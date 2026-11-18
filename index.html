@@ -406,6 +406,18 @@ if (!(+S.sVer >= 7)){ const ex = new Set(String(S.sExclude||'').split(',').map(x
   Object.assign(S, {strictMode:true, sMarkets:'ml', sMinWin:0.50, sModelMin:0.58, sModelEdge:0, sNoModelSports:true, sMaxAdvPct:1.0, sMinPos:2, sMinScore:-99, sMinConf:80, sMinEV:-99, preset:'super', sVer:7}); try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
 if (S.alertNewPlays==null) S.alertNewPlays = true;
 if (S.alertPulledPlays==null) S.alertPulledPlays = true;
+function randomNtfyTopic(){
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(16);
+  if (typeof crypto!=='undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i=0;i<16;i++) bytes[i] = Math.floor(Math.random()*256);
+  let out = 'bettinglab-';
+  for (let i=0;i<16;i++) out += alphabet[bytes[i] % 36];
+  return out;
+}
+function hostedPage(){ return location.protocol==='http:' || location.protocol==='https:'; }
+if (!S.ntfyTopic){ S.ntfyTopic = randomNtfyTopic(); try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
+if (S.ntfyOn==null){ S.ntfyOn = !hostedPage(); try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
 let firstSeen = loadJSON(LS.firstSeen, {});
 let bets = loadJSON(LS.bets, []);
 let oddsCache = loadJSON(LS.oddsCache, null);
@@ -1423,7 +1435,24 @@ function pullReasonFor(r){
   return 'no longer passes the filters';
 }
 const alertOn = kind => kind==='new' ? S.alertNewPlays!==false : S.alertPulledPlays!==false;
+const NTFY_CLICK = 'https://sl1n137956.github.io/betting-lab/';
 function canNotify(){ return typeof Notification!=='undefined' && Notification.permission==='granted'; }
+function normalizeNtfyTopic(raw){
+  let t = String(raw==null?'':raw).trim();
+  t = t.replace(/^https?:\/\/ntfy\.sh\//i,'').replace(/\/+$/,'').split('/')[0].split('?')[0];
+  return t;
+}
+function ntfyTopicOk(t){ return /^[A-Za-z0-9_-]{8,64}$/.test(t||''); }
+function ntfyEnabled(){ return !!S.ntfyOn && ntfyTopicOk(normalizeNtfyTopic(S.ntfyTopic)); }
+function ntfyPush(title, body, opts, topicOverride){
+  const topic = normalizeNtfyTopic(topicOverride!=null ? topicOverride : S.ntfyTopic);
+  if (!ntfyTopicOk(topic)) return Promise.resolve(false);
+  const headers = { 'Title': String(title||'Betting Lab'), 'Priority': String((opts&&opts.priority)||'default'), 'Click': NTFY_CLICK };
+  if (opts && opts.tags) headers['Tags'] = String(opts.tags);
+  return fetch('https://ntfy.sh/'+encodeURIComponent(topic), { method:'POST', body:String(body||''), headers })
+    .then(r=>r.ok).catch(()=>false);
+}
+function canAlert(kind){ return alertOn(kind) && (canNotify() || ntfyEnabled()); }
 function postNotification(title, opts){
   const show = ()=>{ new Notification(title, opts||{}); };
   try{
@@ -1460,7 +1489,7 @@ function playAlertLine(p){
   return `${p.label} ${fmtAm(price)}${book?` (${book})`:''}${when?` · ${when}`:''}`;
 }
 function notifyNewPlayBatch(list){
-  if (!list || !list.length || !alertOn('new') || !canNotify()) return;
+  if (!list || !list.length || !canAlert('new')) return;
   const pending = list.filter(p=>{
     if (!p || !p.g || p.g.state!=='pre' || !p.g.eventId) return false;
     const k = playResultKey(p);
@@ -1468,26 +1497,40 @@ function notifyNewPlayBatch(list){
   });
   if (!pending.length) return;
   try{
-    if (pending.length===1){
-      postNotification('New play', {body:'New play: '+playAlertLine(pending[0]), tag:'bl-new-'+playResultKey(pending[0])});
-    } else {
-      postNotification('New plays', {body:pending.length+' new plays', tag:'bl-new-batch'});
-    }
     const now = Date.now();
     for (const p of pending) newPlayNotified[playResultKey(p)] = now;
     pruneNewPlayNotified();
     saveJSON(LS.newPlayNotified, newPlayNotified);
+    if (pending.length===1){
+      const line = playAlertLine(pending[0]);
+      if (canNotify()) postNotification('New play', {body:'New play: '+line, tag:'bl-new-'+playResultKey(pending[0])});
+      if (ntfyEnabled()) ntfyPush('New play', line, {priority:'high', tags:'moneybag'});
+    } else {
+      const lines = pending.map(playAlertLine).join('\n');
+      if (canNotify()) postNotification('New plays', {body:pending.length+' new plays', tag:'bl-new-batch'});
+      if (ntfyEnabled()) ntfyPush('New plays', lines, {priority:'high', tags:'moneybag'});
+    }
   }catch(e){}
 }
 function notifyPulled(r){
   if (!r || r.pullNotified || r.legacyPull) return;
   if ((r.from||r.pulledFrom||'good')!=='good') return;
-  if (!alertOn('pulled') || !canNotify()) return;
+  if (!canAlert('pulled')) return;
   try{
     const why = r.pullReason||r.reason||'no longer passes the filters';
-    postNotification('Play pulled', {body:`${r.label} (${r.game}): pulled from Good Plays — ${why}`, tag:'bl-pull-'+(r.k||'')});
+    const body = `${r.label} (${r.game}): pulled from Good Plays — ${why}`;
     r.pullNotified = true;
+    if (canNotify()) postNotification('Play pulled', {body, tag:'bl-pull-'+(r.k||'')});
+    if (ntfyEnabled()) ntfyPush('Play pulled', body, {priority:'default', tags:'warning'});
   }catch(e){}
+}
+function sendNtfyTest(){
+  const field = document.querySelector('input[name="ntfyTopic"]');
+  const topic = normalizeNtfyTopic(field && field.value ? field.value : S.ntfyTopic);
+  if (!ntfyTopicOk(topic)){ toast('Enter a valid ntfy topic first'); return; }
+  toast('Sending test…');
+  ntfyPush('Betting Lab', 'Test alert from Betting Lab. Phone alerts are working.', {priority:'default', tags:'white_check_mark'}, topic)
+    .then(ok=>toast(ok?'Test sent. Check ntfy on your phone.':'Could not send the test. Check your connection and topic.'));
 }
 function requestPullAlerts(){
   if (typeof Notification==='undefined'){ toast('This browser does not support alerts'); return; }
@@ -3658,6 +3701,13 @@ function renderSettings(){
         return `<button type="button" class="btn sm" id="btnPullAlerts">Turn on alerts</button>${checks}<div class="s-note">Turn on alerts to get a pop-up when a new play lands on Good Plays, or when one is pulled from it. Alerts only fire while the app is open. On iPhone, install it to your Home Screen first, then tap this button. On first load, several new plays are grouped into one pop-up so they do not spam you.</div>`;
       })()}</div>
 
+    <div class="s-row"><div class="s-h">Phone alerts (ntfy)</div>
+      <label class="chk"><input type="checkbox" name="ntfyOn" ${S.ntfyOn?'checked':''}> Send alerts to my phone</label>
+      <label class="s-inline" style="margin-top:8px">Topic<input name="ntfyTopic" value="${esc(S.ntfyTopic||'')}" autocomplete="off" spellcheck="false" style="max-width:420px;font-family:ui-monospace,Menlo,Consolas,monospace"></label>
+      <div style="margin-top:8px"><button type="button" class="btn sm" id="btnNtfyTest">Send test</button></div>
+      <div class="s-note">Install ntfy on your iPhone, tap +, subscribe to this topic.</div>
+      <div class="s-note">This uses your PC: BettingLab has to be open there. Your phone can be locked or closed. Turn this off on the phone copy so it does not send twice.</div></div>
+
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn primary" type="submit">Save</button></div>
   </div>
 
@@ -3727,6 +3777,10 @@ function renderSettings(){
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).concat(extra).join(',');
     S.sExclude = LEAGUES.filter(L=>!f.get('pick_'+L.id)).map(L=>L.id).join(','); S.sNoSoccer = false;
     S.alertNewPlays = !!f.get('alertNewPlays'); S.alertPulledPlays = !!f.get('alertPulledPlays');
+    S.ntfyOn = !!f.get('ntfyOn');
+    const topic = typeof normalizeNtfyTopic==='function' ? normalizeNtfyTopic(f.get('ntfyTopic')) : String(f.get('ntfyTopic')||'').trim();
+    S.ntfyTopic = topic || S.ntfyTopic || (typeof randomNtfyTopic==='function' ? randomNtfyTopic() : S.ntfyTopic);
+
     const chosen = f.get('preset') || before;
     if (chosen !== before && PRESETS[chosen]) applyPreset(chosen); else S.preset = detectPreset();
     saveJSON(LS.settings, S); toast('Saved. Refreshing…'); refresh(); renderSettings();
@@ -3773,6 +3827,7 @@ $('#view').addEventListener('click', e=>{
   const d = e.target.closest('[data-dismiss-pull]');
   if (d){ dismissPulled(d.dataset.dismissPull, +d.dataset.pulledAt||Date.now()); return; }
   if (e.target.closest('#btnPullAlerts')){ requestPullAlerts(); return; }
+  if (e.target.closest('#btnNtfyTest')){ if (typeof sendNtfyTest==='function') sendNtfyTest(); return; }
   const sc = e.target.closest('[data-pull-scope]');
   if (sc){ ui.pullAll = sc.dataset.pullScope==='all'; render(); return; }
   if (e.target.closest('#btnSideToggle')){ ui.sideOpen = !ui.sideOpen; render(); return; }
