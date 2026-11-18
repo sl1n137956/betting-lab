@@ -392,30 +392,31 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 
 /* matchup visuals */
 
-.cmp{margin:10px 0 12px}
-.cmp-meta{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--txt2);margin-bottom:6px;font-variant-numeric:tabular-nums}
-.cmp-meta b{color:var(--txt);font-size:13.5px}
 .cmp-gap{font-weight:750;letter-spacing:.02em}
 .cmp-gap.pos{color:#6ee7b7}
 .cmp-gap.neg{color:#fca5a5}
-.cmp-fee{display:block;font-size:10.5px;color:var(--mut);font-weight:500}
-.cmp-track{position:relative;height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:visible;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset}
-.cmp-fill{display:block;height:100%;border-radius:999px;max-width:100%}
-.cmp-track.ahead .cmp-fill{background:linear-gradient(90deg,#22c55e,#34d399);box-shadow:0 0 12px rgba(52,211,153,.35)}
-.cmp-track.behind .cmp-fill{background:linear-gradient(90deg,#f87171,#ef4444);box-shadow:0 0 12px rgba(239,68,68,.3)}
-.cmp-odds{position:absolute;top:-4px;bottom:-4px;width:2px;background:#fff;border-radius:2px;box-shadow:0 0 0 2px rgba(15,23,42,.55);transform:translateX(-1px)}
+.chance{margin:10px 0 14px}
+.wc-heads{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.wc-side{display:flex;align-items:center;gap:7px;min-width:0}
+.wc-side.right{flex-direction:row-reverse;text-align:right}
+.wc-logo{width:22px;height:22px;object-fit:contain;flex:none}
+.wc-name{font-weight:700;font-size:13px;color:var(--txt);letter-spacing:.01em}
+.wc-rec{color:var(--mut);font-size:11.5px;font-variant-numeric:tabular-nums}
+.chance-meta{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:6px}
+.chance-meta .est-lab{color:var(--mut);font-size:10.5px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
+.wc-left{color:#4ade80}
+.wc-right{color:#f87171}
+.chance-track{position:relative;height:8px;border-radius:999px;background:linear-gradient(180deg,#f87171,#ef4444);overflow:visible;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset}
+.chance-track > i{display:block;height:100%;border-radius:999px 0 0 999px;background:linear-gradient(180deg,#4ade80,#16a34a);max-width:100%}
+.chance-be{position:absolute;top:-4px;bottom:-4px;width:3px;background:#fff;border-radius:2px;box-shadow:0 0 0 2px rgba(11,18,32,.7),0 0 8px rgba(255,255,255,.35);transform:translateX(-1.5px);z-index:1}
+.wc-cap{margin-top:7px;font-size:12px;color:var(--txt2);text-align:center;line-height:1.4;font-variant-numeric:tabular-nums}
+.wc-cap b{color:var(--txt);font-weight:700}
 @media (max-width:767.98px){
-  .cmp-meta{font-size:12px;gap:6px 10px}
-  .cmp-meta b{font-size:13px}
+  .wc-logo{width:20px;height:20px}
+  .wc-name{font-size:12.5px}
+  .chance-meta{font-size:12.5px}
+  .wc-cap{font-size:11.5px}
 }
-
-.chance{margin:8px 0 12px}
-.chance-meta{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px;color:var(--txt2);margin-bottom:6px;font-variant-numeric:tabular-nums}
-.chance-meta b{color:var(--txt);font-size:13px}
-.chance-meta .est-lab{color:var(--mut);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
-.chance-track{position:relative;height:10px;border-radius:999px;background:rgba(240,113,103,.35);overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset}
-.chance-track > i{display:block;height:100%;border-radius:999px 0 0 999px;background:linear-gradient(90deg,#22c55e,#34d399);box-shadow:0 0 12px rgba(52,211,153,.35)}
-.chance-be{position:absolute;top:-3px;bottom:-3px;width:2px;background:#fff;border-radius:2px;box-shadow:0 0 0 2px rgba(15,23,42,.5);transform:translateX(-1px)}
 .mu-table{width:100%;margin:8px 0 10px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:rgba(8,16,30,.35)}
 .mu-table th,.mu-table td{padding:7px 9px;font-size:12.5px;white-space:normal}
 .mu-table th{background:rgba(59,130,246,.08);color:var(--mut)}
@@ -3298,39 +3299,46 @@ function courtroomHTML(p, C){
     ${marginChartsHTML(p)}
   </div>`;
 }
-function estimateCmpHTML(p, C){
+function chanceCaptionHTML(C){
   const E = C && C.E, P = C && C.P;
   if (!E || E.final==null || !P || P.need==null) return '';
   const est = E.final, need = P.need, gap = est - need;
   const ahead = gap>=0;
   const gapTxt = Math.abs(gap)<0.005 ? 'even' : ((ahead?'+':'−')+(Math.abs(gap)*100).toFixed(1)+' pts');
-  const fee = P.pm ? '<span class="cmp-fee">after the Polymarket fee</span>' : '';
-  return `<div class="cmp">
-    <div class="cmp-meta">
-      <span>Our estimate <b>${fmtPct(est,0)}</b></span>
-      <span class="cmp-gap ${ahead?'pos':'neg'}">${gapTxt}</span>
-      <span>Odds imply <b>${fmtPct(need,0)}</b>${fee}</span>
-    </div>
-    <div class="cmp-track ${ahead?'ahead':'behind'}">
-      <i class="cmp-fill" style="width:${(est*100).toFixed(1)}%"></i>
-      <span class="cmp-odds" style="left:${(need*100).toFixed(1)}%" title="Odds imply ${fmtPct(need,0)}"></span>
-    </div>
-  </div>`;
+  const fee = P.pm ? ' <span class="mut">after fee</span>' : '';
+  return `<div class="wc-cap">Our estimate <b>${fmtPct(est,0)}</b> · Odds imply <b>${fmtPct(need,0)}</b>${fee} · <span class="cmp-gap ${ahead?'pos':'neg'}">${gapTxt}</span></div>`;
+}
+function teamChipHTML(t){
+  if (!t) return '';
+  const logo = t.logo ? `<img class="wc-logo" src="${esc(t.logo)}" alt="" loading="lazy" onerror="this.remove()">` : '';
+  const rec = t.rec ? `<span class="wc-rec">${esc(t.rec)}</span>` : '';
+  return `${logo}<span class="wc-name">${esc(t.short||t.name||'')}</span>${rec}`;
 }
 function chanceBarHTML(p, C){
-  const g = p.g, E = C.E; if (!g || !E || E.final==null) return estimateCmpHTML(p, C);
+  const g = p && p.g, E = C && C.E, cap = chanceCaptionHTML(C);
+  if (!g || !E || E.final==null) return cap ? `<div class="chance">${cap}</div>` : '';
   const team = p.side==='home'||p.side==='away';
-  if (!team && p.mk!=='total') return estimateCmpHTML(p, C);
+  const isTot = p.mk==='total';
+  if (!team && !isTot){
+    const be = C.P && C.P.need;
+    return `<div class="chance">
+      <div class="chance-meta"><span class="wc-left">Our estimate ${fmtPct(E.final,0)}</span><span class="est-lab">Win chance</span><span class="wc-right">Odds ${be!=null?fmtPct(be,0):''}</span></div>
+      <div class="chance-track">${be!=null?`<span class="chance-be" style="left:${(be*100).toFixed(1)}%" title="Odds imply ${fmtPct(be,0)}"></span>`:''}<i style="width:${(E.final*100).toFixed(1)}%"></i></div>
+      ${cap}
+    </div>`;
+  }
   const left = team ? g.away : {short:'Over'};
   const right = team ? g.home : {short:'Under'};
-  const leftP = (p.mk==='total' ? (p.side==='over'?E.final:1-E.final) : (p.side==='away'?E.final:1-E.final));
+  const leftP = (isTot ? (p.side==='over'?E.final:1-E.final) : (p.side==='away'?E.final:1-E.final));
   const be = C.P && C.P.need;
-  const beLeft = be==null ? null : ( (p.mk==='total' ? p.side==='over' : p.side==='away') ? be : 1-be );
-  const sides = `<div class="chance">
-    <div class="chance-meta"><span><b>${esc(left.short)}</b> ${fmtPct(leftP,0)}</span><span class="est-lab">Side by side</span><span>${fmtPct(1-leftP,0)} <b>${esc(right.short)}</b></span></div>
-    <div class="chance-track">${beLeft!=null?`<span class="chance-be" style="left:${(beLeft*100).toFixed(1)}%" title="break-even"></span>`:''}<i style="width:${(leftP*100).toFixed(1)}%"></i></div>
+  const beLeft = be==null ? null : ( (isTot ? p.side==='over' : p.side==='away') ? be : 1-be );
+  const heads = team ? `<div class="wc-heads"><div class="wc-side">${teamChipHTML(left)}</div><div class="wc-side right">${teamChipHTML(right)}</div></div>` : '';
+  return `<div class="chance">
+    ${heads}
+    <div class="chance-meta"><span class="wc-left"><b>${esc(left.short)}</b> ${fmtPct(leftP,0)}</span><span class="est-lab">Win chance</span><span class="wc-right">${fmtPct(1-leftP,0)} <b>${esc(right.short)}</b></span></div>
+    <div class="chance-track">${beLeft!=null?`<span class="chance-be" style="left:${(beLeft*100).toFixed(1)}%" title="Odds imply ${fmtPct(be,0)}"></span>`:''}<i style="width:${(leftP*100).toFixed(1)}%"></i></div>
+    ${cap}
   </div>`;
-  return sides + estimateCmpHTML(p, C);
 }
 function matchupTableHTML(p, C){
   const g = p.g; if (!g || !(p.side==='home'||p.side==='away')) return '';
