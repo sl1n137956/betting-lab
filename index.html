@@ -405,7 +405,7 @@ const LEAGUES = [
 const LMAP = Object.fromEntries(LEAGUES.map(l=>[l.id,l]));
 const BOOK_NAMES = {draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
 const DEFAULTS = {
-  refreshMin:2, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
+  refreshMin:1, refreshSec:60, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
   oddsKey:'', oddsRegions:'us', oddsEveryMin:120, oddsBooks:'', sharpWeight:2,
   unit:25, maxGood:5,
   goodFavMin:-250, goodFavMax:-110, avoidFavBelow:-300, closeLow:-101, closeHigh:130,
@@ -439,6 +439,13 @@ if (!(+S.sVer >= 8)){
   if (S.oddsEveryMin==null || S.oddsEveryMin==='') S.oddsEveryMin = 120;
   S.sVer = 8; try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
 }
+// v9: free sources default to once a minute; 15s/30s remain available.
+if (!(+S.sVer >= 9)){
+  S.refreshSec = 60; S.refreshMin = 1; S.sVer = 9;
+  try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+}
+if (S.refreshSec==null || !isFinite(+S.refreshSec)) S.refreshSec = Math.round((+S.refreshMin||1)*60);
+
 function randomNtfyTopic(){
   const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = new Uint8Array(16);
@@ -457,6 +464,7 @@ let oddsCache = loadJSON(LS.oddsCache, null);
 let games = [], plays = [];
 let ui = {tab:'good', sport:'all', mkt:'all', q:'', hideStarted:true, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false};
 let nextAt = 0, lastUpdated = null, feedErrors = [], oddsErrors = [], busy = false;
+let feedBackoffUntil = 0, feedFailStreak = 0, feedRateLimited = false;
 
 function loadJSON(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
 function saveJSON(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ console.warn('save failed', k, e); } }
@@ -488,6 +496,7 @@ async function fetchJSON(url, timeoutMs=15000){
   const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), timeoutMs);
   try{
     const r = await fetch(url, {signal:ctl.signal, cache:'no-store'});
+    if (r.status===429 && typeof noteFeedRateLimit==='function') noteFeedRateLimit();
     const txt = await r.text(); let data=null; try{ data = JSON.parse(txt); }catch(e){}
     return {ok:r.ok, status:r.status, data, headers:r.headers};
   } finally { clearTimeout(to); }
@@ -512,17 +521,43 @@ async function fetchEspn(){
     const dates = []; for (let i=0;i<leagueDays(L.id);i++){ const d=new Date(base); d.setDate(d.getDate()+i); dates.push(ymd(d)); }
     for (const dt of dates){
       const url = `https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${dt}${L.q?'&'+L.q:''}`;
-      tasks.push(async()=>{ const r = await fetchJSON(url); if(!r.ok||!r.data) throw new Error(`${L.label} ${dt}: HTTP ${r.status}`); return {L, data:r.data}; });
+      tasks.push(async()=>{ const r = await fetchJSON(url); if (r.status===429) noteFeedRateLimit(); if(!r.ok||!r.data) throw new Error(`${L.label} ${dt}: HTTP ${r.status}`); return {L, data:r.data, status:r.status}; });
     }
   }
   const res = await pool(tasks, 6);
   const out = []; let okCount=0;
   for (const r of res){
-    if (!r || r.error){ feedErrors.push(String(r && r.error && r.error.message || 'network error')); continue; }
+    if (!r || r.error){
+      const msg = String(r && r.error && r.error.message || 'network error');
+      feedErrors.push(msg);
+      if (/HTTP 429|429/.test(msg)) noteFeedRateLimit();
+      continue;
+    }
     okCount++; out.push(r);
   }
+  noteFeedOutcome(okCount, tasks.length);
   return {results:out, okCount, total:tasks.length};
 }
+function noteFeedRateLimit(){
+  feedRateLimited = true;
+  feedBackoffUntil = Date.now() + 10*60000;
+}
+function noteFeedOutcome(okCount, total){
+  if (feedRateLimited && Date.now()<feedBackoffUntil) return;
+  if (total>0 && okCount===0){
+    feedFailStreak++;
+    if (feedFailStreak>=2) noteFeedRateLimit();
+  } else if (okCount>0){
+    feedFailStreak = 0;
+    if (Date.now()>=feedBackoffUntil) feedRateLimited = false;
+  }
+}
+function feedBackoffActive(){ return feedRateLimited && Date.now()<feedBackoffUntil; }
+function refreshIntervalMs(){
+  const want = Math.max(15, +S.refreshSec || 60)*1000;
+  return feedBackoffActive() ? Math.max(want, 3*60000) : want;
+}
+
 function competitorName(c){
   if (c.team) return {name:c.team.displayName||c.team.name, short:c.team.abbreviation||c.team.shortDisplayName, logo:c.team.logo||''};
   if (c.athlete) return {name:c.athlete.displayName, short:c.athlete.shortName||c.athlete.displayName, logo:(c.athlete.flag&&c.athlete.flag.href)||''};
@@ -1443,7 +1478,7 @@ const PM_TAGS = {nba:745, nhl:899, nfl:450, ncaaf:100351, ncaab:102114};
 let pmCache = loadJSON(LS.pm, null); let pmErr = null;
 async function fetchPolymarket(){
   if (!S.pmOn || !myBookList().includes('polymarket')){ pmErr=null; return; }
-  const pmFresh = Math.max(30, (+S.refreshMin||2)*60 - 5)*1000;
+  const pmFresh = Math.max(10*1000, (typeof refreshIntervalMs==="function"?refreshIntervalMs():60000) - 2000);
   if (pmCache && Date.now()-pmCache.t < pmFresh) return;
   const want = Object.keys(PM_TAGS).filter(id=>S.enabled.includes(id) && games.some(g=>g.league===id && g.state==='pre'));
   const res = {t:Date.now(), m:{}}; let errs=0;
@@ -2375,21 +2410,35 @@ async function refresh(forceOdds=false){
     attachFx();
     evaluateAll();
     lastUpdated = new Date();
-    $('#dotFeed').className = 'dot '+(feedErrors.length?'warn':'ok');
-    $('#feedTxt').textContent = `${games.length} events` + (feedErrors.length?` (${feedErrors.length} failed)`:'');
+    updateFeedPill();
   }catch(e){
     console.warn(e);
-    $('#dotFeed').className='dot err'; $('#feedTxt').textContent='offline';
     feedErrors.push(String(e.message||e));
+    if (/HTTP 429|429/.test(String(e.message||e))) noteFeedRateLimit();
+    noteFeedOutcome(0, 1);
+    updateFeedPill();
     toast('Could not load data. Will retry automatically.');
   }finally{
-    busy = false; btn.disabled=false; btn.textContent='↻ Refresh now';
-    nextAt = Date.now() + Math.max(1, +S.refreshMin||2)*60000;
+    busy = false;
+    if (btn){ btn.disabled=false; btn.textContent='↻ Refresh now'; }
+    nextAt = Date.now() + refreshIntervalMs();
     updateOddsPill(); render(); tick();
   }
-  if (games.length) runEnrichment().then(()=>loadPlayerImpacts()).catch(e=>console.warn('enrichment', e)).then(()=>{ if (typeof learnTick==='function') learnTick(); }); else { updateDeepPill(); if (typeof learnTick==='function') learnTick(); }
+  // Light cycle: ESPN + Polymarket only. Deep ESPN game pages stay on their 15/5-min stale rules.
+  const needDeep = games.length && typeof needsSummary==='function' && games.some(g=>needsSummary(g) || (typeof needsWx==='function' && needsWx(g)));
+  if (needDeep) runEnrichment().then(()=>loadPlayerImpacts()).catch(e=>console.warn('enrichment', e)).then(()=>{ if (typeof learnTick==='function') learnTick(); });
+  else { if (typeof updateDeepPill==='function') updateDeepPill(); if (typeof learnTick==='function') learnTick(); }
   gradeAll().catch(e=>console.warn('grading', e));
   pruneCaches();
+}
+function updateFeedPill(){
+  const d=$('#dotFeed'), t=$('#feedTxt'); if (!d||!t) return;
+  if (typeof feedBackoffActive==='function' && feedBackoffActive()){
+    d.className='dot warn'; t.textContent='Slowed down: feed rate-limited'; return;
+  }
+  if (!lastUpdated && feedErrors.length){ d.className='dot err'; t.textContent='offline'; return; }
+  d.className='dot '+(feedErrors.length?'warn':'ok');
+  t.textContent = `${games.length} events` + (feedErrors.length?` (${feedErrors.length} failed)`:'');
 }
 function softRender(){ // live update without wiping forms on Tracker/Settings
   if (ui.tab==='tracker' || ui.tab==='settings' || ui.tab==='picks' || ui.tab==='results'){ const vis = v => filtered(plays.filter(p=>p.verdict===v), true).length; ['good','watch','avoid'].forEach(t=>setTabCount(t, vis(t))); if (typeof updatePullDots==='function') updatePullDots(); return; }
@@ -2404,7 +2453,7 @@ function updateOddsPill(){
   const ago = Math.round((Date.now()-oddsCache.t)/60000);
   t.textContent = `${ago}m ago` + (oddsCache.remaining!=null?` · ${oddsCache.remaining} credits left`:'');
 }
-const REFRESH_WATCH_MS = 20000;
+const REFRESH_WATCH_MS = 5000;
 function refreshIfDue(){
   if (!nextAt || busy) return false;
   if (Date.now() >= nextAt){ refresh(); return true; }
@@ -2421,7 +2470,7 @@ function tick(){
   }catch(e){}
 }
 function startRefreshWatch(ms){
-  const every = Math.max(1000, +ms || REFRESH_WATCH_MS);
+  const every = Math.max(2000, +ms || Math.min(10000, Math.max(3000, (typeof refreshIntervalMs==='function'?refreshIntervalMs():60000)/4)));
   if (window._blTick) clearInterval(window._blTick);
   window._blTick = setInterval(tick, 1000);
   if (window._blDue) clearInterval(window._blDue);
@@ -3903,6 +3952,22 @@ function applyPreset(name){ const P = PRESETS[name]; if (!P) return; if (name===
 function detectPreset(){ if (!S.strictMode) return 'relaxed'; for (const n of ['super','picky']){ const P = PRESETS[n]; if (PRESET_KEYS.every(k=>String(S[k])===String(P[k]))) return n; } return 'custom'; }
 const MY_BOOK_CHOICES = [['bovada','Bovada'],['polymarket','Polymarket'],['draftkings','DraftKings'],['fanduel','FanDuel'],['betmgm','BetMGM'],['williamhill_us','Caesars'],['espnbet','ESPN BET'],['fanatics','Fanatics'],['betrivers','BetRivers'],['betonlineag','BetOnline']];
 const LOST_IN_TEST = new Set(['ncaab','mls','epl','ucl','laliga','seriea','bund']);
+function applyPickSportsLive(){
+  S.sExclude = LEAGUES.filter(L=>{
+    const el = document.querySelector('input[name="pick_'+L.id+'"]');
+    return el ? !el.checked : String(S.sExclude||'').split(',').map(x=>x.trim()).includes(L.id);
+  }).map(L=>L.id).join(',');
+  S.sNoSoccer = false;
+  saveJSON(LS.settings, S);
+  if (ui.sport!=='all' && typeof goodEligibleLeague==='function' && !goodEligibleLeague(ui.sport)) ui.sport = 'all';
+  try{ if (typeof evaluateAll==='function') evaluateAll(); }catch(e){}
+  if (typeof renderChips==='function') renderChips();
+  if (typeof updatePullDots==='function') updatePullDots();
+  try{
+    const vis = v => filtered(plays.filter(p=>p.verdict===v), true).length;
+    ['good','watch','avoid'].forEach(tab=>setTabCount(tab, vis(tab)));
+  }catch(e){}
+}
 function renderSettings(){
   const cur = detectPreset(); const books = myBookList();
   const exl = new Set(String(S.sExclude||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean));
@@ -3928,8 +3993,8 @@ function renderSettings(){
       <div class="s-note">* College basketball and soccer lost money in testing, so they are off by default. Their games still show in All Games, but not in the Good Plays, Watchlist, or Avoid sport filters. Sports you turn off in Settings are hidden from those filters too.</div></div>
 
     <div class="s-row"><div class="s-h">Refresh every</div>
-      <div class="seg">${[1,2,5,10].map(n=>`<label class="${+S.refreshMin===n?'on':''}"><input type="radio" name="refreshMin" value="${n}" ${+S.refreshMin===n?'checked':''} hidden>${n} min${n===2?' <small>recommended</small>':''}</label>`).join('')}</div>
-      <div class="s-note">Free sources (ESPN and Polymarket) refresh this often, including when the window is minimized, so phone alerts can go out. The Odds API (Bovada) is fetched about every 2 hours and again about 60 and 15 minutes before a Good Play, and is throttled so it stays within your monthly credits.</div></div>
+      <div class="seg">${[[15,'15s'],[30,'30s'],[60,'1 min'],[120,'2 min'],[300,'5 min'],[600,'10 min']].map(([v,l])=>`<label class="${+S.refreshSec===v?'on':''}"><input type="radio" name="refreshSec" value="${v}" ${+S.refreshSec===v?'checked':''} hidden>${l}${v===60?' <small>recommended</small>':''}</label>`).join('')}</div>
+      <div class="s-note">Free sources (ESPN and Polymarket) refresh this often, including when the window is minimized, so phone alerts can go out. 1 minute is the default. If the feed rate-limits us, the app slows to every 3 minutes for 10 minutes. The Odds API (Bovada) is fetched about every 2 hours and again about 60 and 15 minutes before a Good Play, and is throttled so it stays within your monthly credits.</div></div>
 
     <div class="s-row"><div class="s-h">Odds key (optional)</div>
       <input name="oddsKey" type="password" autocomplete="off" value="${esc(S.oddsKey)}" placeholder="paste your free key here" style="max-width:420px">
@@ -4010,12 +4075,20 @@ function renderSettings(){
   </ul></div>
   </div></details>
   </form>`;
-  $('#view').querySelectorAll('label.chip input').forEach(i=>i.onchange=()=>i.parentElement.classList.toggle('on', i.checked));
-  $('#view').querySelectorAll('.seg input').forEach(i=>i.onchange=()=>{ $('#view').querySelectorAll('.seg label').forEach(l=>l.classList.toggle('on', l.contains(i))); $('#presetNote').textContent = PRESETS[i.value].test; });
+  $('#view').querySelectorAll('label.chip input').forEach(i=>i.onchange=()=>{
+    i.parentElement.classList.toggle('on', i.checked);
+    if (i.name && i.name.indexOf('pick_')===0) applyPickSportsLive();
+  });
+  $('#view').querySelectorAll('.seg input').forEach(i=>i.onchange=()=>{
+    const g = i.closest('.seg');
+    if (g) g.querySelectorAll('label').forEach(l=>l.classList.toggle('on', l.contains(i)));
+    if (i.name==='preset' && PRESETS[i.value] && $('#presetNote')) $('#presetNote').textContent = PRESETS[i.value].test;
+  });
   $('#setForm').onsubmit = e=>{
     e.preventDefault(); const f = new FormData(e.target);
     const before = detectPreset();
-    for (const k of ['refreshMin','lookaheadDays','unit','oddsEveryMin','summaryTTL','summaryHorizonHrs','maxSummaries',...TH.map(t=>t[0]),...WT.map(t=>t[0]),...ST.map(t=>t[0])]){ const v=parseFloat(f.get(k)); if (isFinite(v)) S[k]=v; }
+    for (const k of ['lookaheadDays','unit','oddsEveryMin','summaryTTL','summaryHorizonHrs','maxSummaries',...TH.map(t=>t[0]),...WT.map(t=>t[0]),...ST.map(t=>t[0])]){ const v=parseFloat(f.get(k)); if (isFinite(v)) S[k]=v; }
+    const rs = parseFloat(f.get('refreshSec')); if (isFinite(rs)){ S.refreshSec = rs; S.refreshMin = rs>=60 ? rs/60 : rs/60; }
     const newKey = String(f.get('oddsKey')||'').trim();
     if (newKey!==S.oddsKey) oddsCache = null;
     S.oddsKey = newKey; S.oddsRegions = f.get('oddsRegions'); S.oddsBooks = String(f.get('oddsBooks')||'').trim();
@@ -4031,7 +4104,8 @@ function renderSettings(){
 
     const chosen = f.get('preset') || before;
     if (chosen !== before && PRESETS[chosen]) applyPreset(chosen); else S.preset = detectPreset();
-    saveJSON(LS.settings, S); toast('Saved. Refreshing…'); refresh(); renderSettings();
+    saveJSON(LS.settings, S); if (typeof startRefreshWatch==='function') startRefreshWatch();
+    toast('Saved. Refreshing…'); refresh(); renderSettings();
   };
   $('#btnDefaults').onclick = ()=>{ if(!confirm('Reset everything except your key, books, sports and bet size to the recommended settings?')) return;
     for (const [k] of TH.concat(WT, ST)) S[k]=DEFAULTS[k]; S.sExclude = DEFAULTS.sExclude; S.sNoSoccer = false; S.sMarkets = DEFAULTS.sMarkets; S.sNoModelSports = DEFAULTS.sNoModelSports; S.pmOn = true; applyPreset('super');
