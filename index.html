@@ -56,6 +56,7 @@ nav.tabs button[data-tab=avoid] .cnt{background:var(--avoid-bg);color:var(--avoi
 .banner{margin:18px 0 4px;padding:12px 16px;border-radius:12px;background:linear-gradient(180deg,rgba(124,77,255,.05),rgba(124,77,255,.02));border:1px solid rgba(124,77,255,.14);color:var(--mut);font-size:12.5px;line-height:1.6}
 .banner b{color:var(--acc-hi);font-weight:600}
 .filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0}
+.chip-note{margin:-2px 0 10px;padding:0 2px;font-size:12px;color:var(--mut);line-height:1.45}
 .chip{background:rgba(255,255,255,.02);border:1px solid var(--line);color:var(--mut);padding:5px 12px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:550;user-select:none;transition:all .2s var(--ease)}
 .chip:hover{color:var(--txt2);border-color:var(--line2)}
 .chip.on{background:var(--acc-dim);color:var(--acc-hi);border-color:rgba(124,77,255,.4)}
@@ -345,6 +346,7 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
   <div class="banner"><b>Math rules, not AI.</b> Every play starts from the sharpest betting odds (house cut removed), then adds only the factors that proved useful in a 60-day test on real past games, and checks your book's price against what the bet is worth. One rules engine argues both sides in the courtroom. It cannot read lineups or news. No guarantees.</div>
   <div id="filterBar">
     <div class="filters" id="sportChips"></div>
+    <div class="chip-note" id="chipNote" hidden></div>
     <div class="filters">
       <span class="chip on" data-mkt="all">All markets</span>
       <span class="chip" data-mkt="ml">Moneyline</span>
@@ -403,7 +405,7 @@ const LEAGUES = [
 const LMAP = Object.fromEntries(LEAGUES.map(l=>[l.id,l]));
 const BOOK_NAMES = {draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
 const DEFAULTS = {
-  refreshMin:10, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
+  refreshMin:2, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
   oddsKey:'', oddsRegions:'us', oddsEveryMin:120, oddsBooks:'', sharpWeight:2,
   unit:25, maxGood:5,
   goodFavMin:-250, goodFavMax:-110, avoidFavBelow:-300, closeLow:-101, closeHigh:130,
@@ -412,7 +414,7 @@ const DEFAULTS = {
   // factor model (points per factor; editable)
   wPrice:1.0, wModel:1.0, wEdge:1.0, wMove:0.75, wInj:1.0, wForm:0.75, wSplit:0.5, wRest:0.75, wH2H:0.4, wStats:1.0, wGoalie:0.75, wWeather:1.0, wRecord:0.5,
   goodScore:3.0, watchScore:1.5, dogGoodScore:5.0, dogMinFactors:3, minConfGood:60,
-  deepData:true, summaryTTL:20, summaryHorizonHrs:36, maxSummaries:250,
+  deepData:true, summaryTTL:15, summaryHorizonHrs:36, maxSummaries:250,
   // strict mode (tuned by backtest; see Backtest tab)
   strictMode:true, sMarkets:'ml', sFavMin:-150, sDogMax:150, sMinWin:0.50, sModelMin:0.58, sModelEdge:0, sNoModelSports:true, sNoSoccer:false, sExclude:'ncaab,mls,epl,ucl,laliga,seriea,bund', preset:'super', sMaxAdvPct:1.0, sMinPos:2, sMinScore:-99, sMinConf:80, sMinEV:-99,
   // your books
@@ -430,6 +432,13 @@ if (!(+S.sVer >= 7)){ const ex = new Set(String(S.sExclude||'').split(',').map(x
   Object.assign(S, {strictMode:true, sMarkets:'ml', sMinWin:0.50, sModelMin:0.58, sModelEdge:0, sNoModelSports:true, sMaxAdvPct:1.0, sMinPos:2, sMinScore:-99, sMinConf:80, sMinEV:-99, preset:'super', sVer:7}); try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
 if (S.alertNewPlays==null) S.alertNewPlays = true;
 if (S.alertPulledPlays==null) S.alertPulledPlays = true;
+// v8: free sources refresh every 2 min; Odds API stays on its own budgeted schedule; deeper ESPN pages 15/5 min.
+if (!(+S.sVer >= 8)){
+  if (+S.refreshMin===10 || S.refreshMin==null) S.refreshMin = 2;
+  if (+S.summaryTTL===20 || S.summaryTTL==null) S.summaryTTL = 15;
+  if (S.oddsEveryMin==null || S.oddsEveryMin==='') S.oddsEveryMin = 120;
+  S.sVer = 8; try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+}
 function randomNtfyTopic(){
   const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = new Uint8Array(16);
@@ -609,14 +618,67 @@ function addEspnOdds(g, oddsArr){
   }
 }
 /* ---------- The Odds API (optional) ---------- */
+function oddsCostPerFetch(){
+  const regions = (S.oddsBooks||'').trim() ? Math.ceil(S.oddsBooks.split(',').filter(Boolean).length/10) : String(S.oddsRegions||'us').split(',').filter(Boolean).length;
+  const n = Math.max(1, new Set((games||[]).filter(g=>g.state!=='post').map(g=>g.league)).size);
+  return n * 3 * Math.max(1, regions||1);
+}
+function daysLeftInOddsMonth(){
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth()+1, 1);
+  return Math.max(1, (end - now)/86400000);
+}
+function minOddsIntervalMs(){
+  const cost = Math.max(1, oddsCostPerFetch());
+  const rem = oddsCache && oddsCache.remaining!=null && isFinite(+oddsCache.remaining) ? +oddsCache.remaining : 500;
+  const reserve = Math.min(40, Math.max(8, rem*0.08));
+  const spendable = Math.max(0, rem - reserve);
+  const maxFetches = Math.floor(spendable / cost);
+  const spaced = maxFetches<=0 ? 24*3600000 : (daysLeftInOddsMonth()*86400000)/maxFetches;
+  const configured = Math.max(30, +S.oddsEveryMin||120)*60000;
+  return Math.max(configured, spaced);
+}
+function upcomingGoodOddsWindows(){
+  const now = Date.now();
+  const out = [];
+  const seen = new Set();
+  const add = (k, start) => {
+    if (!k || !start) return;
+    const mins = (start - now)/60000;
+    for (const w of [60, 15]){
+      if (mins <= w+5 && mins > Math.max(0, w-20)){
+        const id = k+'|oa|'+w;
+        if (!seen.has(id)){ seen.add(id); out.push({id, w, mins}); }
+      }
+    }
+  };
+  for (const p of (plays||[])){
+    if (p && p.verdict==='good' && p.g && p.g.state==='pre' && p.g.start && p.g.eventId) add(playResultKey(p), p.g.start.getTime ? p.g.start.getTime() : +p.g.start);
+  }
+  for (const r of (typeof results!=='undefined' && results)||[]){
+    if (r && r.status==='active' && r.start && r.k) add(r.k, +r.start);
+  }
+  return out;
+}
+function shouldFetchOdds(force){
+  if (!S.oddsKey) return false;
+  if (force) return true;
+  const rem = oddsCache && oddsCache.remaining!=null && isFinite(+oddsCache.remaining) ? +oddsCache.remaining : null;
+  const cost = oddsCostPerFetch();
+  if (rem!=null && rem < cost) return false;
+  const boosts = upcomingGoodOddsWindows().filter(w => !(oddsCache && oddsCache.boosts && oddsCache.boosts[w.id]));
+  if (boosts.length && (rem==null || rem >= cost+5)) return 'boost';
+  const every = +S.oddsEveryMin||0;
+  if (!every) return false;
+  const wait = minOddsIntervalMs();
+  if (oddsCache && oddsCache.t && (Date.now()-oddsCache.t) < wait) return false;
+  return true;
+}
 async function fetchOddsApi(force){
   oddsErrors = [];
   if (!S.oddsKey) return;
-  const every = +S.oddsEveryMin||0;
-  if (!force){
-    if (every===0) return;                                                     // manual only
-    if (oddsCache && oddsCache.t && (Date.now()-oddsCache.t) < every*60000) return; // still fresh
-  }
+  const why = shouldFetchOdds(force);
+  if (!why) return;
   const key = encodeURIComponent(S.oddsKey.trim());
   const sp = await fetchJSON(`https://api.the-odds-api.com/v4/sports/?apiKey=${key}`); // free, no credits
   if (!sp.ok || !Array.isArray(sp.data)){ oddsErrors.push(`Sports list: HTTP ${sp.status} ${sp.data&&sp.data.message||''}`); return; }
@@ -635,13 +697,17 @@ async function fetchOddsApi(force){
   const res = await pool(list.map(w=>async()=>{
     const r = await fetchJSON(`https://api.the-odds-api.com/v4/sports/${w.key}/odds/?apiKey=${key}${books}&markets=h2h,spreads,totals&oddsFormat=american`);
     const rem = r.headers.get('x-requests-remaining'), us = r.headers.get('x-requests-used');
-    if (rem!=null) remaining = rem; if (us!=null) used = us;
+    if (rem!=null && isFinite(+rem)) remaining = +rem; if (us!=null && isFinite(+us)) used = +us;
     if (!r.ok || !Array.isArray(r.data)) throw new Error(`${w.key}: HTTP ${r.status} ${r.data&&r.data.message||''}`);
     return {L:w.L, data:r.data};
   }), 3);
   const events = [];
   for (const r of res){ if (!r || r.error){ oddsErrors.push(String(r&&r.error&&r.error.message||'error')); continue; } for (const ev of r.data) events.push({league:r.L.id, ev}); }
-  oddsCache = {t:Date.now(), events, remaining, used, calls:list.length};
+  const boosts = Object.assign({}, (oddsCache && oddsCache.boosts) || {});
+  if (why==='boost' || force){
+    for (const w of upcomingGoodOddsWindows()) boosts[w.id] = Date.now();
+  }
+  oddsCache = {t:Date.now(), events, remaining, used, calls:list.length, boosts};
   saveJSON(LS.oddsCache, oddsCache);
 }
 const STOP = new Set(['fc','cf','sc','afc','the','of','and','de','state','university','city','united','club','real','st','saint','sporting','athletic','atletico','ac','as','us','cd','rc','ud','sd','vfb','vfl','tsg','bv']);
@@ -1032,10 +1098,10 @@ function pruneCaches(){
   for (const k in wxCache) if (now - wxCache[k].t > 2*86400000) delete wxCache[k];
   saveJSON(LS.sum, sumCache); saveJSON(LS.wx, wxCache);
 }
-function sumTTL(g){ // refresh more often close to start (injury news), less often for far-off games
+function sumTTL(g){ // 5 min within 2h of start (injury news); otherwise 15 min (or Settings)
   const hrs = (g.start - Date.now())/3600000;
-  const base = Math.max(5, +S.summaryTTL||20)*60000;
-  return hrs <= 3 ? base : hrs <= 12 ? base*2 : base*4;
+  const far = Math.max(5, +S.summaryTTL||15)*60000;
+  return hrs <= 2 ? Math.min(5*60000, far) : far;
 }
 function teamSide(g, id){ id = String(id); return id===g.home.id ? 'home' : id===g.away.id ? 'away' : null; }
 const num = v => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return isFinite(n) ? n : null; };
@@ -1377,7 +1443,8 @@ const PM_TAGS = {nba:745, nhl:899, nfl:450, ncaaf:100351, ncaab:102114};
 let pmCache = loadJSON(LS.pm, null); let pmErr = null;
 async function fetchPolymarket(){
   if (!S.pmOn || !myBookList().includes('polymarket')){ pmErr=null; return; }
-  if (pmCache && Date.now()-pmCache.t < 4*60000) return;
+  const pmFresh = Math.max(30, (+S.refreshMin||2)*60 - 5)*1000;
+  if (pmCache && Date.now()-pmCache.t < pmFresh) return;
   const want = Object.keys(PM_TAGS).filter(id=>S.enabled.includes(id) && games.some(g=>g.league===id && g.state==='pre'));
   const res = {t:Date.now(), m:{}}; let errs=0;
   await pool(want.map(id=>async()=>{
@@ -1603,6 +1670,9 @@ function requestPullAlerts(){
 function alertsPerm(){ return (typeof Notification==='undefined') ? 'unsupported' : Notification.permission; }
 function noteVisible(n, now, dismissed){
   if (!n || !n.from) return false;
+  if (n.resolved || n.readded) return false;
+  const cur = typeof currentTabOf==='function' ? currentTabOf(n.k) : null;
+  if (cur && TAB_RANK[cur] >= (TAB_RANK[n.from]||0)) return false;
   const isLegacy = !!(n.legacyPull || n.reason===LEGACY_PULL || (n.legacy && !n.at));
   if (isLegacy){ if (!(n.start > now)) return false; }
   else if (!(n.start > now || (n.at && (now - n.at) < 24*3600000))) return false;
@@ -1627,9 +1697,10 @@ function visiblePulled(fromTab){
   }
   if (!fromTab || fromTab==='good'){
     for (const r of results){
-      if (r.status!=='withdrawn') continue;
+      if (r.status!=='withdrawn' || r.readded) continue;
       if (seen.has(r.k+'|good')) continue;
       const to = currentTabOf(r.k) || null;
+      if (to && TAB_RANK[to] >= (TAB_RANK['good']||0)) continue;
       const note = {k:r.k, from:'good', to, at:r.pulledAt||0, reason:r.pullReason||LEGACY_PULL, label:r.label, game:r.game, start:r.start, legacyPull:!!(r.legacyPull || !r.pulledAt), pullNotified:r.pullNotified};
       if (!noteVisible(note, now, dismissed)) continue;
       list.push(note); seen.add(r.k+'|good');
@@ -1645,9 +1716,31 @@ function dismissPulled(k, pulledAt){
   saveJSON(LS.pulledDismiss, d);
   if (typeof render==='function') render();
 }
+const PAGE_STARTED = Date.now();
+function markReadded(k, now, origin){
+  now = now || Date.now();
+  for (const n of pullNotes){
+    if (n.k!==k) continue;
+    n.resolved = true; n.readded = true; n.readdedAt = now;
+  }
+  const t = playTabs[k];
+  if (t){
+    t.pulledFrom = null; t.pulledAt = null; t.pullReason = null;
+    t.readded = true; t.readdedAt = now;
+    if (origin) t.upgradedFrom = origin;
+  }
+  const r = results.find(x=>x.k===k);
+  if (r){
+    r.readded = true; r.readdedAt = now; r.pullNotified = false;
+    r.lastPullAt = r.lastPullAt || r.pulledAt;
+    r.lastPullReason = r.lastPullReason || r.pullReason;
+  }
+}
 function playMoveTag(p){
   if (!p || !p.g || !p.g.eventId || !TAB_RANK[p.verdict]) return null;
   const t = playTabs[playResultKey(p)]; if (!t) return null;
+  if (t.readdedAt && t.readdedAt >= PAGE_STARTED && t.tab===p.verdict)
+    return {kind:'up', text:'Back in'};
   if (t.upgradedFrom && t.tab===p.verdict && TAB_RANK[p.verdict] > (TAB_RANK[t.upgradedFrom]||0))
     return {kind:'up', text:'Upgraded from '+(TAB_NAME[t.upgradedFrom]||t.upgradedFrom)};
   if (t.pulledFrom && t.tab===p.verdict && TAB_RANK[p.verdict] < (TAB_RANK[t.pulledFrom]||99))
@@ -1680,12 +1773,24 @@ function trackPlayTabs(){
         if (r && prev.tab==='good'){ r.pulledFrom = r.pulledFrom||'good'; if (!r.pullReason) r.pullReason = reason; }
       } else if (TAB_RANK[cur] > TAB_RANK[prev.tab]){
         meta.upgradedFrom = prev.tab; meta.upgradedAt = now;
-        meta.pulledFrom = null; meta.pulledAt = null; meta.pullReason = null;
-        for (const n of pullNotes) if (n.k===k) n.resolved = true;
+        const note = pullNotes.find(n=>n.k===k);
+        const origin = prev.pulledFrom || (note && note.from) || (prev.readded ? (prev.upgradedFrom || 'good') : null);
+        if ((origin && TAB_RANK[cur] >= (TAB_RANK[origin]||0)) || prev.readded){
+          meta.readded = true; meta.readdedAt = now;
+          meta.pulledFrom = null; meta.pulledAt = null; meta.pullReason = null;
+          playTabs[k] = Object.assign({}, prev, meta);
+          markReadded(k, now, prev.tab);
+        } else if (prev.pulledFrom){
+          meta.pulledFrom=prev.pulledFrom; meta.pulledAt=prev.pulledAt; meta.pullReason=prev.pullReason;
+        }
       }
     } else if (prev){
       if (prev.pulledFrom){ meta.pulledFrom=prev.pulledFrom; meta.pulledAt=prev.pulledAt; meta.pullReason=prev.pullReason; }
       if (prev.upgradedFrom){ meta.upgradedFrom=prev.upgradedFrom; meta.upgradedAt=prev.upgradedAt; }
+      if (prev.readded){ meta.readded=prev.readded; meta.readdedAt=prev.readdedAt; }
+    }
+    if (prev && prev.readded && TAB_RANK[cur] >= (TAB_RANK[prev.pulledFrom||prev.upgradedFrom||cur]||TAB_RANK[cur])){
+      meta.readded = true; meta.readdedAt = meta.readdedAt || prev.readdedAt || now;
     }
     playTabs[k] = meta;
   }
@@ -1711,7 +1816,7 @@ function recordResults(){
     if (!r){ r = {k, ev:p.g.eventId, lg:p.g.league, mk:p.mk, side:p.side, point:p.sd.point, label:p.label, game:`${p.g.away.short} @ ${p.g.home.short}`, start:p.g.start.getTime(), first:now, price:(p.my&&p.my.best?p.my.best.price:p.sd.best.price), book:(p.my&&p.my.best?p.my.best.book:p.sd.best.book), est:p.est, status:'active', res:null, mv:(typeof LEARN!=='undefined' && LEARN.cur) || 1}; results.push(r); }
     const wasPulled = r.status==='withdrawn';
     Object.assign(r, {status:'active', lastPrice:(p.my&&p.my.best?p.my.best.price:p.sd.best.price), lastBook:(p.my&&p.my.best?p.my.best.book:p.sd.best.book), est:p.est, point:p.sd.point, betOn:bo.line, d:isoDate(p.g.start)});
-    if (wasPulled){ r.readdedAt = now; r.readded = true; r.pullNotified = false; r.lastPullAt = r.pulledAt; r.lastPullReason = r.pullReason; r.legacyPull = false; }
+    if (wasPulled){ r.readdedAt = now; r.readded = true; r.pullNotified = false; r.lastPullAt = r.pulledAt; r.lastPullReason = r.pullReason; r.legacyPull = false; markReadded(k, now); }
   }
   for (const r of results){
     if (r.status==='active' && r.start > now && !goodIds.has(r.k) && games.some(g=>String(g.eventId)===String(r.ev))){
@@ -2279,7 +2384,7 @@ async function refresh(forceOdds=false){
     toast('Could not load data. Will retry automatically.');
   }finally{
     busy = false; btn.disabled=false; btn.textContent='↻ Refresh now';
-    nextAt = Date.now() + Math.max(2, +S.refreshMin||10)*60000;
+    nextAt = Date.now() + Math.max(1, +S.refreshMin||2)*60000;
     updateOddsPill(); render(); tick();
   }
   if (games.length) runEnrichment().then(()=>loadPlayerImpacts()).catch(e=>console.warn('enrichment', e)).then(()=>{ if (typeof learnTick==='function') learnTick(); }); else { updateDeepPill(); if (typeof learnTick==='function') learnTick(); }
@@ -2299,13 +2404,45 @@ function updateOddsPill(){
   const ago = Math.round((Date.now()-oddsCache.t)/60000);
   t.textContent = `${ago}m ago` + (oddsCache.remaining!=null?` · ${oddsCache.remaining} credits left`:'');
 }
+const REFRESH_WATCH_MS = 20000;
+function refreshIfDue(){
+  if (!nextAt || busy) return false;
+  if (Date.now() >= nextAt){ refresh(); return true; }
+  return false;
+}
 function tick(){
-  if (lastUpdated) $('#lastUpd').textContent = lastUpdated.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-  const ms = nextAt - Date.now();
-  if (nextAt && ms <= 0 && !busy){ refresh(); return; }
-  const cd = busy ? 'now' : (nextAt ? `${Math.floor(ms/60000)}:${String(Math.floor(ms%60000/1000)).padStart(2,'0')}` : '—');
-  $('#countdown').textContent = cd;
-  const sc = $('#sideCountdown'); if (sc) sc.textContent = cd;
+  try{
+    if (lastUpdated){ const el=$('#lastUpd'); if (el) el.textContent = lastUpdated.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+    const ms = nextAt - Date.now();
+    if (refreshIfDue()) return;
+    const cd = busy ? 'now' : (nextAt ? `${Math.floor(ms/60000)}:${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}` : '—');
+    const c=$('#countdown'); if (c) c.textContent = cd;
+    const sc=$('#sideCountdown'); if (sc) sc.textContent = cd;
+  }catch(e){}
+}
+function startRefreshWatch(ms){
+  const every = Math.max(1000, +ms || REFRESH_WATCH_MS);
+  if (window._blTick) clearInterval(window._blTick);
+  window._blTick = setInterval(tick, 1000);
+  if (window._blDue) clearInterval(window._blDue);
+  window._blDue = setInterval(refreshIfDue, every);
+  if (window._blWorker){ try{ window._blWorker.terminate(); }catch(e){} window._blWorker=null; }
+  try{
+    const src = 'setInterval(function(){ postMessage(Date.now()); }, '+every+');';
+    const blob = new Blob([src], {type:'text/javascript'});
+    const url = URL.createObjectURL(blob);
+    const w = new Worker(url);
+    URL.revokeObjectURL(url);
+    w.onmessage = function(){ try{ tick(); }catch(e){} };
+    w.onerror = function(){};
+    window._blWorker = w;
+  }catch(e){}
+  if (!window._blVisBound){
+    window._blVisBound = true;
+    const onVis = ()=>{ if (!document.hidden) refreshIfDue(); };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', onVis);
+  }
 }
 
 /* ================= RENDER ================= */
@@ -2466,11 +2603,67 @@ function updatePullDots(){
     });
   }
 }
+function leagueExcludeWhy(lg){
+  if (typeof learnOff==='function' && learnOff(lg)) return {kind:'auto', why: (typeof learnOffWhy==='function' && learnOffWhy(lg)) || 'the app turned it off after it lost money in testing'};
+  if (typeof isExcluded==='function' && isExcluded(lg, true)){
+    if (lg==='ncaab') return {kind:'test', why:'not profitable in testing'};
+    if (typeof SOCCER!=='undefined' && SOCCER.has(lg)) return {kind:'test', why:'not profitable in testing'};
+    return {kind:'settings', why:'turned off in Settings'};
+  }
+  if (!(S.enabled||[]).includes(lg)) return {kind:'settings', why:'turned off in Settings'};
+  return null;
+}
+function goodEligibleLeague(lg){ return !leagueExcludeWhy(lg); }
+function goodPlaysExcludeLine(){
+  const testLabs = [];
+  const other = [];
+  let soccerTest = false, soccerOther = null;
+  for (const L of LEAGUES){
+    const w = leagueExcludeWhy(L.id);
+    if (!w) continue;
+    if (typeof SOCCER!=='undefined' && SOCCER.has(L.id)){
+      if (w.kind==='test') soccerTest = true;
+      else if (!soccerOther) soccerOther = w;
+      continue;
+    }
+    if (w.kind==='test') testLabs.push(L.label);
+    else other.push(`${L.label} (${w.why})`);
+  }
+  if (soccerTest) testLabs.push('soccer');
+  else if (soccerOther) other.push(`soccer (${soccerOther.why})`);
+  const bits = [];
+  if (testLabs.length) bits.push(testLabs.join(', ') + ' (not profitable in testing)');
+  bits.push(...other);
+  if (S.strictMode && typeof learnOff==='function'){
+    const names = (typeof MKN_S!=='undefined' && MKN_S) || {ml:'moneylines', spread:'spreads', total:'totals'};
+    for (const mk of String(S.sMarkets||'ml').split(',').map(x=>x.trim()).filter(Boolean)){
+      if (learnOff('mk:'+mk)) bits.push(`strict ${names[mk]||mk} (the app turned them off after they lost money in testing)`);
+    }
+  }
+  return bits.length ? 'Not eligible for Good Plays: ' + bits.join('; ') : '';
+}
 function renderChips(){
-  const counts = {}; games.forEach(g=>{ if(!ui.hideStarted || g.state==='pre') counts[g.league]=(counts[g.league]||0)+1; });
-  const total = Object.values(counts).reduce((a,b)=>a+b,0);
+  const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
+  if (restrict && ui.sport!=='all' && !goodEligibleLeague(ui.sport)) ui.sport = 'all';
+  const counts = {};
+  if (ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid'){
+    const want = ui.tab;
+    for (const p of plays){
+      if (p.verdict!==want) continue;
+      if (ui.hideStarted && p.g && p.g.state!=='pre') continue;
+      const lg = p.g && p.g.league; if (lg) counts[lg]=(counts[lg]||0)+1;
+    }
+  } else {
+    games.forEach(g=>{ if(!ui.hideStarted || g.state==='pre') counts[g.league]=(counts[g.league]||0)+1; });
+  }
+  const allowed = L => restrict ? goodEligibleLeague(L.id) : (S.enabled.includes(L.id) || !!counts[L.id]);
+  const show = L => allowed(L) && (counts[L.id] || ui.sport===L.id);
+  const total = Object.entries(counts).reduce((a,[id,n])=>a+n,0);
   $('#sportChips').innerHTML = `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
-    LEAGUES.filter(L=>S.enabled.includes(L.id) && (counts[L.id] || ui.sport===L.id)).map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${L.label}<span class="n">${counts[L.id]||0}</span></span>`).join('');
+    LEAGUES.filter(show).map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${L.label}<span class="n">${counts[L.id]||0}</span></span>`).join('');
+  const note = ui.tab==='good' ? goodPlaysExcludeLine() : '';
+  const el = $('#chipNote');
+  if (el){ el.hidden = !note; el.textContent = note; }
 }
 function section(title, sub, list, emptyMsg){
   return `<div class="section-title"><h2>${title}</h2><span class="hint">${sub}</span></div>` + (list.length ? `<div class="grid">${list.map(playCard).join('')}</div>` : `<div class="empty-state">${emptyMsg}</div>`);
@@ -3685,12 +3878,17 @@ const TH = [
   ['advPct','Adverse move: implied drop (%)'],['heavyPct','Heavy adverse: implied drop (%)'],['advPts','Adverse move: line (pts)'],['heavyPts','Heavy adverse: line (pts)'],
   ['watchMovePts','Watch: line moved toward side (pts)'],['watchMovePct','Watch: price moved toward side (%)'],['maxJuice','Spread/total Good: price no worse than'],['avoidJuice','Avoid juice worse than'],['sharpWeight','Pinnacle/sharp book weight in consensus'],
 ];
+function oddsCreditsLine(){
+  if (!S.oddsKey) return 'Odds API: off (add a key for Bovada prices).';
+  if (oddsCache && oddsCache.remaining!=null && isFinite(+oddsCache.remaining)) return 'Odds API: '+oddsCache.remaining+' credits left';
+  return 'Odds API: credits show after the first fetch.';
+}
 function estimateCredits(){
-  const regions = S.oddsBooks.trim() ? Math.ceil(S.oddsBooks.split(',').filter(Boolean).length/10) : (S.oddsRegions||'us').split(',').length;
-  const n = Math.max(1, new Set(games.filter(g=>g.state!=='post').map(g=>g.league)).size);
-  if (!+S.oddsEveryMin) return `${3*regions} credits per sport per manual fetch`;
-  const perDay = Math.round(24*60/S.oddsEveryMin) * n * 3 * regions;
-  return `about ${perDay} credits/day if the PC is on 24h (${n} sports with games)` + (perDay*30>500?'. ⚠ That is above the free 500/month: raise the interval or use manual':'');
+  const cost = typeof oddsCostPerFetch==='function' ? oddsCostPerFetch() : 3;
+  const waitH = typeof minOddsIntervalMs==='function' ? (minOddsIntervalMs()/3600000) : ((+S.oddsEveryMin||120)/60);
+  if (!+S.oddsEveryMin) return `${cost} credits per manual or pre-game fetch`;
+  const perDay = 24/Math.max(waitH, 0.5) * cost;
+  return `about ${Math.round(perDay)} credits/day at the current budgeted pace (${Math.max(1, Math.round(waitH*10)/10)}h between fetches, ${cost} credits each)` + (perDay*30>500?'. Auto-throttle will slow this down to stay near the free 500/month.':'');
 }
 const PRESETS = {
   super:  {label:'Super picky', strictMode:true, sMarkets:'ml', sMinWin:0.50, sModelMin:0.58, sModelEdge:0, sNoModelSports:true, sMaxAdvPct:1.0, sMinPos:2, sMinScore:-99, sMinConf:80, sMinEV:-99,
@@ -3727,10 +3925,15 @@ function renderSettings(){
 
     <div class="s-row"><div class="s-h">Sports I want picks for</div>
       <div class="filters">${LEAGUES.map(L=>`<label class="chip ${!exl.has(L.id)?'on':''}"><input type="checkbox" name="pick_${L.id}" ${!exl.has(L.id)?'checked':''} hidden>${L.label}${LOST_IN_TEST.has(L.id)?' <small class="mut">*</small>':''}</label>`).join('')}</div>
-      <div class="s-note">* College basketball and soccer lost money in testing, so they are off by default. Their games still show in All Games.</div></div>
+      <div class="s-note">* College basketball and soccer lost money in testing, so they are off by default. Their games still show in All Games, but not in the Good Plays, Watchlist, or Avoid sport filters. Sports you turn off in Settings are hidden from those filters too.</div></div>
+
+    <div class="s-row"><div class="s-h">Refresh every</div>
+      <div class="seg">${[1,2,5,10].map(n=>`<label class="${+S.refreshMin===n?'on':''}"><input type="radio" name="refreshMin" value="${n}" ${+S.refreshMin===n?'checked':''} hidden>${n} min${n===2?' <small>recommended</small>':''}</label>`).join('')}</div>
+      <div class="s-note">Free sources (ESPN and Polymarket) refresh this often, including when the window is minimized, so phone alerts can go out. The Odds API (Bovada) is fetched about every 2 hours and again about 60 and 15 minutes before a Good Play, and is throttled so it stays within your monthly credits.</div></div>
 
     <div class="s-row"><div class="s-h">Odds key (optional)</div>
       <input name="oddsKey" type="password" autocomplete="off" value="${esc(S.oddsKey)}" placeholder="paste your free key here" style="max-width:420px">
+      <div class="s-note"><b>${esc(oddsCreditsLine())}</b></div>
       <div class="s-note">What is this? A free key from <a href="https://the-odds-api.com" target="_blank" rel="noopener">the-odds-api.com</a> that lets the app see Bovada, FanDuel and other books, not just DraftKings and Polymarket.</div></div>
 
     <div class="s-row"><div class="s-h">Bet size</div>
@@ -3751,7 +3954,8 @@ function renderSettings(){
       <label class="s-inline" style="margin-top:8px">Topic<input name="ntfyTopic" value="${esc(S.ntfyTopic||'')}" autocomplete="off" spellcheck="false" style="max-width:420px;font-family:ui-monospace,Menlo,Consolas,monospace"></label>
       <div style="margin-top:8px"><button type="button" class="btn sm" id="btnNtfyTest">Send test</button></div>
       <div class="s-note">Install ntfy on your iPhone, tap +, subscribe to this topic.</div>
-      <div class="s-note">This uses your PC: BettingLab has to be open there. Your phone can be locked or closed. Turn this off on the phone copy so it does not send twice.</div></div>
+      <div class="s-note">This uses your PC: BettingLab has to be open there (minimized is fine). Your phone can be locked or closed. Turn this off on the phone copy so it does not send twice.</div>
+      <div class="s-note">Edge and Chrome can freeze a background tab and pause refresh, so phone alerts would wait until you open the window. Use Start BettingLab.bat so it opens as its own app window. In Edge: Settings → System and performance → Never put these sites to sleep, and add this page. In Chrome, turn off "Memory Saver" for this page or keep the app window open.</div></div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn primary" type="submit">Save</button></div>
   </div>
@@ -3759,7 +3963,6 @@ function renderSettings(){
   <details class="dd adv" ${ui.open.has('settings-adv')?'open':''} data-dd="settings-adv"><summary>Advanced (you don't need to touch this)</summary>
   <div style="margin-top:10px">
   <div class="panel"><h3>Refresh & which sports to load</h3><div class="form">
-    <label>Refresh ESPN data every (min)<input name="refreshMin" type="number" min="2" max="120" value="${S.refreshMin}"></label>
     <label>Days ahead to load (1–7)<input name="lookaheadDays" type="number" min="1" max="7" value="${S.lookaheadDays}"></label>
   </div>
   <div class="filters" style="margin-top:12px">${LEAGUES.map(L=>`<label class="chip ${S.enabled.includes(L.id)?'on':''}"><input type="checkbox" name="en_${L.id}" ${S.enabled.includes(L.id)?'checked':''} hidden>${L.label}</label>`).join('')}</div>
@@ -3777,7 +3980,7 @@ function renderSettings(){
     <label>Fetch odds every (min, 0 = manual)<input name="oddsEveryMin" type="number" min="0" value="${S.oddsEveryMin}"></label>
     <label style="grid-column:span 2">Only these books (optional, comma-separated keys)<input name="oddsBooks" value="${esc(S.oddsBooks)}" placeholder="draftkings,fanduel,betmgm,williamhill_us,pinnacle"></label>
   </div>
-  <div class="hint" style="margin-top:8px">Free plan: 500 credits/month. Each sport fetch costs 3 credits per region (or per 10 listed books). Only sports with games on the slate are fetched. With these settings: <b>${estimateCredits()}</b>. Pinnacle is in the <b>eu</b> region (or list <code>pinnacle</code> as a book). ${oddsCache&&oddsCache.remaining!=null?`Credits left: <b>${esc(oddsCache.remaining)}</b>.`:''}</div>
+  <div class="hint" style="margin-top:8px">Free plan: 500 credits/month. Each sport fetch costs 3 credits per region (or per 10 listed books). Regular fetches are about every 2 hours, plus a pre-game fetch ~60 and ~15 minutes before a Good Play, and auto-throttled to last the month. With these settings: <b>${estimateCredits()}</b>. <b>${esc(oddsCreditsLine())}</b> Pinnacle is in the <b>eu</b> region (or list <code>pinnacle</code> as a book).</div>
   <div style="margin-top:10px"><button type="button" class="btn sm" id="btnOddsNow">Fetch Odds API now</button></div></div>
 
   <div class="panel"><h3>Deep data (free ESPN game pages + Open-Meteo weather)</h3><div class="form">
@@ -3785,7 +3988,7 @@ function renderSettings(){
     <label>Re-check game pages every (min, near start)<input name="summaryTTL" type="number" min="5" value="${S.summaryTTL}"></label>
     <label>Only games starting within (hours)<input name="summaryHorizonHrs" type="number" min="3" max="168" value="${S.summaryHorizonHrs}"></label>
     <label>Max game pages per refresh<input name="maxSummaries" type="number" min="5" max="400" value="${S.maxSummaries}"></label>
-  </div><div class="hint" style="margin-top:8px">Game pages are re-checked every ${S.summaryTTL} min within 3h of start, ×2 within 12h, ×4 beyond. Weather is re-checked every 90 min.</div></div>
+  </div><div class="hint" style="margin-top:8px">Game pages are re-checked every 5 min within 2 hours of start, and every ${S.summaryTTL} min otherwise. Weather is re-checked every 90 min. Cached pages are reused until they go stale, so a 2-minute slate refresh does not re-download every ESPN game page.</div></div>
   <div class="panel"><h3>Factor weights & verdict thresholds</h3><div class="form">${WT.map(([k,l])=>`<label>${l}<input name="${k}" type="number" step="any" value="${S[k]}"></label>`).join('')}</div>
   <div class="hint" style="margin-top:8px">Each factor gives roughly −2 to +2 points times its weight (0 turns it off). The composite is the sum. Hard rules still apply first (extreme favorites, longshots without edge, heavy juice and heavy adverse moves are Avoid).</div></div>
   <div class="panel"><h3>Rule thresholds</h3><div class="form">${TH.map(([k,l])=>`<label>${l}<input name="${k}" type="number" step="any" value="${S[k]}"></label>`).join('')}</div>
@@ -3883,7 +4086,7 @@ $('#view').addEventListener('click', e=>{
   window.scrollTo({top:0}); toast('Pre-filled. Confirm the odds at your book, then Add bet.');
 });
 document.addEventListener('toggle', e=>{ const d=e.target; if (!d.dataset || !d.dataset.dd) return; const k=d.dataset.dd; if (d.open){ ui.open.add(k); ui.closed.delete(k); } else { ui.open.delete(k); ui.closed.add(k); } }, true);
-document.addEventListener('visibilitychange', ()=>{ if (!document.hidden && nextAt && Date.now()>nextAt) refresh(); });
+
 if ($('#btnInstallTip')) $('#btnInstallTip').onclick = ()=>{
   saveJSON(LS.installTip, true);
   const el = $('#installTip'); if (el) el.hidden = true;
@@ -3919,7 +4122,7 @@ function registerAppSW(){
 attachHttpLinks();
 registerAppSW();
 showInstallTip();
-setInterval(tick, 1000);
+startRefreshWatch();
 learnInit().catch(e=>console.warn('learning', e)).then(()=>{ render(); refresh(); });
 </script>
 </body>
