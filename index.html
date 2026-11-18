@@ -204,6 +204,17 @@ code{background:var(--inset);border:1px solid var(--line2);border-radius:5px;pad
 .c-col.win .ct{color:var(--good)}.c-col.lose .ct{color:var(--avoid)}
 .c-judge{border:1px solid var(--line2);border-radius:11px;padding:10px 12px;background:rgba(124,77,255,.04);display:grid;gap:5px}
 .c-judge .ct{color:var(--acc-hi)}.c-sent{color:var(--txt);font-size:13.5px}.c-ten{color:var(--txt2)}.c-ten b{color:var(--acc-hi);font-size:15px}
+.wr-line{margin:8px 2px 2px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.02);font-size:12.5px;line-height:1.45}
+.wr-line b{color:var(--txt);font-weight:700}
+.wr-inline{color:var(--txt2);font-size:12.5px;margin-top:2px}
+.c-sent{line-height:1.55;font-size:14px}
+.nums-dd{margin-top:8px}
+.ntab{font-size:12px}
+.trend-list{margin:6px 0 0;padding:0;list-style:none}
+.trend-list li{padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;line-height:1.45}
+.trend-list li:first-child{border-top:0;padding-top:0}
+.trend-list b{color:var(--mut);font-size:11px;letter-spacing:.03em;text-transform:uppercase;margin-right:4px}
+
 .dots{display:inline-flex;gap:4px;vertical-align:middle;margin-left:6px}.dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.1)}.dots i.on{background:var(--acc)}
 .strict-banner{border-color:rgba(63,182,139,.25);background:var(--good-bg)}
 .mtab tr.mrow td{border-bottom:0;padding-bottom:1px}.mtab tr.mhow td{color:var(--mut);font-size:11px;padding-top:0}.mtab td:nth-child(2),.mtab td:nth-child(3){white-space:nowrap;text-align:right}
@@ -1413,8 +1424,11 @@ function extractFx(s, g){
   // --- against the spread
   if (Array.isArray(s.againstTheSpread)) for (const t of s.againstTheSpread){
     const side = teamSide(g, t.team && t.team.id); if (!side) continue;
-    const r = (t.records||[]).map(x=>`${x.type||x.name||''} ${x.summary||''}`.trim()).filter(Boolean);
-    if (r.length) fx.sides[side].ats = r.join(', ');
+    const recs = t.records||[];
+    const ats = recs.filter(x=>!/over|under|total/i.test(String(x.type||x.name||''))).map(x=>`${x.type||x.name||''} ${x.summary||''}`.trim()).filter(Boolean);
+    const ou = recs.filter(x=>/over|under|total/i.test(String(x.type||x.name||''))).map(x=>`${x.type||x.name||''} ${x.summary||''}`.trim()).filter(Boolean);
+    if (ats.length) fx.sides[side].ats = ats.join(', ');
+    if (ou.length) fx.sides[side].ou = ou.join(', ');
   }
   // --- goalies (NHL): GAA / SV% of roster goalies, matched to the probable starter later
   if (s.goalies){
@@ -2505,6 +2519,209 @@ async function loadPlayerImpacts(){
   } finally { pimpBusy = false; }
 }
 // expected margin a missing player is worth to his team (full absence)
+const MISS_KEY = 'bl_missed';
+const SCHED_KEY = 'bl_sched';
+let missCache = loadJSON(MISS_KEY, {}) || {};
+let schedCache = loadJSON(SCHED_KEY, {}) || {};
+let missBusy = false;
+function schedEventScore(e, teamId){
+  const c = (e.competitions && e.competitions[0]) || e;
+  const st = (c.status && c.status.type) || {};
+  if (!st.completed) return null;
+  const comps = c.competitors || [];
+  const me = comps.find(x=>String(x.team && x.team.id)===String(teamId));
+  const opp = comps.find(x=>x!==me);
+  if (!me) return null;
+  const sc = x => { const s = x && x.score; const v = s && (s.value!=null?s.value:s.displayValue!=null?s.displayValue:s); const n = +v; return isFinite(n)?n:null; };
+  const pf = sc(me), pa = sc(opp);
+  if (pf==null || pa==null) return null;
+  return {eventId:String(e.id||c.id||''), date:new Date(e.date||c.date||0), pf, pa, win: !!(me.winner || pf>pa), loss: !!(opp && (opp.winner || pa>pf)), opp:(opp && opp.team && (opp.team.abbreviation||opp.team.displayName))||'', home: me.homeAway==='home'};
+}
+async function loadTeamSchedule(lg, teamId){
+  const k = lg+':'+teamId;
+  const c = schedCache[k];
+  if (c && Date.now()-c.t < 12*3600000) return c.games;
+  if (!LMAP[lg]) return [];
+  const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${LMAP[lg].path}/teams/${teamId}/schedule`, 20000);
+  if (!r.ok || !r.data) throw new Error('schedule HTTP '+(r.status||'?'));
+  const games = (r.data.events||[]).map(e=>schedEventScore(e, teamId)).filter(Boolean);
+  schedCache[k] = {t:Date.now(), games};
+  try{ saveJSON(SCHED_KEY, schedCache); }catch(e){}
+  return games;
+}
+async function loadMissedContext(){
+  if (missBusy) return; missBusy = true;
+  try{
+    const jobs = [];
+    for (const g of games||[]){
+      if (g.state!=='pre' || !g.fx || !g.fx.inj || !SUMMARY_LEAGUES.has(g.league)) continue;
+      for (const side of ['home','away']){
+        const team = g[side]; if (!team || !team.id) continue;
+        for (const i of (g.fx.inj[side]||[])){
+          if (!i.key || !i.id || i.gtd) continue;
+          const ruled = (typeof isRuledOutStatus==='function') ? isRuledOutStatus(i.st) : /out|inactive|injured reserve|^ir\b|suspen/i.test(String(i.st||''));
+          if (!ruled) continue;
+          const mk = `${g.league}:${team.id}:${i.id}`;
+          const cached = missCache[mk];
+          if (cached && Date.now()-cached.t < 12*3600000){ i.missed = cached; continue; }
+          jobs.push({g, side, i, team, mk});
+        }
+      }
+    }
+    const uniq = [];
+    const seen = new Set();
+    for (const j of jobs){ if (seen.has(j.mk)) continue; seen.add(j.mk); uniq.push(j); }
+    const work = uniq.slice(0, 10);
+    if (!work.length) return;
+    await pool(work.map(job=>async()=>{
+      try{
+        if (typeof loadGamelog!=='function'){ missCache[job.mk] = {t:Date.now(), n:0, unavailable:'no log'}; job.i.missed = missCache[job.mk]; return; }
+        const [gamesT, gl] = await Promise.all([
+          loadTeamSchedule(job.g.league, job.team.id),
+          loadGamelog(job.g.league, job.i.id).catch(()=>null)
+        ]);
+        const start = job.g.start && job.g.start.getTime ? job.g.start.getTime() : Date.now();
+        const played = new Set();
+        if (gl && Array.isArray(gl.rows)){
+          for (const r of gl.rows){
+            if (r.min!=null && r.min<=0) continue;
+            if (r.eventId) played.add(String(r.eventId));
+          }
+        }
+        if (!gl || !gl.rows || !gl.rows.length){
+          missCache[job.mk] = {t:Date.now(), n:0, unavailable:"ESPN doesn't list this player's game log, so we can't say how the team did without them"};
+          job.i.missed = missCache[job.mk];
+          return;
+        }
+        const missed = gamesT.filter(x=>x.date.getTime() < start-2*3600000 && x.eventId && !played.has(x.eventId));
+        const n = missed.length;
+        const w = missed.filter(x=>x.win).length, l = missed.filter(x=>x.loss && !x.win).length;
+        const pf = n? missed.reduce((a,x)=>a+x.pf,0)/n : 0;
+        const pa = n? missed.reduce((a,x)=>a+x.pa,0)/n : 0;
+        const rec = {t:Date.now(), n, w, l, pf, pa, unit: (job.g.league==='nhl'||(typeof SOCCER!=='undefined'&&SOCCER.has(job.g.league)))?'goals':job.g.league==='mlb'?'runs':'points'};
+        missCache[job.mk] = rec; job.i.missed = rec;
+      }catch(e){
+        missCache[job.mk] = {t:Date.now()-10*3600000, n:0, unavailable:"Couldn't load the games this player missed"};
+        job.i.missed = missCache[job.mk];
+      }
+    }), 3);
+    try{ saveJSON(MISS_KEY, missCache); }catch(e){}
+    if (typeof softRender==='function') softRender();
+  } finally { missBusy = false; }
+}
+
+function pickTpl(key, arr){
+  let h = 2166136261; const s = String(key||'');
+  for (let i=0;i<s.length;i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return arr[(h>>>0) % arr.length];
+}
+function softFail(f){
+  const s = String(f||'');
+  if (/price .+ is outside your range/i.test(s)) return 'the price sits outside the range you set for singles';
+  if (/odds moved against/i.test(s)) return 'the line has already moved against this side';
+  if (/game-time decision/i.test(s)) return "a key player's status still isn't decided";
+  if (/starting goalies not confirmed/i.test(s)) return "the starting goalies aren't confirmed yet";
+  if (/starting pitchers not confirmed/i.test(s)) return "the starting pitchers aren't confirmed yet";
+  if (/^confidence /i.test(s)) return "we're not confident enough yet";
+  if (/thin/i.test(s)) return "the Polymarket market is too thin";
+  if (/injury report missing/i.test(s)) return "the injury report hasn't posted";
+  if (/^key player ruled out:/i.test(s)) return s.replace(/^key player ruled out:\s*/i, 'a key player was just ruled out: ');
+  if (/already started/i.test(s)) return 'the game already started';
+  if (/only takes /i.test(s)) return 'this market is turned off in your strict settings';
+  if (/excluded from strict/i.test(s) || /not profitable/i.test(s)) return 'this sport is turned off for Good Plays';
+  if (/est\. win/i.test(s) || /win chance/i.test(s)) return "our estimated win chance doesn't clear the bar";
+  if (/supporting factors/i.test(s) || /supporting reasons/i.test(s)) return "there aren't enough supporting reasons yet";
+  if (/ESPN model/i.test(s)) return "ESPN's computer pick doesn't clear the bar for this sport";
+  return s.charAt(0).toLowerCase()+s.slice(1);
+}
+const ODDS_BUCKETS = [
+  {lo:-300, hi:-151, label:'shorter than -150'},
+  {lo:-150, hi:-131, label:'-150 to -131'},
+  {lo:-130, hi:-110, label:'-130 to -110'},
+  {lo:-109, hi:100, label:'-109 to +100'},
+  {lo:101, hi:120, label:'+101 to +120'},
+  {lo:121, hi:150, label:'+121 to +150'},
+  {lo:151, hi:400, label:'longer than +150'}
+];
+function oddsBucket(am){
+  if (am==null || !isFinite(+am)) return null;
+  const a = +am;
+  return ODDS_BUCKETS.find(b=>a>=b.lo && a<=b.hi) || {lo:a, hi:a, label: (typeof fmtAm==='function'?fmtAm(a):String(a))};
+}
+function histOddsSamples(){
+  const rows = [], seen = new Set();
+  for (const r of (typeof results!=='undefined' && results) || []){
+    if (r.res!=='win' && r.res!=='loss') continue;
+    const price = r.lastPrice!=null ? r.lastPrice : r.price;
+    if (price==null || !isFinite(+price)) continue;
+    const k = (r.ev||r.k||'')+'|'+(r.mk||'')+'|'+(r.side||'');
+    seen.add(k);
+    rows.push({price:+price, res:r.res, lg:r.lg, mk:r.mk});
+  }
+  for (const b of (typeof bets!=='undefined' && bets) || []){
+    if (b.result!=='win' && b.result!=='loss') continue;
+    const price = +b.odds; if (!isFinite(price)) continue;
+    const link = b.link || (b.legs && b.legs.length===1 && b.legs[0]);
+    const k = link && link.ev ? `${link.ev}|${link.mk}|${link.side}` : 'bet:'+b.id;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const lg = link && link.lg;
+    const mk = link && link.mk;
+    rows.push({price, res:b.result, lg, mk});
+  }
+  return rows;
+}
+function hitRateFor(price, lg, mk){
+  const bkt = oddsBucket(price);
+  const empty = {enough:false, n:0, w:0, l:0, bkt, text:'Not enough history yet'};
+  if (!bkt) return empty;
+  const rows = histOddsSamples();
+  const sport = (lg && LMAP[lg] && LMAP[lg].label) || lg;
+  const market = mk && (typeof MKN!=='undefined' && MKN[mk] ? MKN[mk] : mk);
+  const filters = [
+    {lg, mk, need:5, label: sport && market ? `${sport} ${market.toLowerCase()}s at ${bkt.label}` : null},
+    {mk, need:6, label: market ? `${market.toLowerCase()}s at ${bkt.label}` : null},
+    {lg, need:6, label: sport ? `${sport} bets at ${bkt.label}` : null},
+    {need:5, label: `bets at ${bkt.label}`}
+  ].filter(f=>f.label);
+  let best = null;
+  for (const f of filters){
+    const hit = rows.filter(r => (f.lg==null || r.lg===f.lg) && (f.mk==null || r.mk===f.mk) && (oddsBucket(r.price)||{}).label===bkt.label);
+    const w = hit.filter(r=>r.res==='win').length, l = hit.filter(r=>r.res==='loss').length, n=w+l;
+    const rec = {w,l,n, wr:n?w/n:0, label:f.label, bkt, enough:n>=f.need};
+    if (rec.enough) return rec;
+    if (n && (!best || n>best.n)) best = rec;
+  }
+  if (best && best.n){
+    best.enough = false;
+    best.text = `Not enough history yet (${best.w}–${best.l} in ${best.n} ${best.label})`;
+    return best;
+  }
+  empty.text = `Not enough history yet at ${bkt.label}`;
+  return empty;
+}
+function hitRateText(hr){
+  if (!hr) return 'Not enough history yet';
+  if (hr.enough) return `${hr.w}–${hr.l}, ${Math.round(hr.wr*100)}% in ${hr.n} ${hr.label}`;
+  return hr.text || 'Not enough history yet';
+}
+function wrLineHTML(p, C){
+  C = C || (typeof courtModel==='function' ? courtModel(p) : null);
+  if (!C || !C.P || C.E==null || C.E.final==null) return '';
+  const need = C.P.need, est = C.E.final, am = C.P.am;
+  const hr = C.wr || hitRateFor(am, p.g && p.g.league, p.mk);
+  const a = outOf10(est), b = outOf10(need);
+  return `<div class="wr-line">
+    <div>These odds break even at about <b>${b} wins in 10</b> (${fmtPct(need,0)}). We estimate <b>${a} in 10</b> (${fmtPct(est,0)}).</div>
+    <div class="mut">App record: ${esc(hitRateText(hr))}</div>
+  </div>`;
+}
+
+function parseWL(x){
+  const m = /^(\d+)\s*-\s*(\d+)(?:\s*-\s*(\d+))?/.exec(String(x||'').trim());
+  return m ? {w:+m[1], l:+m[2], d:m[3]?+m[3]:0, raw:m[0]} : null;
+}
+
 function playerMargin(g, i){
   if ((g.league==='nba'||g.league==='wnba') && i.id && pimp[i.id] && pimp[i.id].n>=3){ const x = pimp[i.id]; return {m: clamp(0.18*x.ppg + 0.05*x.mpg - 1.5, 0, 7), how:`${x.ppg.toFixed(1)} pts, ${x.mpg.toFixed(0)} min a game`}; }
   const sp = sportOf(g);
@@ -2599,45 +2816,314 @@ function plainNote(n){ if (PLAIN_NOTE[n]) return PLAIN_NOTE[n]; let m;
   if ((m=n.match(/^(\S+) pitcher not (announced|confirmed)/))) return `We don't know for sure who ${m[1]}'s pitcher is yet`;
   if (/game-time decision/.test(n)) return null; // shown with its worth instead
   return n.charAt(0).toUpperCase()+n.slice(1); }
-// Builds the courtroom (plain words on top, all numbers behind it)
+function shortDate(d){ const x = new Date(d); return isNaN(x) ? '' : x.toLocaleDateString([], {month:'short', day:'numeric'}); }
+function contextFacts(p){
+  const {g, mk} = p, side = p.side, fx = g && g.fx, sp = g && typeof sportOf==='function' ? sportOf(g) : {};
+  const team = side==='home'||side==='away';
+  const T = team ? g[side] : null, opp = team ? other(side) : null, O = team ? g[opp] : null;
+  const unit = (sp && sp.goalie) || (g && g.league==='nhl') ? 'goals' : (g && g.league==='mlb') ? 'runs' : (typeof SOCCER!=='undefined' && SOCCER.has(g && g.league)) ? 'goals' : 'points';
+  const facts = [], win = [], lose = [];
+  const addFact = (kind, txt, good) => {
+    if (!txt) return;
+    facts.push({kind, txt, good});
+    if (good===true) win.push({txt, tag:'context', ctx:true, kind});
+    else if (good===false) lose.push({txt, tag:'context', ctx:true, kind});
+  };
+  if (!g) return {facts, win, lose, unit};
+
+  // last 5
+  const l5of = s2 => {
+    const evs = fx && fx.sides && fx.sides[s2] && fx.sides[s2].l5;
+    if (evs && evs.length>=3){
+      const w = evs.filter(e=>e.res==='W').length, n = evs.length, m = evs.reduce((a,e)=>a+e.pf-e.pa,0)/n;
+      return {w, l:n-w, n, m, str: evs.map(e=>e.res).join('')};
+    }
+    const fo = fx && fx.sides && fx.sides[s2] && fx.sides[s2].form;
+    if (fo && fo.n) return {w:fo.w, l:fo.l, n:fo.n, m:null, str:fo.str||''};
+    return null;
+  };
+  if (team){
+    const a = l5of(side), b = l5of(opp);
+    if (a) addFact('l5', `${T.short} are ${a.w}–${a.l} in their last ${a.n}${a.m!=null?`, ${a.m>=0?'winning':'losing'} by ${Math.abs(a.m).toFixed(1)} ${unit} a game`:''}`, a.w>=4?true:a.l>=4?false:null);
+    else addFact('l5', `ESPN didn't post ${T.short}'s last 5 results`, null);
+    if (b) addFact('l5', `${O.short} are ${b.w}–${b.l} in their last ${b.n}${b.m!=null?`, ${b.m>=0?'winning':'losing'} by ${Math.abs(b.m).toFixed(1)} ${unit} a game`:''}`, b.l>=4?true:b.w>=4?false:null);
+  }
+
+  // last 10
+  if (team){
+    const a10 = parseWL(fx && fx.sides && fx.sides[side] && fx.sides[side].last10);
+    const b10 = parseWL(fx && fx.sides && fx.sides[opp] && fx.sides[opp].last10);
+    if (a10) addFact('l10', `${T.short} are ${a10.raw} in their last 10`, a10.w>=7?true:a10.w<=3?false:null);
+    if (b10) addFact('l10', `${O.short} are ${b10.raw} in their last 10`, b10.w<=3?true:b10.w>=7?false:null);
+    if (!a10 && !b10 && fx) addFact('l10', `ESPN didn't post a last-10 record for this game`, null);
+  }
+
+  // streaks
+  const streakOf2 = x => { const m = /^([WLT])(\d+)$/.exec(String(x||'').trim()); return m ? {t:m[1], n:+m[2]} : null; };
+  if (team && fx && fx.sides){
+    const st = streakOf2(fx.sides[side] && fx.sides[side].streak);
+    const so = streakOf2(fx.sides[opp] && fx.sides[opp].streak);
+    if (st && st.n>=3 && st.t!=='T') addFact('streak', `${T.short} have ${st.t==='W'?'won':'lost'} ${st.n} in a row`, st.t==='W');
+    if (so && so.n>=3 && so.t!=='T') addFact('streak', `${O.short} have ${so.t==='W'?'won':'lost'} ${so.n} in a row`, so.t==='L');
+  }
+
+  // home / away
+  if (team && !g.neutral){
+    const own = side==='home' ? g.home.homeRec : g.away.roadRec;
+    const ops = side==='home' ? g.away.roadRec : g.home.homeRec;
+    if (own && ops) addFact('split', `${T.short} are ${own} ${side==='home'?'at home':'on the road'}; ${O.short} are ${ops} ${side==='home'?'on the road':'at home'}`, (typeof wlPct==='function' && wlPct(own)!=null && wlPct(ops)!=null) ? wlPct(own)>=wlPct(ops) : null);
+    else if (own) addFact('split', `${T.short} are ${own} ${side==='home'?'at home':'on the road'}`, null);
+    else addFact('split', `Home and road records weren't in the scoreboard for this game`, null);
+  }
+
+  // scoring
+  if (team && fx && fx.sides){
+    const a = typeof pfpa==='function' ? pfpa(fx.sides[side] && fx.sides[side].stats) : null;
+    const b = typeof pfpa==='function' ? pfpa(fx.sides[opp] && fx.sides[opp].stats) : null;
+    if (a && b){
+      addFact('scoring', `${T.short} score ${a.pf.toFixed(1)} ${unit} a game and allow ${a.pa.toFixed(1)}; ${O.short} score ${b.pf.toFixed(1)} and allow ${b.pa.toFixed(1)}`, (a.pf-a.pa)>=(b.pf-b.pa));
+    } else if (!a && !b) addFact('scoring', `Season scoring averages weren't posted for this matchup`, null);
+  }
+
+  // head to head
+  if (team && fx){
+    if (fx.h2hGames && fx.h2hGames.length){
+      const gs = fx.h2hGames.slice().sort((x,y)=>new Date(y.d)-new Date(x.d));
+      const w = gs.filter(x=>x.win===side).length, l = gs.filter(x=>x.win===opp).length;
+      const last = gs[0]; const lw = last.win===side ? T.short : last.win===opp ? O.short : null;
+      let t = `${T.short} are ${w}–${l} against ${O.short} in the games we have`;
+      if (lw) t += `. Last meeting${last.d?` (${shortDate(last.d)})`:''}: ${lw} won${last.ws!=null&&last.ls!=null?` ${last.ws}–${last.ls}`:''}`;
+      addFact('h2h', t, w>=l);
+    } else if (fx.h2h && fx.h2h.n>=1){
+      const w = fx.h2h[side], l = fx.h2h[opp];
+      addFact('h2h', `${T.short} are ${w}–${l} against ${O.short} this season`, w>l);
+    } else addFact('h2h', `No head-to-head results are posted for these two yet`, null);
+  }
+
+  // ATS / OU
+  if (team && fx && fx.sides){
+    const a = fx.sides[side] && fx.sides[side].ats, b = fx.sides[opp] && fx.sides[opp].ats;
+    if (a || b) addFact('ats', `Against the spread: ${T.short} ${a||'—'}; ${O.short} ${b||'—'}`, null);
+    const ao = fx.sides[side] && fx.sides[side].ou, bo = fx.sides[opp] && fx.sides[opp].ou;
+    if (ao || bo) addFact('ou', `Over/under trend: ${T.short} ${ao||'—'}; ${O.short} ${bo||'—'}`, null);
+  }
+
+  // rest / b2b
+  if (team && fx && fx.sides && fx.sides[side] && fx.sides[opp] && fx.sides[side].restDays!=null && fx.sides[opp].restDays!=null){
+    const r1 = Math.floor(fx.sides[side].restDays), r2 = Math.floor(fx.sides[opp].restDays);
+    const b2b = (fx.sides[side].restDays<1.6) !== (fx.sides[opp].restDays<1.6);
+    if (b2b) addFact('rest', `${fx.sides[side].restDays<1.6?T.short:O.short} played yesterday (back-to-back); ${fx.sides[side].restDays<1.6?O.short:T.short} had ${fx.sides[side].restDays<1.6?r2:r1} day${(fx.sides[side].restDays<1.6?r2:r1)===1?'':'s'} off`, fx.sides[opp].restDays<1.6);
+    else if (Math.abs(r1-r2)>=2) addFact('rest', `${r1>r2?T.short:O.short} had ${Math.max(r1,r2)} days of rest vs ${Math.min(r1,r2)}`, r1>r2);
+  }
+
+  // injuries + missed-with-player-out
+  if (team && fx && fx.inj){
+    for (const s2 of ['home','away']){
+      for (const i of (fx.inj[s2]||[]).filter(x=>x.key || x.w>=0.4)){
+        const st = typeof prettyInjStatus==='function' ? prettyInjStatus(i.st) : (i.st||'');
+        const typ = i.typ ? `, ${String(i.typ).toLowerCase()}` : '';
+        let t = `${g[s2].short} ${/out|inactive/i.test(st)?'is without':'has a question on'} ${i.n} (${st.toLowerCase()}${typ})`;
+        if (i.missed && i.missed.n>=2){
+          const u = i.missed.unit || unit;
+          const last = i.n.split(' ').slice(-1)[0];
+          t += `. In the ${i.missed.n} games ${last} has missed, ${g[s2].short} are ${i.missed.w}–${i.missed.l} and score ${i.missed.pf.toFixed(1)} ${u} a game (allow ${i.missed.pa.toFixed(1)})`;
+        } else if (i.missed && i.missed.unavailable && i.key){
+          t += `. ${i.missed.unavailable}`;
+        }
+        addFact('inj', t, s2!==side);
+      }
+    }
+  } else if (team && !fx){
+    addFact('inj', "The injury report hasn't loaded yet", null);
+  }
+
+  // goalies / pitchers
+  if (team && g){
+    const prA = g[side] && g[side].probable, prB = g[opp] && g[opp].probable;
+    if (sp && sp.goalie){
+      if (prA && prB) addFact('starter', `Goalies: ${prA.name}${prA.status?` (${prA.status})`:''} vs ${prB.name}${prB.status?` (${prB.status})`:''}`, /confirm/i.test(prA.status||'') && /confirm/i.test(prB.status||''));
+      else addFact('starter', 'Starting goalies are not confirmed yet', null);
+    }
+    if (sp && sp.pitcher){
+      if (prA && prB) addFact('starter', `Pitchers: ${prA.name}${prA.stats?` (${prA.stats})`:''} vs ${prB.name}${prB.stats?` (${prB.stats})`:''}`, true);
+      else addFact('starter', 'Probable pitchers are not posted yet', null);
+    }
+  }
+
+  // totals extras already handled in older context; keep weather
+  if (mk==='total' && fx){
+    const over = side==='over';
+    const a = fx.sides && typeof pfpa==='function' ? pfpa(fx.sides.home && fx.sides.home.stats) : null;
+    const b = fx.sides && typeof pfpa==='function' ? pfpa(fx.sides.away && fx.sides.away.stats) : null;
+    const pt = p.sd && p.sd.point;
+    if (a && b && pt!=null){ const proj = (a.pf+b.pa)/2 + (b.pf+a.pa)/2; addFact('total', `Season averages for these two land around ${proj.toFixed(1)} total ${unit}; the line is ${pt}`, over === (proj>pt)); }
+  }
+  if (g.wx && typeof OUTDOOR_LEAGUES!=='undefined' && OUTDOOR_LEAGUES.has(g.league) && !(g.venue && g.venue.indoor)){
+    const w = g.wx;
+    if (w.wind>=15 || (w.pop||0)>=60) addFact('wx', `Weather: wind ${Math.round(w.wind)} mph${w.pop!=null?`, ${Math.round(w.pop)}% chance of rain`:''}`, mk==='total' ? side==='under' : false);
+    else addFact('wx', `Weather looks fine: ${Math.round(w.temp)}°F, wind ${Math.round(w.wind)} mph`, null);
+  }
+
+  if (typeof lineupAvailability==='function'){
+    const av = lineupAvailability(g);
+    addFact('lineup', av.label, av.ok ? true : null);
+  }
+  return {facts, win, lose, unit};
+}
+function contextBullets(p){
+  const C = contextFacts(p);
+  return {win:C.win.slice(0,8), lose:C.lose.slice(0,8)};
+}
+
+function pricePlain(P, E, who, tone){
+  const est = outOf10(E.final), need = outOf10(P.need);
+  const odds = P.pm ? `${Math.round(P.cents*100)}¢ on Polymarket` : `${fmtAm(P.am)} at ${P.book}`;
+  if (P.edge>=0){
+    const opts = [
+      `The price is fair: ${who} should win about ${est} of 10, and the odds pay like it wins ${need}`,
+      `At ${odds}, you only need about ${need} wins in 10; we have ${who} closer to ${est}`,
+      `These odds are a fair shake — ${who} looks like about ${est} wins in 10, and the price is built for ${need}`
+    ];
+    return opts[tone];
+  }
+  const opts = [
+    `The price is a little steep: ${who} should win about ${est} of 10, but these odds pay like it wins ${need}`,
+    `At ${odds}, the break-even is about ${need} wins in 10; we only have ${who} around ${est}`,
+    `You're being asked to be right about ${need} times in 10 at ${odds}, and we see closer to ${est}`
+  ];
+  return opts[tone];
+}
+function judgeSentence(p, E, P, who, reasons, against, fail){
+  const v = p.verdict;
+  const id = p.id || (p.g && p.g.eventId) || who;
+  const tone = (String(id).length + (who||'').length) % 3;
+  const stop = s => { s=String(s||'').trim(); return !s ? '' : /[.!?]$/.test(s) ? s : s+'.'; };
+  const why = stop(reasons[0] || '');
+  const why2 = stop(reasons[1] || '');
+  const vs = stop(against[0] || '');
+  const est = outOf10(E.final), need = outOf10(P.need);
+  const join = (a,b) => a && b ? a.replace(/\.$/,'') + ', and ' + uncap(b) : (a||b||'');
+  if (v==='started') return 'The game already started, so this one is off the table.';
+  if (v==='good' && P.edge < 0){
+    return pickTpl(id+'g-', [
+      `${cap(who)} still looks like the right side${why?`. ${why}`:''}. It should win about ${est} of 10, but the price is a bit steep (it pays like ${need} of 10), so this is about being right more often, not finding a bargain.`,
+      `I'd still take ${who}. ${join(why,why2) || 'The usual checks all cleared.'}. Expect about ${est} wins in 10; the odds are asking for ${need}, so don't think of this as a juicy price.`,
+      `${cap(who)} gets the nod${why?`. ${why}`:''}. The win chance looks solid (about ${est} of 10), even if the price isn't doing you any favors (break-even is ${need} of 10).`
+    ]);
+  }
+  if (v==='good'){
+    return pickTpl(id+'g+', [
+      `${cap(who)} looks like the better side here${why?`. ${why}`:''}${why2?` ${why2}`:''} ${pricePlain(P,E,who,tone)}.`,
+      `I'd take ${who}${why?`. ${why}`:''} ${pricePlain(P,E,who,tone)}.`,
+      `${cap(who)} gets the nod${why?`. ${why}`:''} The price is fair: this side should win about ${est} of 10 and the odds pay like it wins ${need}.`
+    ]);
+  }
+  if (v==='watch'){
+    const hole = fail ? softFail(fail) : 'it does not quite clear every check yet';
+    return pickTpl(id+'w', [
+      `There's a case for ${who}${why?`. ${why}`:''} But ${hole}. Worth another look closer to tip.`,
+      `${cap(who)} is close, not quite there. ${cap(hole)}.${why?` The encouraging part: ${uncap(why)}.`:''} Check again before the game.`,
+      `I'm not betting this yet. ${cap(hole)}.${vs?` Also, ${uncap(vs)}.`:''} If the situation changes, it could come back into play.`
+    ]);
+  }
+  if (P.edge < -0.02){
+    return pickTpl(id+'s', [
+      `I'm passing on ${who}. ${pricePlain(P,E,who,tone)}.${vs?` ${vs}`: fail?` ${cap(softFail(fail))}.`:''}`,
+      `This isn't one I'd take. ${pricePlain(P,E,who,tone)}.${why?' There are some pluses, but not enough to get over the price.':''}`,
+      `Skip. The odds are asking for more wins than we think ${who} will get (${need} needed, about ${est} expected).${vs?` ${vs}`:''}`
+    ]);
+  }
+  return fail ? `I'm passing. ${cap(softFail(fail))}.` : (vs ? `I'm passing. ${vs}` : 'There is not a clear enough reason to bet this.');
+}
+
+const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : s;
+const uncap = s => { if (!s) return s; if (/^[A-Z0-9]{2,}\b/.test(s) || /^[A-Z][a-z]+\s/.test(s) && /^[A-Z]{2,}/.test(s.split(' ')[0])) return s; return s.charAt(0).toLowerCase()+s.slice(1); };
 function courtModel(p){
   const E = estimate(p); const P = priceMath(p, E); const g = p.g, side = p.side;
   const who = p.mk==='total' ? `the ${side}` : side==='draw' ? 'a draw' : (g[side].nick || g[side].short || g[side].name);
+  const CF = contextFacts(p);
   const win = [], lose = [];
-  for (const s of E.steps){ if (Math.abs(s.dp) < 0.005) continue; (s.dp>0?win:lose).push({txt:`${s.plain}`, imp:s.dp, tag:`${s.dp>0?'raises':'lowers'} the chance by about ${pctTxt(s.dp)}`}); }
-  for (const i of E.info){ const good = i.worth>0; (good?win:lose).push({txt:i.plain, imp:i.worth, tag:`worth about ${pctTxt(i.worth)}; the odds already count it`}); }
-  // the price itself
-  if (P.edge >= 0) win.push({txt:`Your price is a good deal: ${P.pm?`${Math.round(P.cents*100)}¢ on Polymarket`:`${fmtAm(P.am)} at ${P.book}`} only needs ${outOf10(P.need)} wins out of 10`, imp:P.edge, tag:`you get about ${pctTxt(P.edge)} more than you pay for`});
-  else lose.push({txt:`The price is too high: ${P.pm?`${Math.round(P.cents*100)}¢ on Polymarket`:`${fmtAm(P.am)} at ${P.book}`} needs ${outOf10(P.need)} wins out of 10`, imp:P.edge, tag:`about ${pctTxt(P.edge)} more than it's worth`});
-  for (const u of E.unknown) lose.push({txt:u.plain, imp:-Math.abs(u.worth)/2, tag:`worth about ${pctTxt(u.worth)} if he sits`});
-  for (const n of p.j.conf.notes){ const t = plainNote(n); if (t) lose.push({txt:t, imp:-0.0001, tag:"can't be measured, so we trust this less", unk:true}); }
-  if (P.thin) lose.push({txt:'Not many people are trading this on Polymarket, so the price can jump', imp:-0.003, tag:'thin market'});
-  win.sort((a,b)=>b.imp-a.imp); lose.sort((a,b)=>(a.unk?1:0)-(b.unk?1:0) || a.imp-b.imp);
-  lose.push({txt:`Even good picks lose: ${p.mk==='total'?'this':who} should still miss about ${outOf10(1-E.final)} times out of 10`, imp:-(1-E.final), tag:'always true', always:true});
-  // the judge (math-driven)
-  const v = p.verdict; let J, sentence;
+  const seen = new Set();
+  const pushU = (arr, item) => { const k = String(item.txt||'').toLowerCase(); if (seen.has(k)) return; seen.add(k); arr.push(item); };
+  // context first (concrete, human)
+  for (const x of CF.win) pushU(win, {txt:x.txt, imp:0.04, tag:'', ctx:true, kind:x.kind});
+  for (const x of CF.lose) pushU(lose, {txt:x.txt, imp:-0.04, tag:'', ctx:true, kind:x.kind});
+  // measured injuries / GTD from the estimate (already in the odds; explanation only here)
+  const alreadyInj = txt => [...win, ...lose].some(x=>x.kind==='inj' && txt && x.txt.toLowerCase().includes(String(txt).toLowerCase()));
+  for (const i of E.info){ if (alreadyInj(i.who)) continue; pushU(i.worth>=0?win:lose, {txt:i.plain, imp:i.worth, tag:'', ctx:true, kind:'inj'}); }
+  for (const u of E.unknown){ if (alreadyInj(u.who)) continue; pushU(lose, {txt:u.plain, imp:-Math.abs(u.worth)/2, tag:'', ctx:true, kind:'inj'}); }
+  // human model steps that aren't already covered (back-to-back, rest) — skip technical "weight 0" form/h2h if we already have context
+  const covered = new Set(['form','h2h','split','margin','injfit']);
+  for (const s of E.steps){
+    if (Math.abs(s.dp) < 0.005) continue;
+    if (covered.has(s.key)) continue;
+    if (s.key==='model' || s.key==='strict' || s.key==='totmove') continue; // keep these in Numbers
+    pushU(s.dp>0?win:lose, {txt:s.plain, imp:s.dp, tag:'', kind:s.key});
+  }
+  for (const n of (p.j && p.j.conf && p.j.conf.notes) || []){ const t = plainNote(n); if (t) pushU(lose, {txt:t, imp:-0.0001, tag:"", unk:true}); }
+  if (P.thin) pushU(lose, {txt:'Not many people are trading this on Polymarket, so the price can jump around', imp:-0.003, tag:''});
+  // price last, in simple terms
+  const tone = (String(p.id||who).length) % 3;
+  const ptxt = pricePlain(P, E, who, tone);
+  if (P.edge>=0) pushU(win, {txt:ptxt, imp:P.edge, tag:'', kind:'price'});
+  else pushU(lose, {txt:ptxt, imp:P.edge, tag:'', kind:'price'});
+  const RANK = {inj:0, starter:1, l5:2, h2h:3, streak:4, split:5, rest:6, l10:7, scoring:8, wx:9, price:20};
+  const take = (arr, n) => {
+    const price = arr.filter(x=>x.kind==='price');
+    const ctx = arr.filter(x=>x.kind!=='price' && !x.always).slice().sort((a,b)=>(RANK[a.kind]??12)-(RANK[b.kind]??12));
+    return ctx.slice(0, n).concat(price);
+  };
+  const winOut = take(win, 4);
+  const loseOut = take(lose, 4);
+  if (!loseOut.some(x=>/no side wins every night|even good picks lose/i.test(x.txt)))
+    loseOut.push({txt:'No side wins every night — even a good look will lose sometimes', imp:-0.001, tag:'', always:true});
   const fail = (p.strictFails||[])[0];
-  if (p.verdict==='started'){ J='SKIP'; sentence='The game already started.'; }
-  else if (v==='good' && P.edge < 0){ J='BET'; sentence = `${cap(who)} should win about ${outOf10(E.final)} of 10 and every strict check passed. The price is a little high (it needs ${outOf10(P.need)}), so this is a win-rate pick, not a value pick.`; }
-  else if (v==='good'){ J='BET'; sentence = `${cap(who)} should win about ${outOf10(E.final)} of 10, and your price only needs ${outOf10(P.need)}. Every strict check passed.`; }
-  else if (v==='watch'){ J='MAYBE LATER'; sentence = P.edge<0 ? `Wait for a better price: it needs to pay like ${fmtAm(probToAm(E.final))} or better (now ${P.pm?Math.round(P.cents*100)+'¢':fmtAm(P.am)}).` : `Close, but ${fail||'not every check passed'}. Look again closer to game time.`; }
-  else { J='SKIP'; sentence = P.edge < -0.02 ? `You'd pay for ${outOf10(P.need)} wins out of 10 but we only expect ${outOf10(E.final)}. That loses money over time.` : fail ? `${cap(fail)}.` : 'Not enough reasons to bet this.'; }
-  let CX = {win:[], lose:[]}; try{ CX = contextBullets(p); }catch(e){ console.warn('context', e); }
-  return {E, P, win:win.slice(0,4), lose: lose.filter(x=>!x.always).slice(0,3).concat(lose.filter(x=>x.always)), cwin:CX.win, close:CX.lose, J, sentence, who};
+  const reasons = winOut.filter(x=>x.kind!=='price' && !x.always).map(x=>x.txt);
+  const against = loseOut.filter(x=>x.kind!=='price' && !x.always).map(x=>x.txt);
+  const sentence = judgeSentence(p, E, P, who, reasons, against, fail);
+  const v = p.verdict; let J;
+  if (p.verdict==='started') J='SKIP';
+  else if (v==='good') J='BET';
+  else if (v==='watch') J='MAYBE LATER';
+  else J='SKIP';
+  const wr = hitRateFor(P.am, g && g.league, p.mk);
+  const leftover = CF.facts.filter(f => !winOut.some(x=>x.txt===f.txt) && !loseOut.some(x=>x.txt===f.txt));
+  return {E, P, win:winOut, lose:loseOut, cwin:leftover.filter(f=>f.good!==false).map(f=>({txt:f.txt, tag:'context', ctx:true})), close:leftover.filter(f=>f.good===false).map(f=>({txt:f.txt, tag:'context', ctx:true})), facts:CF.facts, J, sentence, who, wr};
 }
-const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : s;
 function courtroomHTML(p, C){
   C = C || courtModel(p);
-  const li = x => `<li><span>${esc(x.txt)}</span> <em>(${esc(x.tag)})</em></li>`;
+  const li = x => `<li><span>${esc(x.txt)}</span></li>`;
   const cls = C.J==='BET'?'b-good':C.J==='MAYBE LATER'?'b-watch':'b-avoid';
+  const wr = C.wr || hitRateFor(C.P && C.P.am, p.g && p.g.league, p.mk);
   return `<div class="court2">
-    <div class="c-start">Starting point: ${esc(C.E.src)} gives ${esc(C.who)} <b>${outOf10(C.E.start)} out of 10</b>.</div>
-    <div class="c-col win"><div class="ct">Why this could WIN</div><ul>${C.win.length?C.win.map(li).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul>${ctxHTML(C.cwin, p.id+'|cwin')}</div>
-    <div class="c-col lose"><div class="ct">Why this could LOSE</div><ul>${C.lose.map(li).join('')}</ul>${ctxHTML(C.close, p.id+'|closs')}</div>
+    <div class="c-col win"><div class="ct">Why this could win</div><ul>${C.win.length?C.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way.</li>'}</ul></div>
+    <div class="c-col lose"><div class="ct">Why this could lose</div><ul>${C.lose.map(li).join('')}</ul></div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${confDots(p.j.conf.v)}</div>
       <div class="c-sent">${esc(C.sentence)}</div>
-      <div class="c-ten">Out of 10 games like this, ${esc(C.who)} ${p.mk==='total'?'hits':'win'} about <b>${outOf10(C.E.final)}</b>.</div></div>
+      <div class="wr-inline">${esc(hitRateText(wr))}</div></div>
+    ${trendsHTML(C.facts, p.id+'|trends')}
+    ${numbersHTML(p, C)}
   </div>`;
+}
+function trendsHTML(facts, key){
+  if (!facts || !facts.length) return '';
+  const attr = key ? ` data-dd="${esc(key)}" ${ui.open.has(key)?'open':''}` : '';
+  const labels = {l5:'Last 5', l10:'Last 10', streak:'Streak', split:'Home / away', scoring:'Scoring', h2h:'Head to head', ats:'ATS', ou:'Over / under', rest:'Rest', inj:'Injuries', starter:'Starters', total:'Total', wx:'Weather', lineup:'Lineups'};
+  return `<details class="dd c-ctx-dd"${attr}><summary>Trends &amp; context <span>(for reading — it does not change the pick)</span></summary><ul class="trend-list">${facts.map(f=>`<li>${labels[f.kind]?`<b>${esc(labels[f.kind])}.</b> `:''}${esc(f.txt)}</li>`).join('')}</ul></details>`;
+}
+function numbersHTML(p, C){
+  const E = C.E, P = C.P;
+  const mid = p.id+'|nums';
+  const rows = [`<tr><td>Starting fair price</td><td>${fmtPct(E.start)}</td><td class="mut">${esc(E.src)}</td></tr>`];
+  let run = E.start;
+  for (const s of E.steps){ run += s.dp; rows.push(`<tr><td>${esc((CAL[s.key]&&CAL[s.key].what)||s.plain||s.key)}</td><td class="${s.dp>0.0005?'pos':s.dp<-0.0005?'neg':'mut'}">${s.dp>=0?'+':''}${(s.dp*100).toFixed(1)} pts</td><td class="mut">${fmtPct(run)}</td></tr>`); }
+  rows.push(`<tr><td><b>Estimated win chance</b></td><td><b>${fmtPct(E.final)}</b></td><td class="mut">about ${outOf10(E.final)} of 10</td></tr>`);
+  rows.push(`<tr><td>Break-even at this price</td><td>${fmtPct(P.need)}</td><td class="mut">${P.pm?`${Math.round(P.cents*100)}¢ on Polymarket`:`${fmtAm(P.am)} at ${P.book}`} · about ${outOf10(P.need)} of 10</td></tr>`);
+  rows.push(`<tr><td>Edge</td><td class="${P.edge>=0?'pos':'neg'}">${fmtEdge(P.edge)}</td><td class="mut">EV per $${(+S.unit||25).toFixed(0)}: ${P.ev25>=0?'+':'-'}$${Math.abs(P.ev25).toFixed(2)}</td></tr>`);
+  return `<details class="dd nums-dd" data-dd="${esc(mid)}" ${ui.open.has(mid)?'open':''}><summary>Numbers</summary>
+    <table class="ftab ntab">${rows.join('')}</table>
+    <div class="mut" style="margin-top:6px">No-vig (fair) ${fmtPct(p.sd.nv)} · raw implied ${fmtPct(p.sd.impBest)} · hold ${p.A&&p.A.hold!=null?fmtPct(p.A.hold):'—'}</div>
+  </details>`;
 }
 function mathHTML(p, C){
   C = C || courtModel(p); const E = C.E, P = C.P;
@@ -2656,100 +3142,8 @@ function mathHTML(p, C){
       <li>Expected value per $${(+S.unit||25).toFixed(0)}: <b class="${P.ev>=0?'pos':'neg'}">${P.ev25>=0?'+':'-'}$${Math.abs(P.ev25).toFixed(2)}</b> · fair price ${fmtAm(probToAm(E.final))}</li></ul>
     <div class="ct" style="margin-top:8px">Strict checks</div>${gates}`;
 }
-
-/* ================= COURTROOM CONTEXT (facts from the data; they do NOT change the number) ================= */
-const ordinalN = n => n+(['th','st','nd','rd'][(n%100-20)%10]||['th','st','nd','rd'][n%100]||'th');
-function streakOf(x){ const m = /^([WLT])(\d+)$/.exec(String(x||'').trim()); return m ? {t:m[1], n:+m[2]} : null; }
-function shortDate(d){ const x = new Date(d); return isNaN(x) ? '' : x.toLocaleDateString([], {month:'short', day:'numeric'}); }
-function contextBullets(p){
-  const {g, mk} = p, side = p.side, fx = g.fx, sp = sportOf(g); const W = [], L = [];
-  const team = side==='home'||side==='away'; const T = team ? g[side] : null, opp = team ? other(side) : null, O = team ? g[opp] : null;
-  const add = (good, txt) => (good ? W : L).push({txt, tag:'context', ctx:true});
-  const unit = sp.goalie||g.league==='nhl' ? 'goals' : g.league==='mlb' ? 'runs' : SOCCER.has(g.league) ? 'goals' : 'points';
-  if (!fx){
-    if (typeof lineupAvailability==='function'){ const av = lineupAvailability(g); add(av.ok, av.label); }
-    return {win:W, lose:L};
-  }
-  const S2 = fx.sides||{};
-  if (team){
-    const me = S2[side]||{}, op = S2[opp]||{};
-    // streaks
-    const st = streakOf(me.streak), so = streakOf(op.streak);
-    if (st && st.n>=3 && st.t!=='T') add(st.t==='W', `${T.short} have ${st.t==='W'?'won':'lost'} ${st.n} games in a row`);
-    if (so && so.n>=3 && so.t!=='T') add(so.t==='L', `${O.short} have ${so.t==='W'?'won':'lost'} ${so.n} games in a row`);
-    // last 10
-    const l10 = x => { const m = /^(\d+)-(\d+)/.exec(String(x||'')); return m ? {w:+m[1], l:+m[2]} : null; };
-    const a10 = l10(me.last10), b10 = l10(op.last10);
-    if (a10 && (a10.w>=7 || a10.w<=3)) add(a10.w>=7, `${T.short} are ${a10.w}-${a10.l} in their last 10 games`);
-    if (b10 && (b10.w>=7 || b10.w<=3)) add(b10.w<=3, `${O.short} are ${b10.w}-${b10.l} in their last 10 games`);
-    // last 5 by margin
-    const m5 = x => x && x.length>=3 ? {w:x.filter(e=>e.res==='W').length, n:x.length, m:x.reduce((a,e)=>a+e.pf-e.pa,0)/x.length} : null;
-    const f1 = m5(me.l5), f2 = m5(op.l5);
-    if (f1) add(f1.m>=0, `${T.short} went ${f1.w}-${f1.n-f1.w} in their last ${f1.n}, ${f1.m>=0?'winning':'losing'} by ${Math.abs(f1.m).toFixed(1)} ${unit} a game on average`);
-    if (f2) add(f2.m<0, `${O.short} went ${f2.w}-${f2.n-f2.w} in their last ${f2.n}, ${f2.m>=0?'winning':'losing'} by ${Math.abs(f2.m).toFixed(1)} ${unit} a game on average`);
-    // scoring / defense
-    const a = pfpa(me.stats), b = pfpa(op.stats);
-    if (a && b){ const dp = a.pf-b.pf, dd = b.pa-a.pa;
-      if (Math.abs(dp) >= sp.margin*0.15) add(dp>0, `${dp>0?T.short:O.short} score more: ${(dp>0?a:b).pf.toFixed(1)} ${unit} a game vs ${(dp>0?b:a).pf.toFixed(1)}`);
-      if (Math.abs(dd) >= sp.margin*0.15) add(dd>0, `${dd>0?T.short:O.short} defend better: they allow ${(dd>0?a:b).pa.toFixed(1)} a game vs ${(dd>0?b:a).pa.toFixed(1)}`); }
-    // home / road
-    if (!g.neutral){ const own = side==='home'?g.home.homeRec:g.away.roadRec, ops = side==='home'?g.away.roadRec:g.home.homeRec;
-      const po = wlPct(own), pp = wlPct(ops);
-      if (po!=null && pp!=null && Math.abs(po-pp)>=0.15) add(po>pp, `${T.short} are ${own} ${side==='home'?'at home':'on the road'}; ${O.short} are ${ops} ${side==='home'?'on the road':'at home'}`); }
-    // rest
-    if (me.restDays!=null && op.restDays!=null){ const r1 = Math.floor(me.restDays), r2 = Math.floor(op.restDays);
-      if (sp.b2b && (me.restDays<1.6) !== (op.restDays<1.6)) add(op.restDays<1.6, `${me.restDays<1.6?T.short:O.short} played yesterday (back-to-back); ${me.restDays<1.6?O.short:T.short} had ${me.restDays<1.6?r2:r1} days off`);
-      else if (Math.abs(r1-r2)>=2 && Math.min(r1,r2)<=3) add(r1>r2, `${r1>r2?T.short:O.short} had ${Math.max(r1,r2)} days of rest vs ${Math.min(r1,r2)}`); }
-    // head to head
-    if (fx.h2hGames && fx.h2hGames.length){ const gs = fx.h2hGames.slice().sort((x,y)=>new Date(y.d)-new Date(x.d));
-      const w = gs.filter(x=>x.win===side).length, l = gs.filter(x=>x.win===opp).length;
-      const last = gs[0]; const lw = last.win===side ? T.short : last.win===opp ? O.short : null;
-      if (lw) add(last.win===side, `Last time they met (${shortDate(last.d)}), ${lw} won${last.ws!=null&&last.ls!=null?` ${last.ws}-${last.ls}`:''}${gs.length>1?`; ${T.short} are ${w}-${l} vs ${O.short} this season`:''}`); }
-    else if (fx.h2h && fx.h2h.n>=1){ const w = fx.h2h[side], l = fx.h2h[opp]; if (w!==l) add(w>l, `${T.short} are ${w}-${l} against ${O.short} this season`); }
-    // against the spread (only when ESPN gives it)
-    if (me.ats) add(true, `${T.short} betting record: ${me.ats}`);
-    // goalies / pitchers
-    const prA = g[side].probable, prB = g[opp].probable;
-    if (sp.goalie && fx.goalies && prA && prB){ const ga = fx.goalies[prA.id], gb = fx.goalies[prB.id];
-      if (ga && gb && ga.gaa!=null && gb.gaa!=null){ const better = ga.gaa < gb.gaa; add(better, `Goalies: ${ga.n} allows ${ga.gaa.toFixed(2)} goals a game${ga.sv!=null?` (saves ${(ga.sv>1?ga.sv:ga.sv*100).toFixed(1)}%)`:''}; ${gb.n} allows ${gb.gaa.toFixed(2)}${gb.sv!=null?` (${(gb.sv>1?gb.sv:gb.sv*100).toFixed(1)}%)`:''}`); } }
-    if (sp.pitcher && prA && prB){ const era = x => { const m = /ERA\s*([\d.]+)/i.exec(x.stats||''); return m ? +m[1] : null; }; const e1 = era(prA), e2 = era(prB);
-      if (e1!=null && e2!=null) add(e1<e2, `Pitchers: ${prA.name} has a ${e1.toFixed(2)} ERA; ${prB.name} has ${e2.toFixed(2)} (lower is better)`); }
-    // key players (leaders), with last-5 vs season where the game log is loaded
-    const inj = new Set(((fx.inj&&fx.inj.home)||[]).concat((fx.inj&&fx.inj.away)||[]).filter(i=>i.w>=0.4).map(i=>i.id));
-    for (const [s2, good] of [[side, true], [opp, false]]){
-      const L2 = (fx.lead && fx.lead[s2]) || []; const top = L2.find(l=>/points|goals|passing/i.test(l.key+l.cat)) || L2[0]; if (!top || inj.has(top.id)) continue;
-      const tm = g[s2].short; const pi = pimp[top.id];
-      if (pi && pi.l5!=null && pi.n>=6 && Math.abs(pi.l5-pi.ppg) >= 3) add(good === (pi.l5>pi.ppg), `${top.last} (${tm}'s top scorer) is ${pi.l5>pi.ppg?'hot':'cold'}: ${pi.l5.toFixed(1)} points a game over his last ${pi.l5n} vs ${pi.ppg.toFixed(1)} on the season`);
-      else if (/YDS/.test(top.dv)){ const y = /([\d,]+)\s*YDS/.exec(top.dv), td = /(\d+)\s*TD/.exec(top.dv), it = /(\d+)\s*INT/.exec(top.dv); const role = /pass/i.test(top.key+top.cat) ? 'quarterback' : /rush/i.test(top.key+top.cat) ? 'top runner' : 'top receiver';
-        add(good, `${top.n} (${tm}'s ${role}) has ${y?y[1]:'?'} yards and ${td?td[1]:'0'} touchdowns${it?`, with ${it[1]} interceptions`:''} this season`); }
-      else add(good, `${top.n} leads ${tm} with ${top.dv} ${String(top.cat).toLowerCase()}${/basketball/.test(LMAP[g.league].path||'')?' a game':''}${fx.inj?' and is not on the injury report':''}`);
-    }
-  } else if (mk==='total'){
-    const over = side==='over'; const a = pfpa(S2.home && S2.home.stats), b = pfpa(S2.away && S2.away.stats); const pt = p.sd.point;
-    if (a && b && pt!=null){ const proj = (a.pf+b.pa)/2 + (b.pf+a.pa)/2; if (Math.abs(proj-pt) >= 0.5) add(over === (proj>pt), `Using season averages these teams land around ${proj.toFixed(1)} total ${unit}; the line is ${pt}`); }
-    const l5t = x => x && x.length>=3 ? x.reduce((s,e)=>s+e.pf+e.pa,0)/x.length : null; const h5 = l5t(S2.home&&S2.home.l5), a5 = l5t(S2.away&&S2.away.l5);
-    if (h5!=null && a5!=null && pt!=null){ const avg = (h5+a5)/2; if (Math.abs(avg-pt)>=0.5) add(over === (avg>pt), `Their last 5 games averaged ${avg.toFixed(1)} total ${unit} (line ${pt})`); }
-    if (g.wx && OUTDOOR_LEAGUES.has(g.league) && !(g.venue && g.venue.indoor)){ const w = g.wx;
-      if (w.wind>=15 || (w.pop||0)>=60) add(!over, `Weather: wind ${Math.round(w.wind)} mph${w.pop!=null?`, ${Math.round(w.pop)}% chance of rain`:''}; bad weather usually means fewer ${unit}`);
-      else add(over, `Weather looks fine: ${Math.round(w.temp)}°F, wind ${Math.round(w.wind)} mph`); }
-  }
-  // weather note for outdoor sides (only when it is bad)
-  if (team && g.wx && OUTDOOR_LEAGUES.has(g.league) && !(g.venue && g.venue.indoor) && (g.wx.wind>=18 || (g.wx.pop||0)>=70)) L.push({txt:`Bad weather: wind ${Math.round(g.wx.wind)} mph${g.wx.pop!=null?`, ${Math.round(g.wx.pop)}% rain chance`:''}. Messy games are more random`, tag:'context', ctx:true});
-  // lineups, injuries, headlines: context only, does not change the number
-  if (typeof lineupAvailability==='function'){ const av = lineupAvailability(g); add(av.ok, av.label); }
-  if (fx.inj){
-    for (const s2 of ['home','away']){
-      for (const i of (fx.inj[s2]||[]).filter(x=>x.key || x.w>=0.75).slice(0,3)){
-        const st = typeof prettyInjStatus==='function' ? prettyInjStatus(i.st) : (i.st||'out');
-        add(s2!==side, `${g[s2].short}: ${i.n} is ${st}${i.typ?` (${i.typ})`:''}${i.key?' — key player':''}`);
-      }
-    }
-  }
-  if (fx.news && fx.news.length){ for (const n of fx.news.slice(0,2)) add(true, n.h); }
-  return {win:W.slice(0,7), lose:L.slice(0,7)};
-}
-
 function ctxHTML(list, key){ if (!list || !list.length) return ''; const attr = key ? ` data-dd="${esc(key)}" ${ui.open.has(key)?'open':''}` : ''; return `<details class="dd c-ctx-dd"${attr}><summary>Also worth knowing <span>(doesn't change our number)</span></summary><ul>${list.map(x=>`<li>${esc(x.txt)}</li>`).join('')}</ul></details>`; }
+
 /* ================= REFRESH LOOP ================= */
 async function refresh(forceOdds=false){
   if (busy) return; busy = true;
@@ -2783,7 +3177,7 @@ async function refresh(forceOdds=false){
   }
   // Light cycle: ESPN + Polymarket only. Deep ESPN game pages stay on their 15/5-min stale rules.
   const needDeep = games.length && typeof needsSummary==='function' && games.some(g=>needsSummary(g) || (typeof needsWx==='function' && needsWx(g)));
-  if (needDeep) runEnrichment().then(()=>loadPlayerImpacts()).catch(e=>console.warn('enrichment', e)).then(()=>{ if (typeof learnTick==='function') learnTick(); });
+  if (needDeep) runEnrichment().then(()=>loadPlayerImpacts()).then(()=>{ if (typeof loadMissedContext==='function') return loadMissedContext(); }).catch(e=>console.warn('enrichment', e)).then(()=>{ if (typeof learnTick==='function') learnTick(); });
   else { if (typeof updateDeepPill==='function') updateDeepPill(); if (typeof learnTick==='function') learnTick(); }
   gradeAll().catch(e=>console.warn('grading', e));
   pruneCaches();
@@ -2929,6 +3323,7 @@ function playCard(p){
       <div class="price">${fmtAm(sd.best.price)}<small>${esc(sd.best.book)}</small></div></div>
     <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div><div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
     ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return `<div class="hint" style="margin:6px 2px 0">${/^excluded/.test(f[0]) ? '<b>No picks for this sport</b> (turned off in Settings)' : `Strict mode: missed "${esc(f[0])}"${f.length>1?` (+${f.length-1} more)`:''}`}</div>`; })() : ''}
+    ${typeof wrLineHTML==='function'?wrLineHTML(p, C):''}
     ${typeof lineupsNewsHTML==='function'?lineupsNewsHTML(p):''}
     <details class="dd court-dd" data-dd="${esc(cid)}" ${ui.open.has(cid)?'open':''}><summary>Courtroom</summary>${courtroomHTML(p, C)}</details>
     <details class="dd" data-dd="${esc(mid)}" ${ui.open.has(mid)?'open':''}><summary>Nerd stats / Show the math</summary>${mathHTML(p, C)}
@@ -3394,6 +3789,7 @@ function renderTracker(pf){
     ${(()=>{ const c=bets.filter(b=>b.clv!=null); const a=c.length?c.reduce((x,b)=>x+b.clv,0)/c.length:null; return `<div class="kpi" title="Closing line value: the closing DraftKings line (house cut removed) minus the chance your odds implied. Positive on average = you are beating the market."><div class="k">Avg CLV (${c.length} bets)</div><div class="v ${a==null?'':a>=0?'pos':'neg'}">${a==null?'—':fmtEdge(a)}</div></div>`; })()}
   </div>
   <div class="hint" style="margin:-4px 0 10px">Bets are graded automatically from ESPN final scores (parlays too) when the app can match them to a game. Bets logged from a play card or Check My Picks are matched exactly; typed bets are matched by team name.</div>
+  ${typeof oddsHistoryTable==='function'?oddsHistoryTable():''}
   ${st.curLoss>=3?`<div class="banner warn-banner">⚠️ ${st.curLoss} losses in a row. Your system says never chase losses. Consider a break or smaller stakes.</div>`:''}
   <div class="panel"><h3>Log a bet</h3>
     <form id="betForm" class="form">
@@ -3501,6 +3897,30 @@ function importCSV(text){
   }
   saveBets(); toast(`Imported ${n} bet${n===1?'':'s'}`); if (ui.tab==='tracker') renderTracker();
   return n;
+}
+
+function oddsHistoryTable(){
+  if (typeof histOddsSamples!=='function' || typeof ODDS_BUCKETS==='undefined') return '';
+  const rows = histOddsSamples();
+  if (!rows.length) return '<div class="panel"><h3>Win rate by odds</h3><p class="mut">Not enough history yet. Once bets and recommended plays are graded, you will see a record for each odds range here and on every card.</p></div>';
+  const midBe = b => {
+    const a = (b.lo+b.hi)/2;
+    return (typeof imp==='function') ? imp(a<=-100||a>=100?a:b.hi) : null;
+  };
+  const body = ODDS_BUCKETS.map(b=>{
+    const hit = rows.filter(r=>(oddsBucket(r.price)||{}).label===b.label);
+    const w = hit.filter(r=>r.res==='win').length, l = hit.filter(r=>r.res==='loss').length, n=w+l;
+    if (!n) return `<tr><td>${esc(b.label)}</td><td class="mut">—</td><td class="mut">Not enough history yet</td><td class="mut">${midBe(b)!=null?fmtPct(midBe(b),0):'—'}</td></tr>`;
+    const wr = w/n, be = midBe(b);
+    const enough = n>=5;
+    return `<tr><td>${esc(b.label)}</td><td>${w}–${l} (${n})</td><td class="${enough?(wr>=(be||0)?'pos':'neg'):'mut'}">${enough?`${Math.round(wr*100)}%`:`Not enough history yet (${w}–${l} in ${n})`}</td><td class="mut">${be!=null?fmtPct(be,0):'—'}</td></tr>`;
+  }).join('');
+  const recN = rows.length;
+  return `<div class="panel overflow"><h3>Win rate by odds</h3>
+    <p class="hint">Your graded logged bets and the app's recommended Good plays, combined (duplicates counted once). Break-even is the typical win rate these odds require. Small samples are marked as not enough history yet.</p>
+    <table><tr><th>Odds</th><th>Record</th><th>Win rate</th><th>Break-even</th></tr>${body}</table>
+    <div class="mut" style="margin-top:6px">${recN} graded result${recN===1?'':'s'} in the book.</div>
+  </div>`;
 }
 /* ================= CHECK MY PICKS (rule-based courtroom for user legs) ================= */
 try{ localStorage.removeItem('bl_picks_input'); }catch(e){}
@@ -3842,10 +4262,15 @@ function judgeLeg(leg){
   if (leg.live && leg.verdict==='BET'){ leg.verdict='WATCHLIST'; leg.why += ' (game already live)'; }
   leg.outRange = leg.price!=null && (leg.price < S.sFavMin || leg.price > S.sDogMax);
   if (leg.outRange && !leg.final){ leg.no.unshift({t:`Outside your range: ${fmtAm(leg.price)} is ${leg.price < S.sFavMin ? `more expensive than ${fmtAm(S.sFavMin)}` : `longer than ${fmtAm(S.sDogMax)}`}`, imp:-1, tag:'your rule for singles'}); if (leg.verdict==='BET'||leg.verdict==='WATCHLIST'){ leg.verdict='PASS'; leg.why='Outside your '+fmtAm(S.sFavMin)+' to '+fmtAm(S.sDogMax)+' range'; } }
-  if (p!=null && !leg.final){ const need = leg.implied; const pr = leg.price!=null ? fmtAm(leg.price) : null;
-    leg.plainWhy = leg.outRange ? `${fmtAm(leg.price)} is outside your ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)} range for singles. We think it hits about ${outOf10(p)} of 10.` : leg.verdict==='BET' ? `We think it hits about ${outOf10(p)} of 10${need!=null?` and the price only needs ${outOf10(need)}`:''}. ${need==null?`Only bet at ${fmtAm(probToAm(p))} or better.`:'Good deal.'}`
-      : leg.verdict==='WATCHLIST' ? (need!=null && p<need ? `Close. The price needs ${outOf10(need)} of 10 and we expect ${outOf10(p)}. Wait for ${fmtAm(probToAm(p))} or better.` : `Close, but ${leg.gtd?"a key player's status is unknown":'the edge is thin'}. Check again later.`)
-      : (need!=null && p<need ? `You'd pay for ${outOf10(need)} wins out of 10 but we only expect ${outOf10(p)}. That loses money over time.` : `We only expect it to hit about ${outOf10(p)} of 10.`); }
+  if (p!=null && !leg.final){ const need = leg.implied;
+    const est = outOf10(p), nd = need!=null ? outOf10(need) : null;
+    const priceBit = need!=null ? (p>=need ? `The price is fair: this should hit about ${est} of 10, and the odds pay like it hits ${nd}.` : `The price is a little steep: this should hit about ${est} of 10, but the odds pay like it hits ${nd}.`) : `We think this hits about ${est} of 10${leg.p!=null?`; only bet at ${fmtAm(probToAm(p))} or better`:''}.`;
+    if (leg.outRange) leg.plainWhy = `${fmtAm(leg.price)} sits outside your ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)} range for singles. ${priceBit}`;
+    else if (leg.verdict==='BET') leg.plainWhy = priceBit + (leg.gtd ? " A key player's status still isn't decided." : '');
+    else if (leg.verdict==='WATCHLIST') leg.plainWhy = (leg.gtd ? "A key player's status still isn't decided. " : 'This is close, but not quite there. ') + priceBit + ' Check again closer to game time.';
+    else leg.plainWhy = `I'm passing. ${priceBit}`;
+    if (leg.price!=null && typeof hitRateFor==='function'){ const lg = leg.g && leg.g.league; const mk = /Spread/i.test(leg.market||'')?'spread':/Total/i.test(leg.market||'')?'total':'ml'; leg.wr = hitRateFor(leg.price, lg, mk); }
+  }
 }
 async function resolveLeg(raw, override){
   const L = parseLeg(raw);
@@ -3914,11 +4339,11 @@ function legCard(leg, i, weakest){
     ${leg.result?`<div class="banner" style="margin:6px 0">Result: <b class="${leg.result==='HIT'?'pos':leg.result==='MISS'?'neg':''}">${leg.result}</b>${leg.actual!=null?` (actual ${leg.actual})`:''}</div>`:''}
     <details class="dd court-dd" data-dd="picks|${i}|court" ${ui.open.has('picks|'+i+'|court')?'open':''}><summary>Courtroom</summary>
     <div class="court2">
-      <div class="c-col win"><div class="ct">Why this could WIN</div><ul>${leg.yes.length?legSort(leg.yes,1).slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul>${ctxHTML(leg.cyes, 'picks|'+i+'|cyes')}</div>
-      <div class="c-col lose"><div class="ct">Why this could LOSE</div><ul>${legSort(leg.no,-1).slice(0,4).map(legItem).join('')}${leg.p!=null?`<li><span>Even good picks lose: this should still miss about ${outOf10(1-leg.p)} times out of 10</span> <em>(always true)</em></li>`:''}</ul>${ctxHTML(leg.cno, 'picks|'+i+'|cno')}</div>
+      <div class="c-col win"><div class="ct">Why this could win</div><ul>${leg.yes.length?legSort(leg.yes,1).slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul>${ctxHTML(leg.cyes, 'picks|'+i+'|cyes')}</div>
+      <div class="c-col lose"><div class="ct">Why this could lose</div><ul>${legSort(leg.no,-1).slice(0,4).map(legItem).join('')}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul>${ctxHTML(leg.cno, 'picks|'+i+'|cno')}</div>
       <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf):''}</div>
         <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>
-        ${leg.p!=null&&!leg.final?`<div class="c-ten">Out of 10 times like this, it hits about <b>${outOf10(leg.p)}</b>.</div>`:''}</div>
+        ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: (leg.p!=null&&leg.implied!=null?`<div class="wr-inline">These odds break even at about ${outOf10(leg.implied)} of 10; we estimate ${outOf10(leg.p)}.</div>`:'')}</div>
     </div></details>
     <details class="dd" data-dd="picks|${i}|math" ${ui.open.has('picks|'+i+'|math')?'open':''}><summary>Nerd stats / Show the math</summary><div style="margin-top:6px">
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
