@@ -61,7 +61,7 @@ nav.tabs button[data-tab=avoid] .cnt{background:var(--avoid-bg);color:var(--avoi
 .chip:hover{color:var(--txt2);border-color:var(--line2)}
 .chip.on{background:var(--acc-dim);color:var(--acc-hi);border-color:rgba(124,77,255,.4)}
 .chip .n{opacity:.6;margin-left:4px;font-weight:500;font-variant-numeric:tabular-nums}
-.chip.empty{opacity:.4}
+.chip.empty{opacity:.55}.chip.empty.on{opacity:1}
 .sep{width:1px;height:20px;background:var(--line2);margin:0 6px}
 .search{background:var(--inset);border:1px solid var(--line2);border-radius:999px;padding:5px 14px;min-width:200px;outline:none;transition:border-color .2s}
 .search:focus{border-color:rgba(124,77,255,.5)}
@@ -2706,13 +2706,21 @@ function renderChips(){
     games.forEach(g=>{ if(!ui.hideStarted || g.state==='pre') counts[g.league]=(counts[g.league]||0)+1; });
   }
   const allowed = L => restrict ? goodEligibleLeague(L.id) : (S.enabled.includes(L.id) || !!counts[L.id]);
-  const show = L => allowed(L) && (counts[L.id] || ui.sport===L.id);
-  const total = Object.entries(counts).reduce((a,[id,n])=>a+n,0);
+  // Good / Watch / Avoid: every eligible Settings sport stays visible, including 0-count.
+  const show = L => restrict ? allowed(L) : (allowed(L) && (counts[L.id] || ui.sport===L.id));
+  const total = restrict
+    ? LEAGUES.filter(allowed).reduce((a,L)=>a+(counts[L.id]||0),0)
+    : Object.entries(counts).reduce((a,[id,n])=>a+n,0);
   $('#sportChips').innerHTML = `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
     LEAGUES.filter(show).map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${L.label}<span class="n">${counts[L.id]||0}</span></span>`).join('');
   const note = ui.tab==='good' ? goodPlaysExcludeLine() : '';
   const el = $('#chipNote');
   if (el){ el.hidden = !note; el.textContent = note; }
+}
+function sportFilterEmpty(generic){
+  if (ui.sport==='all') return generic;
+  const lab = (LMAP[ui.sport] && LMAP[ui.sport].label) || String(ui.sport).toUpperCase();
+  return `No ${lab} plays right now`;
 }
 function section(title, sub, list, emptyMsg){
   return `<div class="section-title"><h2>${title}</h2><span class="hint">${sub}</span></div>` + (list.length ? `<div class="grid">${list.map(playCard).join('')}</div>` : `<div class="empty-state">${emptyMsg}</div>`);
@@ -2739,16 +2747,16 @@ function render(){
     const near = plays.filter(p=>p.verdict==='watch' && p.strictFails && p.strictFails.length===1).length;
     const banner = S.strictMode ? `<div class="banner strict-banner"><b>Strict mode:</b> ${allGood.length} play${allGood.length===1?'':'s'} passed all checks (${today} today). ${near} more missed by just one check (see Watchlist). Zero is allowed: no forced bets.</div>` : `<div class="banner"><b>Normal mode:</b> looser rules, more plays. Turn Strict mode on in Settings for fewer, higher-confidence plays.</div>`;
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
-    v.innerHTML = slateLayout('good', banner + (typeof priceSourceNote==='function'?priceSourceNote():'') + section('Good Plays', S.strictMode ? `Your range ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)}, ranked by win chance. Passed every strict check: market + ESPN agree, 2+ supporting factors, no move against, nothing strongly against, full data. Sports you turned off in Settings are left out. One per game.` : 'Rule-based plays, one per game.', good, 'No plays passed today. <b>Zero picks is fine.</b> Never force a bet.') + errs, counts);
+    v.innerHTML = slateLayout('good', banner + (typeof priceSourceNote==='function'?priceSourceNote():'') + section('Good Plays', S.strictMode ? `Your range ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)}, ranked by win chance. Passed every strict check: market + ESPN agree, 2+ supporting factors, no move against, nothing strongly against, full data. Sports you turned off in Settings are left out. One per game.` : 'Rule-based plays, one per game.', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
     const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
-    const watchMain = section('Watchlist', 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, over.length?'No other watchlist items.':'Nothing on the watchlist.')
+    const watchMain = section('Watchlist', 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, sportFilterEmpty(over.length?'No other watchlist items.':'Nothing on the watchlist.'))
       + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '') + errs;
     v.innerHTML = slateLayout('watch', (typeof priceSourceNote==='function'?priceSourceNote():'') + watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
   }
-  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', (typeof priceSourceNote==='function'?priceSourceNote():'') + section('Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, 'Nothing flagged to avoid.') + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
+  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', (typeof priceSourceNote==='function'?priceSourceNote():'') + section('Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
   else if (ui.tab==='all') v.innerHTML = `<div class="section-title"><h2>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
 /* ================= TRACKER ================= */
