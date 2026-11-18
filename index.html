@@ -768,8 +768,11 @@ function analyzeMarket(g, mk){
     const edge = nFull>=2 ? nv - imp(best.price) : null;
     let impSum=0, nImp=0, ptSum=0, nPt=0, fsOnly=true;
     for (const q of qs){
-      if (q.openPrice!=null && (mk==='ml' || q.openPoint==null || q.openPoint===q.point)){ impSum += imp(q.price)-imp(q.openPrice); nImp++; }
-      if (mk!=='ml' && q.openPoint!=null && q.point!=null){
+      // Only true market opens (ESPN / Odds API open). firstSeen is this device's memory and
+      // would make a long-running PC disagree with a newly installed phone on the same play.
+      const realOpen = q.openPrice!=null && !q.openIsFirstSeen;
+      if (realOpen && (mk==='ml' || q.openPoint==null || q.openPoint===q.point)){ impSum += imp(q.price)-imp(q.openPrice); nImp++; }
+      if (mk!=='ml' && q.openPoint!=null && !q.openIsFirstSeen && q.point!=null){
         // + = line moved against this side (side now gets a better number because the market went the other way)
         ptSum += (mk==='spread' || s==='under') ? (q.point - q.openPoint) : (q.openPoint - q.point); nPt++;
       }
@@ -1342,13 +1345,29 @@ function myBooks(p){
   out.fairAm = probToAm(fair); out.maxCents = pmMaxCents(fair);
   return out;
 }
+function priceSourceNote(){
+  if (S.oddsKey) return '';
+  const pm = myBookList().includes('polymarket') && S.pmOn!==false;
+  const text = pm
+    ? 'Prices from DraftKings and Polymarket — add Odds API key in Settings for Bovada prices'
+    : 'Prices from DraftKings — add Odds API key in Settings for Bovada prices';
+  return `<div class="banner price-banner">${text}.</div>`;
+}
+function missingBovadaHint(my){
+  if (S.oddsKey) return '';
+  if (!myBookList().includes('bovada')) return '';
+  const has = my && (my.quotes||[]).some(q=>/bovada/i.test(q.book||''));
+  if (has) return '';
+  return ' — add an Odds API key in Settings for Bovada prices';
+}
 function betOnText(p){
   const my = p.my, sd = p.sd; const estP = (p.E && p.E.final) || (typeof estimate==='function' ? estimate(p).final : sd.nv); const fair = probToAm(estP);
   const sideName = p.mk==='total' ? (p.side==='over'?'Over':'Under')+' '+sd.point : p.side==='draw' ? 'Draw' : (p.g[p.side].nick||p.g[p.side].short||p.g[p.side].name);
   const ref = `${sd.best.book} ${fmtAm(sd.best.price)}`;
+  const bovadaHint = missingBovadaHint(my);
   if (!my || !my.best) return {line:`Bet on: ${ref}${my?` (${my.names} not in the data${!S.oddsKey&&my.required?': add an Odds API key to see Bovada':''})`:''}`, max:`Don't pay more than ${fmtAm(fair)}`};
   const b = my.best;
-  const line = b.kind==='pm' ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on Polymarket at ${Math.round(b.cents*100)}¢ (≈ ${fmtAm(b.price)} after fee)` : `Bet on: ${b.book} at ${fmtAm(b.price)}`;
+  const line = (b.kind==='pm' ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on Polymarket at ${Math.round(b.cents*100)}¢ (≈ ${fmtAm(b.price)} after fee)` : `Bet on: ${b.book} at ${fmtAm(b.price)}`) + bovadaHint;
   const max = list => list;
   return {line, max:`Don't pay more than ${fmtAm(fair)}${my.quotes.some(q=>q.kind==='pm')||myBookList().includes('polymarket')?` · Polymarket max ${Math.floor(pmMaxCents(estP)*100)}¢`:''}`, ok: (b.cost!=null?estP-b.cost:estP-imp(b.price))>=0, thin:b.thin};
 }
@@ -2273,7 +2292,7 @@ function softRender(){ // live update without wiping forms on Tracker/Settings
 }
 function updateOddsPill(){
   const d=$('#dotOdds'), t=$('#oddsTxt');
-  if (!S.oddsKey){ d.className='dot'; t.textContent='off (ESPN/DraftKings only)'; return; }
+  if (!S.oddsKey){ d.className='dot'; t.textContent='off — DraftKings only, add a key for Bovada'; return; }
   if (oddsErrors.length){ d.className='dot err'; t.textContent='error, see list'; return; }
   if (!oddsCache){ d.className='dot warn'; t.textContent='not fetched yet'; return; }
   d.className='dot ok';
@@ -2478,16 +2497,16 @@ function render(){
     const near = plays.filter(p=>p.verdict==='watch' && p.strictFails && p.strictFails.length===1).length;
     const banner = S.strictMode ? `<div class="banner strict-banner"><b>Strict mode:</b> ${allGood.length} play${allGood.length===1?'':'s'} passed all checks (${today} today). ${near} more missed by just one check (see Watchlist). Zero is allowed: no forced bets.</div>` : `<div class="banner"><b>Normal mode:</b> looser rules, more plays. Turn Strict mode on in Settings for fewer, higher-confidence plays.</div>`;
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
-    v.innerHTML = slateLayout('good', banner + section('Good Plays', S.strictMode ? `Your range ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)}, ranked by win chance. Passed every strict check: market + ESPN agree, 2+ supporting factors, no move against, nothing strongly against, full data. Sports you turned off in Settings are left out. One per game.` : 'Rule-based plays, one per game.', good, 'No plays passed today. <b>Zero picks is fine.</b> Never force a bet.') + errs, counts);
+    v.innerHTML = slateLayout('good', banner + (typeof priceSourceNote==='function'?priceSourceNote():'') + section('Good Plays', S.strictMode ? `Your range ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)}, ranked by win chance. Passed every strict check: market + ESPN agree, 2+ supporting factors, no move against, nothing strongly against, full data. Sports you turned off in Settings are left out. One per game.` : 'Rule-based plays, one per game.', good, 'No plays passed today. <b>Zero picks is fine.</b> Never force a bet.') + errs, counts);
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
     const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
     const watchMain = section('Watchlist', 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, over.length?'No other watchlist items.':'Nothing on the watchlist.')
       + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '') + errs;
-    v.innerHTML = slateLayout('watch', watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
+    v.innerHTML = slateLayout('watch', (typeof priceSourceNote==='function'?priceSourceNote():'') + watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
   }
-  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', section('Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, 'Nothing flagged to avoid.') + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
+  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', (typeof priceSourceNote==='function'?priceSourceNote():'') + section('Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, 'Nothing flagged to avoid.') + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
   else if (ui.tab==='all') v.innerHTML = `<div class="section-title"><h2>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
 /* ================= TRACKER ================= */
@@ -3779,7 +3798,7 @@ function renderSettings(){
     <li><b>Implied probability</b>: -150 → 150/250 = 60.0%. +130 → 100/230 = 43.5%.</li>
     <li><b>No-vig probability</b>: each side's implied probability divided by the sum of all sides (removes the book's cut). With several books, consensus = average across books (Pinnacle weighted ×${S.sharpWeight}).</li>
     <li><b>Edge</b> = consensus no-vig probability − implied probability of the best price. Needs 2+ books, so ESPN-only mode shows "n/a".</li>
-    <li><b>Line movement</b>: DraftKings opening line (from ESPN) vs now. For Odds API books, the first price this app saw (stored on this PC).</li>
+    <li><b>Line movement</b>: the market's opening line (DraftKings from ESPN, or an Odds API open when the book sends one) vs now. The first price this phone or PC happened to see is stored on this device only and is not used to pull a play, so two devices with the same settings judge movement the same way.</li>
     <li><b>Hard rules (applied first)</b>: Avoid favorites worse than ${fmtAm(S.avoidFavBelow)}, dogs above ${fmtAm(S.longshotAbove)} without a ${S.dogMinEdge}% model or price edge, juice worse than ${fmtAm(S.avoidJuice)}, and heavy adverse line moves. Moneyline Good needs a favorite between ${fmtAm(S.goodFavMin)} and ${fmtAm(S.goodFavMax)} (or a dog clearing the stricter underdog bar), no adverse move, and model/price edge ≥ −${S.neutralTol}%.</li>
     <li><b>Spreads/totals</b>: Good needs price no worse than ${fmtAm(S.maxJuice)}, no adverse move, and the factor score below. Model edge on spreads uses ESPN win probability at 60% weight (it is a win %, not a cover %).</li>
     <li><b>Factor model</b>: each market side gets points from price range, ESPN model vs market, best price vs books, line movement, injuries (team leaders and QBs count most; IR/long-term ignored), last-5 form, home/away split, rest/back-to-backs, head-to-head, season scoring margin or projections vs the line, starting goalies (GAA), and weather for outdoor totals. Composite ≥ ${S.goodScore} with 2+ supporting factors and confidence ≥ ${S.minConfGood} can be Good. Underdogs need ≥ ${S.dogGoodScore}, ${S.dogMinFactors}+ strong factors and a ${S.dogMinEdge}% model or price edge.</li>

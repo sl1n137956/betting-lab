@@ -1,9 +1,20 @@
-/* Betting Lab app-shell cache. Never caches live API responses. */
-const CACHE = 'betting-lab-shell-v1';
+/* Betting Lab app-shell cache. Never caches live API responses.
+   v2: HTML pages are network-first with cache: 'no-store' so a new
+   deploy is not stuck behind GitHub Pages or a stale iOS shell. */
+const CACHE = 'betting-lab-shell-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(SHELL.map(async u => {
+      try{
+        const r = await fetch(u, {cache:'no-store'});
+        if (r.ok) await cache.put(u, r);
+      }catch(e){}
+    }));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', event => {
@@ -32,10 +43,12 @@ self.addEventListener('fetch', event => {
     const isPage = !url.pathname.split('/').pop() || url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
     if (isPage){
       try{
-        const fresh = await fetch(req);
-        const cache = await caches.open(CACHE);
-        cache.put(req, fresh.clone());
-        cache.put(new Request('./index.html', {cache:'reload'}), fresh.clone());
+        const fresh = await fetch(req, {cache:'no-store'});
+        if (fresh && fresh.ok){
+          const cache = await caches.open(CACHE);
+          cache.put(req, fresh.clone());
+          cache.put(new Request('./index.html', {cache:'reload'}), fresh.clone());
+        }
         return fresh;
       }catch(e){
         return (await caches.match(req)) || (await caches.match('./index.html')) || Response.error();
