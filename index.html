@@ -131,7 +131,7 @@ th{color:var(--mut);font-weight:550;font-size:10.5px;text-transform:uppercase;le
 select{background:var(--inset);border:1px solid var(--line2);border-radius:7px;padding:3px 7px;color:var(--txt2)}
 input[type=checkbox]{accent-color:var(--acc)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
-.kpi{background:linear-gradient(180deg,#202127,#1c1d22);border:1px solid var(--line);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow)}
+.kpi{background:linear-gradient(180deg,#17263b,#132033);border:1px solid var(--line);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow)}
 .kpi .k{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em}
 .kpi .v{font-size:22px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .err-list{font-size:12px;color:#e58c85;margin-top:10px}
@@ -231,12 +231,14 @@ code{background:var(--inset);border:1px solid var(--line2);border-radius:5px;pad
 .seg label.on{background:rgba(59,130,246,.18);color:var(--acc-hi);font-weight:600}.seg small{font-size:10.5px;color:var(--mut);margin-left:4px}
 details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .bt-bar{height:6px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}.bt-bar i{display:block;height:100%;background:var(--acc)}
-.pulled-banner{margin:18px 0 8px;padding:14px 16px;border-radius:12px;background:linear-gradient(180deg,rgba(208,87,79,.18),rgba(208,87,79,.07));border:1px solid rgba(208,87,79,.42);color:var(--txt2);font-size:13px;line-height:1.55;box-shadow:0 0 0 1px rgba(208,87,79,.08),0 10px 28px -16px rgba(208,87,79,.5)}
-.pulled-banner .ph{margin:0 0 8px;font-size:14.5px;font-weight:650;color:#f0a8a3;letter-spacing:-.01em;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pulled-banner{margin:18px 0 8px;padding:14px 16px;border-radius:12px;background:linear-gradient(180deg,rgba(59,130,246,.10),rgba(15,32,64,.25));border:1px solid rgba(59,130,246,.28);color:var(--txt2);font-size:13px;line-height:1.55;box-shadow:var(--shadow)}
+.pulled-banner .ph{margin:0 0 8px;font-size:14.5px;font-weight:650;color:var(--acc-hi);letter-spacing:-.01em;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .pulled-banner .ph .badge{margin:0}
 .pulled-item .pull-marks{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px}
+.card.pulled-item:before{background:#f5b942;width:3px}
+.card.pulled-item{border-color:rgba(245,185,66,.35)}
 .pulled-item .pull-title{font-size:16px;font-weight:650;letter-spacing:-.01em;margin:2px 0 4px}
-.pulled-item .hop{color:#f0a8a3;font-size:12px;font-weight:550}
+.pulled-item .hop{color:#fde68a;font-size:12px;font-weight:550}
 .pulled-item.logged-pulled .hop{color:#ffb4b0}
 .pulled-item .why{color:var(--mut);font-size:12.5px;margin-top:4px;line-height:1.45}
 .pulled-item .cfoot{justify-content:flex-end}
@@ -252,9 +254,9 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .slate-main{min-width:0}
 .slate-main .section-title{margin-top:14px}
 .slate-side{position:sticky;top:156px;display:flex;flex-direction:column;gap:12px}
-.side-card{background:linear-gradient(180deg,#202127,#1a1b20);border:1px solid var(--line);border-radius:16px;padding:14px 14px 12px;box-shadow:var(--shadow)}
+.side-card{background:linear-gradient(180deg,#17263b,#132033);border:1px solid rgba(59,130,246,.18);border-radius:16px;padding:14px 14px 12px;box-shadow:var(--shadow)}
 .side-card h3{margin:0 0 4px;font-size:13.5px;font-weight:650;display:flex;align-items:center;gap:7px;flex-wrap:wrap;color:var(--txt)}
-.side-card h3 .n{min-width:18px;padding:0 6px;border-radius:999px;font-size:10.5px;line-height:17px;text-align:center;background:var(--avoid-bg);color:#f0a8a3;font-variant-numeric:tabular-nums}
+.side-card h3 .n{min-width:18px;padding:0 6px;border-radius:999px;font-size:10.5px;line-height:17px;text-align:center;background:rgba(245,185,66,.16);color:#fde68a;font-variant-numeric:tabular-nums}
 .side-card h3 .n.mute{background:rgba(255,255,255,.05);color:var(--mut)}
 .side-tools{margin-left:auto;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .side-chip{background:transparent;border:1px solid var(--line2);color:var(--mut);font-size:11px;padding:2px 8px;border-radius:999px;cursor:pointer;font-weight:550}
@@ -265,7 +267,7 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .side-row{position:relative;padding:9px 22px 9px 0;border-top:1px solid var(--line)}
 .side-row:first-child{border-top:0;padding-top:4px}
 .side-row .what{font-weight:650;font-size:13px;color:var(--txt);line-height:1.3}
-.side-row .hop{color:#f0a8a3;font-size:11px;margin-top:2px;font-weight:550}
+.side-row .hop{color:#fde68a;font-size:11px;margin-top:2px;font-weight:550}
 .side-row .why{color:var(--mut);font-size:11.5px;margin-top:2px;line-height:1.4}
 .side-x{position:absolute;top:5px;right:0;width:22px;height:22px;border:0;background:transparent;color:var(--mut2);cursor:pointer;font-size:18px;line-height:1;border-radius:6px}
 .side-x:hover{color:var(--txt);background:rgba(255,255,255,.06)}
@@ -366,7 +368,7 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
   .bottom-nav button[data-tab=good] .cnt{background:var(--good-bg);color:var(--good)}
   .bottom-nav button[data-tab=watch] .cnt{background:var(--watch-bg);color:var(--watch)}
   .bottom-nav button[data-tab=avoid] .cnt{background:var(--avoid-bg);color:var(--avoid)}
-  .bottom-nav button[data-tab=pulled] .cnt{background:rgba(140,16,32,.45);color:#ffb4b0}
+  .bottom-nav button[data-tab=pulled] .cnt{background:rgba(245,185,66,.18);color:#fde68a}
   .bottom-nav button.on .cnt{background:rgba(255,255,255,.22);color:#fff;box-shadow:0 0 0 2px rgba(106,60,240,.9)}
   .bottom-nav .tab-dot{position:absolute;top:-3px;left:-5px;margin:0;width:8px;height:8px;box-shadow:0 0 0 2px rgba(18,18,20,.85),0 0 0 3px rgba(208,87,79,.28)}
   .bottom-nav button.on .tab-dot{box-shadow:0 0 0 2px #1d4ed8,0 0 0 3px rgba(255,255,255,.25)}
@@ -423,6 +425,7 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .mu-table td.k{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;width:28%}
 .mu-table td.better{color:#6ee7b7;font-weight:600}
 .mu-table td.worse{color:#fca5a5}
+.mu-table td .tip{cursor:help;border-bottom:1px dotted rgba(255,255,255,.25)}
 .rank-pill{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
 .rank-pill.r-good{background:rgba(52,211,153,.18);color:#6ee7b7;border:1px solid rgba(52,211,153,.4)}
 .rank-pill.r-ok{background:rgba(245,185,66,.16);color:#fde68a;border:1px solid rgba(245,185,66,.4)}
@@ -2674,6 +2677,228 @@ async function loadMissedContext(){
   } finally { missBusy = false; }
 }
 
+
+const ODDS_HIST_KEY = 'bl_histodds';
+let oddsHistCache = loadJSON(ODDS_HIST_KEY, {}) || {};
+let teamHist = {}; // lg:teamId -> {fav:{w,l,n}, dog:{w,l,n}, rows:[{ml,win}], n, why}
+let oddsHistStatus = {}; // lg -> 'ok'|'loading'|'unavailable'|'empty'
+let oddsHistBusy = false;
+const ODDS_HIST_CAP = 12;
+
+function corePath(lg){
+  const L = LMAP[lg]; if (!L || !L.path || L.path.indexOf('/')<0) return null;
+  const i = L.path.indexOf('/');
+  return {sport: L.path.slice(0,i), league: L.path.slice(i+1)};
+}
+function parseAmerican(v){
+  if (v==null) return null;
+  if (typeof v==='number' && isFinite(v)) return Math.round(v);
+  const m = /([+-]?\d+)/.exec(String(v).trim());
+  return m ? +m[1] : null;
+}
+function mlFromBlock(block){
+  if (block==null) return null;
+  if (typeof block==='number') return Math.round(block);
+  if (typeof block!=='object') return parseAmerican(block);
+  if (typeof block.moneyLine==='number') return Math.round(block.moneyLine);
+  if (block.moneyLine && typeof block.moneyLine==='object')
+    return parseAmerican(block.moneyLine.american || block.moneyLine.alternateDisplayValue);
+  return parseAmerican(block.american || block.alternateDisplayValue);
+}
+function extractSideML(t){
+  if (!t || typeof t!=='object') return null;
+  return mlFromBlock(t.close) || mlFromBlock(t.current) || (typeof t.moneyLine==='number'?Math.round(t.moneyLine):null) || mlFromBlock(t.open);
+}
+function roleOfML(ml){
+  if (ml==null || !isFinite(+ml)) return null;
+  if (ml < 0) return 'fav';
+  if (ml > 0) return 'dog';
+  return null;
+}
+function similarML(a, b){
+  if (a==null || b==null || !isFinite(+a) || !isFinite(+b)) return false;
+  if (Math.abs(a-b) <= 40) return true;
+  if (typeof imp==='function'){
+    const ia = imp(a), ib = imp(b);
+    if (ia!=null && ib!=null && Math.abs(ia-ib) <= 0.06) return true;
+  }
+  return false;
+}
+function pickOddsItem(items){
+  if (!items || !items.length) return null;
+  const dk = items.find(it=>it && it.provider && (String(it.provider.id)==='100' || /draftkings/i.test(it.provider.name||'')));
+  return dk || items[0];
+}
+async function loadEventCloseOdds(lg, eventId){
+  const k = lg+':'+eventId;
+  const hit = oddsHistCache[k];
+  if (hit && (hit.home!=null || hit.away!=null || hit.empty || hit.fail)) return hit;
+  const cp = corePath(lg);
+  if (!cp || !eventId){ oddsHistCache[k] = {t:Date.now(), empty:true}; return oddsHistCache[k]; }
+  const url = `https://sports.core.api.espn.com/v2/sports/${cp.sport}/leagues/${cp.league}/events/${eventId}/competitions/${eventId}/odds`;
+  const r = await fetchJSON(url, 15000);
+  if (r.status===429){ if (typeof noteFeedRateLimit==='function') noteFeedRateLimit(); throw new Error('429'); }
+  if (!r.ok || !r.data){
+    oddsHistCache[k] = {t:Date.now(), fail:true, status:r.status};
+    return oddsHistCache[k];
+  }
+  const item = pickOddsItem(r.data.items || r.data.odds || []);
+  if (!item){ oddsHistCache[k] = {t:Date.now(), empty:true}; return oddsHistCache[k]; }
+  const rec = {t:Date.now(), home: extractSideML(item.homeTeamOdds), away: extractSideML(item.awayTeamOdds)};
+  if (rec.home==null && rec.away==null) rec.empty = true;
+  oddsHistCache[k] = rec;
+  return rec;
+}
+function recordFromGames(lg, teamId, games){
+  const fav={w:0,l:0,n:0}, dog={w:0,l:0,n:0}, rows=[];
+  let pending=0, failed=0;
+  for (const g of games||[]){
+    const od = oddsHistCache[lg+':'+g.eventId];
+    if (!od){ pending++; continue; }
+    if (od.fail || od.empty){ failed++; continue; }
+    const ml = g.home ? od.home : od.away;
+    if (ml==null){ failed++; continue; }
+    const decided = !!(g.win || g.loss);
+    if (!decided) continue;
+    rows.push({ml, win:!!g.win, eventId:g.eventId});
+    const role = roleOfML(ml);
+    if (role==='fav'){ fav.n++; if (g.win) fav.w++; else fav.l++; }
+    else if (role==='dog'){ dog.n++; if (g.win) dog.w++; else dog.l++; }
+  }
+  return {fav, dog, rows, n:rows.length, pending, failed, games: (games||[]).length};
+}
+function atTheseOddsRec(hist, price){
+  if (!hist || price==null || !isFinite(+price)) return null;
+  const hits = (hist.rows||[]).filter(r=>similarML(r.ml, price));
+  if (!hits.length) return {w:0,l:0,n:0, price:+price};
+  const w = hits.filter(r=>r.win).length, l = hits.length-w;
+  return {w, l, n:hits.length, wr: w/hits.length, price:+price, small: hits.length<3};
+}
+function leagueAtPrice(lg, price){
+  if (price==null || !lg) return null;
+  let w=0,l=0,n=0;
+  for (const [k, rec] of Object.entries(teamHist)){
+    if (!k.startsWith(lg+':') || !rec || !rec.rows) continue;
+    for (const r of rec.rows){
+      if (!similarML(r.ml, price)) continue;
+      n++; if (r.win) w++; else l++;
+    }
+  }
+  if (n<8) return null;
+  return {w,l,n, wr:w/n};
+}
+function histForTeam(lg, teamId){
+  if (!lg || !teamId) return null;
+  return teamHist[lg+':'+teamId] || null;
+}
+function favDogCell(hist, todayML, status){
+  if (status==='unavailable') return {html:'<span class="mut tip" title="ESPN did not post historical moneylines for this sport">n/a</span>', txt:null};
+  if (status==='empty') return {html:'<span class="mut tip" title="No completed games with moneylines yet this season">n/a</span>', txt:null};
+  if (!hist || (hist.fav.n+hist.dog.n)===0){
+    if (hist && hist.pending) return {html:'<span class="mut tip" title="Loading past moneylines…">n/a</span>', txt:null};
+    return {html:'<span class="mut tip" title="Historical moneylines have not loaded yet">n/a</span>', txt:null};
+  }
+  const role = roleOfML(todayML);
+  const R = role==='fav' ? hist.fav : role==='dog' ? hist.dog : null;
+  const both = `Favorite ${hist.fav.w}–${hist.fav.l} (n=${hist.fav.n}); underdog ${hist.dog.w}–${hist.dog.l} (n=${hist.dog.n}) this season, using ESPN closing moneylines`;
+  const tag = (r, word) => {
+    const small = r.n && r.n<3 ? ' <span class="mut">small sample</span>' : '';
+    return `${r.w}–${r.l} as ${word}${small}`;
+  };
+  if (R && R.n){
+    const word = role==='fav' ? 'fav' : 'underdog';
+    return {html:`<span class="tip" title="${both.replace(/"/g,'')}">${tag(R, word)}</span>`, txt: tag(R, word).replace(/<[^>]+>/g,''), rec:R, role};
+  }
+  if (hist.fav.n || hist.dog.n){
+    const parts = [];
+    if (hist.fav.n) parts.push(tag(hist.fav,'fav'));
+    if (hist.dog.n) parts.push(tag(hist.dog,'underdog'));
+    return {html:`<span class="tip" title="${both.replace(/"/g,'')}">${parts.join(', ')}</span>`, txt: parts.join(', ').replace(/<[^>]+>/g,'')};
+  }
+  return {html:'<span class="mut tip" title="No favorite/underdog splits in the lines we have">n/a</span>', txt:null};
+}
+function atOddsCell(hist, todayML, lg){
+  if (todayML==null) return {html:'<span class="mut tip" title="No current moneyline to compare">n/a</span>', txt:null};
+  if (!hist) return {html:'<span class="mut tip" title="Historical moneylines have not loaded yet">n/a</span>', txt:null};
+  const at = atTheseOddsRec(hist, todayML);
+  if (!at || !at.n){
+    if (hist.pending) return {html:'<span class="mut tip" title="Loading past moneylines…">n/a</span>', txt:null};
+    return {html:'<span class="mut tip" title="No games this season at a similar moneyline (within about 40 cents, or a similar implied chance)">n/a</span>', txt:null};
+  }
+  const small = at.small ? ' <span class="mut">small sample</span>' : '';
+  const lgR = leagueAtPrice(lg, todayML);
+  const lgBit = lgR ? ` League at this price: ${lgR.w}–${lgR.l} (${Math.round(lgR.wr*100)}%, n=${lgR.n}).` : '';
+  const title = `This team\\'s record when its closing moneyline was within about 40 cents of ${typeof fmtAm==='function'?fmtAm(todayML):todayML} (or a similar implied chance). n=${at.n}.${lgBit}`;
+  return {html:`<span class="tip" title="${title}">${at.w}–${at.l}${at.n?` <span class="mut">n=${at.n}</span>`:''}${small}</span>`, txt:`${at.w}–${at.l} (n=${at.n})`, rec:at, league:lgR};
+}
+async function loadOddsHistory(){
+  if (oddsHistBusy) return; oddsHistBusy = true;
+  try{
+    const pre = (typeof games!=='undefined' && games) ? games.filter(g=>g && g.state==='pre' && g.league && (g.home&&g.home.id || g.away&&g.away.id) && corePath(g.league)) : [];
+    const teams = [];
+    const seenT = new Set();
+    for (const g of pre){
+      for (const side of ['home','away']){
+        const t = g[side]; if (!t || !t.id) continue;
+        const k = g.league+':'+t.id;
+        if (seenT.has(k)) continue; seenT.add(k);
+        teams.push({lg:g.league, id:t.id, start:g.start});
+      }
+    }
+    if (!teams.length) return;
+    for (const tm of teams) oddsHistStatus[tm.lg] = oddsHistStatus[tm.lg] || 'loading';
+    const startNeed = [];
+    const seenE = new Set();
+    for (const tm of teams){
+      let gamesT = [];
+      try{ gamesT = await loadTeamSchedule(tm.lg, tm.id); }
+      catch(e){ oddsHistStatus[tm.lg] = 'unavailable'; continue; }
+      const cutoff = tm.start && tm.start.getTime ? tm.start.getTime() : Date.now();
+      const past = (gamesT||[]).filter(x=>x.eventId && (!x.date || x.date.getTime() < cutoff-3600000));
+      if (!past.length && !(gamesT||[]).length) oddsHistStatus[tm.lg] = oddsHistStatus[tm.lg]==='ok'?'ok':'empty';
+      for (const ev of past){
+        const ek = tm.lg+':'+ev.eventId;
+        if (oddsHistCache[ek]) continue;
+        if (seenE.has(ek)) continue;
+        seenE.add(ek);
+        startNeed.push({lg:tm.lg, eventId:ev.eventId});
+      }
+      teamHist[tm.lg+':'+tm.id] = recordFromGames(tm.lg, tm.id, past);
+    }
+    const work = startNeed.slice(0, ODDS_HIST_CAP);
+    let stopped = false, got = 0, failedLg = {};
+    if (work.length){
+      await pool(work.map(job=>async()=>{
+        if (stopped) return;
+        try{
+          await loadEventCloseOdds(job.lg, job.eventId);
+          got++;
+        }catch(e){
+          if (String(e.message||e).includes('429')) stopped = true;
+          failedLg[job.lg] = (failedLg[job.lg]||0)+1;
+        }
+      }), 3);
+      try{ saveJSON(ODDS_HIST_KEY, oddsHistCache); }catch(e){}
+    }
+    // recompute after new odds
+    for (const tm of teams){
+      try{
+        const gamesT = (schedCache[tm.lg+':'+tm.id] && schedCache[tm.lg+':'+tm.id].games) || await loadTeamSchedule(tm.lg, tm.id);
+        const cutoff = tm.start && tm.start.getTime ? tm.start.getTime() : Date.now();
+        const past = (gamesT||[]).filter(x=>x.eventId && (!x.date || x.date.getTime() < cutoff-3600000));
+        const rec = recordFromGames(tm.lg, tm.id, past);
+        teamHist[tm.lg+':'+tm.id] = rec;
+        if (rec.n>0) oddsHistStatus[tm.lg] = 'ok';
+        else if (rec.pending>0) oddsHistStatus[tm.lg] = 'loading';
+        else if ((failedLg[tm.lg]||0)>=3 && rec.n===0) oddsHistStatus[tm.lg] = 'unavailable';
+        else if (past.length && rec.n===0 && !rec.pending) oddsHistStatus[tm.lg] = 'unavailable';
+        else if (!past.length) oddsHistStatus[tm.lg] = oddsHistStatus[tm.lg]==='ok'?'ok':'empty';
+      }catch(e){}
+    }
+    if (typeof softRender==='function') softRender();
+  } finally { oddsHistBusy = false; }
+}
+
 function pickTpl(key, arr){
   let h = 2166136261; const s = String(key||'');
   for (let i=0;i<s.length;i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
@@ -3139,6 +3364,27 @@ function contextFacts(p){
     if (hr && hr.enough) addFact('oddsrec', `At odds like these (${hr.bkt.label}), the app is ${hr.w}–${hr.l} (${Math.round(hr.wr*100)}%) in ${hr.n} ${hr.label}`, hr.wr>=0.55);
   }
 
+  // this team's record as favorite / underdog, and at similar prices
+  if (team && typeof histForTeam==='function'){
+    const rec = histForTeam(g.league, T.id);
+    const today = (mk==='ml' && sd && sd.best && sd.best.price!=null) ? sd.best.price : null;
+    if (rec){
+      const role = typeof roleOfML==='function' ? roleOfML(today) : null;
+      const R = role==='fav' ? rec.fav : role==='dog' ? rec.dog : null;
+      if (R && R.n>=5){
+        const wr = R.w/R.n;
+        const word = role==='fav' ? 'a favorite' : 'an underdog';
+        addFact('favdog', `${T.short} are ${R.w}–${R.l} as ${word} this season`, wr>=0.6?true:wr<=0.4?false:null);
+      }
+      if (today!=null && typeof atTheseOddsRec==='function'){
+        const at = atTheseOddsRec(rec, today);
+        if (at && at.n>=5){
+          addFact('atodds', `${T.short} are ${at.w}–${at.l} this season at moneylines like today's ${fmtAm(today)}`, at.wr>=0.6?true:at.wr<=0.4?false:null);
+        }
+      }
+    }
+  }
+
   return {facts, win, lose, unit};
 }
 function contextBullets(p){
@@ -3238,7 +3484,7 @@ function courtModel(p){
   const ptxt = pricePlain(P, E, who, tone);
   if (P.edge>=0) pushU(win, {txt:ptxt, imp:P.edge, tag:'', kind:'price'});
   else pushU(lose, {txt:ptxt, imp:P.edge, tag:'', kind:'price'});
-  const RANK = {move:0, l5:1, l10:2, scoring:3, rank:4, split:5, h2h:6, rest:7, streak:8, oddsrec:9, ats:10, spot:11, starter:12, inj:13, wx:14, price:20};
+  const RANK = {move:0, l5:1, l10:2, favdog:3, atodds:4, scoring:5, rank:6, split:7, h2h:8, rest:9, streak:10, oddsrec:11, ats:12, spot:13, starter:14, inj:15, wx:16, price:20};
   const take = (arr, n, maxInj) => {
     const price = arr.filter(x=>x.kind==='price');
     const ctx = arr.filter(x=>x.kind!=='price' && !x.always).slice().sort((a,b)=>(RANK[a.kind]??15)-(RANK[b.kind]??15));
@@ -3367,12 +3613,17 @@ function matchupTableHTML(p, C){
     rows.push(`<tr><td class="k">Offense rank</td>${cell(rankPill(a.off, ra.n)+(a.pf!=null?` <span class="mut">${a.pf.toFixed(1)}</span>`:''), a.off<h.off?'better':'')}${cell(rankPill(h.off, ra.n)+(h.pf!=null?` <span class="mut">${h.pf.toFixed(1)}</span>`:''), h.off<a.off?'better':'')}</tr>`);
     rows.push(`<tr><td class="k">Defense rank</td>${cell(rankPill(a.def, ra.n)+(a.pa!=null?` <span class="mut">${a.pa.toFixed(1)}</span>`:''), a.def<h.def?'better':'')}${cell(rankPill(h.def, ra.n)+(h.pa!=null?` <span class="mut">${h.pa.toFixed(1)}</span>`:''), h.def<a.def?'better':'')}</tr>`);
   }
-  // As fav / underdog — we do not have historical role records from ESPN; stay honest
-  rows.push(`<tr><td class="k">As fav / underdog</td>${cell(null)}${cell(null)}</tr>`);
-  const hrA = (typeof hitRateFor==='function' && awayNow && awayNow.price!=null) ? hitRateFor(awayNow.price, g.league, p.mk) : null;
-  const hrH = (typeof hitRateFor==='function' && homeNow && homeNow.price!=null) ? hitRateFor(homeNow.price, g.league, p.mk) : null;
-  const hrCell = hr => !hr ? '<span class="mut">n/a</span>' : (hr.enough ? `${hr.w}–${hr.l} (${Math.round(hr.wr*100)}%)` : '<span class="mut">n/a</span>');
-  rows.push(`<tr><td class="k">At these odds</td>${cell(hrCell(hrA))}${cell(hrCell(hrH))}</tr>`);
+  const stLg = (typeof oddsHistStatus!=='undefined' && oddsHistStatus[g.league]) || (typeof histForTeam==='function' ? 'loading' : 'unavailable');
+  const histA = typeof histForTeam==='function' ? histForTeam(g.league, A.id) : null;
+  const histH = typeof histForTeam==='function' ? histForTeam(g.league, H.id) : null;
+  const mlA = (p.mk==='ml' && awayNow && awayNow.price!=null) ? awayNow.price : null;
+  const mlH = (p.mk==='ml' && homeNow && homeNow.price!=null) ? homeNow.price : null;
+  const fdA = typeof favDogCell==='function' ? favDogCell(histA, mlA, stLg) : {html:null};
+  const fdH = typeof favDogCell==='function' ? favDogCell(histH, mlH, stLg) : {html:null};
+  rows.push(`<tr><td class="k">As fav / underdog</td>${cell(fdA.html)}${cell(fdH.html)}</tr>`);
+  const atA = typeof atOddsCell==='function' ? atOddsCell(histA, mlA, g.league) : {html:null};
+  const atH = typeof atOddsCell==='function' ? atOddsCell(histH, mlH, g.league) : {html:null};
+  rows.push(`<tr><td class="k">At these odds</td>${cell(atA.html)}${cell(atH.html)}</tr>`);
   const venA = A.roadRec || A.rec, venH = H.homeRec || H.rec;
   rows.push(`<tr><td class="k">Venue</td>${cell(A.roadRec ? A.roadRec+' on the road' : (A.rec||null))}${cell(H.homeRec ? H.homeRec+' at home' : (H.rec||null))}</tr>`);
   const rest = (s) => {
@@ -3541,7 +3792,7 @@ async function refresh(forceOdds=false){
   }
   // Light cycle: ESPN + Polymarket only. Deep ESPN game pages stay on their 15/5-min stale rules.
   const needDeep = games.length && typeof needsSummary==='function' && games.some(g=>needsSummary(g) || (typeof needsWx==='function' && needsWx(g)));
-  if (needDeep) runEnrichment().then(()=>loadPlayerImpacts()).then(()=>{ if (typeof loadMissedContext==='function') return loadMissedContext(); }).catch(e=>console.warn('enrichment', e)).then(()=>{ if (typeof learnTick==='function') learnTick(); });
+  if (needDeep) runEnrichment().then(()=>loadPlayerImpacts()).then(()=>{ if (typeof loadMissedContext==='function') return loadMissedContext(); }).then(()=>{ if (typeof loadOddsHistory==='function') return loadOddsHistory(); }).catch(e=>console.warn('enrichment', e)).then(()=>{ if (typeof learnTick==='function') learnTick(); });
   else { if (typeof updateDeepPill==='function') updateDeepPill(); if (typeof learnTick==='function') learnTick(); }
   gradeAll().catch(e=>console.warn('grading', e));
   pruneCaches();
