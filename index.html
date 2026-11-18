@@ -168,6 +168,10 @@ code{background:var(--inset);border:1px solid var(--line2);border-radius:5px;pad
 .strict-banner{border-color:rgba(63,182,139,.25);background:var(--good-bg)}
 .mtab tr.mrow td{border-bottom:0;padding-bottom:1px}.mtab tr.mhow td{color:var(--mut);font-size:11px;padding-top:0}.mtab td:nth-child(2),.mtab td:nth-child(3){white-space:nowrap;text-align:right}
 .c-ctx{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line2)}.c-ctx-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2)}.c-ctx-h span{text-transform:none;letter-spacing:0;color:var(--mut)}.c-ctx ul{margin:3px 0 0;padding-left:18px}.c-ctx li{margin:3px 0;color:var(--txt2);font-size:12.5px;line-height:1.4}
+.c-ctx-dd{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line2)}
+.c-ctx-dd>summary{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);font-weight:550}
+.c-ctx-dd>summary span{text-transform:none;letter-spacing:0;color:var(--mut);font-weight:450}
+.c-ctx-dd ul{margin:3px 0 0;padding-left:18px}.c-ctx-dd li{margin:3px 0;color:var(--txt2);font-size:12.5px;line-height:1.4}
 .simple .s-row{padding:12px 0;border-bottom:1px solid var(--line2)}.simple .s-row:last-of-type{border-bottom:0}
 .s-h{font-size:14px;font-weight:600;color:var(--txt);margin-bottom:8px}.s-note{font-size:12.5px;color:var(--txt2);margin-top:6px}.s-note a{color:var(--acc-hi)}
 .s-inline{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}.s-inline label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--txt2)}.s-inline input{max-width:140px}
@@ -2106,8 +2110,8 @@ function courtroomHTML(p, C){
   const cls = C.J==='BET'?'b-good':C.J==='MAYBE LATER'?'b-watch':'b-avoid';
   return `<div class="court2">
     <div class="c-start">Starting point: ${esc(C.E.src)} gives ${esc(C.who)} <b>${outOf10(C.E.start)} out of 10</b>.</div>
-    <div class="c-col win"><div class="ct">Why this could WIN</div><ul>${C.win.length?C.win.map(li).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul>${ctxHTML(C.cwin)}</div>
-    <div class="c-col lose"><div class="ct">Why this could LOSE</div><ul>${C.lose.map(li).join('')}</ul>${ctxHTML(C.close)}</div>
+    <div class="c-col win"><div class="ct">Why this could WIN</div><ul>${C.win.length?C.win.map(li).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul>${ctxHTML(C.cwin, p.id+'|cwin')}</div>
+    <div class="c-col lose"><div class="ct">Why this could LOSE</div><ul>${C.lose.map(li).join('')}</ul>${ctxHTML(C.close, p.id+'|closs')}</div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${confDots(p.j.conf.v)}</div>
       <div class="c-sent">${esc(C.sentence)}</div>
       <div class="c-ten">Out of 10 games like this, ${esc(C.who)} ${p.mk==='total'?'hits':'win'} about <b>${outOf10(C.E.final)}</b>.</div></div>
@@ -2209,7 +2213,7 @@ function contextBullets(p){
   return {win:W.slice(0,5), lose:L.slice(0,5)};
 }
 
-function ctxHTML(list){ if (!list || !list.length) return ''; return `<div class="c-ctx"><div class="c-ctx-h">Also worth knowing <span>(doesn't change our number)</span></div><ul>${list.map(x=>`<li>${esc(x.txt)}</li>`).join('')}</ul></div>`; }
+function ctxHTML(list, key){ if (!list || !list.length) return ''; const attr = key ? ` data-dd="${esc(key)}" ${ui.open.has(key)?'open':''}` : ''; return `<details class="dd c-ctx-dd"${attr}><summary>Also worth knowing <span>(doesn't change our number)</span></summary><ul>${list.map(x=>`<li>${esc(x.txt)}</li>`).join('')}</ul></details>`; }
 /* ================= REFRESH LOOP ================= */
 async function refresh(forceOdds=false){
   if (busy) return; busy = true;
@@ -2326,7 +2330,7 @@ function playCard(p){
       <div class="price">${fmtAm(sd.best.price)}<small>${esc(sd.best.book)}</small></div></div>
     <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div><div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
     ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return `<div class="hint" style="margin:6px 2px 0">${/^excluded/.test(f[0]) ? '<b>No picks for this sport</b> (turned off in Settings)' : `Strict mode: missed "${esc(f[0])}"${f.length>1?` (+${f.length-1} more)`:''}`}</div>`; })() : ''}
-    <details class="dd court-dd" data-dd="${esc(cid)}" ${ui.closed.has(cid)?'':'open'}><summary>Courtroom</summary>${courtroomHTML(p, C)}</details>
+    <details class="dd court-dd" data-dd="${esc(cid)}" ${ui.open.has(cid)?'open':''}><summary>Courtroom</summary>${courtroomHTML(p, C)}</details>
     <details class="dd" data-dd="${esc(mid)}" ${ui.open.has(mid)?'open':''}><summary>Nerd stats / Show the math</summary>${mathHTML(p, C)}
       <div class="ct" style="margin-top:10px">Rule factors (used by the strict checks)</div>${factorsHTML(p)}
       <div class="stats" style="margin-top:8px"><div class="stat"><div class="k">No-vig</div><div class="v">${fmtPct(sd.nv)}</div></div><div class="stat"><div class="k">Implied</div><div class="v">${fmtPct(sd.impBest)}</div></div><div class="stat"><div class="k">Move</div><div class="v ${sd.adverse?'neg':sd.support?'pos':''}">${moveCell(p.mk, sd)}</div></div><div class="stat"><div class="k">Books</div><div class="v">${A.booksFull}</div></div></div>
@@ -3001,19 +3005,20 @@ function legCard(leg, i, weakest){
       <div class="stat"><div class="k">Fair odds</div><div class="v">${leg.p!=null?fmtAm(probToAm(leg.p)):'—'}</div></div>
     </div>
     ${leg.result?`<div class="banner" style="margin:6px 0">Result: <b class="${leg.result==='HIT'?'pos':leg.result==='MISS'?'neg':''}">${leg.result}</b>${leg.actual!=null?` (actual ${leg.actual})`:''}</div>`:''}
+    <details class="dd court-dd" data-dd="picks|${i}|court" ${ui.open.has('picks|'+i+'|court')?'open':''}><summary>Courtroom</summary>
     <div class="court2">
-      <div class="c-col win"><div class="ct">Why this could WIN</div><ul>${leg.yes.length?legSort(leg.yes,1).slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul>${ctxHTML(leg.cyes)}</div>
-      <div class="c-col lose"><div class="ct">Why this could LOSE</div><ul>${legSort(leg.no,-1).slice(0,4).map(legItem).join('')}${leg.p!=null?`<li><span>Even good picks lose: this should still miss about ${outOf10(1-leg.p)} times out of 10</span> <em>(always true)</em></li>`:''}</ul>${ctxHTML(leg.cno)}</div>
+      <div class="c-col win"><div class="ct">Why this could WIN</div><ul>${leg.yes.length?legSort(leg.yes,1).slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul>${ctxHTML(leg.cyes, 'picks|'+i+'|cyes')}</div>
+      <div class="c-col lose"><div class="ct">Why this could LOSE</div><ul>${legSort(leg.no,-1).slice(0,4).map(legItem).join('')}${leg.p!=null?`<li><span>Even good picks lose: this should still miss about ${outOf10(1-leg.p)} times out of 10</span> <em>(always true)</em></li>`:''}</ul>${ctxHTML(leg.cno, 'picks|'+i+'|cno')}</div>
       <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf):''}</div>
         <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>
         ${leg.p!=null&&!leg.final?`<div class="c-ten">Out of 10 times like this, it hits about <b>${outOf10(leg.p)}</b>.</div>`:''}</div>
-    </div>
-    <details class="dd"><summary>Nerd stats / Show the math</summary><div style="margin-top:6px">
+    </div></details>
+    <details class="dd" data-dd="picks|${i}|math" ${ui.open.has('picks|'+i+'|math')?'open':''}><summary>Nerd stats / Show the math</summary><div style="margin-top:6px">
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
       <div class="hint">${esc(leg.formula||'—')}</div>
       ${leg.implied!=null&&leg.p!=null?`<div class="hint">Price ${fmtAm(leg.price)} needs ${fmtPct(leg.implied)} · edge ${fmtEdge(leg.p-leg.implied)} · EV per $${(+S.unit||25).toFixed(0)}: ${money((leg.p*profitOn(leg.price,+S.unit||25))-(1-leg.p)*(+S.unit||25))}</div>`:''}
       ${leg.info.length?`<ul class="why">${leg.info.map(x=>`<li class="mut">${esc(x)}</li>`).join('')}</ul>`:''}</div></details>
-    <div class="cfoot"><span class="books"></span><button class="btn sm" data-logleg="${i}">+ Log as single</button></div>`}
+    <div class="cfoot"><span>${verdictBadge(leg.verdict)}</span><button class="btn sm" data-logleg="${i}">+ Log as single</button></div>`}
   </div>`;
 }
 function parlaySummary(){
@@ -3156,7 +3161,8 @@ function renderResults(){
     <div class="hint" style="margin-top:8px">First run downloads about 2 small files per past game (DraftKings open/close odds + ESPN's win probability at tip-off), a few minutes for 60 days. After that it only fetches new days.</div>
     ${btState.err?`<div class="err-list">${esc(btState.err)}</div>`:''}</div>
   ${R ? btResultsHTML(R) : ''}
-  <div class="panel"><h3>How the courtroom's math was set</h3>
+  <details class="dd" data-dd="results-math-origin" ${ui.open.has('results-math-origin')?'open':''}><summary>How the courtroom's math was set</summary>
+  <div class="panel" style="margin-top:8px">
     <table class="ftab"><tr><th>Factor</th><th>Fitted effect</th><th>t</th><th>Games</th><th>Used</th></tr>
     ${['model','form','split','rest','b2b','h2h','margin','totMove'].map(k=>{ const c=CAL[k]; return `<tr><td>${esc(c.what)}</td><td>${c.fit}</td><td>${c.t}</td><td>${c.n}</td><td class="${c.coef?'pos':'mut'}">${c.coef?c.coef:'0 (no proven value beyond the odds)'}</td></tr>`; }).join('')}
     <tr><td>Strict-filter track record</td><td>+${(CAL.strictObs*100).toFixed(1)} pts</td><td>—</td><td>${CAL.strictN}</td><td class="pos">+${(CAL.strictBonus*100).toFixed(1)} pts (20% credited)</td></tr></table>
@@ -3165,7 +3171,7 @@ function renderResults(){
       <li>Each factor's weight comes from a logistic regression on ${CAL.games} past games (${CAL.totals} for totals) with the closing odds as the starting point, shrunk by t²/(1+t²), and set to 0 if the sign made no sense.</li>
       <li>The odds already include injuries, ESPN's computer and recent form; in the test none of them predicted results better than the odds. That is why they are shown with their measured size but mostly add 0.</li>
       <li>Injury size: NBA/WNBA from each player's season points and minutes (0.18×PPG + 0.05×MPG − 1.5 points of margin, converted to win chance with a normal curve). Other sports use a rule of thumb (starting QB 6 pts, leaders smaller). Not testable on history: ESPN keeps no past injury reports.</li>
-      <li>Biggest real edges: a better price than the market (line shopping, Polymarket), and betting before the line moves (shown as CLV).</li></ul></div>`;
+      <li>Biggest real edges: a better price than the market (line shopping, Polymarket), and betting before the line moves (shown as CLV).</li></ul></div></details>`;
   $('#btnGrade').onclick = ()=>{ gradeAll().then(()=>{ toast('Graded'); renderResults(); }); };
   $('#btDays').onchange = e=>{ btUI.days = +e.target.value; };
   $('#view').querySelectorAll('[data-btl]').forEach(i=>i.onchange=()=>{ i.parentElement.classList.toggle('on', i.checked); btUI.leagues = [...$('#view').querySelectorAll('[data-btl]')].filter(x=>x.checked).map(x=>x.dataset.btl); });
@@ -3212,7 +3218,7 @@ function btResultsHTML(R){
       <li>Prices are DraftKings closing lines from ESPN; your real prices (Bovada, Polymarket, earlier in the day) will differ.</li>
       <li>Not testable on past games: injury reports, confirmed goalies/pitchers, extra books, weather. The live app adds those checks, so live plays per day will be lower.</li>
       <li>The strict thresholds were tuned on this same data, so expect live results to be worse than this. The Results table above is the honest scoreboard.</li></ul>
-    <details class="dd"><summary>Last 25 strict plays in the backtest</summary><table style="margin-top:6px"><tr><th>Day</th><th>Sport</th><th>Play</th><th>Price</th><th>Result</th></tr>${recent}</table></details></div>`;
+    <details class="dd" data-dd="results-bt-recent" ${ui.open.has('results-bt-recent')?'open':''}><summary>Last 25 strict plays in the backtest</summary><table style="margin-top:6px"><tr><th>Day</th><th>Sport</th><th>Play</th><th>Price</th><th>Result</th></tr>${recent}</table></details></div>`;
 }
 /* ================= AUTO-LEARNING (no AI, no tokens: plain statistics that re-run by themselves) ================= */
 // What it does while the app is open:
@@ -3605,8 +3611,8 @@ function learnPanelHTML(){
     ${off.length?`<div class="ln-off"><b>Switched off by learning (strict picks only):</b> ${off.map(([k,o])=>`${esc(k.startsWith('mk:')?(MKN_S[k.slice(3)]||k):(LMAP[k]?LMAP[k].label:k))} <span class="mut">(${esc(o.why)})</span>`).join('; ')}. They come back on by themselves if they recover.</div>`:''}
     <h3 style="margin-top:16px">Version history</h3>
     <div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th><th>Tested on days it hadn't seen</th><th>Live record</th><th>Games</th></tr>${ver}</table></div>
-    <details class="dd" style="margin-top:10px"><summary>Learning log (${LEARN.log.length})</summary><ul class="why" style="margin-top:6px">${LEARN.log.slice(0,15).map(l=>`<li><span class="mut">${dtt(l.at)}</span> — ${esc(l.txt)}</li>`).join('')}</ul></details>
-    <details class="dd"><summary>How learning works and its safety checks</summary><ul class="why" style="margin-top:6px">
+    <details class="dd" style="margin-top:10px" data-dd="learn-log" ${ui.open.has('learn-log')?'open':''}><summary>Learning log (${LEARN.log.length})</summary><ul class="why" style="margin-top:6px">${LEARN.log.slice(0,15).map(l=>`<li><span class="mut">${dtt(l.at)}</span> — ${esc(l.txt)}</li>`).join('')}</ul></details>
+    <details class="dd" data-dd="learn-how" ${ui.open.has('learn-how')?'open':''}><summary>How learning works and its safety checks</summary><ul class="why" style="margin-top:6px">
       <li><b>Collects:</b> every upcoming game the app shows is saved with what was known before it started: odds, ESPN's pick, injuries, goalies or pitchers, and your Bovada/Polymarket price. Once a day it downloads finished games and grades them, including closing line value. Stored on this PC (IndexedDB), ${learnState.idb===false?'<span class="neg">IndexedDB unavailable here, using smaller browser storage</span>':'no size limit to worry about'}.</li>
       <li><b>When:</b> every ${LEARN_EVERY} days, or after ${LEARN_SOONEST}+ days once ${LEARN_NEW_GAMES} new live games are graded.</li>
       <li><b>How:</b> uses the last ${LEARN_WINDOW} days (newer games count more, live-captured games count 1.5×). It learns on the older days, then tests on the newest ${LEARN_HOLD} days it never saw.</li>
