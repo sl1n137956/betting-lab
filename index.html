@@ -391,6 +391,24 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 @media (max-width:640px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.status{margin-left:0}}
 
 /* matchup visuals */
+
+.cmp{margin:10px 0 12px}
+.cmp-meta{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--txt2);margin-bottom:6px;font-variant-numeric:tabular-nums}
+.cmp-meta b{color:var(--txt);font-size:13.5px}
+.cmp-gap{font-weight:750;letter-spacing:.02em}
+.cmp-gap.pos{color:#6ee7b7}
+.cmp-gap.neg{color:#fca5a5}
+.cmp-fee{display:block;font-size:10.5px;color:var(--mut);font-weight:500}
+.cmp-track{position:relative;height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:visible;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset}
+.cmp-fill{display:block;height:100%;border-radius:999px;max-width:100%}
+.cmp-track.ahead .cmp-fill{background:linear-gradient(90deg,#22c55e,#34d399);box-shadow:0 0 12px rgba(52,211,153,.35)}
+.cmp-track.behind .cmp-fill{background:linear-gradient(90deg,#f87171,#ef4444);box-shadow:0 0 12px rgba(239,68,68,.3)}
+.cmp-odds{position:absolute;top:-4px;bottom:-4px;width:2px;background:#fff;border-radius:2px;box-shadow:0 0 0 2px rgba(15,23,42,.55);transform:translateX(-1px)}
+@media (max-width:767.98px){
+  .cmp-meta{font-size:12px;gap:6px 10px}
+  .cmp-meta b{font-size:13px}
+}
+
 .chance{margin:8px 0 12px}
 .chance-meta{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px;color:var(--txt2);margin-bottom:6px;font-variant-numeric:tabular-nums}
 .chance-meta b{color:var(--txt);font-size:13px}
@@ -3280,19 +3298,39 @@ function courtroomHTML(p, C){
     ${marginChartsHTML(p)}
   </div>`;
 }
+function estimateCmpHTML(p, C){
+  const E = C && C.E, P = C && C.P;
+  if (!E || E.final==null || !P || P.need==null) return '';
+  const est = E.final, need = P.need, gap = est - need;
+  const ahead = gap>=0;
+  const gapTxt = Math.abs(gap)<0.005 ? 'even' : ((ahead?'+':'−')+(Math.abs(gap)*100).toFixed(1)+' pts');
+  const fee = P.pm ? '<span class="cmp-fee">after the Polymarket fee</span>' : '';
+  return `<div class="cmp">
+    <div class="cmp-meta">
+      <span>Our estimate <b>${fmtPct(est,0)}</b></span>
+      <span class="cmp-gap ${ahead?'pos':'neg'}">${gapTxt}</span>
+      <span>Odds imply <b>${fmtPct(need,0)}</b>${fee}</span>
+    </div>
+    <div class="cmp-track ${ahead?'ahead':'behind'}">
+      <i class="cmp-fill" style="width:${(est*100).toFixed(1)}%"></i>
+      <span class="cmp-odds" style="left:${(need*100).toFixed(1)}%" title="Odds imply ${fmtPct(need,0)}"></span>
+    </div>
+  </div>`;
+}
 function chanceBarHTML(p, C){
-  const g = p.g, E = C.E; if (!g || !E || E.final==null) return '';
+  const g = p.g, E = C.E; if (!g || !E || E.final==null) return estimateCmpHTML(p, C);
   const team = p.side==='home'||p.side==='away';
-  if (!team && p.mk!=='total') return '';
+  if (!team && p.mk!=='total') return estimateCmpHTML(p, C);
   const left = team ? g.away : {short:'Over'};
   const right = team ? g.home : {short:'Under'};
   const leftP = (p.mk==='total' ? (p.side==='over'?E.final:1-E.final) : (p.side==='away'?E.final:1-E.final));
   const be = C.P && C.P.need;
   const beLeft = be==null ? null : ( (p.mk==='total' ? p.side==='over' : p.side==='away') ? be : 1-be );
-  return `<div class="chance">
-    <div class="chance-meta"><span><b>${esc(left.short)}</b> ${fmtPct(leftP,0)}</span><span class="est-lab">Our estimate</span><span>${fmtPct(1-leftP,0)} <b>${esc(right.short)}</b></span></div>
+  const sides = `<div class="chance">
+    <div class="chance-meta"><span><b>${esc(left.short)}</b> ${fmtPct(leftP,0)}</span><span class="est-lab">Side by side</span><span>${fmtPct(1-leftP,0)} <b>${esc(right.short)}</b></span></div>
     <div class="chance-track">${beLeft!=null?`<span class="chance-be" style="left:${(beLeft*100).toFixed(1)}%" title="break-even"></span>`:''}<i style="width:${(leftP*100).toFixed(1)}%"></i></div>
   </div>`;
+  return sides + estimateCmpHTML(p, C);
 }
 function matchupTableHTML(p, C){
   const g = p.g; if (!g || !(p.side==='home'||p.side==='away')) return '';
@@ -3370,15 +3408,18 @@ function marginChartsHTML(p){
 function injuriesSectionHTML(p){
   const g = p && p.g, fx = g && g.fx;
   const did = p.id+'|inj';
-  let body = '';
-  if (!fx || !fx.inj){ body = `<div class="mut">${g && g.fxErr ? 'Could not load the injury report.' : 'The injury report has not loaded yet, or ESPN did not post one for this game.'}</div>`; }
-  else {
+  let injBody = '';
+  if (!fx){
+    injBody = `<div class="mut">${g && g.fxErr ? 'Could not load injuries, lineups, or news from ESPN ('+esc(g.fxErr)+').' : 'Injuries, lineups, and news load with deep data (every 15 minutes, or 5 minutes within 2 hours of start).'}</div>`;
+  } else if (!fx.inj){
+    injBody = '<div class="mut">The injury report has not loaded yet, or ESPN did not post one for this game.</div>';
+  } else {
     let any = false;
     for (const side of ['away','home']){
       const list = (fx.inj[side]||[]).slice().sort((a,b)=>(b.key-a.key)||(b.w-a.w));
       if (!list.length) continue;
       any = true;
-      body += `<div class="inj-team">${esc(g[side].name||g[side].short)}</div>`;
+      injBody += `<div class="inj-team">${esc(g[side].name||g[side].short)}</div>`;
       for (const i of list){
         const st = typeof prettyInjStatus==='function' ? prettyInjStatus(i.st) : (i.st||'—');
         const cls = (typeof injStatusClass==='function'?injStatusClass(i.st):'') || (/probable/i.test(st)?'st-prob':'');
@@ -3389,12 +3430,39 @@ function injuriesSectionHTML(p){
         } else if (i.missed && i.missed.unavailable){
           missed = `<div class="inj-missed mut">${esc(i.missed.unavailable)}</div>`;
         }
-        body += `<div class="inj-row"><div><span class="${cls}">${esc(st)}</span> · ${esc(i.n)}${usage?` <span class="mut">(${esc(usage)})</span>`:''}${i.key?' <span class="mut">key</span>':''}${missed}</div></div>`;
+        injBody += `<div class="inj-row"><div><span class="${cls}">${esc(st)}</span> · ${esc(i.n)}${usage?` <span class="mut">(${esc(usage)})</span>`:''}${i.key?' <span class="mut">key</span>':''}${missed}</div></div>`;
       }
     }
-    if (!any) body = '<div class="mut">No one is on the ESPN injury report.</div>';
+    if (!any) injBody = '<div class="mut">No one is on the ESPN injury report.</div>';
   }
-  return `<details class="dd inj-sec" data-dd="${esc(did)}" ${ui.open.has(did)?'open':''}><summary>Injuries</summary>${body}</details>`;
+  let lineupBody = '';
+  if (fx && typeof lineupAvailability==='function'){
+    const av = lineupAvailability(g);
+    lineupBody += `<div class="ln-status ${av.ok?'ok':'no'}">${esc(av.label)}</div>`;
+    if (typeof lineupPeopleHTML==='function'){
+      const people = lineupPeopleHTML(g,'away') + lineupPeopleHTML(g,'home');
+      if (people) lineupBody += people;
+    }
+  }
+  let newsBody = '';
+  if (fx){
+    const seen = new Set();
+    const items = (fx.news||[]).map(n=>{
+      const key = String(n.h||'').trim().toLowerCase();
+      if (!key || seen.has(key)) return '';
+      seen.add(key);
+      const when = typeof newsWhen==='function' ? newsWhen(n.t) : '';
+      const title = esc(n.h);
+      const inner = n.href ? `<a href="${esc(n.href)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
+      return `<li>${inner}${when?`<span class="when">${esc(when)}</span>`:''}</li>`;
+    }).filter(Boolean).join('');
+    newsBody = items ? `<ul class="ln-list">${items}</ul>` : '<div class="mut">No ESPN headlines for this matchup yet.</div>';
+  }
+  const sections = [];
+  sections.push(`<div class="ln-block"><h4>Injuries</h4>${injBody}</div>`);
+  if (lineupBody) sections.push(`<div class="ln-block"><h4>Lineups</h4>${lineupBody}</div>`);
+  if (newsBody) sections.push(`<div class="ln-block"><h4>Headlines</h4>${newsBody}</div>`);
+  return `<details class="dd inj-sec" data-dd="${esc(did)}" ${ui.open.has(did)?'open':''}><summary>Injuries, lineups &amp; news</summary>${sections.join('')}</details>`;
 }
 function trendsHTML(facts, key){
   if (!facts || !facts.length) return '';
@@ -3612,7 +3680,6 @@ function playCard(p){
     <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div><div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
     ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return `<div class="hint" style="margin:6px 2px 0">${/^excluded/.test(f[0]) ? '<b>No picks for this sport</b> (turned off in Settings)' : `Strict mode: missed "${esc(f[0])}"${f.length>1?` (+${f.length-1} more)`:''}`}</div>`; })() : ''}
     ${typeof wrLineHTML==='function'?wrLineHTML(p, C):''}
-    ${typeof lineupsNewsHTML==='function'?lineupsNewsHTML(p):''}
     <details class="dd court-dd" data-dd="${esc(cid)}" ${ui.open.has(cid)?'open':''}><summary>Courtroom</summary>${courtroomHTML(p, C)}</details>
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(p):''}
     <details class="dd" data-dd="${esc(mid)}" ${ui.open.has(mid)?'open':''}><summary>Numbers</summary>${typeof numbersHTML==='function'?numbersHTML(p,C):''}${mathHTML(p, C)}
