@@ -55,6 +55,7 @@ nav.tabs button[data-tab=watch] .cnt{background:var(--watch-bg);color:var(--watc
 nav.tabs button[data-tab=avoid] .cnt{background:var(--avoid-bg);color:var(--avoid)}
 .banner{margin:18px 0 4px;padding:12px 16px;border-radius:12px;background:linear-gradient(180deg,rgba(124,77,255,.05),rgba(124,77,255,.02));border:1px solid rgba(124,77,255,.14);color:var(--mut);font-size:12.5px;line-height:1.6}
 .banner b{color:var(--acc-hi);font-weight:600}
+.math-banner{margin:28px 0 16px}
 .filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0}
 .chip-note{margin:-2px 0 10px;padding:0 2px;font-size:12px;color:var(--mut);line-height:1.45}
 .chip{background:rgba(255,255,255,.02);border:1px solid var(--line);color:var(--mut);padding:5px 12px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:550;user-select:none;transition:all .2s var(--ease)}
@@ -74,6 +75,17 @@ main{padding-bottom:48px}
 .chead{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--mut);font-size:12px;margin-bottom:10px;font-variant-numeric:tabular-nums}
 .lg{background:rgba(255,255,255,.04);border:1px solid var(--line);padding:2px 8px;border-radius:6px;font-weight:600;font-size:10.5px;color:var(--txt2);letter-spacing:.08em}
 .teams{display:flex;flex-direction:column;gap:7px;margin:4px 0 12px}
+.teams-block{margin:4px 0 12px}
+.teams-row{display:flex;align-items:center;gap:12px}
+.teams-row .teams{flex:1;min-width:0;margin:0}
+.teams-block .venue,.teams + .venue{font-size:11px;margin-top:7px}
+.verdict-slot{flex:none;display:flex;align-items:center;justify-content:center;align-self:center}
+.verdict-pill{display:inline-flex;align-items:center;justify-content:center;min-width:76px;padding:8px 16px;border-radius:999px;font-size:11.5px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;line-height:1;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset,0 6px 16px -8px rgba(0,0,0,.55)}
+.verdict-pill.vp-good{background:linear-gradient(180deg,rgba(63,182,139,.28),rgba(63,182,139,.14));color:#7ee0b6;border:1px solid rgba(63,182,139,.5);box-shadow:0 0 0 1px rgba(255,255,255,.07) inset,0 0 18px -6px rgba(63,182,139,.55)}
+.verdict-pill.vp-watch{background:linear-gradient(180deg,rgba(224,168,74,.28),rgba(224,168,74,.14));color:#f3cd86;border:1px solid rgba(224,168,74,.5);box-shadow:0 0 0 1px rgba(255,255,255,.07) inset,0 0 18px -6px rgba(224,168,74,.5)}
+.verdict-pill.vp-avoid{background:linear-gradient(180deg,rgba(208,87,79,.3),rgba(208,87,79,.14));color:#f09b94;border:1px solid rgba(208,87,79,.55);box-shadow:0 0 0 1px rgba(255,255,255,.07) inset,0 0 18px -6px rgba(208,87,79,.55)}
+.verdict-pill.vp-none{background:rgba(255,255,255,.04);color:var(--mut);border:1px solid var(--line2)}
+.verdict-pill.vp-live{background:var(--avoid-bg);color:#e5776e;border:1px solid rgba(208,87,79,.45)}
 .team{display:flex;align-items:center;gap:9px;font-weight:550;letter-spacing:-.005em}
 .team img{width:22px;height:22px;object-fit:contain}
 .team .rec{color:var(--mut2);font-weight:450;font-size:12px;font-variant-numeric:tabular-nums}
@@ -249,14 +261,12 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .bottom-nav,.more-sheet,.more-backdrop{display:none}
 @media (max-width:999.98px){
   .slate-layout{display:flex;flex-direction:column;gap:12px}
-  .slate-side{order:-1;position:static;margin:0;width:100%;align-items:stretch}
-  .side-toggle{display:flex;align-items:center;gap:8px;width:100%;align-self:stretch;min-height:44px;background:linear-gradient(180deg,#202127,#1a1b20);border:1px solid var(--line);border-radius:12px;padding:10px 14px;color:var(--txt);cursor:pointer;font-weight:650;font-size:13.5px}
-  .side-toggle .n{min-width:18px;padding:0 6px;border-radius:999px;font-size:10.5px;line-height:17px;text-align:center;background:var(--avoid-bg);color:#f0a8a3}
-  .side-toggle .n.mute{background:rgba(255,255,255,.05);color:var(--mut)}
-  .side-toggle .chev{margin-left:auto;color:var(--mut);font-weight:500}
-  .slate-side:not(.open) .side-body{display:none}
+  .slate-side{order:0;position:static;margin:0;width:100%;align-items:stretch}
+  .side-toggle{display:none}
+  .slate-side .side-body{display:block}
 }
 @media (max-width:767.98px){
+  .slate-side{display:none}
   html,body{overflow-x:hidden;max-width:100%;-webkit-text-size-adjust:100%}
   .wrap{padding:0 14px}
   .logo small{display:none}
@@ -284,6 +294,8 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
   .grid{grid-template-columns:1fr}
   .stats{grid-template-columns:repeat(2,1fr)}
   .card{width:100%;max-width:100%}
+  .verdict-pill{min-width:70px;padding:8px 13px;font-size:11px}
+  .math-banner{margin:20px 0 12px}
   .card:hover{transform:none}
   .search{min-width:0;width:100%;min-height:44px}
   .chip{min-height:44px;display:inline-flex;align-items:center;padding:8px 14px}
@@ -373,7 +385,6 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 </header>
 
 <main class="wrap">
-  <div class="banner"><b>Math rules, not AI.</b> Every play starts from the sharpest betting odds (house cut removed), then adds only the factors that proved useful in a 60-day test on real past games, and checks your book's price against what the bet is worth. One rules engine argues both sides in the courtroom. It cannot read lineups or news. No guarantees.</div>
   <div id="filterBar">
     <div class="filters" id="sportChips"></div>
     <div class="chip-note" id="chipNote" hidden></div>
@@ -393,6 +404,7 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
     </div>
   </div>
   <div id="view"></div>
+  <div class="banner math-banner"><b>Math rules, not AI.</b> Every play starts from the sharpest betting odds (house cut removed), then adds only the factors that proved useful in a 60-day test on real past games, and checks your book's price against what the bet is worth. One rules engine argues both sides in the courtroom. It cannot read lineups or news. No guarantees.</div>
 </main>
 
 <footer>
@@ -2641,17 +2653,25 @@ function badge(v){
   const m = {good:['b-good','Bet'], watch:['b-watch','Maybe later'], avoid:['b-avoid','Skip'], none:['b-none','Skip'], started:['b-live','Started']};
   const [c,t] = m[v]||m.none; return `<span class="badge ${c}">${t}</span>`;
 }
+function verdictPill(v){
+  const m = {good:['vp-good','BET'], watch:['vp-watch','WATCH'], avoid:['vp-avoid','AVOID'], none:['vp-none','SKIP'], started:['vp-live','LIVE']};
+  const [c,t] = m[v]||m.none;
+  return `<span class="verdict-pill ${c}">${t}</span>`;
+}
 const MKN = {ml:'Moneyline', spread:'Spread', total:'Total'};
 function teamRow(g, side){
   const t = g[side];
   return `<div class="team">${t.logo?`<img src="${esc(t.logo)}" alt="" loading="lazy" onerror="this.remove()">`:''}${t.rank?`<span class="mut" style="font-size:11px">#${t.rank}</span>`:''}<span>${esc(t.name)}</span> <span class="rec">${esc(t.rec||'')}</span>${g.state!=='pre'&&t.score!==''?`<span class="sc">${esc(t.score)}</span>`:''}</div>`;
 }
-function gameHead(g){
+function gameHead(g, verdict){
   const L = LMAP[g.league];
   const st = g.state==='in' ? `<span class="badge b-live">● Live ${esc(g.statusText)}</span>` : g.state==='post' ? `<span>${esc(g.statusText||'Final')}</span>` : `<span>${fmtTime(g.start)}</span>`;
   const first = g.ind ? 'home' : 'away', second = g.ind ? 'away' : 'home';
+  const venue = !g.ind ? `<div class="mut venue">${g.neutral?'Neutral site':'@ '+esc(g.home.name)}</div>` : '';
+  const teams = `<div class="teams">${teamRow(g, first)}${teamRow(g, second)}</div>`;
+  const showPill = verdict && verdict!=='started' && verdict!=='none';
   return `<div class="chead"><span><span class="lg">${esc(L.label)}</span> ${g.title?`<span class="mut">${esc(g.title)}</span>`:''}</span>${st}</div>
-    <div class="teams">${teamRow(g, first)}${teamRow(g, second)}${!g.ind?`<div class="mut" style="font-size:11px">${g.neutral?'Neutral site':'@ '+esc(g.home.name)}</div>`:''}</div>`;
+    ${showPill?`<div class="teams-block"><div class="teams-row">${teams}<div class="verdict-slot">${verdictPill(verdict)}</div></div>${venue}</div>`:`${teams}${venue}`}`;
 }
 function moveCell(mk, sd){
   if (mk!=='ml' && Math.abs(sd.ptAdv)>=0.25) return `${sd.ptAdv>0?'▼':'▲'} ${Math.abs(sd.ptAdv).toFixed(1)}pt`;
@@ -2695,7 +2715,7 @@ function playCard(p){
   ) : '';
   return `<div class="${cardCls}">
     ${logMarks}
-    ${gameHead(g)}
+    ${gameHead(g, p.verdict)}
     ${move?`<div class="${move.kind==='up'?'moved-up':'moved-down'}">${esc(move.text)}</div>`:''}
     <div class="pick"><div><div class="mk">${MKN[p.mk]}${p.rank?` · #${p.rank}`:''}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${fmtAm(sd.best.price)}<small>${esc(sd.best.book)}</small></div></div>
@@ -2707,7 +2727,7 @@ function playCard(p){
       <div class="stats" style="margin-top:8px"><div class="stat"><div class="k">No-vig</div><div class="v">${fmtPct(sd.nv)}</div></div><div class="stat"><div class="k">Implied</div><div class="v">${fmtPct(sd.impBest)}</div></div><div class="stat"><div class="k">Move</div><div class="v ${sd.adverse?'neg':sd.support?'pos':''}">${moveCell(p.mk, sd)}</div></div><div class="stat"><div class="k">Books</div><div class="v">${A.booksFull}</div></div></div>
       <div class="books">${sd.openTxt?`Open ${esc(sd.openTxt)} · `:''}${esc(allBooks.join(' · '))}${pmq?` · Polymarket ask ${Math.round(pmq.cents*100)}¢ (spread ${Math.round(pmq.pm.spread*100)}¢, $${Math.round(pmq.pm.liq).toLocaleString()} liquidity, $${Math.round(pmq.pm.v24).toLocaleString()} 24h volume, fee ${(pmq.pm.fee*100).toFixed(0)}% rate)`:''} · hold ${fmtPct(A.hold)} · fair from ${esc(A.truth)}</div>
       ${checksHTML(g)}</details>
-    <div class="cfoot"><span>${confBadge(p.j.conf)}</span><span>${badge(p.verdict)} <button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></span></div>
+    <div class="cfoot"><span>${confBadge(p.j.conf)}</span><button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></div>
   </div>`;
 }
 function marketCell(g, mk){
