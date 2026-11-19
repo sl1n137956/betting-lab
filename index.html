@@ -78,6 +78,12 @@ nav.tabs button[data-tab=avoid] .cnt{background:var(--avoid-bg);color:var(--avoi
 .chip.on{background:var(--acc-dim);color:var(--acc-hi);border-color:rgba(59,130,246,.45)}
 .chip .n{opacity:.6;margin-left:2px;font-weight:500;font-variant-numeric:tabular-nums}
 .chip.empty{opacity:.55}.chip.empty.on{opacity:1}
+.chip.auto-off .auto-tag{font-size:9px;letter-spacing:.03em;font-weight:700;text-transform:uppercase;opacity:.75;padding:1px 5px;border-radius:999px;border:1px solid currentColor;line-height:1.2}
+.chip.reset-chip{border-style:dashed}
+.ln-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 14px}
+.ln-head h3{margin:0;font-size:16px;display:flex;align-items:center;gap:6px;letter-spacing:-.02em}
+.results-board-row{margin:0 0 16px}
+@media (max-width:899.98px){ #tabs [data-tab="results"]{display:none !important} }
 .sep{width:1px;height:20px;background:var(--line2);margin:0 6px}
 .search{background:var(--inset);border:1px solid var(--line2);border-radius:999px;padding:5px 14px;min-width:200px;outline:none;transition:border-color .2s}
 .search:focus{border-color:rgba(59,130,246,.55)}
@@ -852,7 +858,6 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
   <button type="button" data-tab="tracker" role="menuitem" aria-label="Tracker"><span class="tab-ic tab-emo" aria-hidden="true">📊</span><span class="tab-lab">Tracker</span></button>
   <button type="button" data-tab="pulled" role="menuitem" aria-label="Pulled plays"><span class="tab-ic tab-emo" aria-hidden="true">🟠</span><span class="tab-lab">Pulled</span><span class="cnt" data-cnt="pulled">0</span></button>
   <button type="button" data-tab="all" role="menuitem" aria-label="All Games"><span class="tab-ic tab-emo" aria-hidden="true">🏟️</span><span class="tab-lab">All Games</span><span class="cnt" data-cnt="all">0</span></button>
-  <button type="button" data-tab="results" role="menuitem" aria-label="Results and Backtest"><span class="tab-ic tab-emo" aria-hidden="true">🧪</span><span class="tab-lab">Results &amp; Backtest</span></button>
   <button type="button" data-tab="settings" role="menuitem" aria-label="Settings"><span class="tab-ic tab-emo" aria-hidden="true">⚙️</span><span class="tab-lab">Settings</span></button>
 </div>
 <div class="ptr" id="ptr" hidden aria-live="polite"><div class="ptr-pill"><span class="ptr-spin" hidden></span><span class="ptr-txt">Pull to refresh</span></div></div>
@@ -942,26 +947,73 @@ let firstSeen = loadJSON(LS.firstSeen, {});
 let bets = loadJSON(LS.bets, []);
 let oddsCache = loadJSON(LS.oddsCache, null);
 let games = [], plays = [];
-let ui = {tab:'picks', board:'games', sport:'all', mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false, filtersOpen:false, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false, navPop:null, settingsBoard:'games', resultsBoard:'games'};
+let ui = {tab:'picks', board:'games', sport:'all', sports:null, mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false, filtersOpen:false, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false, navPop:null, settingsBoard:'games', resultsBoard:'games'};
 let filterViews = loadJSON(LS.filterViews, {}) || {};
 function filterViewKey(board, tab){
   if (tab==='good'||tab==='watch'||tab==='avoid') return (board||'games')+':'+tab;
   return null;
 }
-function defaultFilterView(){
-  return {sport:'all', mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false};
+function getLearnSafe(){ try{ return LEARN; }catch(e){ return null; } }
+function modelSkippedSports(board){
+  board = board || 'games';
+  const skip = new Set();
+  if (board==='games'){
+    String((typeof DEFAULTS!=='undefined' && DEFAULTS.sExclude) || 'ncaab,mls,epl,ucl,laliga,seriea,bund').split(',').forEach(x=>{ if(x.trim()) skip.add(x.trim()); });
+    const Lrn = getLearnSafe();
+    if (Lrn && Lrn.autoOff){
+      Object.keys(Lrn.autoOff).forEach(k=>{ if (k && k.indexOf('mk:')!==0) skip.add(k); });
+    }
+  } else {
+    const Lrn = getLearnSafe();
+    const tr = Lrn && Lrn[board==='parlay'?'parlay':'props'];
+    if (tr && tr.autoOff) Object.keys(tr.autoOff).forEach(k=>{ if (k && k.indexOf('mk:')!==0) skip.add(k); });
+  }
+  return skip;
+}
+function defaultSportsList(board){
+  const skip = modelSkippedSports(board);
+  return LEAGUES.map(L=>L.id).filter(id=>!skip.has(id));
+}
+function migrateViewSports(v, board){
+  v = v || {};
+  if (Array.isArray(v.sports) && v.sports.length){
+    v.sports = v.sports.filter(id=>LMAP[id]);
+    if (!v.sports.length) v.sports = defaultSportsList(board);
+    return v.sports;
+  }
+  if (v.sport && v.sport!=='all' && LMAP[v.sport]) v.sports = [v.sport];
+  else v.sports = defaultSportsList(board);
+  return v.sports;
+}
+function syncSportAlias(){
+  if (!Array.isArray(ui.sports) || !ui.sports.length) ui.sport = 'all';
+  else if (ui.sports.length===1) ui.sport = ui.sports[0];
+  else ui.sport = 'all';
+}
+function sportOnFilter(lg){
+  if (!lg) return false;
+  if (!Array.isArray(ui.sports)) return true;
+  return ui.sports.includes(lg);
+}
+function defaultFilterView(board){
+  const sports = defaultSportsList(board||'games');
+  return {sport: sports.length===1?sports[0]:'all', sports, mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false};
 }
 function ensureFilterView(key){
-  if (!key) return defaultFilterView();
+  if (!key) return defaultFilterView('games');
+  const board = (key.split(':')[0])||'games';
   if (!filterViews[key] || typeof filterViews[key]!=='object'){
-    filterViews[key] = {sport:ui.sport||'all', mkt:ui.mkt||'all', mix:ui.mix||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+    filterViews[key] = defaultFilterView(board);
+  } else {
+    migrateViewSports(filterViews[key], board);
   }
   return filterViews[key];
 }
 function applyFilterView(key){
-  const v = ensureFilterView(key) || defaultFilterView();
-  if (v.sport && (v.sport==='all' || (typeof LMAP!=='undefined' && LMAP[v.sport]))) ui.sport = v.sport;
-  else ui.sport = 'all';
+  const board = key ? (key.split(':')[0]||'games') : (ui.board||'games');
+  const v = ensureFilterView(key) || defaultFilterView(board);
+  ui.sports = (v.sports||defaultSportsList(board)).slice();
+  syncSportAlias();
   ui.mkt = v.mkt || 'all';
   ui.mix = v.mix || 'all';
   ui.q = v.q || '';
@@ -982,16 +1034,24 @@ function applyFilterView(key){
   for (const board of ['games','props','parlay']) for (const tab of ['good','watch','avoid']){
     const k = board+':'+tab;
     if (!filterViews[k]){
-      filterViews[k] = {sport:ui.sport||'all', mkt:(board==='games'?(ui.mkt||'all'):'all'), mix:'all', q:'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+      filterViews[k] = defaultFilterView(board);
+      filterViews[k].mkt = (board==='games'?(ui.mkt||'all'):'all');
       if (board!=='games' && ['ml','spread','total'].includes(filterViews[k].mkt)) filterViews[k].mkt = 'all';
+      filterViews[k].hideStarted = !!ui.hideStarted;
+      filterViews[k].hideLogged = !!ui.hideLogged;
+    } else {
+      migrateViewSports(filterViews[k], board);
     }
   }
+  ui.sports = defaultSportsList(ui.board||'games');
+  syncSportAlias();
 })();
 function saveFilters(){
   try{ saveJSON(LS.filters, {sport:ui.sport||'all', mkt:ui.mkt||'all', hideLogged:!!ui.hideLogged, hideStarted:!!ui.hideStarted, q:ui.q||'', board:ui.board||'games', tab:ui.tab}); }catch(e){}
   const key = filterViewKey(ui.board||'games', ui.tab);
   if (key){
-    filterViews[key] = {sport:ui.sport||'all', mkt:ui.mkt||'all', mix:ui.mix||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+    syncSportAlias();
+    filterViews[key] = {sport:ui.sport||'all', sports:(ui.sports||defaultSportsList(ui.board||'games')).slice(), mkt:ui.mkt||'all', mix:ui.mix||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
     try{ saveJSON(LS.filterViews, filterViews); }catch(e){}
   }
 }
@@ -2093,7 +2153,7 @@ function strictGates(p, opts){
   if (p.side==='draw') F.push('draws are never strict plays');
   if (typeof learnOff==='function' && learnOff(g.league) && !String(S.sExclude||'').split(',').map(x=>x.trim()).includes(g.league)) F.push(`the app turned ${LMAP[g.league]?LMAP[g.league].label:g.league} off for strict picks after it lost money in testing (${learnOffWhy(g.league)})`);
   else if (typeof learnOff==='function' && learnOff('mk:'+mk)) F.push(`the app turned off strict ${MKN_S[mk]||mk} after they lost money in testing`);
-  if (isExcluded(g.league, true)) F.push(`excluded from strict mode (${g.league==='ncaab'?'college basketball lost money in the test':SOCCER.has(g.league)?'soccer lost money in the test (draws)':'turned off in Settings'})`);
+  if (isExcluded(g.league, true)) F.push(`excluded from strict mode (${g.league==='ncaab'?'college basketball lost money in the test':SOCCER.has(g.league)?'soccer lost money in the test (draws)':'the model does not recommend this sport'})`);
   if (S.sNoSoccer && SOCCER.has(g.league)) F.push('soccer is left out of strict mode (draws make it riskier; it lost money in the test)');
   // his price range (singles): judged at his book's price when one of his books has it
   const myP = (!opts.bt && p.my && p.my.best) ? p.my.best.price : price;
@@ -2146,7 +2206,7 @@ function evaluateAll(){
       if (p.strictFails.length===0 && p.base!=='avoid'){ if (p.verdict!=='good') p.reasons.unshift('Passed every strict check'); p.verdict='good'; }
       else if (p.verdict==='good'){ p.verdict='watch'; p.reasons.unshift(`Strict mode: missed "${p.strictFails[0]}"${p.strictFails.length>1?` (+${p.strictFails.length-1} more)`:''}`); }
       else if (p.verdict==='watch' && p.strictFails.length<=2) p.reasons.unshift(`Close to strict: missed "${p.strictFails.join('" and "')}"`);
-    } else if (p.verdict==='good' && isExcluded(p.g.league, true)){ p.verdict='watch'; p.reasons.unshift('You turned off picks for this sport in Settings'); }
+    } else if (p.verdict==='good' && isExcluded(p.g.league, true)){ p.verdict='watch'; p.reasons.unshift('The model does not recommend this sport for Games Picks'); }
     else if (p.verdict==='good' && inMyRange(p)===false){ p.verdict='watch'; p.reasons.unshift(`Outside your ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)} range`); }
     else if (p.verdict==='good' && p.my && p.my.best && p.my.best.edge<0){ p.verdict='watch'; p.reasons.unshift(`${p.my.best.book} price is worse than fair`); }
   }
@@ -4584,7 +4644,7 @@ function filtered(list, isPlay){
   return list.filter(x=>{
     const g = isPlay ? x.g : x;
     if (g && g.pickOnly) return false;
-    if (ui.sport!=='all' && g.league!==ui.sport) return false;
+    if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)) return false;
     if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt) return false;
     if (ui.hideStarted && g.state!=='pre') return false;
     if (isPlay && ui.hideLogged && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && typeof isPlayLogged==='function' && isPlayLogged(x)){
@@ -4689,7 +4749,9 @@ function pulledCard(r){
 }
 function activeFilterCount(){
   let n=0;
-  if (ui.sport && ui.sport!=='all') n++;
+  const defSports = (typeof defaultSportsList==='function') ? defaultSportsList(ui.board||'games') : [];
+  const curSports = Array.isArray(ui.sports) ? ui.sports.slice().sort() : [];
+  if (curSports.join(',') !== defSports.slice().sort().join(',')) n++;
   if (ui.mkt && ui.mkt!=='all') n++;
   if (ui.mix && ui.mix!=='all') n++;
   if (ui.hideLogged) n++;
@@ -4888,7 +4950,7 @@ function renderChips(){
   const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
   const onProps = restrict && (ui.board||'games')==='props';
   const onParlay = restrict && (ui.board||'games')==='parlay';
-  if (restrict && !onProps && !onParlay && ui.sport!=='all' && !goodEligibleLeague(ui.sport)) ui.sport = 'all';
+  if (!Array.isArray(ui.sports)){ ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id)); if (typeof syncSportAlias==='function') syncSportAlias(); }
   const counts = {};
   const propSports = {};
   const countOne = (p, lg)=>{ if (lg) counts[lg]=(counts[lg]||0)+1; };
@@ -4931,27 +4993,38 @@ function renderChips(){
   } else {
     games.forEach(g=>{ if(!ui.hideStarted || g.state==='pre') counts[g.league]=(counts[g.league]||0)+1; });
   }
-  const allowed = L => (onProps||onParlay)
-    ? !!(propSports[L.id] || counts[L.id] || ui.sport===L.id || (typeof boardSportOn==='function' && boardSportOn(ui.board, L.id) && counts[L.id]!=null))
-    : (restrict ? goodEligibleLeague(L.id) : (S.enabled.includes(L.id) || !!counts[L.id]));
-  const show = L => (onProps||onParlay)
-    ? !!(propSports[L.id] || counts[L.id] || ui.sport===L.id)
-    : (restrict ? allowed(L) : (allowed(L) && (counts[L.id] || ui.sport===L.id)));
-  const total = (onProps||onParlay)
-    ? Object.values(counts).reduce((a,n)=>a+n,0)
-    : (restrict
-      ? LEAGUES.filter(allowed).reduce((a,L)=>a+(counts[L.id]||0),0)
-      : Object.entries(counts).reduce((a,[id,n])=>a+n,0));
-  $('#sportChips').innerHTML = `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
-    LEAGUES.filter(show).map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${sportChipLabel(L)}<span class="n">${counts[L.id]||0}</span></span>`).join('');
-  const note = (!onProps && !onParlay && ui.tab==='good') ? goodPlaysExcludeLine() : '';
+  const skip = (typeof modelSkippedSports==='function') ? modelSkippedSports(ui.board||'games') : new Set();
+  const onSet = new Set(ui.sports||[]);
+  const allOn = LEAGUES.every(L=>onSet.has(L.id));
+  const total = Object.values(counts).reduce((a,n)=>a+n,0);
+  const showList = restrict ? LEAGUES : LEAGUES.filter(L=>S.enabled.includes(L.id) || counts[L.id] || onSet.has(L.id));
+  const chips = restrict
+    ? `<span class="chip ${allOn?'on':''}" data-sport="all" title="Show every sport on this tab">All<span class="n">${total}</span></span>` +
+      `<span class="chip reset-chip" data-sport="reset" title="Back to defaults: sports the model does not recommend start off">Reset</span>` +
+      showList.map(L=>{
+        const auto = skip.has(L.id);
+        const on = onSet.has(L.id);
+        const tip = auto ? (on ? 'Model does not recommend this sport here, but you turned it on for this tab.' : 'Auto-off: the model does not recommend this sport on this tab. Tap to show it anyway.') : (on ? 'Shown on this tab. Tap to hide.' : 'Hidden on this tab. Tap to show.');
+        return `<span class="chip ${on?'on':''} ${counts[L.id]?'':'empty'}${auto?' auto-off':''}" data-sport="${L.id}" title="${tip}">${sportChipLabel(L)}${auto?'<span class="auto-tag" aria-hidden="true">auto-off</span>':''}<span class="n">${counts[L.id]||0}</span></span>`;
+      }).join('')
+    : `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
+      showList.map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${sportChipLabel(L)}<span class="n">${counts[L.id]||0}</span></span>`).join('');
+  $('#sportChips').innerHTML = chips;
+  const note = restrict
+    ? 'Highlighted sports are shown on this tab. Sports marked auto-off start hidden because the model does not recommend them here — tap any chip to show or hide it on this tab only.'
+    : ((!onProps && !onParlay && ui.tab==='good') ? (typeof goodPlaysExcludeLine==='function'?goodPlaysExcludeLine():'') : '');
   const el = $('#chipNote');
   if (el){ el.hidden = !note; el.textContent = note; }
 }
 function sportFilterEmpty(generic){
-  if (ui.sport==='all') return generic;
-  const lab = (LMAP[ui.sport] && LMAP[ui.sport].label) || String(ui.sport).toUpperCase();
-  return `No ${lab} plays right now`;
+  const on = Array.isArray(ui.sports) ? ui.sports : [];
+  if (!on.length) return 'No sports selected in Filters';
+  if (on.length===LEAGUES.length || (typeof defaultSportsList==='function' && on.length===defaultSportsList(ui.board||'games').length && ui.sport==='all' && on.length!==1)) return generic;
+  if (on.length===1){
+    const lab = (LMAP[on[0]] && LMAP[on[0]].label) || String(on[0]).toUpperCase();
+    return `No ${lab} plays right now`;
+  }
+  return generic;
 }
 function section(title, sub, list, emptyMsg){
   return `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length ? `<div class="grid">${list.map(playCard).join('')}</div>` : `<div class="empty-state">${emptyMsg}</div>`);
@@ -4976,6 +5049,7 @@ function render(){
   if (typeof syncTabChrome==='function') syncTabChrome();
   const v = $('#view');
   const errs = (feedErrors.length||oddsErrors.length) ? `<div class="err-list">${feedErrors.slice(0,4).map(esc).join('<br>')}${feedErrors.length>4?`<br>…and ${feedErrors.length-4} more feed errors`:''}${oddsErrors.length?'<br>Odds API: '+oddsErrors.map(esc).join('<br>'):''}</div>` : '';
+  if (ui.tab==='results' && typeof isMobileViewport==='function' && isMobileViewport()){ ui.tab='tracker'; }
   if (ui.tab==='tracker') return renderTracker();
   if (ui.tab==='picks') return renderPicks();
   if (ui.tab==='settings') return renderSettings();
@@ -6248,6 +6322,19 @@ function pullRightWrong(r){
   if (r.res==='void') return '<span class="pull-verdict mut">Game was cancelled.</span>';
   return '';
 }
+function resultsBoardSegHTML(id){
+  const rb = ui.resultsBoard || 'games';
+  return `<div class="board-seg results-learn-seg" id="${id}">${[['games','🏟️ Games'],['props','🏀 Props'],['parlay','🎟️ Parlay']].map(([b,l])=>`<button type="button" data-res-board="${b}" class="${rb===b?'on':''}">${l}</button>`).join('')}</div>`;
+}
+function bindResultsBoardSeg(){
+  document.querySelectorAll('[data-res-board]').forEach(b=>{
+    b.onclick=()=>{ ui.resultsBoard=b.getAttribute('data-res-board'); renderResults(); };
+  });
+}
+function learnCardHead(board){
+  const lab = board==='props'?'Props':board==='parlay'?'Parlays':'Games';
+  return `<div class="ln-head"><h3><span class="h-emo" aria-hidden="true">🧠</span> Model learning · ${lab}</h3>${resultsBoardSegHTML('learnBoardSeg')}</div>`;
+}
 function renderResults(){
   const act = results.filter(r=>r.status==='active');
   const st = resStats(act), pend = act.filter(r=>!r.res).length;
@@ -6258,20 +6345,21 @@ function renderResults(){
   const R = btState.res;
   const cached = Object.values(BT.games).length;
   const rb = ui.resultsBoard || 'games';
-  const switcher = `<div class="s-row" style="margin:0 0 14px"><div class="board-seg" id="resultsBoardSeg">${[['games','🏟️ Games'],['props','🏀 Props'],['parlay','🎟️ Parlay']].map(([b,l])=>`<button type="button" data-res-board="${b}" class="${rb===b?'on':''}">${l}</button>`).join('')}</div></div>`;
+  const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, or Parlay.</div></div>`;
   const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
-  const bindResBoard = ()=>{
-    const seg=$('#resultsBoardSeg');
-    if (seg) seg.querySelectorAll('[data-res-board]').forEach(b=>b.onclick=()=>{ ui.resultsBoard=b.getAttribute('data-res-board'); renderResults(); });
+  const finish = ()=>{
+    bindResultsBoardSeg();
+    if (rb==='games' && typeof learnBind==='function') learnBind();
+    if ((rb==='props'||rb==='parlay') && typeof boardLearnBind==='function') boardLearnBind(rb);
   };
   if (rb==='props'){
-    $('#view').innerHTML = title+switcher+`<div class="section-title"><h2>Props model learning</h2><span class="hint">Snapshots, daily box-score grading, and weekly walk-forward retunes are independent from Games.</span></div>`+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
-    bindResBoard();
+    $('#view').innerHTML = title+switcher+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
+    finish();
     return;
   }
   if (rb==='parlay'){
-    $('#view').innerHTML = title+switcher+`<div class="section-title"><h2>Parlay model learning</h2><span class="hint">Every generated ticket is snapshotted and graded from finished legs. Weekly retunes are independent from Games and Props.</span></div>`+(typeof parlayLearnPanelHTML==='function'?parlayLearnPanelHTML():'<div class="hint">Parlay learning starts after a refresh.</div>')+(typeof parlayBacktestHTML==='function'?parlayBacktestHTML():'');
-    bindResBoard();
+    $('#view').innerHTML = title+switcher+(typeof parlayLearnPanelHTML==='function'?parlayLearnPanelHTML():'<div class="hint">Parlay learning starts after a refresh.</div>')+(typeof parlayBacktestHTML==='function'?parlayBacktestHTML():'');
+    finish();
     return;
   }
   $('#view').innerHTML = title+switcher+`
@@ -6323,8 +6411,7 @@ function renderResults(){
   $('#btDays').onchange = e=>{ btUI.days = +e.target.value; };
   $('#view').querySelectorAll('[data-btl]').forEach(i=>i.onchange=()=>{ i.parentElement.classList.toggle('on', i.checked); btUI.leagues = [...$('#view').querySelectorAll('[data-btl]')].filter(x=>x.checked).map(x=>x.dataset.btl); });
   $('#btnBt').onclick = runBacktestUI;
-  if (typeof learnBind==='function') learnBind();
-  bindResBoard();
+  finish();
 }
 async function runBacktestUI(){
   if (btState.busy) return; btState = {busy:true, prog:'Starting…', res:btState.res, err:null}; renderResults();
@@ -6739,8 +6826,9 @@ function learnPanelHTML(){
   const off = Object.entries(LEARN.autoOff||{});
   const nextTxt = LEARN.paused ? 'Paused' : due.due ? 'Due now (runs on the next refresh)' : `${dt(due.next.getTime())}`;
   const sooner = LEARN.paused ? '' : `or sooner (from ${dt(due.soonest.getTime())}) once 50 new live games are graded: ${due.newLive}/50 so far`;
-  return `<div class="section-title"><h2>Model learning</h2><span class="hint">The app re-learns from new results by itself. No AI, no tokens: the same statistics, re-run on fresh games, with safety checks.</span></div>
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Games</h2><span class="hint">The app re-learns from new results by itself. No AI, no tokens: the same statistics, re-run on fresh games, with safety checks. Use the Games | Props | Parlay switcher to see the other tracks.</span></div>
   <div class="panel ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('games'):''}
     <div class="kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${cur.id}</div><div class="hint">since ${dt(cur.at)}</div></div>
       <div class="kpi"><div class="k">Live record (v${cur.id})</div><div class="v">${lvN ? `${lv.w}-${lv.l}` : '—'}</div><div class="hint">${lvN ? pctS(lv.wr)+(lvN<100?' · small sample':'') : 'no graded strict plays yet'}</div></div>
@@ -7433,7 +7521,7 @@ function filteredProps(list){
   const q = typeof norm==='function' ? norm(ui.q) : String(ui.q||'').toLowerCase();
   return (list||[]).filter(p=>{
     const g = p.g;
-    if (ui.sport!=='all' && p.league!==ui.sport) return false;
+    if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
     if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
     if (ui.hideStarted && g && g.state!=='pre') return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(p)){
@@ -8074,7 +8162,10 @@ function parlayCard(pl){
 function filteredParlays(list){
   const q = typeof norm==='function' ? norm(ui.q) : String(ui.q||'').toLowerCase();
   return (list||[]).filter(pl=>{
-    if (ui.sport && ui.sport!=='all' && !(pl.sports||[]).includes(ui.sport) && pl.league!==ui.sport) return false;
+    if (typeof sportOnFilter==='function'){
+      const sports = (pl.sports && pl.sports.length) ? pl.sports : [pl.league];
+      if (sports.filter(Boolean).some(lg=>!sportOnFilter(lg))) return false;
+    } else if (ui.sport && ui.sport!=='all' && !(pl.sports||[]).includes(ui.sport) && pl.league!==ui.sport) return false;
     if (ui.mkt && ui.mkt!=='all'){
       if (ui.mkt==='2' && pl.n!==2) return false;
       if (ui.mkt==='3' && pl.n!==3) return false;
@@ -8607,15 +8698,23 @@ function propsLearnPanelHTML(){
   const due=boardLearnDue(t, snaps);
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
-  return `<div class="panel ln-panel">
+  const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Props</h2><span class="hint">Snapshots, daily box-score grading, and weekly walk-forward retunes are independent from Games and Parlay.</span></div>
+  <div class="panel ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('props'):''}
     <div class="kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
       <div class="kpi"><div class="k">Live graded</div><div class="v">${st.n?`${st.w}–${st.l}`:'—'}</div><div class="hint">${st.wr==null?'no graded props yet':fmtPct(st.wr,1)}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
       <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
-    <p class="hint">Every upcoming prop card (Picks, Watch, and Avoid) is snapshotted. Once a day the app downloads ESPN box scores and grades the line. After a week, and once enough props are graded, it walk-forward tunes the Props win-chance bar and can auto-pause a cold sport or stat. Odds range and the sports you turned off are never changed.</p>
-    <details class="dd" data-dd="props-learn-log" ${ui.open.has('props-learn-log')?'open':''}><summary>Learning log</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
+    <div class="ln-actions">
+      <button class="btn primary sm" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Run a learning check now'}</button>
+      <button class="btn sm" id="lnPauseBoard">${t.paused?'▶ Resume auto-learning':'❚❚ Pause auto-learning'}</button>
+    </div>
+    <p class="hint">Every upcoming prop card (Picks, Watch, and Avoid) is snapshotted. Once a day the app downloads ESPN box scores and grades the line. After a week, and once enough props are graded, it walk-forward tunes the Props win-chance bar and can auto-pause a cold sport or stat. Odds range is never changed automatically.</p>
+    ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
+    <details class="dd" data-dd="props-learn-log" ${ui.open.has('props-learn-log')?'open':''}><summary>Learning log (${(t.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
   </div>`;
 }
 function parlayLearnPanelHTML(){
@@ -8631,16 +8730,42 @@ function parlayLearnPanelHTML(){
   const due=boardLearnDue(t, snaps);
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
-  return `<div class="panel ln-panel">
+  const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Parlays</h2><span class="hint">Every generated ticket is snapshotted and graded from finished legs. Weekly retunes are independent from Games and Props.</span></div>
+  <div class="panel ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('parlay'):''}
     <div class="kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
       <div class="kpi"><div class="k">Live graded</div><div class="v">${settled.length?`${w}–${l}`:'—'}</div><div class="hint">${settled.length?`2-leg ${two.filter(x=>x.y===1).length}–${two.filter(x=>x.y===0).length} · 3-leg ${three.filter(x=>x.y===1).length}–${three.filter(x=>x.y===0).length}`:'no graded parlays yet'}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
       <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
-    <p class="hint">Every generated parlay across Picks, Watch, and Avoid is snapshotted. Legs are graded from finished game finals and prop box scores (a ticket hits only if every leg hits). Weekly walk-forward tuning can nudge the per-leg win bar once enough live parlays are graded. The 2.0x–3.0x payout window and the sports you turned off are never changed automatically.</p>
-    <details class="dd" data-dd="parlay-learn-log" ${ui.open.has('parlay-learn-log')?'open':''}><summary>Learning log</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
+    <div class="ln-actions">
+      <button class="btn primary sm" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Run a learning check now'}</button>
+      <button class="btn sm" id="lnPauseBoard">${t.paused?'▶ Resume auto-learning':'❚❚ Pause auto-learning'}</button>
+    </div>
+    <p class="hint">Every generated parlay across Picks, Watch, and Avoid is snapshotted. Legs are graded from finished game finals and prop box scores (a ticket hits only if every leg hits). Weekly walk-forward tuning can nudge the per-leg win bar once enough live parlays are graded. The 2.0x–3.0x payout window is never changed automatically.</p>
+    ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
+    <details class="dd" data-dd="parlay-learn-log" ${ui.open.has('parlay-learn-log')?'open':''}><summary>Learning log (${(t.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
   </div>`;
+}
+function boardLearnBind(kind){
+  const run=$('#lnRunBoard'), pause=$('#lnPauseBoard');
+  if (!run && !pause) return;
+  const track = LEARN && LEARN[kind==='parlay'?'parlay':'props'];
+  if (run) run.onclick=()=>{
+    if (learnState.busy) return;
+    const fn = kind==='parlay' ? parlayLearnRetune : propsLearnRetune;
+    Promise.resolve(fn({force:true})).then(res=>{
+      if (res && !res.adopted) toast('Checked: kept the current model (see the log)');
+    }).catch(e=>console.warn('board retune', e)).finally(()=>{ try{renderResults();}catch(err){} });
+  };
+  if (pause && track) pause.onclick=()=>{
+    track.paused = !track.paused;
+    (track.log||(track.log=[])).unshift({at:Date.now(), txt: track.paused ? 'You paused auto-learning.' : 'You resumed auto-learning.'});
+    if (typeof learnSave==='function') learnSave();
+    renderResults();
+  };
 }
 
 async function boardLearnTick(){
@@ -8757,7 +8882,6 @@ function renderSettings(){
   const sb = ui.settingsBoard || 'games';
   const B = typeof boardS==='function' ? boardS(sb) : S;
   const cur = typeof boardPreset==='function' ? boardPreset(sb) : detectPreset();
-  const exl = new Set(String(B.sExclude||S.sExclude||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean));
   const boardLabs = {games:'🏟️ Games', props:'🏀 Props', parlay:'🎟️ Parlay'};
   const presetNote = sb==='parlay'
     ? (cur==='super' ? 'Super picky parlays: 68%+ per leg, no negative edge, clean signals, 2.0x–3.0x sweet spot.'
@@ -8789,7 +8913,7 @@ function renderSettings(){
   <div class="panel simple">
     <div class="s-row"><div class="s-h">Which board?</div>
       <div class="board-seg" id="settingsBoardSeg">${['games','props','parlay'].map(b=>`<button type="button" data-set-board="${b}" class="${sb===b?'on':''}">${boardLabs[b]}</button>`).join('')}</div>
-      <div class="s-note">Pickiness, sports, and odds are independent for Games, Props, and Parlay. Changing Props to Relaxed leaves Games and Parlay alone. Shared settings (books, refresh, alerts, bet size) stay below.</div></div>
+      <div class="s-note">Pickiness and odds are independent for Games, Props, and Parlay. Changing Props to Relaxed leaves Games and Parlay alone. Which sports show on each tab is set in that tab's Filters. Shared settings (books, refresh, alerts, bet size) stay below.</div></div>
     <div class="s-row"><div class="s-h">How picky? <span class="mut">(${boardLabs[sb]})</span></div>
       <div class="seg">${['super','picky','relaxed'].map(n=>`<label class="${cur===n?'on':''}"><input type="radio" name="preset" value="${n}" ${cur===n?'checked':''} hidden>${(PRESETS[n]&&PRESETS[n].label)||n}${n==='picky'&&sb==='parlay'?' <small>recommended</small>':''}${n==='super'&&sb!=='parlay'?' <small>recommended</small>':''}</label>`).join('')}</div>
       <div class="s-note" id="presetNote">${presetNote}</div></div>
@@ -8798,10 +8922,6 @@ function renderSettings(){
     <div class="s-row"><div class="s-h">My books</div>
       <div class="filters">${MY_BOOK_CHOICES.map(([k,l])=>`<label class="chip ${books.includes(k)?'on':''}"><input type="checkbox" name="book_${k}" ${books.includes(k)?'checked':''} hidden>${l}</label>`).join('')}</div>
       <div class="s-note">Cards tell you where to bet among these. Polymarket and DraftKings work for free; the others need the odds key below.</div></div>
-
-    <div class="s-row"><div class="s-h">Sports I want picks for <span class="mut">(${sb==='props'?'Props':sb==='parlay'?'Parlay':'Games'})</span></div>
-      <div class="filters">${LEAGUES.map(L=>`<label class="chip ${!exl.has(L.id)?'on':''}"><input type="checkbox" name="pick_${L.id}" ${!exl.has(L.id)?'checked':''} hidden>${sportChipLabel(L)}${LOST_IN_TEST.has(L.id)?' <small class="mut">*</small>':''}</label>`).join('')}</div>
-      <div class="s-note">These sports apply to this board only. NCAAB can be off for Games and on for Props. * College basketball and soccer lost money in the Games test, so they start off on Games. All Games still lists every loaded sport.</div></div>
 
     <div class="s-row"><div class="s-h">Refresh every</div>
       <div class="seg seg-pills">${[[15,'15s'],[30,'30s'],[60,'1 min'],[120,'2 min'],[300,'5 min'],[600,'10 min']].map(([v,l])=>`<label class="${+S.refreshSec===v?'on':''}"><input type="radio" name="refreshSec" value="${v}" ${+S.refreshSec===v?'checked':''} hidden>${l}${v===60?' <small>recommended</small>':''}</label>`).join('')}</div>
@@ -8918,7 +9038,7 @@ function renderSettings(){
     S.deepData = f.get('deepData')==='1'; S.sMarkets = f.get('sMarkets'); S.sNoModelSports = f.get('sNoModelSports')==='1'; S.pmOn = f.get('pmOn')==='1';
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).concat(extra).join(',');
-    if ((ui.settingsBoard||'games')==='games'){ S.sExclude = LEAGUES.filter(L=>!f.get('pick_'+L.id)).map(L=>L.id).join(','); S.sNoSoccer = false; }
+    if ((ui.settingsBoard||'games')==='games'){ S.sNoSoccer = false; }
     S.alertNewPlays = !!f.get('alertNewPlays'); S.alertPulledPlays = !!f.get('alertPulledPlays');
     S.ntfyOn = !!f.get('ntfyOn');
     const topic = typeof normalizeNtfyTopic==='function' ? normalizeNtfyTopic(f.get('ntfyTopic')) : String(f.get('ntfyTopic')||'').trim();
@@ -8939,7 +9059,6 @@ function renderSettings(){
         if (isFinite(pmn)) B.payoutMin = pmn;
         if (isFinite(pmx)) B.payoutMax = pmx;
       }
-      B.sExclude = LEAGUES.filter(L=>!f.get('pick_'+L.id)).map(L=>L.id).join(',');
       if (typeof applyBoardPreset==='function' && chosen) applyBoardPreset(sb, chosen);
       else B.preset = chosen;
     }
@@ -9056,7 +9175,10 @@ function setNavPop(board){
   if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
   if (typeof syncTabChrome==='function') syncTabChrome();
 }
+function isMobileViewport(){ return !!(window.matchMedia && window.matchMedia('(max-width:899.98px)').matches); }
+window.addEventListener('resize', function resizeResultsGuard(){ if (ui.tab==='results' && isMobileViewport()){ setTab('tracker'); if (typeof render==='function') render(); } });
 function setTab(t, opts){
+  if (t==='results' && typeof isMobileViewport==='function' && isMobileViewport()) t = 'tracker';
   const prev = ui.tab;
   const prevBoard = ui.board||'games';
   if (prev==='tracker' && t!=='tracker' && typeof resetTrackerOpen==='function') resetTrackerOpen();
@@ -9115,7 +9237,28 @@ document.addEventListener('click', e=>{
   if (e.target.closest('#navPop') || e.target.closest('#bottomNav') || e.target.closest('#navPopBack')) return;
   setNavPop(null);
 });
-$('#sportChips').addEventListener('click', e=>{ const c=e.target.closest('[data-sport]'); if(!c) return; ui.sport=c.dataset.sport; if (typeof saveFilters==='function') saveFilters(); render(); });
+$('#sportChips').addEventListener('click', e=>{
+  const c=e.target.closest('[data-sport]'); if(!c) return;
+  const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
+  const id = c.dataset.sport;
+  if (restrict){
+    if (!Array.isArray(ui.sports)) ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id));
+    if (id==='all') ui.sports = LEAGUES.map(L=>L.id);
+    else if (id==='reset') ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id));
+    else {
+      const i = ui.sports.indexOf(id);
+      if (i>=0) ui.sports.splice(i,1);
+      else ui.sports.push(id);
+    }
+    if (typeof syncSportAlias==='function') syncSportAlias();
+  } else {
+    ui.sport = id;
+    if (id==='all') ui.sports = LEAGUES.map(L=>L.id);
+    else if (LMAP[id]) ui.sports = [id];
+  }
+  if (typeof saveFilters==='function') saveFilters();
+  render();
+});
 document.querySelectorAll('[data-logged]').forEach(c=>c.onclick=()=>{ ui.hideLogged=c.dataset.logged==='hide'; document.querySelectorAll('[data-logged]').forEach(x=>x.classList.toggle('on',x===c)); if (typeof saveFilters==='function') saveFilters(); render(); });
 const filterPresetSeg = $('#filterPresetSeg');
 if (filterPresetSeg) filterPresetSeg.querySelectorAll('input').forEach(i=>i.onchange=()=>{
