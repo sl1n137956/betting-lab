@@ -3068,7 +3068,7 @@ function pullReasonFor(r){
   return 'no longer passes the filters';
 }
 const alertOn = kind => kind==='new' ? S.alertNewPlays!==false : S.alertPulledPlays!==false;
-const NTFY_CLICK = 'https://sl1n137956.github.io/betting-lab/';
+const NTFY_CLICK = 'https://verdict-picks.web.app/';
 function canNotify(){ return typeof Notification!=='undefined' && Notification.permission==='granted'; }
 function normalizeNtfyTopic(raw){
   let t = String(raw==null?'':raw).trim();
@@ -11171,7 +11171,7 @@ const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAWla-MkoPfB9pZ0I43DgQ__XYqb5yLRFc",
   // On Firebase Hosting (verdict-sl1n1.web.app) sign-in runs first-party on the same origin (no Safari ITP issues);
   // everywhere else (github.io, localhost) it uses the default auth domain.
-  authDomain: (typeof location!=='undefined' && /^verdict-sl1n1\.(web\.app|firebaseapp\.com)$/.test(location.hostname)) ? location.hostname : "verdict-sl1n1.firebaseapp.com",
+  authDomain: (typeof location!=='undefined' && /^(verdict-picks|verdict-sl1n1)\.(web\.app|firebaseapp\.com)$/.test(location.hostname)) ? location.hostname : "verdict-picks.firebaseapp.com",
   projectId: "verdict-sl1n1",
   storageBucket: "verdict-sl1n1.firebasestorage.app",
   messagingSenderId: "373139235584",
@@ -11180,10 +11180,10 @@ const FIREBASE_CONFIG = {
 const ADMIN_EMAILS = ['sl1n137956@gmail.com'];
 const FB_VER = '10.14.1';
 const SYNC_META_LS = 'bl_sync_meta';
-const ONLINE_URL = 'https://sl1n137956.github.io/betting-lab/';
-const FIRST_PARTY_URL = 'https://verdict-sl1n1.web.app';
+const ONLINE_URL = 'https://verdict-picks.web.app/';
+const FIRST_PARTY_URL = 'https://verdict-picks.web.app';
 const REDIRECT_PENDING_KEY = 'verdict_google_redirect_pending';
-const SAFARI_REDIRECT_MSG = "Safari blocked Google's cross-site redirect on this shortcut. Sign in with Email & Password below (same account & sync), or open Verdict on verdict-sl1n1.web.app for 1-tap Google sign-in.";
+const SAFARI_REDIRECT_MSG = "Safari blocked Google's cross-site redirect on this shortcut. Sign in with Email & Password below (same account & sync), or open Verdict on verdict-picks.web.app for 1-tap Google sign-in.";
 const AUTH = {ready:false, loading:false, failed:false, user:null, unsub:null, pushT:0, applying:false, lastSync:0, status:'idle', err:'', deviceId:'', lastPushAt:0};
 let syncMeta = (function(){ const m = loadJSON(SYNC_META_LS, null); return (m && typeof m==='object') ? m : {}; })();
 syncMeta.settingsAt = +syncMeta.settingsAt||0; syncMeta.filtersAt = +syncMeta.filtersAt||0; syncMeta.periodAt = +syncMeta.periodAt||0;
@@ -11303,7 +11303,7 @@ function authErrMsg(err){
     'auth/popup-closed-by-user':'Google sign-in was closed before it finished.',
     'auth/cancelled-popup-request':'Google sign-in was closed before it finished.',
     'auth/popup-blocked':'Your browser blocked the Google pop-up. Trying a full-page sign-in instead…',
-    'auth/unauthorized-domain':'Sign-in isn\'t allowed from this address. Open Verdict at sl1n137956.github.io/betting-lab/.',
+    'auth/unauthorized-domain':'Sign-in isn\'t allowed from this address. Open Verdict at verdict-picks.web.app.',
     'auth/network-request-failed':'No connection. Check your internet and try again.',
     'auth/too-many-requests':'Too many tries. Wait a minute and try again.',
     'auth/user-disabled':'This account has been disabled.',
@@ -11559,7 +11559,7 @@ function renderAuthChrome(){
   if ($('#authModal') && !$('#authModal').hidden && AUTH.user && $('#authModal').dataset.mode!=='account') openAuthModal('account');
   renderAuthStatusOnly();
 }
-function offlineNoteHtml(){ return `<div class="acct-note">Open Verdict online at sl1n137956.github.io/betting-lab/ to sign in and sync between PC and phone. <a class="btn sm acct-link" href="${ONLINE_URL}" target="_blank" rel="noopener">Open online ↗</a></div>`; }
+function offlineNoteHtml(){ return `<div class="acct-note">Open Verdict online at verdict-picks.web.app to sign in and sync between PC and phone. <a class="btn sm acct-link" href="${ONLINE_URL}" target="_blank" rel="noopener">Open online ↗</a></div>`; }
 function accountCardHtml(){
   const u = AUTH.user;
   if (!authHttp()) return `<div class="panel simple acct-card" id="acctCard"><div class="s-row"><div class="s-h">☁️ Account &amp; sync</div>${offlineNoteHtml()}</div></div>`;
@@ -11605,7 +11605,7 @@ function openAuthModal(mode){
     const up = mode==='create';
     body = `<div class="auth-title"><span class="h-emo" aria-hidden="true">⚖️</span>${up?'Create your Verdict account':'Sign in to Verdict'}</div>
       <div class="auth-sub">Sync your settings, filters, and tailed bets between PC and phone.</div>
-      ${AUTH.redirectBlocked?`<div class="auth-err auth-blocked">${esc(SAFARI_REDIRECT_MSG)} <a href="${FIRST_PARTY_URL}" target="_blank" rel="noopener">Open verdict-sl1n1.web.app</a></div>`:''}
+      ${AUTH.redirectBlocked?`<div class="auth-err auth-blocked">${esc(SAFARI_REDIRECT_MSG)} <a href="${FIRST_PARTY_URL}" target="_blank" rel="noopener">Open verdict-picks.web.app</a></div>`:''}
       <div class="board-seg auth-seg"><button type="button" data-auth-mode="signin" class="${up?'':'on'}">Sign in</button><button type="button" data-auth-mode="create" class="${up?'on':''}">Create account</button></div>
       <button type="button" class="btn auth-google" id="btnGoogle">${GOOGLE_G}<span>Continue with Google</span></button>
       <div class="auth-or"><span>or use email</span></div>
@@ -11618,7 +11618,7 @@ function openAuthModal(mode){
         <button type="submit" class="btn primary auth-submit">${up?'Create account':'Sign in'}</button>
         ${up?'':'<button type="button" class="auth-link" id="btnForgot">Forgot password?</button>'}
       </form>
-      ${(!/web\.app$/.test(location.hostname) && (typeof isIOSDevice==='function' ? isIOSDevice() : /iPhone|iPad/.test(navigator.userAgent||''))) ? `<div class="acct-note">Google sign-in trouble on iPhone? Use email &amp; password, or open <a href="${FIRST_PARTY_URL}" target="_blank" rel="noopener">verdict-sl1n1.web.app</a> for 1-tap Google.</div>` : ''}
+      ${(!/web\.app$/.test(location.hostname) && (typeof isIOSDevice==='function' ? isIOSDevice() : /iPhone|iPad/.test(navigator.userAgent||''))) ? `<div class="acct-note">Google sign-in trouble on iPhone? Use email &amp; password, or open <a href="${FIRST_PARTY_URL}" target="_blank" rel="noopener">verdict-picks.web.app</a> for 1-tap Google.</div>` : ''}
       ${AUTH.ready?'':`<div class="acct-note">${AUTH.failed?'Can\'t reach the sign-in service. Check your connection.':'Loading sign-in…'}</div>`}`;
   }
   m.innerHTML = `<div class="auth-card">${head}${body}</div>`;
