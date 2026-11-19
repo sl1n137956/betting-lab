@@ -8818,6 +8818,21 @@ async function runPropEnrichment(){
     flush(false);
   }), 5);
   propEnrich.running = false;
+  // Master rule: never keep opposite-side Props Picks for the same player + stat in the same game.
+  try{
+    const bestByPS = new Map();
+    const goods = (props||[]).filter(x=>x && x.verdict==='good').sort((a,b)=>(b.p||0)-(a.p||0) || (b.edge||0)-(a.edge||0));
+    for (const x of goods){
+      const pk = `${(x.g&&x.g.eventId)||x.eventId||''}|${String(x.playerId||x.playerName||'').toLowerCase()}|${x.kind||''}`;
+      const keep = bestByPS.get(pk);
+      if (keep && keep.side && x.side && keep.side !== x.side){
+        x.verdict = 'watch';
+        if (x.C) x.C.J = 'MAYBE LATER';
+      } else if (!keep){
+        bestByPS.set(pk, x);
+      }
+    }
+  }catch(e){}
   try{ if (typeof checkLockAlerts==='function') checkLockAlerts('props'); }catch(e){}
   try{ if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props'); }catch(e){}
   flush(true);
@@ -9248,6 +9263,39 @@ function setBoardExclude(board, excludeIds){
 }
 
 function parlayEventId(p){ return (p && p.g && (p.g.eventId||p.g.id)) || p.eventId || null; }
+function propPlayerMatch(a, b){
+  if (!a || !b) return false;
+  if (a.playerId && b.playerId && String(a.playerId)===String(b.playerId)) return true;
+  const na = String(a.playerName||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const nb = String(b.playerName||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  return !!(na && nb && na===nb);
+}
+// Master rule: never recommend a parlay leg that bets against a Pick on Games or Props.
+function contradictsBoardPick(leg){
+  if (!leg) return false;
+  const ev = parlayEventId(leg);
+  if (!ev) return false;
+  const isProp = !!(leg.isProp || (leg.kind && leg.playerName));
+  if (!isProp){
+    const mk = leg.mk;
+    for (const gp of (typeof plays!=='undefined' ? plays : [])){
+      if (!gp || gp.verdict!=='good') continue;
+      if (parlayEventId(gp) !== ev) continue;
+      const teamSide = m => m==='ml' || m==='spread';
+      if (teamSide(gp.mk) && teamSide(mk) && gp.side && leg.side && gp.side !== leg.side) return true;
+      if (gp.mk==='total' && mk==='total' && gp.side && leg.side && gp.side !== leg.side) return true;
+    }
+    return false;
+  }
+  for (const pp of (typeof props!=='undefined' ? props : [])){
+    if (!pp || pp.verdict!=='good') continue;
+    if (parlayEventId(pp) !== ev) continue;
+    if (pp.kind && leg.kind && pp.kind !== leg.kind) continue;
+    if (!propPlayerMatch(pp, leg)) continue;
+    if (pp.side && leg.side && String(pp.side).toLowerCase() !== String(leg.side).toLowerCase()) return true;
+  }
+  return false;
+}
 function parlayLegPrice(p){
   if (p.isProp || p.kind) return p.price;
   const mb = p.my && p.my.best;
@@ -9287,6 +9335,7 @@ function gameParlaySides(){
         p.edge = (p.p!=null && p.implied!=null) ? p.p-p.implied : null;
         p.league = g.league;
         if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(p)) continue;
+        if (contradictsBoardPick(p)) continue;
         out.push(p);
       }
     }
@@ -9303,6 +9352,7 @@ function propParlaySides(){
     if (g && g.state && g.state!=='pre') continue;
     const lg = p.league || (g && g.league);
     if (!boardSportOn('parlay', lg)) continue;
+    if (contradictsBoardPick(p)) continue;
     out.push(p);
   }
   return out;
