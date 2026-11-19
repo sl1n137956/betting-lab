@@ -1050,6 +1050,26 @@ main.wrap{padding-top:16px}
 .bottom-nav .cnt[hidden]{display:none}
 .res-pill{white-space:nowrap;flex:none}
 @media (max-width:600px){.pull-actions .btn{flex:1 1 0;min-height:44px}}
+
+/* v42: automatic choices */
+.auto-pick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0}
+.auto-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:rgba(99,102,241,.14);border:1px solid rgba(129,140,248,.45);color:#c7d2fe;font-size:13px;font-weight:600;white-space:nowrap}
+.filter-auto-why{font-size:12px;color:var(--mut,#94a3b8);margin-top:4px;line-height:1.4}
+.parlay-warn.parlay-cold{background:rgba(56,189,248,.10);border-color:rgba(56,189,248,.45);color:#bae6fd}
+.v42-auto{margin-bottom:16px}
+.v42-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.v42-b{border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:14px 16px;background:rgba(15,23,42,.35)}
+.v42-b h3{margin:0 0 8px;font-size:15px}
+.v42-kv{display:flex;justify-content:space-between;gap:10px;margin-top:10px;font-size:13px}
+.v42-kv .k{color:var(--mut,#94a3b8)}
+.v42-kv .v{font-weight:600;text-align:right}
+.v42-v{font-size:13px;margin-top:4px}
+.v42-b .hint{font-size:12px;line-height:1.4;margin-top:3px}
+@media (max-width:1023.98px){ .v42-grid{grid-template-columns:1fr} }
+.v42-tbl td{vertical-align:top}
+.v42-tbl td .hint{margin-top:4px;font-size:12px;line-height:1.35;white-space:normal}
+.v42-tbl td div{line-height:1.4}
+@media (max-width:767.98px){ .auto-chip{white-space:normal} }
 </style>
 </head>
 <body>
@@ -1131,15 +1151,12 @@ main.wrap{padding-top:16px}
       <label class="chk"><input type="checkbox" id="hideStarted" checked> Hide started/final</label>
     </div>
     <details class="filter-details" id="filterDetails">
-      <summary id="filterDetailsSum">Pickiness &amp; prices</summary>
+      <summary id="filterDetailsSum">Pickiness &amp; prices (auto)</summary>
       <div class="filter-extra">
         <div class="filter-pickiness">
           <span class="mut">Pickiness</span>
-          <div class="seg" id="filterPresetSeg">
-            <label class="on"><input type="radio" name="filterPreset" value="super" checked hidden>Super picky</label>
-            <label><input type="radio" name="filterPreset" value="picky" hidden>Picky</label>
-            <label><input type="radio" name="filterPreset" value="relaxed" hidden>Relaxed</label>
-          </div>
+          <div class="auto-pick" id="filterAutoPick"></div>
+          <div class="filter-auto-why" id="filterAutoWhy"></div>
         </div>
         <div class="filter-strict-line" id="filterStrictLine"></div>
         <div class="filter-price-line" id="filterPriceLine"></div>
@@ -1676,25 +1693,24 @@ function filterViewKey(board, tab){
   return null;
 }
 function getLearnSafe(){ try{ return LEARN; }catch(e){ return null; } }
+// v42: sports the MODEL switched off for this board (profit-driven, per board). Sports you switch off in Settings are a hard off
+// and never show up here. Auto-off sports start hidden on Picks / Watchlist / Avoid; tapping one shows it for this visit only.
 function modelSkippedSports(board){
   board = board || 'games';
   const skip = new Set();
-  if (board==='games'){
-    String((typeof DEFAULTS!=='undefined' && DEFAULTS.sExclude) || 'ncaab,mls,epl,ucl,laliga,seriea,bund').split(',').forEach(x=>{ if(x.trim()) skip.add(x.trim()); });
-    const Lrn = getLearnSafe();
-    if (Lrn && Lrn.autoOff){
-      Object.keys(Lrn.autoOff).forEach(k=>{ if (k && k.indexOf('mk:')!==0) skip.add(k); });
-    }
-  } else {
-    const Lrn = getLearnSafe();
-    const tr = Lrn && Lrn[board==='parlay'?'parlay':'props'];
-    if (tr && tr.autoOff) Object.keys(tr.autoOff).forEach(k=>{ if (k && k.indexOf('mk:')!==0) skip.add(k); });
-  }
+  const Lrn = getLearnSafe();
+  const off = Lrn ? (board==='games' ? Lrn.autoOff : (Lrn[board==='parlay'?'parlay':'props']||{}).autoOff) : null;
+  if (off) Object.keys(off).forEach(k=>{ if (k && k.indexOf('mk:')!==0) skip.add(k); });
   return skip;
 }
+function modelOffWhy(board, lg){
+  const Lrn = getLearnSafe(); if (!Lrn) return '';
+  const off = board==='games' ? Lrn.autoOff : (Lrn[board==='parlay'?'parlay':'props']||{}).autoOff;
+  const o = off && off[lg]; return o ? (o.why||'losing money') : '';
+}
+function autoShowSet(board){ if (!ui.autoShow) ui.autoShow = {}; const b = board||ui.board||'games'; if (!ui.autoShow[b]) ui.autoShow[b] = new Set(); return ui.autoShow[b]; }
 function defaultSportsList(board){
-  const skip = modelSkippedSports(board);
-  return LEAGUES.map(L=>L.id).filter(id=>!skip.has(id));
+  return LEAGUES.map(L=>L.id);   // v42: model auto-off is applied live (see sportOnFilter), not baked into saved filters
 }
 function migrateViewSports(v, board){
   v = v || {};
@@ -1714,6 +1730,8 @@ function syncSportAlias(){
 }
 function sportOnFilter(lg){
   if (!lg) return false;
+  const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid' || ui.tab==='pulled';
+  if (restrict && ui.tab!=='pulled'){ const b = ui.board||'games'; if (modelSkippedSports(b).has(lg) && !autoShowSet(b).has(lg)) return false; }
   if (!Array.isArray(ui.sports)) return true;
   return ui.sports.includes(lg);
 }
@@ -1767,7 +1785,7 @@ function boardLockMins(board){
   const b = board || (typeof ui!=='undefined' && ui.board) || 'games';
   // v38: parlays lock on the same window as Games singles, timed from the EARLIEST leg (never "as soon as they qualify")
   // v41: one lock lead for every board (parlays count from their earliest leg)
-  if (typeof lockLeadMins==='function') return lockLeadMins();
+  if (typeof lockLeadMins==='function') return lockLeadMins(b);   // v42: 30m or 60m per board, picked automatically
   if (b==='parlay'){ const gm = boardLockMins('games'); return (gm!=null && +gm>0) ? +gm : 60; }
   try{
     if (typeof LEARN!=='undefined' && LEARN){
@@ -1841,10 +1859,10 @@ function isEarlyPreview(x, board){
   if (!isOfficialLock(itemStartMs(x), lock)) return true;
   return typeof lockStatus==='function' ? !lockStatus(x, board).locked : false;
 }
-function earlyPreviewTitle(lockMins){ return 'Early preview · locks '+fmtLockWindow(lockMins)+' before tip'; }
+function earlyPreviewTitle(lockMins){ return 'Early preview · locks '+fmtLockWindow(lockMins)+' before start (auto)'; }
 function earlyEmptyNote(n, lockMins){
   const w = fmtLockWindow(lockMins);
-  return `No picks inside the ${w} lock window yet — showing ${n} early preview${n===1?'':'s'} below that lock automatically ${w} before tip.`;
+  return `No picks inside the ${w} lock window yet — showing ${n} early preview${n===1?'':'s'} below that lock automatically ${w} before start (lock time picked by the model).`;
 }
 function splitLockedEarly(list, board){
   const lock = boardLockMins(board);
@@ -1946,6 +1964,13 @@ function applyFilterView(key){
     ui.q = '';
     if (f.board==='games'||f.board==='props'||f.board==='parlay') ui.board = f.board;
   }
+  // v42 (once): saved views used to bake the model's skipped sports in; give them back so the model can turn them on/off live.
+  try{ if (localStorage.getItem('bl_v42_views')!=='1'){
+    const back = new Set(['ncaab','mls','epl','ucl','laliga','seriea','bund']);
+    try{ const L0 = loadJSON('bl_learn', null); if (L0){ Object.keys(L0.autoOff||{}).forEach(k=>back.add(k)); ['props','parlay'].forEach(b=>Object.keys((L0[b]||{}).autoOff||{}).forEach(k=>back.add(k))); } }catch(e){}
+    for (const k of Object.keys(filterViews||{})){ const v = filterViews[k]; if (v && Array.isArray(v.sports)){ for (const id of back) if (LMAP[id] && !v.sports.includes(id)) v.sports.push(id); } }
+    saveJSON(LS.filterViews, filterViews); localStorage.setItem('bl_v42_views','1');
+  } }catch(e){}
   // Seed any missing per-view copies from the last-used bl_filters so a first visit isn't empty.
   for (const board of ['games','props','parlay']) for (const tab of ['good','watch','avoid']){
     const k = board+':'+tab;
@@ -3736,7 +3761,7 @@ function lockItemKey(board, item){
 }
 function checkLockAlerts(board){
   // v41: record official locks and run the urgent-only check even when alerts are off
-  try{ for (const b0 of (board ? [board] : ['games','props','parlay'])) if (typeof recordLocks==='function') recordLocks(b0); if (typeof checkLockedUrgent==='function') checkLockedUrgent(); }catch(e){ console.warn('locks', e); }
+  try{ for (const b0 of (board ? [board] : ['games','props','parlay'])){ if (typeof recordLocks==='function') recordLocks(b0); if (typeof v42RecordPolicy==='function') v42RecordPolicy(b0); } if (typeof checkLockedUrgent==='function') checkLockedUrgent(); }catch(e){ console.warn('locks', e); }
   if (!canAlert('new')) return;
   const boards = board ? [board] : ['games','props','parlay'];
   for (const b of boards){
@@ -3923,7 +3948,7 @@ function checkTailedBoardPulls(board){
       if (!chk.started && typeof V41==='function'){
         const st41 = V41(); const ms = isFinite(chk.minStart) ? chk.minStart : ((b.link && +b.link.start) || 0);
         if (st41.locked[k]) parLocked = true;
-        else if (ms && isOfficialLock(ms, lockLeadMins())){
+        else if (ms && isOfficialLock(ms, lockLeadMins('parlay'))){
           const pl0 = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===k) || (typeof tailedParlayFromBet==='function' ? tailedParlayFromBet(b) : null);
           if (pl0){ ensureTailedLockRec(b, 'parlay', pl0); parLocked = true; }
         }
@@ -6420,6 +6445,7 @@ function setFiltersOpen(open){
 
 function pickinessLabel(board){
   const b = board || ui.board || 'games';
+  try{ if (typeof AUTO==='function'){ const A = AUTO(); const n0 = b==='parlay' ? (A.boards.parlay.level>=3?'super':'picky') : A.boards[b].preset; return n0==='super' ? 'Super picky' : 'Picky'; } }catch(e){}
   const n = (typeof boardPreset==='function' ? boardPreset(b) : (S.preset || (typeof detectPreset==='function' ? detectPreset() : 'custom')));
   return n==='super' ? 'Super picky' : n==='picky' ? 'Picky' : n==='relaxed' ? 'Relaxed' : 'Custom';
 }
@@ -6461,7 +6487,9 @@ function fillFilterMeta(){
     else pl.textContent = compactPriceLine();
   }
   const sum = $('#filterDetailsSum');
-  if (sum) sum.textContent = 'Pickiness & prices · ' + pickinessLabel(board);
+  if (sum) sum.textContent = 'Pickiness & prices · ' + pickinessLabel(board) + ' (auto)';
+  const ap = $('#filterAutoPick'); if (ap && typeof v42FilterPickHTML==='function') ap.innerHTML = v42FilterPickHTML(board);
+  const aw = $('#filterAutoWhy'); if (aw && typeof v42PickReason==='function') aw.textContent = 'Picked by the model from real results. ' + v42PickReason(board);
 }
 function setPickiness(name){
   const board = ui.board||'games';
@@ -6478,19 +6506,10 @@ function setPickiness(name){
 }
 function leagueExcludeWhy(lg, board){
   board = board || ui.board || 'games';
-  if (board==='games' && typeof learnOff==='function' && learnOff(lg)) return {kind:'auto', why: (typeof learnOffWhy==='function' && learnOffWhy(lg)) || 'the app turned it off after it lost money in testing'};
-  if (typeof boardSportOn==='function'){
-    if (!boardSportOn(board, lg)){
-      if (board==='games' && lg==='ncaab') return {kind:'test', why:'not profitable in testing'};
-      if (board==='games' && typeof SOCCER!=='undefined' && SOCCER.has(lg)) return {kind:'test', why:'not profitable in testing'};
-      return {kind:'settings', why:'turned off for '+(board==='props'?'Props':board==='parlay'?'Parlay':'Games')+' in Settings'};
-    }
-  } else if (typeof isExcluded==='function' && isExcluded(lg, true)){
-    if (lg==='ncaab') return {kind:'test', why:'not profitable in testing'};
-    if (typeof SOCCER!=='undefined' && SOCCER.has(lg)) return {kind:'test', why:'not profitable in testing'};
-    return {kind:'settings', why:'turned off in Settings'};
-  }
   if (!(S.enabled||[]).includes(lg)) return {kind:'settings', why:'turned off in Settings'};
+  const mw = typeof modelOffWhy==='function' ? modelOffWhy(board, lg) : '';
+  if (mw) return {kind:'auto', why:'model auto-off: '+mw};
+  if (typeof boardSportOn==='function' && !boardSportOn(board, lg)) return {kind:'settings', why:'turned off in Settings'};
   return null;
 }
 function goodEligibleLeague(lg){ return !leagueExcludeWhy(lg); }
@@ -6602,24 +6621,29 @@ function renderChips(){
     games.forEach(g=>{ if((!ui.hideStarted || g.state==='pre') && !(typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(g):0, g.state))) counts[g.league]=(counts[g.league]||0)+1; });
   }
   const skip = (typeof modelSkippedSports==='function') ? modelSkippedSports(ui.board||'games') : new Set();
+  const shown = typeof autoShowSet==='function' ? autoShowSet(ui.board||'games') : new Set();
   const onSet = new Set(ui.sports||[]);
   const allOn = LEAGUES.every(L=>onSet.has(L.id));
+  const hardOff = id => !(S.enabled||[]).includes(id);
   const total = Object.values(counts).reduce((a,n)=>a+n,0);
   const showList = restrict ? LEAGUES : LEAGUES.filter(L=>S.enabled.includes(L.id) || counts[L.id] || onSet.has(L.id));
   const chips = restrict
     ? `<span class="chip ${allOn?'on':''}" data-sport="all" title="Show every sport on this tab">All<span class="n">${total}</span></span>` +
       `<span class="chip reset-chip" data-sport="reset" title="Back to defaults: sports the model does not recommend start off">Reset</span>` +
-      showList.map(L=>{
-        const auto = skip.has(L.id);
-        const on = onSet.has(L.id);
-        const tip = auto ? (on ? 'Model does not recommend this sport here, but you turned it on for this tab.' : 'Auto-off: the model does not recommend this sport on this tab. Tap to show it anyway.') : (on ? 'Shown on this tab. Tap to hide.' : 'Hidden on this tab. Tap to show.');
-        return `<span class="chip ${on?'on':''} ${counts[L.id]?'':'empty'}${auto?' auto-off':''}" data-sport="${L.id}" title="${tip}">${sportChipLabel(L)}${auto?'<span class="auto-tag" aria-hidden="true">auto-off</span>':''}<span class="n">${counts[L.id]||0}</span></span>`;
+      showList.filter(L=>!hardOff(L.id) || counts[L.id]).map(L=>{
+        const auto = skip.has(L.id) && !hardOff(L.id);
+        const on = auto ? shown.has(L.id) : onSet.has(L.id);
+        const why = auto && typeof modelOffWhy==='function' ? modelOffWhy(ui.board||'games', L.id) : '';
+        const tip = auto ? (on ? `Model auto-off (${why}). Shown for this visit only.` : `Model auto-off: ${why}. Tap to peek for this visit; it resets on reload.`) : (on ? 'Shown on this tab. Tap to hide.' : 'Hidden on this tab. Tap to show.');
+        return `<span class="chip ${on?'on':''} ${counts[L.id]?'':'empty'}${auto?' auto-off':''}" data-sport="${L.id}" title="${esc(tip)}">${sportChipLabel(L)}${auto?'<span class="auto-tag" aria-hidden="true">auto-off</span>':''}<span class="n">${counts[L.id]||0}</span></span>`;
       }).join('')
-    : `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
+    : null;
+  const chipsAll = chips!=null ? chips : `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
       showList.map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${sportChipLabel(L)}<span class="n">${counts[L.id]||0}</span></span>`).join('');
-  $('#sportChips').innerHTML = chips;
+  $('#sportChips').innerHTML = chipsAll;
+  const autoList = restrict ? (typeof v42GroupOff==='function' ? v42GroupOff(LEAGUES.filter(L=>skip.has(L.id) && !hardOff(L.id)).map(L=>({lab:L.label, why:typeof modelOffWhy==='function'?modelOffWhy(ui.board||'games', L.id):''}))).map(g=>`${g.labs.join(', ')} auto-off: ${g.why}`) : []) : [];
   const note = restrict
-    ? 'Highlighted sports are shown on this tab. Sports marked auto-off start hidden because the model does not recommend them here — tap any chip to show or hide it on this tab only.'
+    ? (autoList.length ? 'The model picks the sports for this board from your Settings list, based on profit. ' + autoList.join(' · ') + '. They come back on by themselves once they recover. Tap one to peek for this visit only.' : 'The model picks the sports for this board from your Settings list, based on profit. Nothing is auto-off right now.')
     : ((!onProps && !onParlay && ui.tab==='good') ? (typeof goodPlaysExcludeLine==='function'?goodPlaysExcludeLine():'') : '');
   const el = $('#chipNote');
   if (el){ el.hidden = !note; el.textContent = note; }
@@ -8572,7 +8596,7 @@ function renderResults(){
   const rb = ui.resultsBoard || 'games';
   const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, Parlay, or Verdict.</div></div>`;
   const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
-  const live = (typeof v41ScoreboardHTML==='function' ? v41ScoreboardHTML() : '') + liveRecordHTML(rb);
+  const live = (typeof v42ResultsHTML==='function' ? v42ResultsHTML() : '') + (typeof v41ScoreboardHTML==='function' ? v41ScoreboardHTML() : '') + liveRecordHTML(rb);
   let body = '';
   if (rb==='props'){
     body = live+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
@@ -8920,6 +8944,12 @@ async function learnRetune(opts){
         changes.push(`Why (${PRESETS[n].label}): on the ${holdDays} newest days it had never seen it went ${recS(after)}, vs ${recS(before)} with the old bars.`);
       } else why.push(`${PRESETS[n].label} bars kept: ${reason}.`);
     }
+    // v42: the model picks Super picky vs Picky itself — remember how both did on the older (train) and newest unseen (hold) days
+    try{
+      const trainSt = {};
+      for (const n of ['super','picky']){ const cfg = Object.assign({}, presetsNew[n]); delete cfg.test; trainSt[n] = hs2(withParams(calUse, presetCfg(n, cfg), ()=>lnPicks(train)).all); }
+      LEARN.presetEval = {at:Date.now(), holdDays, trainDays, hold:{super:hold2.super.after, picky:hold2.picky.after}, train:trainSt};
+    }catch(e){ console.warn('preset eval', e); }
     // the result that counts for the "test" line shown in Settings
     for (const n of ['super','picky']){ const h = (hold2[n].after); if (h && h.n) presetsNew[n].test = `Latest check (${holdDays} newest days the model had not seen): ${h.ppd.toFixed(1)} plays a day, won ${(h.wr*10).toFixed(1)} of 10 (${h.w}-${h.l}, ${h.roi>=0?'+':''}${(h.roi*100).toFixed(0)}% profit)${h.n<100?'. Small sample.':'.'}`; }
     // --- strict track-record bonus (heavily discounted) ---
@@ -8932,7 +8962,9 @@ async function learnRetune(opts){
     // the bonus only says how much to trust strict plays; it never creates a new version on its own
     // --- sport / market pruning (only sports you have on) ---
     const autoOff = Object.assign({}, LEARN.autoOff||{});
-    const userOff = new Set(String(S.sExclude||'').split(',').map(x=>x.trim()).filter(Boolean));
+    // v42: every sport is checked (also ones you switched off in Settings, so the record is there), but a sport that is
+    // off in Settings stays off no matter what — that is a hard off and the model never turns it on.
+    const userOff = new Set();
     LEARN_IGNORE = true;
     let pr, prRecent;
     try{ pr = withParams(calUse, fin, ()=>lnPicks(rows)); const rc = now - 45*86400000; prRecent = withParams(calUse, fin, ()=>lnPicks(rows.filter(x=>x.r.t>=rc))); }
@@ -8941,6 +8973,8 @@ async function learnRetune(opts){
       if (!autoOff[key]){ if (st && st.n>=40 && (st.roi||0)<0 && st.wr < st.expW){ autoOff[key] = {at:Date.now(), why:`${st.w}-${st.l}, ${(st.roi*100).toFixed(0)}% profit over ${st.n} plays, won ${pctS(st.wr)} when the odds expected ${pctS(st.expW)}`};
           changes.push(`Turned off ${label} for strict picks: ${autoOff[key].why}.`); } }
       else if (stR && stR.n>=15 && (stR.roi||0)>0 && stR.wr >= stR.expW){ delete autoOff[key]; changes.push(`Turned ${label} back on for strict picks: it recovered over the last 45 days (${recS(stR)}).`); }
+      else if (st && st.n>=15){ autoOff[key] = Object.assign({}, autoOff[key], {why:`${(st.roi*100).toFixed(0)}% profit over ${st.n} plays, won ${pctS(st.wr)} when the odds expected ${pctS(st.expW)}`, n:st.n, roi:st.roi}); }
+      if (key.indexOf('mk:')!==0 && st){ (LEARN.sportStats||(LEARN.sportStats={}))[key] = {n:st.n, w:st.w, l:st.l, roi:st.roi, wr:st.wr, expW:st.expW, at:Date.now()}; }
     };
     for (const lg of BT_LEAGUES) if (!userOff.has(lg)) prune(lg, LMAP[lg].label, pr.bySport[lg], prRecent.bySport[lg]);
     for (const mk of String(S.sMarkets||'ml').split(',').map(x=>x.trim()).filter(Boolean)) prune('mk:'+mk, `strict ${MKN_S[mk]||mk}`, pr.byMkt[mk], prRecent.byMkt[mk]);
@@ -8950,6 +8984,7 @@ async function learnRetune(opts){
     if (anyChange && bonusNote) changes.push(bonusNote); else if (bonusNote) why.push(`(The strict-play bonus would move to ${(bonus*100).toFixed(1)} pts; it only changes together with a tested change.)`);
     LEARN.lastTune = Date.now();
     if (!anyChange){
+      try{ LEARN.autoOff = autoOff; if (curV) curV.autoOff = Object.assign({}, autoOff); }catch(e){}
       const m = `Checked ${rows.length} games (${trainDays} older days to learn, ${holdDays} newest days to test). Kept v${LEARN.cur}. ${why.join(' ')}`;
       learnLog(m); out.notes.push(m);
       // still refresh the "fit" columns and the Settings test lines so you see the latest evidence
@@ -8970,6 +9005,7 @@ async function learnRetune(opts){
   }catch(e){ learnState.err = 'Learning check failed: '+(e.message||e); learnLog(learnState.err); console.warn(e); return null; }
   finally{
     try{ if (typeof retuneLockMins==='function') retuneLockMins('games'); }catch(e){ console.warn('games lockMins', e); }
+    try{ if (typeof v42AfterGamesRetune==='function') v42AfterGamesRetune(); }catch(e){ console.warn('v42 games auto', e); }
     learnState.busy = false; learnProg(''); learnSave(); if (ui.tab==='results') renderResults(); else softRender();
   }
 }
@@ -9603,7 +9639,7 @@ async function loadLiveProps(opts){
         ? `Live lines from ESPN’s DraftKings prop feed on ${espnGames} game${espnGames===1?'':'s'} (${espnN} player-stat lines). Over is listed first, Under second — the feed does not label the side. ${S.oddsKey?'Odds API player markets are merged when a cached fetch is available.':'Add an Odds API key in Settings for more books.'}`
         : (espnErr ? 'Could not reach ESPN prop lines just now.' : 'No live prop lines posted for the upcoming games in this window. You can still type a prop in Verdict and we will research the player’s real game log.')
     };
-    try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('props'); if (typeof applyPulledFinal==='function') applyPulledFinal('props'); }catch(e){} try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
+    try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('props'); if (typeof applyPulledFinal==='function') applyPulledFinal('props'); if (typeof v42ApplyAutoOff==='function') v42ApplyAutoOff('props'); }catch(e){} try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
     if (typeof checkLockAlerts==='function') checkLockAlerts('props');
     if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props');
     if (typeof softRender==='function') softRender();
@@ -9727,7 +9763,7 @@ async function runPropEnrichment(){
       }
     }
   }catch(e){}
-  try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('props'); if (typeof applyPulledFinal==='function') applyPulledFinal('props'); }catch(e){} try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
+  try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('props'); if (typeof applyPulledFinal==='function') applyPulledFinal('props'); if (typeof v42ApplyAutoOff==='function') v42ApplyAutoOff('props'); }catch(e){} try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
   try{ if (typeof checkLockAlerts==='function') checkLockAlerts('props'); }catch(e){}
   try{ if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props'); }catch(e){}
   flush(true);
@@ -10359,11 +10395,14 @@ function buildParlays(){
   const propsL = propParlaySides();
   // v41: a pulled leg can never come back inside a parlay
   const raw = gamesL.concat(propsL).filter(l=>!(typeof isFinalPulled==='function' && (isFinalPulled(legKeyOf(l)) || isFinalPulled(l.id))));
-  for (const p of raw) p._fails = parlayLegFails(p, cfg);
+  // v42: parlays are always generated on the BASE level (the tested Picky v2 bar). When parlays run cold the model tightens
+  // the bar (cfg); base-level parlays that miss the tighter bar are held back but still tracked quietly (coldHeld).
+  const baseCfg = (typeof v42ParlayBaseCfg==='function' ? v42ParlayBaseCfg() : null) || cfg;
+  for (const p of raw){ p._fails = parlayLegFails(p, cfg); p._failsBase = baseCfg===cfg ? p._fails : parlayLegFails(p, baseCfg); }
   // Eligible: price in range. Clean legs have no fails. Near legs have only soft misses.
   const inRange = raw.filter(p=>p.price!=null && p.price>=cfg.sFavMin && p.price<=cfg.sDogMax && p.p!=null);
-  const clean = inRange.filter(p=>!p._fails.length);
-  const poolSrc = clean.length>=4 ? clean : inRange.filter(p=>p.p>=Math.max(0.56, (+cfg.sMinWin||0.62)-0.06) && p._fails.filter(f=>/game-time decision/.test(f)).length===0);
+  const clean = inRange.filter(p=>!p._failsBase.length);
+  const poolSrc = clean.length>=4 ? clean : inRange.filter(p=>p.p>=Math.max(0.56, (+baseCfg.sMinWin||0.62)-0.06) && p._failsBase.filter(f=>/game-time decision/.test(f)).length===0);
   // One best side per game+market-family (prefer highest p among legs of that event that are ML first)
   const byEvent = new Map();
   for (const p of poolSrc){
@@ -10386,20 +10425,25 @@ function buildParlays(){
     const edge = p-implied;
     const ev = p*(dec-1)-(1-p);
     const am = decToAm(dec);
-    const fails = arr.flatMap(l=> (l._fails||[]).map(f=>({leg:l, f})));
-    const cleanAll = fails.length===0;
     const sweet = dec>=sweetLo && dec<=sweetHi;
-    let verdict='avoid', J='SKIP';
-    if (cleanAll && edge>=0 && (sweet || (dec>=payLo && dec<=payHi))){ verdict='good'; J='BET'; }
-    else if (cleanAll && edge>=-0.04){ verdict='watch'; J='MAYBE LATER'; }
-    else if (fails.length<=1 && p>=implied*0.92){ verdict='watch'; J='MAYBE LATER'; }
-    else { verdict='avoid'; J='SKIP'; }
+    const judge = fl => {
+      const cleanAll = fl.length===0;
+      if (cleanAll && edge>=0 && (sweet || (dec>=payLo && dec<=payHi))) return ['good','BET'];
+      if (cleanAll && edge>=-0.04) return ['watch','MAYBE LATER'];
+      if (fl.length<=1 && p>=implied*0.92) return ['watch','MAYBE LATER'];
+      return ['avoid','SKIP'];
+    };
+    const fails = arr.flatMap(l=> (l._fails||[]).map(f=>({leg:l, f})));
+    let [verdict, J] = judge(fails);
+    const baseV = baseCfg===cfg ? verdict : judge(arr.flatMap(l=> (l._failsBase||[]).map(f=>({leg:l, f}))))[0];
+    let coldHeld = false, reasons0 = null;
+    if (baseV==='good' && verdict!=='good'){ coldHeld = true; verdict = 'watch'; J = 'MAYBE LATER'; reasons0 = ['Parlays are running cold, so only the strongest show. This one is tracked quietly and counts toward turning parlays back up.']; }
     const id = 'parlay:'+arr.map(l=>l.id).sort().join('+');
     const sports = [...new Set(arr.map(l=>l.league||(l.g&&l.g.league)).filter(Boolean))];
     const mix = arr.every(l=>l.isProp) ? 'props' : arr.every(l=>!l.isProp) ? 'games' : 'mixed';
     combos.push({
       id, isParlay:true, n:arr.length, legs:arr.slice(), dec, am, p, implied, edge, ev,
-      price:am, verdict, C:{J}, sports, mix, league:sports[0],
+      price:am, verdict, C:{J}, sports, mix, league:sports[0], sg: baseV==='good', coldHeld, reasons: reasons0 || undefined,
       label: `${arr.length}-leg parlay · ${fmtDecX(dec)}`,
       g: arr[0] && arr[0].g, start: Math.min(...arr.map(l=>l.g&&l.g.start?+l.g.start:Infinity)),
       score: (p-implied)*20 + (sweet?1:0)
@@ -10436,6 +10480,7 @@ function buildParlays(){
   // ensure some avoids if we have weak combos leftover
   for (const c of kept){ if (typeof isFinalPulled==='function' && isFinalPulled(c.id) && c.verdict!=='avoid'){ c.verdict='avoid'; c.C={J:'SKIP'}; (c.reasons||(c.reasons=[])).unshift('Pulled earlier. It stays off the board.'); } }
   parlays = kept;
+  try{ if (typeof v42ApplyAutoOff==='function') v42ApplyAutoOff('parlay'); }catch(e){}
   try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('parlay'); }catch(e){}
   if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
   try{ if (typeof parlayLearnCapture==='function') parlayLearnCapture(); }catch(e){}
@@ -11053,7 +11098,7 @@ function propLearnCapture(){
     PROP_SNAPS.set(p.id, {
       i:p.id, t, eventId:p.g.eventId||p.g.id, league:p.league||p.g.league,
       playerId:p.playerId, playerName:p.playerName, kind:p.kind||p.mk, side:p.side, line:p.line,
-      price:p.price, p:p.p, implied:p.implied, verdict:p.verdict, y:null,
+      price:p.price, p:p.p, implied:p.implied, verdict:p.verdict, sg:(p.verdict==='good'||p.autoOffFrom==='good')?1:0, y:null,
       minsToTip: Math.round((t - Date.now())/60000)
     });
     n++;
@@ -11070,7 +11115,7 @@ function parlayLearnCapture(){
     if (t < Date.now()-2*86400000) continue;
     if (PARLAY_SNAPS.has(pl.id)) continue;
     PARLAY_SNAPS.set(pl.id, {
-      i:pl.id, t, n:pl.n, dec:pl.dec, am:pl.am, p:pl.p, implied:pl.implied, edge:pl.edge, verdict:pl.verdict, mix:pl.mix,
+      i:pl.id, t, n:pl.n, dec:pl.dec, am:pl.am, p:pl.p, implied:pl.implied, edge:pl.edge, verdict:pl.verdict, mix:pl.mix, sg:(pl.sg||pl.verdict==='good')?1:0, minLegP:(pl.legs||[]).reduce((m,l)=>l&&l.p!=null?Math.min(m,+l.p):m,1),
       minsToTip: Math.round((t - Date.now())/60000),
       legs: pl.legs.map(l=>({
         type: (l.isProp||l.playerName)?'prop':'game',
@@ -11372,35 +11417,10 @@ function evalLockPolicy(rows, maxMins, payoutFn){
   return {n,w,l:n-w,wr:w/n,net,roi:net/(n*unit)};
 }
 function sameLock(a,b){ return (a==null||a<=0) ? (b==null||b<=0) : a===b; }
+// v42: the lock lead is picked automatically per board: 30m (default, recommended) or 60m when 60m is clearly more profitable
 function retuneLockMins(board){
-  return {adopted:false, why:'Lock lead is fixed at 30 minutes before start for every board (v41: lock close to game time).'};
-  const rec=v=>v==='good'||v==='pick'||v==='bet';
-  const rows = lockTuneRows(board).filter(x=>(x.y===0||x.y===1) && x.minsToTip!=null && rec(x.verdict));
-  if (rows.length < 40) return {adopted:false, why:'Need 40 graded timed snapshots first ('+rows.length+' so far).'};
-  const sorted = rows.slice().sort((a,b)=>a.t-b.t);
-  const cut = sorted[Math.max(0, sorted.length-Math.max(20, Math.round(sorted.length*0.3)))].t;
-  const hold = sorted.filter(x=>x.t>=cut);
-  if (hold.length<15) return {adopted:false, why:'Hold-out set is still small ('+hold.length+').'};
-  const cur = (typeof boardLockMins==='function'?boardLockMins(board): (board==='parlay'?null:board==='props'?120:60));
-  const curMax = (cur==null||cur<=0) ? Infinity : cur;
-  const curHold = evalLockPolicy(hold, curMax, board==='parlay' ? (x=>{ const dec=x.dec|| (x.am!=null&&typeof amToDec==='function'?amToDec(x.am):null); const unit=(+S.unit||25); return dec?unit*(dec-1):unit; }) : null);
-  let best={mins:cur, hold:curHold, lab:null};
-  for (const opt of LOCK_TUNE_OPTS){
-    const nAll = rows.filter(x=>x.minsToTip<=opt.max).length;
-    if (nAll < 25) continue;
-    const h = evalLockPolicy(hold, opt.max, board==='parlay' ? (x=>{ const dec=x.dec|| (x.am!=null&&typeof amToDec==='function'?amToDec(x.am):null); const unit=(+S.unit||25); return dec?unit*(dec-1):unit; }) : null);
-    if (h.n<12 || h.roi==null) continue;
-    const better = curHold.roi==null ? (h.n>=12) : (h.roi > curHold.roi + 1e-6);
-    if (better && (best.lab==null || sameLock(best.mins,cur) || h.roi>best.hold.roi)) best={mins:opt.mins, hold:h, lab:opt.lab};
-  }
-  if (best.lab==null || sameLock(best.mins, cur)) return {adopted:false, why:'No better lock window on unseen days.', current:cur};
-  if (typeof setBoardLockMins==='function') setBoardLockMins(board, best.mins);
-  const lab = board==='games'?'Games':board==='props'?'Props':'Parlays';
-  const txt = `Lock window for ${lab} moved to ${best.lab==='all/early'?'Early / Open':best.lab} after a better hold-out ROI (${curHold.roi==null?'—':((curHold.roi*100).toFixed(1)+'%')} → ${(best.hold.roi*100).toFixed(1)}%).`;
-  const track = board==='games' ? LEARN : (LEARN && LEARN[board]);
-  if (track){ (track.log||(track.log=[])).unshift({at:Date.now(), txt}); track.log=track.log.slice(0,40); }
-  try{ if (typeof learnLog==='function' && board==='games') learnLog(txt); }catch(e){}
-  return {adopted:true, mins:best.mins, lab:best.lab, hold:best.hold, current:cur};
+  if (typeof v42RetuneLock==='function') return v42RetuneLock(board);
+  return {adopted:false, why:'Lock lead stays at 30 minutes.'};
 }
 
 async function propsLearnRetune(opts){
@@ -11420,6 +11440,7 @@ async function propsLearnRetune(opts){
     if (r.adopted){
       const next=ver+1;
       boardS('props').sMinWin = r.bar;
+      try{ if (typeof AUTO==='function'){ const ap = AUTO().boards.props; (ap.bars||(ap.bars={}))[boardS('props').preset||'super'] = r.bar; v42Save(true); } }catch(e){}
       if (boardS('props').preset!=='custom'){ /* leave preset name if it still matches, else custom */ }
       track.cur=next;
       track.versions.push({id:next, at:Date.now(), status:'current', title:'Auto-learned', changes:[`Minimum estimated win chance moved ${fmtPct(cur,0)} → ${fmtPct(r.bar,0)} after a better hold-out record (${r.hold.w}-${r.hold.l}, ${fmtPct(r.hold.wr,1)}).`], hold:r.hold, games:r.n});
@@ -11431,6 +11452,7 @@ async function propsLearnRetune(opts){
     }
     track.log=(track.log||[]).slice(0,40);
     try{ retuneLockMins('props'); }catch(e){ console.warn('props lockMins', e); }
+    try{ if (typeof v42AutoPresetProps==='function') v42AutoPresetProps(); if (typeof v42PruneBoard==='function') v42PruneBoard('props'); }catch(e){ console.warn('v42 props auto', e); }
     learnSave();
     return r;
   }catch(e){ console.warn('props learn', e); return null; }
@@ -11445,19 +11467,22 @@ async function parlayLearnRetune(opts){
   learnState.busy=true;
   try{
     await parlayLearnGrade();
-    const steps=[0.58,0.60,0.62,0.64,0.66,0.68];
-    const cur = +boardS('parlay').sMinWin || 0.62;
+    const A42 = typeof AUTO==='function' ? AUTO().boards.parlay : null;
+    const onSuper = !!(A42 && A42.level>=3);
+    const steps = onSuper ? [0.68,0.70,0.72] : [0.58,0.60,0.62,0.64,0.66];
+    const cur = A42 ? (onSuper ? (+A42.base.super||0.68) : (+A42.base.picky||0.62)) : (+boardS('parlay').sMinWin || 0.62);
     const payout = x => {
       const dec = x.dec || (x.am!=null?amToDec(x.am):null);
       const unit=+S.unit||25;
       return dec ? unit*(dec-1) : unit;
     };
-    const r = retuneThresholds([...PARLAY_SNAPS.values()], steps, cur, payout);
+    const r = retuneThresholds([...PARLAY_SNAPS.values()].map(x=>Object.assign({}, x, {p: x.minLegP!=null && x.minLegP<1 ? x.minLegP : x.p})), steps, cur, payout);
     track.lastTune=Date.now(); track.lastTry=Date.now();
     const ver=track.cur||1;
     if (r.adopted){
       const next=ver+1;
-      boardS('parlay').sMinWin = r.bar;
+      if (A42){ if (onSuper) A42.base.super = r.bar; else A42.base.picky = r.bar; if (typeof v42ApplyParlayLevel==='function') v42ApplyParlayLevel(); if (typeof v42Save==='function') v42Save(true); }
+      else boardS('parlay').sMinWin = r.bar;
       track.cur=next;
       track.versions.push({id:next, at:Date.now(), status:'current', title:'Auto-learned', changes:[`Per-leg win bar moved ${fmtPct(cur,0)} → ${fmtPct(r.bar,0)} after a better hold-out record.`], hold:r.hold, games:r.n});
       (track.log||(track.log=[])).unshift({at:Date.now(), txt:`Adopted Parlays v${next}: per-leg min win ${fmtPct(r.bar,0)}.`});
@@ -11468,6 +11493,7 @@ async function parlayLearnRetune(opts){
     }
     track.log=(track.log||[]).slice(0,40);
     try{ retuneLockMins('parlay'); }catch(e){ console.warn('parlay lockMins', e); }
+    try{ if (typeof v42PruneBoard==='function') v42PruneBoard('parlay'); }catch(e){ console.warn('v42 parlay auto', e); }
     learnSave();
     return r;
   }catch(e){ console.warn('parlay learn', e); return null; }
@@ -11927,9 +11953,9 @@ function renderSettings(){
       <div class="s-inline"><label>Min payout (×)<input name="payoutMin" type="number" step="0.05" min="1.2" max="10" value="${B.payoutMin??1.85}"></label>
       <label>Max payout (×)<input name="payoutMax" type="number" step="0.05" min="1.5" max="20" value="${B.payoutMax??3.25}"></label></div>
       <div class="s-note">Sweet spot is 2.0x–3.0x (about +100 to +200). Tickets slightly outside still show, but Picks prefer the sweet spot. Example: −220 and −210 ≈ 2.15x; three legs around −280/−260/−240 ≈ 2.67x.</div></div>
-    <div class="s-row"><div class="s-h">Parlay auto-guard</div>
-      <label class="chk"><input type="checkbox" name="parlayForceOn" ${S.parlayForceOn?'checked':''}> Keep Parlays on even if they're losing money</label>
-      <div class="s-note">Off (recommended): once 30 locked parlays are graded and the last 30 are below −5% ROI, Parlays pause by themselves, then come back once the last 30 are above 0%. ${typeof parlayGuardPaused==='function' && typeof V41==='function' && V41().guard && V41().guard.paused ? '<b>Right now the guard says pause.</b>' : ''}</div></div>`
+    <div class="s-row"><div class="s-h">When parlays run cold <span class="mut">(automatic)</span></div>
+      <div class="s-note">Parlays never fully pause, so a winning stretch is never missed. Every parlay that clears the tested bar is tracked and graded, shown or not. When recent parlays lose money, the board tightens one small step (stronger legs, fewer parlays) and loosens back the same way once results improve. A step is kept only if it also tested better on recent parlays the model hadn't learned from.</div>
+      <div class="s-note"><b>${esc(typeof v42ParlayStateLine==='function' ? v42ParlayStateLine() : '')}</b></div></div>`
     : `<div class="s-row"><div class="s-h">My odds range</div>
       <div class="s-inline"><label>Most I'll lay<input name="sFavMin" type="number" step="1" value="${B.sFavMin??S.sFavMin}"></label>
       <label>Longest I'll take<input name="sDogMax" type="number" step="1" value="${B.sDogMax??S.sDogMax}"></label></div>
@@ -11940,11 +11966,13 @@ function renderSettings(){
   <div class="panel simple">
     <div class="s-row"><div class="s-h">Which board?</div>
       <div class="board-seg" id="settingsBoardSeg">${['games','props','parlay'].map(b=>`<button type="button" data-set-board="${b}" class="${sb===b?'on':''}">${boardLabs[b]}</button>`).join('')}</div>
-      <div class="s-note">Pickiness and odds are independent for Games, Props, and Parlay. Changing Props to Relaxed leaves Games and Parlay alone. Which sports show on each tab is set in that tab's Filters. Shared settings (books, refresh, alerts, bet size) stay below.</div></div>
-    <div class="s-row"><div class="s-h">How picky? <span class="mut">(${boardLabs[sb]})</span></div>
-      <div class="seg">${['super','picky','relaxed'].map(n=>`<label class="${cur===n?'on':''}"><input type="radio" name="preset" value="${n}" ${cur===n?'checked':''} hidden>${(PRESETS[n]&&PRESETS[n].label)||n}${n==='picky'&&sb==='parlay'?' <small>recommended</small>':''}${n==='super'&&sb!=='parlay'?' <small>recommended</small>':''}</label>`).join('')}</div>
-      <div class="s-note" id="presetNote">${presetNote}</div></div>
+      <div class="s-note">Pickiness and lock time are picked by the model for each board separately, based on which is making more money. Your odds range is yours. Shared settings (sports, books, refresh, alerts, bet size) stay below.</div></div>
+    ${typeof v42AutoSettingsHTML==='function' ? v42AutoSettingsHTML(sb) : ''}
     ${oddsRow}
+
+    <div class="s-row"><div class="s-h">Sports I want picks from</div>
+      <div class="filters" id="settingsSports">${LEAGUES.map(L=>`<label class="chip ${S.enabled.includes(L.id)?'on':''}"><input type="checkbox" name="en_${L.id}" ${S.enabled.includes(L.id)?'checked':''} hidden>${sportChipLabel(L)}</label>`).join('')}</div>
+      <div class="s-note">This is your master list. Off here = off everywhere, and the model never turns it back on. Inside this list, the model turns sports off and back on by itself on each board (Games, Props, Parlays), based on whether they're making money. You'll see those as <b>auto-off</b> in Filters, with the reason.</div></div>
 
     <div class="s-row"><div class="s-h">My books</div>
       <div class="mybooks-sel" id="myBooksSel">${myBooksSummaryHTML(books)}</div>
@@ -11995,17 +12023,16 @@ function renderSettings(){
   <div class="panel"><h3>Refresh & which sports to load</h3><div class="form">
     <label>Days ahead to load (1–7)<input name="lookaheadDays" type="number" min="1" max="7" value="${S.lookaheadDays}"></label>
   </div>
-  <div class="filters" style="margin-top:12px">${LEAGUES.map(L=>`<label class="chip ${S.enabled.includes(L.id)?'on':''}"><input type="checkbox" name="en_${L.id}" ${S.enabled.includes(L.id)?'checked':''} hidden>${sportChipLabel(L)}</label>`).join('')}</div>
-  <div class="hint">Turning a sport off here hides its games everywhere. ESPN's free feed carries DraftKings odds for NBA, NHL, NFL, MLB, NCAA, WNBA and soccer.</div></div>
+  <div class="hint">Which sports load is set under <b>Sports I want picks from</b> above. ESPN's free feed carries DraftKings odds for NBA, NHL, NFL, MLB, NCAA, WNBA and soccer.</div></div>
 
   <div class="panel"><h3>Strict checks & prediction markets</h3><div class="form">
-    <label>Markets in strict<select name="sMarkets">${[['ml','Moneyline only (tested)'],['ml,spread','ML + spreads'],['ml,spread,total','All']].map(([v,l])=>`<option value="${v}" ${S.sMarkets===v?'selected':''}>${l}</option>`).join('')}</select></label>
-    <label>Sports without ESPN computer (NHL, MLB)<select name="sNoModelSports"><option value="1" ${S.sNoModelSports?'selected':''}>Allowed</option><option value="0" ${!S.sNoModelSports?'selected':''}>Not allowed</option></select></label>
+    <label>Markets in strict (set by the model)<select name="sMarkets" disabled>${[['ml','Moneyline only (tested)'],['ml,spread','ML + spreads'],['ml,spread,total','All']].map(([v,l])=>`<option value="${v}" ${S.sMarkets===v?'selected':''}>${l}</option>`).join('')}</select></label>
+    <label>Sports without ESPN computer (set by the model)<select name="sNoModelSports" disabled><option value="1" ${S.sNoModelSports?'selected':''}>Allowed</option><option value="0" ${!S.sNoModelSports?'selected':''}>Not allowed</option></select></label>
     <label>Polymarket prices<select name="pmOn"><option value="1" ${S.pmOn?'selected':''}>On</option><option value="0" ${!S.pmOn?'selected':''}>Off</option></select></label>
     <label>Kalshi prices<select name="kalshiOn"><option value="1" ${S.kalshiOn!==false?'selected':''}>On</option><option value="0" ${S.kalshiOn===false?'selected':''}>Off</option></select></label>
     <label style="grid-column:span 2">Kalshi price relay (optional URL; blank = Kalshi's public API)<input name="kalshiRelay" value="${esc(S.kalshiRelay||'')}" placeholder="https://…/trade-api/v2"></label>
-    ${ST.filter(([k])=>k!=='sFavMin'&&k!=='sDogMax').map(([k,l])=>`<label>${l}<input name="${k}" type="number" step="any" value="${S[k]}"></label>`).join('')}
-  </div><div class="hint" style="margin-top:8px">The pickiness buttons set these for you. Changing them here makes the setting "Custom". Polymarket's 5% taker fee is added before comparing prices.</div></div>
+    ${ST.filter(([k])=>k!=='sFavMin'&&k!=='sDogMax').map(([k,l])=>{ const auto = PRESET_KEYS.includes(k); return `<label>${l}${auto?' <span class="mut">(model)</span>':''}<input name="${k}" type="number" step="any" value="${S[k]}" ${auto?'disabled':''}></label>`; }).join('')}
+  </div><div class="hint" style="margin-top:8px">Fields marked (model) are set by the model's automatic pickiness and are shown read-only. Polymarket's 5% taker fee is added before comparing prices.</div></div>
 
   <div class="panel"><h3>Odds API details</h3><div class="form">
 <input type="hidden" name="oddsRegions" value="${esc(S.oddsRegions||'us')}">
@@ -12075,7 +12102,7 @@ function renderSettings(){
     if (newKey!==S.oddsKey) oddsCache = null;
     S.oddsKey = newKey; S.oddsRegions = f.get('oddsRegions'); S.oddsBooks = String(f.get('oddsBooks')||'').trim();
     S.enabled = LEAGUES.filter(L=>f.get('en_'+L.id)).map(L=>L.id);
-    S.deepData = f.get('deepData')==='1'; S.sMarkets = f.get('sMarkets'); S.sNoModelSports = f.get('sNoModelSports')==='1'; S.pmOn = f.get('pmOn')==='1'; S.kalshiOn = f.get('kalshiOn')!=='0'; S.kalshiRelay = String(f.get('kalshiRelay')||'').trim(); if (typeof kalshiCache!=='undefined' && kalshiCache) kalshiCache.failT = 0;
+    S.deepData = f.get('deepData')==='1'; S.pmOn = f.get('pmOn')==='1'; S.kalshiOn = f.get('kalshiOn')!=='0'; S.kalshiRelay = String(f.get('kalshiRelay')||'').trim(); if (typeof kalshiCache!=='undefined' && kalshiCache) kalshiCache.failT = 0;
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).concat(extra).join(',');
     S.myBooksCustom = true;
@@ -12086,9 +12113,7 @@ function renderSettings(){
     S.ntfyTopic = topic || S.ntfyTopic || (typeof randomNtfyTopic==='function' ? randomNtfyTopic() : S.ntfyTopic);
 
     const sb = ui.settingsBoard || 'games';
-    const chosen = f.get('preset') || before;
     if (sb==='games'){
-      if (chosen !== before && PRESETS[chosen]) applyPreset(chosen); else S.preset = detectPreset();
       if (typeof syncGamesBoard==='function') syncGamesBoard();
     } else {
       const B = typeof boardS==='function' ? boardS(sb) : S;
@@ -12096,20 +12121,18 @@ function renderSettings(){
       if (isFinite(fav)) B.sFavMin = fav;
       if (isFinite(dog)) B.sDogMax = dog;
       if (sb==='parlay'){
-        S.parlayForceOn = !!f.get('parlayForceOn');
         const pmn=parseFloat(f.get('payoutMin')), pmx=parseFloat(f.get('payoutMax'));
         if (isFinite(pmn)) B.payoutMin = pmn;
         if (isFinite(pmx)) B.payoutMax = pmx;
       }
-      if (typeof applyBoardPreset==='function' && chosen) applyBoardPreset(sb, chosen);
-      else B.preset = chosen;
     }
+    if (typeof v42Enforce==='function') v42Enforce();   // pickiness stays the model's choice
     saveJSON(LS.settings, S); if (typeof startRefreshWatch==='function') startRefreshWatch();
     toast('Saved. Refreshing…'); refresh(); renderSettings();
   };
   $('#btnDefaults').onclick = ()=>{ if(!confirm('Reset everything except your key, books, sports and bet size to the recommended settings?')) return;
-    for (const [k] of TH.concat(WT, ST)) S[k]=DEFAULTS[k]; S.sExclude = DEFAULTS.sExclude; S.sNoSoccer = false; S.sMarkets = DEFAULTS.sMarkets; S.sNoModelSports = DEFAULTS.sNoModelSports; S.pmOn = true; applyPreset('super');
-    saveJSON(LS.settings,S); evaluateAll(); renderSettings(); toast('Back to recommended (Super picky)'); };
+    for (const [k] of TH.concat(WT, ST)) S[k]=DEFAULTS[k]; S.sExclude = ''; S.sNoSoccer = false; S.sMarkets = DEFAULTS.sMarkets; S.sNoModelSports = DEFAULTS.sNoModelSports; S.pmOn = true; if (typeof v42Enforce==='function') v42Enforce(); else applyPreset('super');
+    saveJSON(LS.settings,S); evaluateAll(); renderSettings(); toast('Back to recommended. Pickiness stays on the model\'s automatic choice.'); };
   $('#btnClearSeen').onclick = ()=>{ if(!confirm('Clear stored first-seen odds?')) return; firstSeen={}; saveJSON(LS.firstSeen, firstSeen); toast('Cleared'); };
   $('#btnOddsNow').onclick = ()=>{ if(!S.oddsKey){ toast('Save an API key first'); return; } refresh(true); };
 }
@@ -12309,8 +12332,10 @@ $('#sportChips').addEventListener('click', e=>{
   const id = c.dataset.sport;
   if (restrict){
     if (!Array.isArray(ui.sports)) ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id));
+    const autoB = (typeof modelSkippedSports==='function' && typeof autoShowSet==='function') ? modelSkippedSports(ui.board||'games') : new Set();
     if (id==='all') ui.sports = LEAGUES.map(L=>L.id);
-    else if (id==='reset'){ ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id)); ui.horizon = '24h'; }
+    else if (id==='reset'){ ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id)); ui.horizon = '24h'; if (typeof autoShowSet==='function') autoShowSet(ui.board||'games').clear(); }
+    else if (autoB.has(id)){ const set = autoShowSet(ui.board||'games'); if (set.has(id)) set.delete(id); else set.add(id); if (!ui.sports.includes(id)) ui.sports.push(id); }   // v42: temporary peek, not saved
     else {
       const i = ui.sports.indexOf(id);
       if (i>=0) ui.sports.splice(i,1);
@@ -12452,7 +12477,7 @@ try{
   if (qb || qt){ history.replaceState(null, '', location.pathname + (location.hash||'')); }
 }catch(e){}
 startRefreshWatch();
-learnInit().catch(e=>console.warn('learning', e)).then(()=>{ render(); refresh(); });
+learnInit().catch(e=>console.warn('learning', e)).then(()=>{ try{ if (typeof v42Init==='function') v42Init(); }catch(e){ console.warn('v42 init', e); } render(); refresh(); });
 /* ================= ACCOUNT + CLOUD SYNC (Firebase Auth + Firestore) =================
    Loads the Firebase compat SDK only on http(s), so file:// and offline stay error-free.
    Synced per account at users/{uid}: settings, filters, bets, profitPeriod, profile, updatedAt. */
@@ -12673,6 +12698,7 @@ function localPayload(){
     betsDeleted: JSON.stringify(syncMeta.deleted||{}),
     pulledFinal: JSON.stringify(typeof V41==='function' ? V41().pulled : {}),
     parlayGuard: JSON.stringify(typeof V41==='function' ? V41().guard : {}),
+    autoState: JSON.stringify(typeof AUTO==='function' ? AUTO() : {}),
     profitPeriod: (typeof trackerUI!=='undefined' && trackerUI.period) || 'all',
     profitPeriodAt: syncMeta.periodAt||0,
     profile: {displayName: (u && u.displayName)||'', email: (u && u.email)||''},
@@ -12730,6 +12756,10 @@ function applyRemote(d){
       for (const k of Object.keys(rp)) if (!st41.pulled[k] && rp[k] && +rp[k].start > Date.now()-12*3600e3){ st41.pulled[k] = rp[k]; add++; }
       if (add){ try{ localStorage.setItem('bl_pulledFinal_v1', JSON.stringify(st41.pulled)); }catch(e){} needRender = true; }
     }
+    if (d.autoState && typeof AUTO==='function'){
+      const ra = parseJ(d.autoState, null); const la = AUTO();
+      if (ra && ra.boards && (+ra.at||0) > (+la.at||0)){ window.__v42 = null; try{ localStorage.setItem('bl_auto_v1', JSON.stringify(ra)); }catch(e){} try{ if (typeof v42Enforce==='function') v42Enforce(); }catch(e){} needRender = true; }
+    }
     if (d.parlayGuard && typeof V41==='function'){
       const rg = parseJ(d.parlayGuard, null); const st41 = V41();
       if (rg && (+rg.checked||0) > (+(st41.guard||{}).checked||0)){ st41.guard = rg; try{ localStorage.setItem('bl_parlayGuard_v1', JSON.stringify(rg)); }catch(e){} }
@@ -12758,6 +12788,7 @@ function localDiffersFrom(d){
   const rs = {}; (rb||[]).forEach(b=>{ if (b && b.id) rs[b.id] = +b._u||0; });
   if ((bets||[]).some(b=>!rIds.has(b.id) || (syncMeta.betStamps[b.id]||0) > (rs[b.id]||0))) return true;
   if (typeof V41==='function'){ const rp = parseJ(d.pulledFinal, {}) || {}; if (Object.keys(V41().pulled).some(k=>!(k in rp))) return true; }
+  if (typeof AUTO==='function'){ const ra = parseJ(d.autoState, null); if ((+AUTO().at||0) > (+(ra&&ra.at)||0)) return true; }
   const rd = parseJ(d.betsDeleted, {}) || {};
   if (Object.keys(syncMeta.deleted||{}).some(id=>!(id in rd))) return true;
   return false;
@@ -13239,7 +13270,12 @@ async function verdictEspnLookup(q){
 /* ================= v41: lock close to game time · pulled is final · urgent-only pulls after lock · automatic profit tracking =================
    State lives on window.__v41 (lazy) so nothing depends on script order. Everything persists in localStorage;
    the pulled set also rides along with account sync. */
-function lockLeadMins(){ return 30; }            // one lead for Games, Props and Parlays (parlays: from the earliest leg)
+// v42: the lead is picked automatically per board, 30m (default, recommended) or 60m — see 19_auto.js. Parlays count from the earliest leg.
+function lockLeadMins(board){
+  try{ if (window.__v42LeadOverride) return +window.__v42LeadOverride; }catch(e){}
+  try{ if (typeof v42LockFor==='function') return v42LockFor(board||'games'); }catch(e){}
+  return 30;
+}
 function v41LS(){ return {pulled:'bl_pulledFinal_v1', locked:'bl_locked_v1', guard:'bl_parlayGuard_v1', flips:'bl_flipLog_v1', prevGood:'bl_prevGood_v1'}; }
 function V41(){
   if (window.__v41) return window.__v41;
@@ -13348,7 +13384,7 @@ function makeLockRec(board, x, extra){
   const now = Date.now();
   const unit = (+S.unit||25);
   if (board==='parlay'){
-    return Object.assign({board, k:x.id, at:now, start:itemStartMs(x), label:x.label||'Parlay', n:x.n, dec:x.dec, am:x.am, p:x.p, legs:(x.legs||[]).map(legRecOf), unit}, extra||{});
+    return Object.assign({board, k:x.id, at:now, start:itemStartMs(x), label:x.label||'Parlay', n:x.n, dec:x.dec, am:x.am, p:x.p, minLegP:(x.legs||[]).reduce((m,l)=>l&&l.p!=null?Math.min(m,+l.p):m, 1), legs:(x.legs||[]).map(legRecOf), unit}, extra||{});
   }
   if (board==='props'){
     const g = x.g;
@@ -13364,12 +13400,17 @@ function recordLocks(board){
   let src = [];
   if (board==='games') src = ((typeof plays!=='undefined' && plays) || []).filter(p=>p && p.verdict==='good' && p.g && p.g.state==='pre' && p.g.eventId);
   else if (board==='props') src = ((typeof props!=='undefined' && props) || []).filter(p=>p && p.verdict==='good' && (!p.g || p.g.state==='pre'));
-  else if (board==='parlay') src = ((typeof parlays!=='undefined' && parlays) || []).filter(p=>p && p.verdict==='good' && !(p.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre'));
+  else if (board==='parlay') src = ((typeof parlays!=='undefined' && parlays) || []).filter(p=>p && (p.verdict==='good' || p.coldHeld) && !(p.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre'));   // v42: parlays held back while running cold are shadow-tracked
   for (const x of src){
     const k = boardKeyOf(board, x); if (!k || st.locked[k] || isFinalPulled(k)) continue;
     if (itemStartMs(x) <= now) continue;
+    if (board==='parlay' && x.coldHeld && x.verdict!=='good'){
+      // shadow: same timing rule, but without the leg-stability check the board would show (it isn't shown)
+      if (!isOfficialLock(itemStartMs(x), lockLeadMins('parlay'))) continue;
+      st.locked[k] = makeLockRec(board, x, {shadow:true, cold:true}); dirty = true; continue;
+    }
     const ls = lockStatus(x, board); if (!ls.locked) continue;
-    st.locked[k] = makeLockRec(board, x, board==='parlay' && parlayGuardPaused() ? {shadow:true} : null);
+    st.locked[k] = makeLockRec(board, x, null);
     dirty = true;
   }
   if (dirty) v41Save('locked');
@@ -13378,7 +13419,7 @@ function recordLocks(board){
 function ensureTailedLockRec(b, board, x){
   const st = V41(); const k = boardKeyOf(board, x); if (!k) return null;
   if (st.locked[k]) return st.locked[k];
-  if (!isOfficialLock(itemStartMs(x), lockLeadMins())) return null;
+  if (!isOfficialLock(itemStartMs(x), lockLeadMins(board))) return null;
   st.locked[k] = makeLockRec(board, x, {tailedOnly:true}); v41Save('locked');
   return st.locked[k];
 }
@@ -13539,9 +13580,12 @@ async function gradeLockedRecords(){
     if (v===line) return 'push';
     return String(r.side).toLowerCase()==='over' ? (v>line?'win':'loss') : (v<line?'win':'loss');
   };
-  for (const k of Object.keys(st.locked)){
-    const r = st.locked[k];
+  const maps = [st.locked].concat(typeof v42PolicyMaps==='function' ? v42PolicyMaps() : []);
+  let nPol = 0;
+  for (const M of maps) for (const k of Object.keys(M)){
+    const r = M[k];
     if (!r || r.res || !(+r.start < now - 3*3600e3)) continue;
+    if (M!==st.locked){ const twin = st.locked[k]; if (twin && twin.res && twin.board===r.board){ r.res = twin.res; r.graded = now; const u = +r.unit||(+S.unit||25); r.profit = twin.res==='win' ? (twin.profit!=null ? +twin.profit*(u/(+twin.unit||u)) : u) : twin.res==='loss' ? -u : 0; nPol++; continue; } }
     try{
       let res = null, dec = null;
       if (r.board==='parlay'){
@@ -13561,48 +13605,41 @@ async function gradeLockedRecords(){
       const unit = +r.unit || (+S.unit||25);
       r.res = res; r.graded = now;
       r.profit = res==='win' ? (dec ? unit*(dec-1) : unit) : res==='loss' ? -unit : 0;
-      n++;
+      if (M===st.locked) n++; else nPol++;
     }catch(e){ console.warn('grade locked', k, e); }
   }
-  if (n){ v41Save('locked'); updateParlayGuard(); if (typeof ui!=='undefined' && (ui.tab==='results' || ui.board==='parlay') && typeof render==='function') render(); }
+  if (nPol && typeof v42SavePolicy==='function') v42SavePolicy();
+  if (n) v41Save('locked');
+  if (n || nPol){ try{ if (typeof v42AfterGrade==='function') v42AfterGrade(); }catch(e){ console.warn('v42 after grade', e); } }
+  if (n){ if (typeof ui!=='undefined' && (ui.tab==='results' || ui.board==='parlay') && typeof render==='function') render(); }
   return n;
 }
 function lockedBoardStats(board, opts){
   opts = opts || {};
   const st = V41();
-  let list = Object.values(st.locked).filter(r=>r && r.board===board && !r.tailedOnly && !(r.pulled && !opts.withPulled));
+  let list = Object.values(st.locked).filter(r=>r && r.board===board && !r.tailedOnly && !(r.shadow && !opts.withShadow) && !(r.pulled && !opts.withPulled));
   const settled = list.filter(r=>r.res==='win'||r.res==='loss').sort((a,b)=>(a.start||0)-(b.start||0));
   const use = opts.last ? settled.slice(-opts.last) : settled;
   const w = use.filter(r=>r.res==='win').length, l = use.length - w;
   const staked = use.reduce((a,r)=>a+(+r.unit||(+S.unit||25)),0);
   const net = use.reduce((a,r)=>a+(+r.profit||0),0);
   return {n:use.length, w, l, push:list.filter(r=>r.res==='push'||r.res==='void').length, pending:list.filter(r=>!r.res).length,
-    pulled:Object.values(st.locked).filter(r=>r && r.board===board && r.pulled && !r.tailedOnly).length,
+    pulled:Object.values(st.locked).filter(r=>r && r.board===board && r.pulled && !r.tailedOnly && !r.shadow).length,
     wr:use.length ? w/use.length : null, roi:staked ? net/staked : null, net, units: net/((+S.unit)||25)};
 }
 function fmtRec(s){ return s.n ? `${s.w}–${s.l}${s.roi!=null?`, ${s.roi>=0?'+':'−'}${Math.abs(s.roi*100).toFixed(0)}%`:''}` : 'no graded locked parlays yet'; }
-/* ---------- parlay auto-guard ---------- */
-function updateParlayGuard(){
-  const st = V41(); const g = st.guard || (st.guard = {paused:false});
-  const last = lockedBoardStats('parlay', {last:30});
-  const before = !!g.paused;
-  if (!g.paused && last.n>=30 && last.roi!=null && last.roi < -0.05){ g.paused = true; g.at = Date.now(); }
-  else if (g.paused && last.n>=30 && last.roi!=null && last.roi > 0){ g.paused = false; g.resumedAt = Date.now(); }
-  g.n = last.n; g.roi = last.roi; g.w = last.w; g.l = last.l; g.checked = Date.now();
-  if (before!==g.paused) v41Save('guard'); else { try{ localStorage.setItem(v41LS().guard, JSON.stringify(g)); }catch(e){} }
-  return g;
-}
-function parlayGuardPaused(){ const g = V41().guard || {}; return !!g.paused && !(typeof S!=='undefined' && S.parlayForceOn); }
+/* ---------- v42: the hard parlay pause is gone (see 19_auto.js: parlays tighten gradually when cold) ---------- */
+function updateParlayGuard(){ const st = V41(); return st.guard || (st.guard = {paused:false}); }
+function parlayGuardPaused(){ return false; }
 function parlayBannerHTML(){
   const s = lockedBoardStats('parlay');
-  const W = fmtLockWindow(lockLeadMins());
-  const g = V41().guard || {};
-  if (parlayGuardPaused()){
-    return `<div class="parlay-warn parlay-paused" role="note"><span class="pw-txt">⏸️ <b>Parlays are paused</b> because they're losing money: the last ${g.n||30} locked parlays went ${g.w||0}–${g.l||0}, ${g.roi!=null?((g.roi>=0?'+':'−')+Math.abs(g.roi*100).toFixed(0)+'%'):'—'}. The model keeps tracking them quietly and turns Parlays back on by itself once the last ${30} are above 0%. You can force them on in Settings.<br><span class="pw-rec">Parlays so far: ${esc(fmtRec(s))}</span></span></div>`;
-  }
+  const W = fmtLockWindow(lockLeadMins('parlay'));
+  const cold = typeof v42ParlayColdNote==='function' ? v42ParlayColdNote() : '';
+  const rec = `<span class="pw-rec">Parlays so far: ${esc(fmtRec(s))}${s.pending?` · ${s.pending} waiting to be graded`:''}</span>`;
+  if (cold) return `<div class="parlay-warn parlay-cold" role="note"><span class="pw-txt">🧊 ${esc(cold)}<br>Parlays lock ${esc(W)} before the first game (auto).<br>${rec}</span></div>`;
   let hidden = false; try{ hidden = sessionStorage.getItem('bl_parlayWarnHidden')==='1'; }catch(e){}
   if (hidden) return '';
-  return `<div class="parlay-warn" role="note"><span class="pw-txt">⚠️ Parlays lock ${esc(W)} before the first game. Early Bird parlays can still change or drop off. Tailing early raises the chance of a pull.<br><span class="pw-rec">Parlays so far: ${esc(fmtRec(s))}${s.pending?` · ${s.pending} waiting to be graded`:''}</span></span><button type="button" class="pw-x" data-hide-parlay-warn aria-label="Hide this note for now">×</button></div>`;
+  return `<div class="parlay-warn" role="note"><span class="pw-txt">⚠️ Parlays lock ${esc(W)} before the first game (auto). Early Bird parlays can still change or drop off. Tailing early raises the chance of a pull.<br>${rec}</span><button type="button" class="pw-x" data-hide-parlay-warn aria-label="Hide this note for now">×</button></div>`;
 }
 /* ---------- Results: plain profit scoreboard ---------- */
 function v41ScoreboardHTML(){
@@ -13620,12 +13657,470 @@ function v41ScoreboardHTML(){
   const order = ['≤30m','30–60m','1–2h','2–6h','6h+'];
   const flipRow = flips.length ? order.map(b=>`<span class="meta-pill">${b} before start: <b>${bk[b]||0}</b></span>`).join(' ') : '<span class="mut">No drops recorded yet. Each time a pick drops to Avoid, the time before start is logged here.</span>';
   return `<div class="card v41-score">
-    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money? (locked picks, auto-graded)</h2><span class="hint">Every pick that locks ${esc(fmtLockWindow(lockLeadMins()))} before start is graded automatically from final scores and box scores at a flat ${esc('$'+(+S.unit||25))} unit. Pulled picks are listed but not counted.</span></div>
+    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money? (locked picks, auto-graded)</h2><span class="hint">Every pick that locks (${esc(['games','props','parlay'].map(b=>fmtLockWindow(lockLeadMins(b))).join(' / '))} before start for Games / Props / Parlays, picked automatically) is graded automatically from final scores and box scores at a flat ${esc('$'+(+S.unit||25))} unit. Pulled picks are listed but not counted.</span></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Board</th><th>W–L</th><th>Win rate</th><th>ROI</th><th>Profit</th><th>Waiting</th><th>Pulled after lock</th><th>So far</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="hint" style="margin-top:10px">Parlay auto-guard: ${parlayGuardPaused() ? `<b class="neg">paused</b> (last ${g.n} locked parlays ${g.roi!=null?(g.roi*100).toFixed(1)+'%':''}).` : (typeof S!=='undefined' && S.parlayForceOn && g.paused) ? '<b>forced on</b> in Settings (it would be paused).' : `on. Pauses Parlays if the last ${30} graded locked parlays are below −5% ROI and turns them back on above 0%.`}</div>
+    <div class="hint" style="margin-top:10px">Parlays never fully pause. ${esc(typeof v42ParlayStateLine==='function' ? v42ParlayStateLine() : '')}</div>
     <div class="hint" style="margin-top:10px"><b>Drops to Avoid by time before start:</b> ${flipRow}</div>
   </div>`;
 }
+/* ================= v42: everything automatic, driven by profit =================
+   - Pickiness: each board picks its own preset (walk-forward: learn on older data, test on the newest unseen window,
+     change only when the other preset is clearly better there). Bars inside each preset keep auto-tuning as before.
+   - Lock time: 30m (default, recommended) or 60m per board, from graded "what if we locked at 30m / 60m" records.
+   - Parlays: no hard pause. Every base-level parlay is shadow-tracked and graded; when recent parlays lose money the
+     board tightens one small step (only if the stricter bar also tests better on unseen parlays) and loosens back the same way.
+   - Sports: your Settings list is the master (off there = hard off). Inside it, each board turns sports/markets off and
+     back on by profit, and keeps tracking the ones it turned off so they can come back.
+   Only function declarations + lazy state on window.__v42 (scripts render before this file runs). */
+function v42Key(){ return 'bl_auto_v1'; }
+function v42PolKey(){ return 'bl_lockPolicy_v1'; }
+function v42Def(){ return {games:'super', props:'super', parlay:'picky'}; }
+function v42Lab(b){ return b==='games'?'Games':b==='props'?'Props':'Parlays'; }
+function v42PresetLab(n){ return n==='super'?'Super picky':n==='picky'?'Picky':n==='relaxed'?'Relaxed':'Custom'; }
+function AUTO(){
+  if (window.__v42) return window.__v42;
+  let o = null; try{ o = JSON.parse(localStorage.getItem(v42Key())||'null'); }catch(e){}
+  if (!o || typeof o!=='object') o = {};
+  o.boards = o.boards || {};
+  const D = v42Def();
+  for (const b of ['games','props','parlay']){
+    o.boards[b] = Object.assign({preset:D[b], presetWhy:'Starting on the tested default. The model re-checks it on every weekly learning run.', presetAt:0, presetChecked:0,
+      lock:30, lockWhy:'30 minutes before start is the default (closer to game time = fewer pulls). The model only moves to 60 minutes if that is clearly more profitable.', lockAt:0, lockChecked:0}, o.boards[b]);
+  }
+  o.boards.parlay = Object.assign({level:0, base:{picky:0.62, super:0.68}, levelAt:0, levelWhy:'', cold:false, recent:null, coldChecked:0}, o.boards.parlay);
+  if (!o.boards.parlay.base) o.boards.parlay.base = {picky:0.62, super:0.68};
+  o.log = Array.isArray(o.log) ? o.log : [];
+  o.at = +o.at || 0;
+  window.__v42 = o;
+  return o;
+}
+function v42Save(push){
+  const o = AUTO(); o.at = Date.now();
+  try{ localStorage.setItem(v42Key(), JSON.stringify(o)); }catch(e){}
+  if (push){ try{ if (typeof scheduleCloudPush==='function' && AUTH && AUTH.user && !AUTH.applying) scheduleCloudPush(); }catch(e){} }
+}
+function v42Log(board, txt){ const o = AUTO(); o.log.unshift({at:Date.now(), board, txt}); o.log = o.log.slice(0, 60); }
+function v42LockFor(board){ const b = AUTO().boards[board||'games']; return b && +b.lock===60 ? 60 : 30; }
+function v42Pct(x, d){ return x==null||!isFinite(x) ? '—' : `${x>=0?'+':'−'}${Math.abs(x*100).toFixed(d==null?1:d)}%`; }
+function v42Rec(s){ return s && s.n ? `${s.w}–${s.l}, ${v42Pct(s.roi)} ROI` : 'no graded picks'; }
+function v42When(t){ if (!+t) return 'not yet'; try{ return new Date(+t).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}); }catch(e){ return 'recently'; } }
+// win/loss records → n, w, l, roi (flat stake)
+function v42Stats(list){
+  let n = 0, w = 0, staked = 0, net = 0;
+  for (const r of list||[]){ if (r.res!=='win' && r.res!=='loss') continue; n++; if (r.res==='win') w++; const u = +r.unit||(+S.unit||25); staked += u; net += (r.profit!=null ? +r.profit : (r.res==='win'?u:-u)); }
+  return {n, w, l:n-w, roi: staked ? net/staked : null, net};
+}
+
+/* ---------- lock time: 30m vs 60m, from "what if" records graded like real locks ---------- */
+function V42P(){
+  if (window.__v42p) return window.__v42p;
+  let o = null; try{ o = JSON.parse(localStorage.getItem(v42PolKey())||'null'); }catch(e){}
+  if (!o || typeof o!=='object') o = {};
+  o['30'] = o['30'] || {}; o['60'] = o['60'] || {};
+  window.__v42p = o; return o;
+}
+function v42PolicyMaps(){ const P = V42P(); return [P['30'], P['60']]; }
+function v42SavePolicy(){
+  const P = V42P(); const cut = Date.now() - 150*86400e3;
+  for (const L of ['30','60']) for (const k of Object.keys(P[L])){ const r = P[L][k]; if (!r || (+r.start||0) < cut) delete P[L][k]; }
+  try{ localStorage.setItem(v42PolKey(), JSON.stringify(P)); }catch(e){}
+}
+// called with every lock check: remember what WOULD have locked at 30m and at 60m (same stability gate as the real board)
+function v42RecordPolicy(board){
+  if (typeof makeLockRec!=='function') return;
+  const P = V42P(); const now = Date.now(); let dirty = false;
+  let src = [];
+  if (board==='games') src = ((typeof plays!=='undefined' && plays) || []).filter(p=>p && p.verdict==='good' && p.g && p.g.state==='pre' && p.g.eventId);
+  else if (board==='props') src = ((typeof props!=='undefined' && props) || []).filter(p=>p && p.verdict==='good' && (!p.g || p.g.state==='pre'));
+  else if (board==='parlay') src = ((typeof parlays!=='undefined' && parlays) || []).filter(p=>p && (p.verdict==='good' || p.coldHeld) && !(p.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre'));
+  for (const L of [30, 60]){
+    const M = P[String(L)];
+    for (const x of src){
+      const k = boardKeyOf(board, x); if (!k || M[k] || isFinalPulled(k)) continue;
+      const start = itemStartMs(x); if (!(start > now) || !isOfficialLock(start, L)) continue;
+      let ok = false;
+      if (x.coldHeld && x.verdict!=='good') ok = true;
+      else { window.__v42LeadOverride = L; try{ ok = lockStatus(x, board).locked; }catch(e){ ok = false; } finally{ window.__v42LeadOverride = 0; } }
+      if (!ok) continue;
+      M[k] = makeLockRec(board, x, {policy:L, shadow: !!(x.coldHeld && x.verdict!=='good')}); dirty = true;
+    }
+  }
+  if (dirty) v42SavePolicy();
+}
+function v42RetuneLock(board){
+  const A = AUTO(), B = A.boards[board]; const P = V42P(); const now = Date.now();
+  const rows = L => Object.values(P[String(L)]).filter(r=>r && r.board===board && (r.res==='win'||r.res==='loss')).sort((a,b)=>(a.start||0)-(b.start||0));
+  const r30 = rows(30), r60 = rows(60);
+  const cur = +B.lock===60 ? 60 : 30; let want = 30, why = '';
+  if (r60.length < 40){
+    why = `Not enough graded history to test 60m yet (${r60.length} graded picks at 60m, needs 40). Staying at 30m, the recommended default.`;
+  } else {
+    const holdN = Math.max(25, Math.round(r60.length*0.3));
+    const cut = r60[r60.length-holdN].start;
+    const h30 = v42Stats(r30.filter(r=>r.start>=cut)), h60 = v42Stats(r60.filter(r=>r.start>=cut));
+    const t30 = v42Stats(r30.filter(r=>r.start<cut)), t60 = v42Stats(r60.filter(r=>r.start<cut));
+    const trainOk = (t60.n>=15 && t30.n>=10) ? (t60.roi||0) >= (t30.roi||0) : true;
+    const clear = h60.n>=25 && h30.n>=10 && (h60.roi||0) >= (h30.roi||0) + 0.03 && trainOk;
+    want = clear ? 60 : 30;
+    why = `Newest unseen picks: locking 60m before went ${v42Rec(h60)} vs 30m ${v42Rec(h30)}` + (clear
+      ? '. 60m is clearly better (3+ ROI points on 25+ picks, and not worse on the older picks), so it locks 1h before start.'
+      : '. 60m is not clearly better (it needs +3 ROI points on 25+ unseen picks), so it stays at 30m.');
+  }
+  B.lockWhy = why; B.lockChecked = now;
+  const changed = want!==cur;
+  if (changed){ B.lock = want; B.lockAt = now; v42Log(board, `${v42Lab(board)} lock time ${cur}m → ${want}m. ${why}`); }
+  v42Save(true);
+  return {adopted:changed, mins:want, why};
+}
+
+/* ---------- pickiness: one preset per board, picked by the model ---------- */
+// rule: stay on the tested default unless the other preset is clearly better on the newest unseen data
+function v42Choose(board, ev, alt, minN){
+  const D = v42Def()[board];
+  const d = ev[D] || {hold:{n:0}, train:{n:0}}, a = ev[alt] || {hold:{n:0}, train:{n:0}};
+  const dR = d.hold && d.hold.n ? (d.hold.roi||0) : 0;
+  const trainOk = (a.train && d.train && a.train.n>=15 && d.train.n>=15) ? (a.train.roi||0) >= (d.train.roi||0) : true;
+  const clear = a.hold && a.hold.n>=minN && (a.hold.roi||0) > 0 && (a.hold.roi||0) >= dR + 0.03 && trainOk;
+  const want = clear ? alt : D;
+  const why = `Newest unseen data: ${v42PresetLab(D)} ${v42Rec(d.hold)} vs ${v42PresetLab(alt)} ${v42Rec(a.hold)}. ` + (clear
+    ? `${v42PresetLab(alt)} is clearly more profitable (3+ ROI points on ${minN}+ plays), so the model uses it.`
+    : `${v42PresetLab(D)} stays (the other one has to beat it by 3+ ROI points on ${minN}+ unseen plays).`);
+  return {want, why};
+}
+function v42SetPreset(board, want, why){
+  const A = AUTO(), B = A.boards[board]; const now = Date.now();
+  B.presetWhy = why; B.presetChecked = now;
+  const was = B.preset;
+  if (want!==was){ B.preset = want; B.presetAt = now; v42Log(board, `${v42Lab(board)} pickiness ${v42PresetLab(was)} → ${v42PresetLab(want)}. ${why}`); }
+  v42Enforce(board);
+  v42Save(true);
+  return want!==was;
+}
+function v42AfterGamesRetune(){
+  try{
+    const pe = (typeof LEARN!=='undefined' && LEARN) ? LEARN.presetEval : null;
+    if (pe && +pe.at > (+AUTO().boards.games.presetChecked||0)){
+      const ev = {super:{hold:pe.hold.super||{n:0}, train:(pe.train||{}).super||{n:0}}, picky:{hold:pe.hold.picky||{n:0}, train:(pe.train||{}).picky||{n:0}}};
+      const c = v42Choose('games', ev, 'picky', 20);
+      v42SetPreset('games', c.want, c.why + ` (checked ${pe.holdDays} newest days the model had not seen.)`);
+    }
+  }catch(e){ console.warn('v42 games preset', e); }
+}
+function v42PropBars(){
+  const ap = AUTO().boards.props; const bars = ap.bars || {};
+  const MIN = (typeof PROP_BET_MIN!=='undefined') ? PROP_BET_MIN : 0.60;
+  return {super: Math.max(MIN, +bars.super||0), picky: +bars.picky || Math.max(0.54, MIN-0.04)};
+}
+function v42AutoPresetProps(){
+  if (typeof PROP_SNAPS==='undefined') return null;
+  const B = boardS('props'); const lo = B.sFavMin!=null ? +B.sFavMin : -150, hi = B.sDogMax!=null ? +B.sDogMax : 150;
+  const skip = (typeof PROP_V2_SKIP_KINDS!=='undefined') ? PROP_V2_SKIP_KINDS : {};
+  const unit = +S.unit||25;
+  const rows = [...PROP_SNAPS.values()].filter(x=>(x.y===0||x.y===1) && x.p!=null && x.price!=null && x.price>=lo && x.price<=hi && !((skip[x.league]||[]).includes(x.kind))).sort((a,b)=>a.t-b.t);
+  const A = AUTO();
+  if (rows.length < 40){ A.boards.props.presetWhy = `Not enough graded props to compare presets yet (${rows.length}, needs 40). Staying on the tested default, Super picky.`; A.boards.props.presetChecked = Date.now(); v42Save(); return null; }
+  const holdN = Math.max(20, Math.round(rows.length*0.3)); const cut = rows[rows.length-holdN].t;
+  const asRec = x => ({res: x.y===1?'win':'loss', unit, profit: x.y===1 ? (typeof profitOn==='function' ? profitOn(x.price, unit) : unit) : -unit});
+  const bars = v42PropBars();
+  const pol = (bar, list) => v42Stats(list.filter(x=>x.p>=bar-1e-9).map(asRec));
+  const hold = rows.filter(x=>x.t>=cut), train = rows.filter(x=>x.t<cut);
+  const ev = {super:{hold:pol(bars.super, hold), train:pol(bars.super, train)}, picky:{hold:pol(bars.picky, hold), train:pol(bars.picky, train)}};
+  const c = v42Choose('props', ev, 'picky', 20);
+  v42SetPreset('props', c.want, c.why);
+  return c;
+}
+// make the board's real settings match the model's choice (keeps odds range, books and bet size)
+function v42Enforce(board){
+  const A = AUTO();
+  for (const b of (board ? [board] : ['games','props','parlay'])){
+    try{
+      if (b==='parlay'){ v42ApplyParlayLevel(); continue; }
+      const want = A.boards[b].preset;
+      if (b==='games'){
+        const cur = typeof detectPreset==='function' ? detectPreset() : S.preset;
+        if (cur!==want || S.preset!==want){ applyPreset(want); S.preset = want; if (typeof syncGamesBoard==='function') syncGamesBoard(); }
+      } else {
+        const B = boardS(b);
+        if (B.preset!==want){
+          const ap = A.boards.props; ap.bars = ap.bars || {};
+          if (B.preset && isFinite(+B.sMinWin)) ap.bars[B.preset] = +B.sMinWin;
+          applyBoardPreset(b, want);
+          const bars = v42PropBars(); B.sMinWin = want==='picky' ? bars.picky : Math.max(+B.sMinWin||0, bars.super);
+        }
+      }
+    }catch(e){ console.warn('v42 enforce', b, e); }
+  }
+  try{ saveJSON(LS.settings, S); }catch(e){}
+}
+
+/* ---------- parlays: gradual tighten / loosen instead of a hard pause ---------- */
+// level 0 = tested Picky v2 bar; 1–2 = Picky with a higher per-leg bar; 3 = Super picky
+function v42ParlayBar(level){
+  const P = AUTO().boards.parlay; const base = +P.base.picky || 0.62;
+  return level>=3 ? Math.max(+P.base.super||0.68, base+0.06) : Math.round((base + 0.02*level)*100)/100;
+}
+function v42ApplyParlayLevel(){
+  const P = AUTO().boards.parlay; const B = boardS('parlay');
+  const want = P.level>=3 ? 'super' : 'picky';
+  if (B.preset!==want) applyBoardPreset('parlay', want);
+  B.sMinWin = v42ParlayBar(P.level);
+  P.preset = want;
+}
+function v42ParlayBaseCfg(){
+  const P = AUTO().boards.parlay;
+  if (!(P.level>0)) return null;
+  const B = boardS('parlay');
+  return Object.assign({}, B, PARLAY_PRESETS.picky, {preset:'picky', sMinWin:+P.base.picky||0.62, sFavMin:B.sFavMin, sDogMax:B.sDogMax, payoutMin:B.payoutMin, payoutMax:B.payoutMax});
+}
+// the complete base-level stream: every parlay that cleared the base bar and locked (shown or shadow), graded
+function v42ParlayStream(){
+  const P = AUTO().boards.parlay; const base = +P.base.picky || 0.62;
+  return Object.values(V41().locked).filter(r=>r && r.board==='parlay' && !r.tailedOnly && !r.pulled && (r.res==='win'||r.res==='loss') && (r.minLegP==null || r.minLegP>=base-1e-9)).sort((a,b)=>(a.start||0)-(b.start||0));
+}
+function v42ParlayWF(stream, cur, cand){
+  if (stream.length < 30) return {ok:false, why:`only ${stream.length} graded parlays to test a change on (needs 30)`};
+  const holdN = Math.max(15, Math.round(stream.length*0.3)); const cut = stream[stream.length-holdN].start;
+  const hold = stream.filter(r=>r.start>=cut), train = stream.filter(r=>r.start<cut);
+  const pol = (lvl, list) => v42Stats(list.filter(r=> r.minLegP==null ? lvl===0 : r.minLegP>=v42ParlayBar(lvl)-1e-9));
+  const hc = pol(cur, hold), hn = pol(cand, hold), tc = pol(cur, train), tn = pol(cand, train);
+  // tightening must also hold on the older parlays; loosening back toward the tested default only needs the newest unseen ones
+  // (so a warm-up is never missed because of an older cold stretch)
+  const trainOk = (cand>cur && tn.n>=10 && tc.n>=10) ? (tn.roi||0) >= (tc.roi||0) : true;
+  const ok = hn.n>=10 && (hn.roi||0) > (hc.n ? (hc.roi||0) : 0) && trainOk;
+  return {ok, hc, hn, why: `newest unseen parlays: every leg ${Math.round(v42ParlayBar(cand)*100)}%+ went ${v42Rec(hn)} vs ${Math.round(v42ParlayBar(cur)*100)}%+ ${v42Rec(hc)}`};
+}
+function v42ParlayColdCheck(force){
+  const A = AUTO(), P = A.boards.parlay; const now = Date.now();
+  const stream = v42ParlayStream();
+  const recent = v42Stats(stream.slice(-30));
+  P.recent = {n:recent.n, w:recent.w, l:recent.l, roi:recent.roi}; P.coldChecked = now;
+  const cold = recent.n>=20 && (recent.roi||0) < 0, warm = recent.n>=20 && (recent.roi||0) > 0;
+  P.cold = cold;
+  const since = stream.filter(r=>(+r.graded||+r.start||0) > (+P.levelAt||0)).length;
+  let cand = null;
+  if (cold && P.level<3) cand = P.level+1; else if (warm && P.level>0) cand = P.level-1;
+  if (cand==null){ v42Save(); return {changed:false}; }
+  if (!force && P.levelAt && since < 10){ P.levelWhy = `Waiting for 10 more graded parlays before another step (${since} so far).`; v42Save(); return {changed:false}; }
+  const wf = v42ParlayWF(stream, P.level, cand);
+  if (!wf.ok){ P.levelWhy = `${cand>P.level?'Tightening':'Loosening'} was tested but not kept: ${wf.why}.`; v42Save(); return {changed:false, why:P.levelWhy}; }
+  const from = P.level; P.level = cand; P.levelAt = now;
+  P.levelWhy = `${cand>from?'Tightened':'Loosened'} one step: the last ${recent.n} parlays went ${v42Rec(recent)}, and ${wf.why}.`;
+  v42ApplyParlayLevel();
+  v42Log('parlay', `Parlays ${cand>from?'tightened':'loosened'}: every leg now ${Math.round(v42ParlayBar(cand)*100)}%+${cand>=3?' (Super picky)':''}. ${P.levelWhy}`);
+  try{ saveJSON(LS.settings, S); }catch(e){}
+  v42Save(true);
+  try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
+  return {changed:true, level:cand};
+}
+function v42ParlayColdNote(){
+  const P = AUTO().boards.parlay; if (!(P.level>0)) return '';
+  const r = P.recent;
+  return `Parlays are running cold${r && r.n ? ` (last ${r.n}: ${v42Rec(r)})` : ''}, so the board shows only the strongest: every leg ${Math.round(v42ParlayBar(P.level)*100)}%+${P.level>=3?' (Super picky)':''}. The rest are still tracked quietly, and it loosens back by itself when results improve.`;
+}
+function v42ParlayStateLine(){
+  const P = AUTO().boards.parlay; const r = P.recent;
+  const st = P.level>0 ? `Running cold: tightened ${P.level} step${P.level===1?'':'s'} (every leg ${Math.round(v42ParlayBar(P.level)*100)}%+).` : `Normal: every leg ${Math.round(v42ParlayBar(0)*100)}%+ (tested Picky v2).`;
+  return `${st} ${r && r.n ? `Last ${r.n} parlays (shown + tracked quietly): ${v42Rec(r)}.` : 'No graded parlays yet.'} When recent parlays lose money the board tightens one small step, and it loosens back the same way, only if the change tests better on unseen parlays.`;
+}
+
+/* ---------- sports: auto off / on per board (Props, Parlays — Games lives in 12_learn.js) ---------- */
+function v42PruneBoard(board){
+  if (typeof LEARN==='undefined' || !LEARN || typeof ensureBoardLearn!=='function') return null;
+  ensureBoardLearn();
+  const tr = LEARN[board]; if (!tr) return null; tr.autoOff = tr.autoOff || {};
+  const snaps = board==='props' ? PROP_SNAPS : PARLAY_SNAPS;
+  const unit = +S.unit||25; const now = Date.now(); const rc = now - 45*86400e3;
+  const rows = [...snaps.values()].filter(x=>(x.y===0||x.y===1) && (x.sg===1 || (x.sg==null && x.verdict==='good')));
+  const groups = new Map(); const add = (k, x) => { if (!k) return; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); };
+  for (const x of rows){
+    if (board==='props'){ add(x.league, x); if (x.kind) add('mk:'+x.kind, x); }
+    else [...new Set((x.legs||[]).map(l=>l.league).filter(Boolean))].forEach(lg=>add(lg, x));
+  }
+  const stat = list => {
+    let n=0, w=0, net=0, exp=0;
+    for (const x of list){
+      n++; if (x.y===1) w++;
+      const dec = board==='parlay' ? (x.dec || (x.am!=null && typeof amToDec==='function' ? amToDec(x.am) : null)) : (x.price!=null && typeof amToDec==='function' ? amToDec(x.price) : null);
+      net += x.y===1 ? (dec ? unit*(dec-1) : unit) : -unit;
+      exp += x.implied!=null ? +x.implied : (dec ? 1/dec : 0.5);
+    }
+    return {n, w, l:n-w, wr:n?w/n:null, roi:n?net/(n*unit):null, expW:n?exp/n:null};
+  };
+  const nm = k => k.indexOf('mk:')===0 ? `${(typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[k.slice(3)]) || k.slice(3)} props` : ((typeof LMAP!=='undefined' && LMAP[k]) ? LMAP[k].label : k.toUpperCase());
+  const pc = x => x==null ? '—' : Math.round(x*100)+'%';
+  let changed = 0;
+  tr.sportStats = tr.sportStats || {};
+  for (const [k, list] of groups){
+    const st = stat(list), stR = stat(list.filter(x=>(x.t||0)>=rc));
+    if (k.indexOf('mk:')!==0) tr.sportStats[k] = Object.assign({at:now}, st);
+    const o = tr.autoOff[k];
+    if (!o){
+      if (st.n>=40 && (st.roi||0)<0 && st.wr < st.expW){
+        tr.autoOff[k] = {at:now, n:st.n, roi:st.roi, why:`${v42Pct(st.roi,0)} over ${st.n} picks (won ${pc(st.wr)} when the odds expected ${pc(st.expW)})`};
+        v42Log(board, `${v42Lab(board)}: turned ${nm(k)} off — ${tr.autoOff[k].why}.`); changed++;
+      }
+    } else if (stR.n>=15 && (stR.roi||0)>0 && stR.wr >= stR.expW){
+      delete tr.autoOff[k]; v42Log(board, `${v42Lab(board)}: turned ${nm(k)} back on — it recovered over the last 45 days (${stR.w}–${stR.l}, ${v42Pct(stR.roi,0)}).`); changed++;
+    } else if (st.n>=15){
+      o.why = `${v42Pct(st.roi,0)} over ${st.n} picks (won ${pc(st.wr)} when the odds expected ${pc(st.expW)})`; o.n = st.n; o.roi = st.roi;
+    }
+  }
+  try{ learnSave(); }catch(e){}
+  if (changed) v42Save(true);
+  return changed;
+}
+// within the sports you have on: a board's auto-off sports/markets can't be Picks there (locked picks are never touched)
+function v42ApplyAutoOff(board){
+  if (typeof LEARN==='undefined' || !LEARN) return;
+  const tr = LEARN[board==='parlay'?'parlay':'props']; const off = tr && tr.autoOff; if (!off || !Object.keys(off).length) return;
+  const nm = k => (typeof LMAP!=='undefined' && LMAP[k]) ? LMAP[k].label : String(k).toUpperCase();
+  if (board==='props'){
+    for (const p of ((typeof props!=='undefined' && props) || [])){
+      if (!p || p.verdict!=='good') continue;
+      const lg = p.league || (p.g && p.g.league); const o = off[lg] || off['mk:'+p.kind];
+      if (!o || (typeof lockedRec==='function' && lockedRec('props', p))) continue;
+      p.verdict = 'watch'; p.autoOffFrom = 'good'; if (p.C) p.C.J = 'MAYBE LATER';
+      (p.reasons||(p.reasons=[])).unshift(`Model auto-off: ${off[lg] ? nm(lg)+' props' : (p.kind+' props')} are losing money right now (${o.why}). Still tracked quietly so they can come back.`);
+    }
+  } else {
+    for (const pl of ((typeof parlays!=='undefined' && parlays) || [])){
+      if (!pl || pl.verdict!=='good') continue;
+      const bad = (pl.sports||[]).find(lg=>off[lg]);
+      if (!bad || (typeof lockedRec==='function' && lockedRec('parlay', pl))) continue;
+      pl.verdict = 'watch'; pl.autoOffFrom = 'good'; pl.C = Object.assign({}, pl.C||{}, {J:'MAYBE LATER'});
+      (pl.reasons||(pl.reasons=[])).unshift(`Model auto-off: ${nm(bad)} legs are losing money in parlays right now (${off[bad].why}). Still tracked quietly.`);
+    }
+  }
+}
+
+/* ---------- ticks ---------- */
+function v42AfterGrade(){
+  try{ v42ParlayColdCheck(false); }catch(e){ console.warn('v42 cold', e); }
+}
+function v42Tick(){
+  const A = AUTO(); const now = Date.now(); let any = false;
+  for (const b of ['games','props','parlay']){
+    if (now - (+A.boards[b].lockChecked||0) > 20*3600e3){ try{ v42RetuneLock(b); any = true; }catch(e){ console.warn('v42 lock', b, e); } }
+  }
+  if (now - (+A.boards.props.presetChecked||0) > 20*3600e3){ try{ v42AutoPresetProps(); v42PruneBoard('props'); any = true; }catch(e){ console.warn('v42 props', e); } }
+  if (now - (+A.boards.parlay.coldChecked||0) > 6*3600e3){ try{ v42ParlayColdCheck(false); v42PruneBoard('parlay'); any = true; }catch(e){ console.warn('v42 parlay', e); } }
+  return any;
+}
+// one-time move to automatic: stored manual pickiness no longer locks a board, the old hand-made sport exclusions become
+// model auto-offs (so they can come back on by profit), odds range / books / bet size are untouched.
+function v42Migrate(){
+  const A = AUTO();
+  if (A.migrated) return false;
+  const LOST = ['ncaab','mls','epl','ucl','laliga','seriea','bund'];
+  const seedWhy = 'lost money in the 60-day backtest (Sep 19 – Nov 16), re-checked every week';
+  try{
+    if (typeof LEARN!=='undefined' && LEARN){
+      const cur = (LEARN.versions||[]).find(v=>v.id===LEARN.cur);
+      LEARN.autoOff = LEARN.autoOff || {};
+      const exG = new Set(String(S.sExclude||'').split(',').map(x=>x.trim()).filter(Boolean));
+      for (const lg of LOST) if (exG.has(lg) && !LEARN.autoOff[lg]) LEARN.autoOff[lg] = {at:Date.now(), why:seedWhy, seed:true};
+      if (cur) cur.autoOff = Object.assign({}, cur.autoOff||{}, LEARN.autoOff);
+      if (typeof ensureBoardLearn==='function') ensureBoardLearn();
+      for (const b of ['props','parlay']){
+        const ex = new Set(String(boardS(b).sExclude||'').split(',').map(x=>x.trim()).filter(Boolean));
+        const tr = LEARN[b]; if (!tr) continue; tr.autoOff = tr.autoOff || {};
+        for (const lg of LOST) if (ex.has(lg) && !tr.autoOff[lg]) tr.autoOff[lg] = {at:Date.now(), why:seedWhy, seed:true};
+      }
+      try{ learnSave(); }catch(e){}
+    } else return false;   // wait for learning state
+  }catch(e){ console.warn('v42 migrate sports', e); return false; }
+  for (const b of ['games','props','parlay']){ try{ setBoardExclude(b, []); }catch(e){} }
+  S.sExclude = ''; S.sNoSoccer = false; delete S.parlayForceOn;
+  A.migrated = Date.now();
+  v42Log('all', 'Switched to automatic: the model now picks pickiness, lock time (30m or 60m) and sports for each board by profit. Your odds range, books and bet size were not changed.');
+  v42Enforce();
+  v42Save(true);
+  return true;
+}
+function v42Init(){
+  try{ v42Migrate(); }catch(e){ console.warn('v42 migrate', e); }
+  try{ v42Enforce(); }catch(e){}
+}
+
+/* ---------- plain-English pieces for Settings / Filters / Results ---------- */
+function v42ModelPickLine(board){
+  const B = AUTO().boards[board];
+  const name = board==='parlay' ? v42PresetLab(AUTO().boards.parlay.level>=3?'super':'picky') : v42PresetLab(B.preset);
+  return `Model picks: ${name} (auto)`;
+}
+function v42PickReason(board){
+  const B = AUTO().boards[board];
+  if (board==='parlay'){ const P = B; return (P.level>0 ? v42ParlayColdNote() : `Tested default (Picky v2, every leg ${Math.round(v42ParlayBar(0)*100)}%+).`) + (P.levelWhy ? ' ' + P.levelWhy : ''); }
+  return B.presetWhy || '';
+}
+function v42Checked(board){ const B = AUTO().boards[board]; const t = Math.max(+B.presetChecked||0, board==='parlay' ? (+B.coldChecked||0) : 0); return t ? 'Last checked ' + v42When(t) : 'Not checked yet: the first check runs with the weekly learning'; }
+function v42SportsOffList(board){
+  const out = [];
+  if (typeof LEARN==='undefined' || !LEARN) return out;
+  const off = board==='games' ? LEARN.autoOff : (LEARN[board]||{}).autoOff;
+  for (const k of Object.keys(off||{})){
+    if (k.indexOf('mk:')===0){ out.push({k, lab: board==='props' ? `${(typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[k.slice(3)])||k.slice(3)} props` : `strict ${k.slice(3)}`, why:off[k].why, hard:false}); continue; }
+    const L = (typeof LMAP!=='undefined' && LMAP[k]) ? LMAP[k] : null;
+    out.push({k, lab: L ? L.label : k.toUpperCase(), why: off[k].why, hard: !(S.enabled||[]).includes(k)});
+  }
+  return out;
+}
+function v42AutoSettingsHTML(board){
+  const B = AUTO().boards[board];
+  return `<div class="s-row"><div class="s-h">How picky? <span class="mut">(set by the model)</span></div>
+      <div class="auto-pick"><span class="auto-chip">🤖 ${esc(v42ModelPickLine(board))}</span></div>
+      <div class="s-note">${esc(v42PickReason(board))}</div>
+      <div class="s-note mut">${esc(v42Checked(board))}. The bars inside it keep auto-tuning every week.</div></div>
+    <div class="s-row"><div class="s-h">Lock time <span class="mut">(set by the model)</span></div>
+      <div class="auto-pick"><span class="auto-chip">🔒 Locks ${esc(fmtLockWindow(v42LockFor(board)))} before start${board==='parlay'?' (first game)':''} (auto)</span></div>
+      <div class="s-note">${esc(B.lockWhy||'')}</div>
+      <div class="s-note mut">${B.lockChecked ? 'Last checked '+esc(v42When(B.lockChecked)) : 'Checked once a day'}. Only 30m (recommended) or 60m.</div></div>`;
+}
+function v42GroupOff(list){
+  const m = new Map();
+  for (const x of list){ const w = x.why || 'losing money'; if (!m.has(w)) m.set(w, []); m.get(w).push(x.lab); }
+  return [...m].map(([why, labs])=>({why, labs}));
+}
+function v42ResultsHTML(){
+  const A = AUTO();
+  const cards = ['games','props','parlay'].map(b=>{
+    const B = A.boards[b];
+    const offs = v42GroupOff(v42SportsOffList(b).filter(x=>!x.hard));
+    const sp = offs.length ? offs.map(g=>`<div class="v42-v"><b>${esc(g.labs.join(', '))}</b></div><div class="hint">${esc(g.why)}.</div>`).join('') : '<div class="v42-v mut">None. Every sport you have on in Settings is in play.</div>';
+    const P = A.boards.parlay;
+    const state = b==='parlay' ? `<div class="v42-kv"><span class="k">Parlay state</span><span class="v">${P.level>0 ? '<b class="neg">Running cold</b>' : '<b class="pos">Normal</b>'}</span></div><div class="hint">${esc(v42ParlayStateLine())}</div>` : '';
+    return `<div class="v42-b"><h3>${v42Lab(b)}</h3>
+      <div class="v42-kv"><span class="k">Pickiness</span><span class="v">${esc(v42ModelPickLine(b).replace('Model picks: ',''))}</span></div><div class="hint">${esc(v42PickReason(b))} ${esc(v42Checked(b))}.</div>
+      <div class="v42-kv"><span class="k">Lock time</span><span class="v">${esc(fmtLockWindow(v42LockFor(b)))} before start${b==='parlay'?' (first game)':''}</span></div><div class="hint">${esc(B.lockWhy||'')}</div>
+      <div class="v42-kv"><span class="k">Sports auto-off</span></div>${sp}
+      ${state}</div>`;
+  }).join('');
+  const hard = LEAGUES.filter(L=>!(S.enabled||[]).includes(L.id)).map(L=>L.label);
+  const log = (A.log||[]).slice(0, 12).map(x=>`<li><span class="mut">${esc(v42When(x.at))}</span> · ${esc(x.txt)}</li>`).join('') || '<li class="mut">No automatic changes yet.</li>';
+  return `<div class="card v42-auto">
+    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">🤖</span>What the model picked (automatic)</h2><span class="hint">Pickiness, lock time and sports are chosen per board from real graded results. None of it needs a manual setting.</span></div>
+    <div class="v42-grid">${cards}</div>
+    ${hard.length ? `<div class="hint" style="margin-top:10px">Off in your Settings (hard off, the model never turns these on): ${esc(hard.join(', '))}.</div>` : ''}
+    <details class="dd" data-dd="v42-log" ${ui.open && ui.open.has('v42-log')?'open':''} style="margin-top:10px"><summary>Automatic changes (${(A.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
+  </div>`;
+}
+function v42FilterPickHTML(board){
+  return `<span class="auto-chip">🤖 ${esc(v42ModelPickLine(board))}</span> <span class="auto-chip">🔒 locks ${esc(fmtLockWindow(v42LockFor(board)))} before start (auto)</span>`;
+}
+
+// hooks: run the automatic checks with the learning tick, and after learning state loads
+(function v42HookTicks(){
+  try{
+    if (typeof learnTick==='function'){
+      const orig = learnTick;
+      learnTick = async function(){ const r = await orig.apply(this, arguments); try{ if (typeof LEARN!=='undefined' && LEARN){ if (!AUTO().migrated) v42Migrate(); v42Tick(); } }catch(e){ console.warn('v42 tick', e); } return r; };
+    }
+    if (typeof learnInit==='function'){
+      const orig2 = learnInit;
+      learnInit = async function(){ const r = await orig2.apply(this, arguments); try{ v42Init(); }catch(e){ console.warn('v42 init', e); } return r; };
+    }
+  }catch(e){ console.warn('v42 hooks', e); }
+})();
 </script>
 </body>
 </html>
