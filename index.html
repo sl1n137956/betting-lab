@@ -838,6 +838,18 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 .pl-court-leg .c-col ul{margin:6px 0 0;padding-left:16px}
 .pl-court-leg .c-col li{font-size:12.5px;margin-bottom:4px}
 .pl-court-leg details.dd{margin-top:8px}
+
+.l10-row.p10-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+@media (max-width:680px){.l10-row.p10-grid{grid-template-columns:1fr}}
+.p10-dual{position:relative;display:flex;align-items:stretch;gap:4px;height:104px;padding:4px 2px 18px;border-bottom:1px solid var(--line)}
+.p10-dual .p10-zero{position:absolute;left:0;right:0;top:44px;height:0;border-top:1px dashed rgba(125,211,252,.55);pointer-events:none}
+.p10-dcol{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;min-width:0;height:100%}
+.p10-dcol .p10-half-top{height:40px;width:100%;display:flex;align-items:flex-end;justify-content:center}
+.p10-dcol .p10-half-bot{height:40px;width:100%;display:flex;align-items:flex-start;justify-content:center}
+.p10-dcol i{display:block;width:100%;max-width:18px}
+.p10-dcol i.over{background:var(--good);border-radius:4px 4px 1px 1px}
+.p10-dcol i.under{background:var(--avoid);border-radius:1px 1px 4px 4px}
+.p10-dcol span{font-size:9px;color:var(--mut);margin-top:3px;font-variant-numeric:tabular-nums;line-height:1}
 </style>
 </head>
 <body>
@@ -3942,7 +3954,7 @@ function scheduleSpot(g, side){
 function l10Margins(g, side){
   const evs = g && g.fx && g.fx.sides && g.fx.sides[side] && g.fx.sides[side].l5;
   if (!evs || !evs.length) return null;
-  const rows = evs.filter(e=>e.pf!=null && e.pa!=null).map(e=>({m:e.pf-e.pa, res:e.res}));
+  const rows = evs.filter(e=>e.pf!=null && e.pa!=null).map(e=>({m:e.pf-e.pa, pf:e.pf, pa:e.pa, tot:e.pf+e.pa, res:e.res}));
   if (!rows.length) return null;
   const avg = rows.reduce((a,x)=>a+x.m,0)/rows.length;
   return {rows, avg, n:rows.length};
@@ -4418,20 +4430,44 @@ function matchupTableHTML(p, C){
   return `<table class="mu-table"><thead><tr><th></th><th>${esc(A.short)}</th><th>${esc(H.short)}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 function marginChartsHTML(p){
-  const g = p.g; if (!g) return '';
+  const g = p && p.g; if (!g) return '';
+  const isTotal = p.mk==='total' && p.sd && p.sd.point!=null;
+  const line = isTotal ? +p.sd.point : (p.mk==='spread' && p.sd && p.sd.point!=null ? +p.sd.point : null);
   const one = (side) => {
     const m = l10Margins(g, side); const t = g[side];
     const l10 = g.fx && g.fx.sides && g.fx.sides[side] && g.fx.sides[side].last10;
-    if (!m && !l10) return `<div class="l10-team"><div class="l10-lab"><b>${esc(t.short)}</b></div><div class="mut">n/a</div></div>`;
-    const max = m ? Math.max(6, ...m.rows.map(x=>Math.abs(x.m))) : 6;
-    const bars = m ? m.rows.slice().reverse().map(x=>{
-      const h = Math.max(6, Math.round(Math.abs(x.m)/max*24));
-      return `<span class="${x.m>=0?'pos':'neg'}" style="--h:${h}px" title="${x.m>=0?'+':''}${x.m.toFixed(0)}"></span>`;
-    }).join('') : '';
-    const avg = m ? `L${m.n} avg ${m.avg>=0?'+':''}${m.avg.toFixed(1)}` : '';
-    return `<div class="l10-team"><div class="l10-lab"><b>${esc(t.short)}</b>${l10?` · L10 ${esc(l10)}`:''}</div>${bars?`<div class="l10-bars">${bars}</div>`:''}<div class="l10-avg">${avg||'<span class="mut">no game-by-game margins posted</span>'}</div></div>`;
+    if (!m && !l10) return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b></div><div class="mut">No recent games posted</div></div>`;
+    if (!m) return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b>${l10?` · L10 ${esc(l10)}`:''}</div><div class="mut">No game-by-game margins posted</div></div>`;
+    const seq = m.rows.slice().reverse();
+    if (isTotal){
+      const vals = seq.map(x=>x.tot);
+      const mx = Math.max(line, ...vals, 1);
+      const bars = seq.map((x,i)=>{
+        const v = x.tot;
+        const hit = p.side==='under' ? v<line : v>line;
+        const h = Math.max(4, Math.round((v/mx)*72));
+        return `<div class="p10-col" title="Game ${i-seq.length+1}: total ${v} vs ${line}"><i class="${hit?'over':'under'}" style="height:${h}px"></i><span>${v}</span></div>`;
+      }).join('');
+      const top = Math.round((line/mx)*72);
+      const avgTot = (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
+      return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b> · Last ${m.n} totals vs ${line} (avg ${avgTot})</div><div class="p10-chart"><div class="p10-line" style="bottom:${top+14}px"></div>${bars}</div></div>`;
+    }
+    const maxAbs = Math.max(4, ...seq.map(x=>Math.abs(x.m)));
+    const isPickedSide = (p.side===side);
+    const spreadAdj = (p.mk==='spread' && isPickedSide && line!=null) ? line : 0;
+    const bars = seq.map((x,i)=>{
+      const val = x.m;
+      const hit = spreadAdj ? (val + spreadAdj > 0) : (val >= 0);
+      const h = Math.max(4, Math.round((Math.abs(val)/maxAbs)*38));
+      const lbl = (val>0?'+':'') + val.toFixed(0);
+      const topBar = val>=0 ? `<i class="${hit?'over':'under'}" style="height:${h}px"></i>` : '';
+      const botBar = val<0 ? `<i class="${hit?'over':'under'}" style="height:${h}px"></i>` : '';
+      return `<div class="p10-dcol" title="Game ${i-seq.length+1}: margin ${lbl}"><div class="p10-half-top">${topBar}</div><div class="p10-half-bot">${botBar}</div><span>${lbl}</span></div>`;
+    }).join('');
+    const avg = `avg ${m.avg>=0?'+':''}${m.avg.toFixed(1)}`;
+    return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b> · Last ${m.n} margins (${avg})${l10?` · L10 ${esc(l10)}`:''}</div><div class="p10-dual"><div class="p10-zero"></div>${bars}</div></div>`;
   };
-  return `<div class="l10-row">${one('away')}${one('home')}</div>`;
+  return `<div class="l10-row p10-grid">${one('away')}${one('home')}</div>`;
 }
 function injuriesSectionHTML(p){
   const g = p && p.g, fx = g && g.fx;
@@ -8544,42 +8580,11 @@ function parlayLegCourtData(l){
   return {isProp, C, win, lose};
 }
 function parlayCourtroomHTML(pl){
-  const win=[], lose=[];
   const legData = pl.legs.map(l => Object.assign({leg:l}, parlayLegCourtData(l)));
   const sortedByProb = legData.slice().sort((a,b)=>(a.leg.p||0)-(b.leg.p||0));
   const weakest = sortedByProb[0] && sortedByProb[0].leg;
   const strongest = sortedByProb[sortedByProb.length-1] && sortedByProb[sortedByProb.length-1].leg;
   const legTitle = l => (l.isProp || l.playerName) ? (l.label || l.playerName) : l.label;
-
-  // Ticket-level case FOR
-  win.push({txt:`${pl.n} independent legs from different games — combined hit estimate is ${fmtPct(pl.p,0)} (${outOf10 ? outOf10(pl.p) : (pl.p*10).toFixed(1)} in 10).`});
-  if (pl.dec>=2 && pl.dec<=3) win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) sits right in the 2.0x–3.0x sweet spot.`});
-  else win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) is inside the allowed range.`});
-  if (pl.edge!=null && pl.edge>=0) win.push({txt:`Our combined estimate beats the ${fmtDecX(pl.dec)} break-even (${fmtPct(pl.implied,0)}) by +${(pl.edge*100).toFixed(1)} pts.`});
-  for (const d of legData){
-    const name = legTitle(d.leg);
-    const topFor = d.win.slice(0, 2);
-    if (topFor.length){
-      topFor.forEach(x => win.push({txt:`${name}: ${x.txt||x}`}));
-    } else if (d.leg.p!=null && d.leg.p>=0.60){
-      win.push({txt:`${name} carries a ${fmtPct(d.leg.p,0)} estimated hit rate at ${fmtAm(d.leg.price)}.`});
-    }
-  }
-
-  // Ticket-level case AGAINST
-  if (weakest && weakest.p!=null){
-    lose.push({txt:`Weakest link: ${legTitle(weakest)} at ${fmtPct(weakest.p,0)} (${fmtAm(weakest.price)}) — if this leg misses, the whole ticket loses.`});
-  }
-  if (pl.edge!=null && pl.edge<0){
-    lose.push({txt:`Combined book juice puts this ${Math.abs(pl.edge*100).toFixed(1)} pts under break-even (${fmtPct(pl.implied,0)} needed vs ${fmtPct(pl.p,0)} estimated).`});
-  }
-  for (const d of legData){
-    const name = legTitle(d.leg);
-    const realLose = d.lose.filter(x => !/no side wins every night/i.test(String(x.txt||x))).slice(0, 2);
-    realLose.forEach(x => lose.push({txt:`${name}: ${x.txt||x}`}));
-    (d.leg._fails||[]).forEach(f => lose.push({txt:`${name}: ${f}`}));
-  }
-  lose.push({txt:'Every leg has to hit — one cold night, foul trouble, or late injury sinks the entire ticket.'});
 
   const J = (pl.C&&pl.C.J)||'SKIP';
   const cls = J==='BET'?'b-good':J==='MAYBE LATER'?'b-watch':'b-avoid';
@@ -8596,7 +8601,6 @@ function parlayCourtroomHTML(pl){
 
   const li = x => `<li><span>${esc(x.txt||x)}</span></li>`;
 
-  // Per-leg detailed courtroom breakdown (same real data as Games & Props!)
   const legCards = legData.map((d, idx) => {
     const l = d.leg;
     const lgLabel = (LMAP[l.league||(l.g&&l.g.league)]||{}).label || (l.league||'').toUpperCase();
@@ -8607,10 +8611,13 @@ function parlayCourtroomHTML(pl){
       : (MKN[l.mk] || 'Game');
     const lWin = d.win.length ? d.win.map(li).join('') : '<li class="mut">Supported mainly by market strength and team baseline.</li>';
     const lLose = d.lose.length ? d.lose.map(li).join('') : '<li class="mut">No major red flags logged — normal game variance still applies.</li>';
-    const detailTables = d.isProp
-      ? ((typeof propStatTableHTML==='function' ? propStatTableHTML(l) : '') + (typeof l10PropChartHTML==='function' ? l10PropChartHTML(l) : ''))
-      : ((typeof matchupTableHTML==='function' && d.C ? matchupTableHTML(l, d.C) : '') + (typeof marginChartsHTML==='function' ? marginChartsHTML(l) : ''));
-    const statsSummary = d.isProp ? '📊 Player L5/L10 & season splits' : '📊 Team matchup splits, L5/L10 & margins';
+    const candleChart = d.isProp
+      ? (typeof l10PropChartHTML==='function' ? l10PropChartHTML(l) : '')
+      : (typeof marginChartsHTML==='function' ? marginChartsHTML(l) : '');
+    const statTable = d.isProp
+      ? (typeof propStatTableHTML==='function' ? propStatTableHTML(l) : '')
+      : (typeof matchupTableHTML==='function' && d.C ? matchupTableHTML(l, d.C) : '');
+    const statsSummary = d.isProp ? '📊 Player L5/L10 & season splits' : '📊 Team matchup splits';
     return `<div class="pl-court-leg">
       <div class="pl-court-leg-h">
         <div class="pl-court-leg-title">
@@ -8629,19 +8636,18 @@ function parlayCourtroomHTML(pl){
         <div class="c-col win"><div class="ct">✅ Why Leg ${idx+1} could hit</div><ul>${lWin}</ul></div>
         <div class="c-col lose"><div class="ct">⚠️ Why Leg ${idx+1} could miss</div><ul>${lLose}</ul></div>
       </div>
-      ${detailTables ? `<details class="dd"><summary>${statsSummary}</summary><div style="margin-top:8px">${detailTables}</div></details>` : ''}
+      ${candleChart}
+      ${statTable ? `<details class="dd"><summary>${statsSummary}</summary><div style="margin-top:8px">${statTable}</div></details>` : ''}
     </div>`;
   }).join('');
 
   return `<div class="court2">
     ${parlayChanceBarHTML(pl)}
-    <div class="c-col win"><div class="ct">✅ Why this parlay could hit</div><ul>${win.map(li).join('')}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this parlay could miss</div><ul>${lose.map(li).join('')}</ul></div>
-    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(J)}</span></div>
+    <div class="ct" style="margin-top:12px">⚖️ Leg-by-leg courtroom breakdown</div>
+    <div class="pl-court-legs">${legCards}</div>
+    <div class="c-judge" style="margin-top:12px"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(J)}</span></div>
       <div class="c-sent">${esc(sentence)}</div>
       ${unitJudgeLineHTML(pl,"parlay")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
-    <div class="ct" style="margin-top:14px">⚖️ Leg-by-leg courtroom breakdown</div>
-    <div class="pl-court-legs">${legCards}</div>
   </div>`;
 }
 function parlayInjBody(pl){
