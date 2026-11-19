@@ -665,12 +665,18 @@ details[open] > summary::before{transform:rotate(0deg)}
 .seg-pills label{border:1px solid var(--line);border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.03);color:var(--txt2);font-weight:600;cursor:pointer;user-select:none;transition:transform .2s var(--ease),border-color .2s var(--ease),background .2s var(--ease),color .2s var(--ease)}
 .seg-pills label:hover{border-color:rgba(59,130,246,.45);color:var(--txt)}
 .seg-pills label.on{background:var(--acc-dim);color:var(--acc-hi);border-color:rgba(59,130,246,.55);box-shadow:0 0 0 1px rgba(125,211,252,.18),0 6px 14px -8px rgba(37,99,235,.55)}
-.tab-group{display:inline-flex;align-items:center;gap:4px;margin:0 4px;padding:0 2px}
-.tab-group .tab-parent{background:none;border:0;border-bottom:2px solid transparent;padding:11px 10px 10px;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
-.tab-group.is-on .tab-parent{color:var(--acc-hi)}
-.tab-subs{display:inline-flex;align-items:center;gap:0;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
-.tab-subs button{border-bottom:0 !important;padding:6px 10px 6px !important;border-radius:999px;font-size:12.5px}
+nav.tabs{gap:0}
+nav.tabs button{padding:11px 10px 10px}
+nav.tabs .tab-parent{background:none;border:none;border-bottom:2px solid transparent;padding:11px 10px 10px;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-bottom-color:var(--acc)}
+.tab-subbar{display:none;padding:0 0 10px}
+.tab-subbar:not([hidden]){display:flex;align-items:center}
+.tab-subs{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+.tab-subs button{background:none;border:0;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;padding:7px 14px;border-radius:999px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+.tab-subs button:hover{color:var(--txt2)}
 .tab-subs button.on{background:var(--acc-dim);color:var(--acc-hi);box-shadow:0 0 0 1px rgba(125,211,252,.16)}
+.tab-subs .cnt{margin-left:4px}
+@media (max-width:767.98px){ .tab-subbar{display:none !important} }
 .prop-head{display:flex;align-items:center;gap:12px;margin:4px 0 12px;min-width:0}
 .prop-who{flex:1;min-width:0}
 .prop-name{font-weight:700;font-size:16.5px;letter-spacing:-.02em;overflow-wrap:anywhere}
@@ -686,19 +692,25 @@ details[open] > summary::before{transform:rotate(0deg)}
 .p10-line{position:absolute;left:0;right:0;height:0;border-top:1px dashed rgba(125,211,252,.55);pointer-events:none}
 .nav-pop{display:none}
 @media (max-width:767.98px){
-  .nav-pop{display:flex;position:fixed;left:0;right:0;bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:33;justify-content:center;align-items:flex-end;gap:22px;padding:0 16px;pointer-events:none}
+  .bottom-nav{z-index:34}
+  .nav-pop-back{display:block;position:fixed;inset:0;z-index:32;background:rgba(5,9,20,.78);backdrop-filter:blur(10px) saturate(120%);-webkit-backdrop-filter:blur(10px) saturate(120%);opacity:0;pointer-events:none;transition:opacity .28s ease}
+  .nav-pop-back[hidden]{display:none}
+  .nav-pop-back.open{opacity:1;pointer-events:auto}
+  .nav-pop{display:flex;position:fixed;left:0;right:0;bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:35;justify-content:center;align-items:flex-end;gap:22px;padding:0 16px;pointer-events:none}
   .nav-pop:not([hidden]){pointer-events:auto}
-  .nav-bubble{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:0;color:var(--txt2);opacity:0;transform:translateY(18px) scale(.84);transition:transform .42s cubic-bezier(.2,1.15,.3,1),opacity .32s ease;transition-delay:calc(var(--stagger,0) * 55ms)}
+  .nav-bubble{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:0;color:#fff;opacity:0;transform:translateY(18px) scale(.84);transition:transform .42s cubic-bezier(.2,1.15,.3,1),opacity .32s ease;transition-delay:calc(var(--stagger,0) * 55ms)}
   .nav-pop.open .nav-bubble{opacity:1;transform:none}
-  .nav-bubble .bub{width:56px;height:56px;border-radius:50%;background:rgba(16,24,40,.82);backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);border:1px solid rgba(125,211,252,.22);display:grid;place-items:center;position:relative;color:var(--txt);box-shadow:0 10px 24px -10px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.04) inset}
+  .nav-bubble .bub{width:56px;height:56px;border-radius:50%;background:rgba(18,28,52,.94);backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);border:1px solid rgba(125,211,252,.38);display:grid;place-items:center;position:relative;color:#fff;box-shadow:0 10px 24px -8px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.08) inset,0 0 18px rgba(37,99,235,.22)}
   .nav-bubble .bub svg{width:22px;height:22px;display:block}
-  .nav-bubble .lab{font-size:11px;font-weight:700;letter-spacing:.01em;color:var(--txt2)}
-  .nav-bubble .cnt{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;font-size:9.5px;line-height:16px;background:rgba(255,255,255,.16);color:#fff}
-  .nav-bubble.on .bub{background:linear-gradient(180deg,#4f8cff,#1d4ed8);color:#fff;box-shadow:0 0 22px rgba(37,99,235,.5),0 0 0 1px rgba(255,255,255,.12) inset}
+  .nav-bubble .lab{font-size:11px;font-weight:750;letter-spacing:.02em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75)}
+  .nav-bubble .cnt{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;font-size:9.5px;line-height:16px;background:rgba(255,255,255,.2);color:#fff}
+  .nav-bubble.on .bub{background:linear-gradient(180deg,#4f8cff,#1d4ed8);color:#fff;border-color:rgba(255,255,255,.28);box-shadow:0 0 22px rgba(37,99,235,.55),0 0 0 1px rgba(255,255,255,.14) inset}
   .nav-bubble.on .lab{color:#fff}
   .bottom-nav [data-board-parent].pop-on{color:var(--acc-hi)}
   @media (prefers-reduced-motion:reduce){
-    .nav-bubble{transition:none;opacity:1;transform:none}
+    .nav-bubble,.nav-pop-back{transition:none}
+    .nav-bubble{opacity:1;transform:none}
+    .nav-pop-back.open{opacity:1}
   }
 }
 
@@ -720,27 +732,20 @@ details[open] > summary::before{transform:rotate(0deg)}
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="picks" class="on"><span class="tab-emo" aria-hidden="true">⚖️</span>Verdict</button>
-      <div class="tab-group" data-board-group="games">
-        <button type="button" class="tab-parent" data-board-parent="games"><span class="tab-emo" aria-hidden="true">🏟️</span>Games</button>
-        <span class="tab-subs">
-          <button data-tab="good" data-board="games"><span class="tab-emo" aria-hidden="true">🎯</span>Picks<span class="cnt" id="c-good" data-cnt="good">0</span><span class="tab-dot" id="d-good" data-pull-dot="good" hidden></span></button>
-          <button data-tab="watch" data-board="games"><span class="tab-emo" aria-hidden="true">👀</span>Watch<span class="cnt" id="c-watch" data-cnt="watch">0</span><span class="tab-dot" id="d-watch" data-pull-dot="watch" hidden></span></button>
-          <button data-tab="avoid" data-board="games"><span class="tab-emo" aria-hidden="true">🚫</span>Avoid<span class="cnt" id="c-avoid" data-cnt="avoid">0</span><span class="tab-dot" id="d-avoid" data-pull-dot="avoid" hidden></span></button>
-        </span>
-      </div>
-      <div class="tab-group" data-board-group="props">
-        <button type="button" class="tab-parent" data-board-parent="props"><span class="tab-emo" aria-hidden="true">🏀</span>Props</button>
-        <span class="tab-subs">
-          <button data-tab="good" data-board="props"><span class="tab-emo" aria-hidden="true">🎯</span>Picks<span class="cnt" data-cnt="props-good">0</span></button>
-          <button data-tab="watch" data-board="props"><span class="tab-emo" aria-hidden="true">👀</span>Watch<span class="cnt" data-cnt="props-watch">0</span></button>
-          <button data-tab="avoid" data-board="props"><span class="tab-emo" aria-hidden="true">🚫</span>Avoid<span class="cnt" data-cnt="props-avoid">0</span></button>
-        </span>
-      </div>
+      <button type="button" class="tab-parent" data-board-parent="games"><span class="tab-emo" aria-hidden="true">🏟️</span>Games<span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></button>
+      <button type="button" class="tab-parent" data-board-parent="props"><span class="tab-emo" aria-hidden="true">🏀</span>Props<span class="cnt" data-cnt="props-good">0</span></button>
       <button data-tab="tracker"><span class="tab-emo" aria-hidden="true">📊</span>Tracker</button>
       <button data-tab="all"><span class="tab-emo" aria-hidden="true">📋</span>All Games<span class="cnt" id="c-all" data-cnt="all">0</span></button>
       <button data-tab="results"><span class="tab-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</button>
       <button data-tab="settings"><span class="tab-emo" aria-hidden="true">⚙️</span>Settings</button>
     </nav>
+    <div class="tab-subbar" id="tabSubbar" hidden>
+      <div class="tab-subs" id="tabSubs">
+        <button type="button" data-sub="good"><span class="tab-emo" aria-hidden="true">🎯</span>Picks<span class="cnt" data-sub-cnt="good">0</span><span class="tab-dot" data-sub-pull="good" hidden></span></button>
+        <button type="button" data-sub="watch"><span class="tab-emo" aria-hidden="true">👀</span>Watch<span class="cnt" data-sub-cnt="watch">0</span><span class="tab-dot" data-sub-pull="watch" hidden></span></button>
+        <button type="button" data-sub="avoid"><span class="tab-emo" aria-hidden="true">🚫</span>Avoid<span class="cnt" data-sub-cnt="avoid">0</span><span class="tab-dot" data-sub-pull="avoid" hidden></span></button>
+      </div>
+    </div>
     <div class="head-tools" id="headTools">
       <input class="search" id="search" placeholder="Search team…" aria-label="Search team">
       <button type="button" class="btn sm filters-btn" id="btnFilters" aria-expanded="false" aria-controls="filterBar"><span class="filters-lab">Filters</span></button>
@@ -751,6 +756,11 @@ details[open] > summary::before{transform:rotate(0deg)}
     </div>
   </div>
 </header>
+<div id="tabCountStore" hidden aria-hidden="true">
+  <span data-cnt="good">0</span><span data-cnt="watch">0</span><span data-cnt="avoid">0</span>
+  <span data-cnt="props-good">0</span><span data-cnt="props-watch">0</span><span data-cnt="props-avoid">0</span>
+  <span data-cnt="all">0</span><span data-cnt="pulled">0</span>
+</div>
 
 <main class="wrap">
   <div id="filterBar">
@@ -804,6 +814,7 @@ details[open] > summary::before{transform:rotate(0deg)}
   <button type="button" data-board-parent="props" aria-label="Props" aria-haspopup="true"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/><circle cx="12" cy="10" r="7" opacity=".0"/></svg><span class="cnt" data-cnt="props-good">0</span></span><span class="tab-lab">Props</span></button>
   <button type="button" id="btnMore" aria-haspopup="true" aria-expanded="false" aria-label="More"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg><span class="tab-dot" data-more-pull hidden></span></span><span class="tab-lab">More</span></button>
 </nav>
+<div class="nav-pop-back" id="navPopBack" hidden></div>
 <div class="nav-pop" id="navPop" hidden aria-label="Section menu"></div>
 <div class="more-backdrop" id="moreBackdrop" hidden></div>
 <div class="more-sheet" id="moreSheet" hidden role="menu" aria-label="More">
@@ -4795,31 +4806,49 @@ function renderMarketChips(){
 }
 function renderChips(){
   const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
-  if (restrict && ui.sport!=='all' && !goodEligibleLeague(ui.sport)) ui.sport = 'all';
+  const onProps = restrict && (ui.board||'games')==='props';
+  if (restrict && !onProps && ui.sport!=='all' && !goodEligibleLeague(ui.sport)) ui.sport = 'all';
   const counts = {};
-  if (ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid'){
+  const propSports = {};
+  const countOne = (p, lg)=>{ if (lg) counts[lg]=(counts[lg]||0)+1; };
+  const loggedSkip = p=>{
+    if (!(ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(p))) return false;
+    const k = p.id || (p.g && p.g.eventId ? `${p.g.eventId}|${p.mk||p.kind}|${p.side}` : '');
+    return !(typeof pulledNoteForKey==='function' && pulledNoteForKey(k));
+  };
+  if (onProps){
+    const want = ui.tab;
+    for (const p of (props||[])){
+      const lg = p.league || (p.g && p.g.league);
+      if (!(ui.hideStarted && p.g && p.g.state!=='pre') && lg) propSports[lg]=1;
+      if (p.verdict!==want) continue;
+      if (ui.hideStarted && p.g && p.g.state!=='pre') continue;
+      if (loggedSkip(p)) continue;
+      countOne(p, lg);
+    }
+  } else if (restrict){
     const want = ui.tab;
     for (const p of plays){
       if (p.verdict!==want) continue;
       if (ui.hideStarted && p.g && p.g.state!=='pre') continue;
-      if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(p)){
-        const k = p.g && p.g.eventId ? `${p.g.eventId}|${p.mk}|${p.side}` : '';
-        if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(k))) continue;
-      }
-      const lg = p.g && p.g.league; if (lg) counts[lg]=(counts[lg]||0)+1;
+      if (loggedSkip(p)) continue;
+      const lg = p.g && p.g.league; countOne(p, lg);
     }
   } else {
     games.forEach(g=>{ if(!ui.hideStarted || g.state==='pre') counts[g.league]=(counts[g.league]||0)+1; });
   }
-  const allowed = L => restrict ? goodEligibleLeague(L.id) : (S.enabled.includes(L.id) || !!counts[L.id]);
-  // Good / Watch / Avoid: every eligible Settings sport stays visible, including 0-count.
-  const show = L => restrict ? allowed(L) : (allowed(L) && (counts[L.id] || ui.sport===L.id));
-  const total = restrict
-    ? LEAGUES.filter(allowed).reduce((a,L)=>a+(counts[L.id]||0),0)
-    : Object.entries(counts).reduce((a,[id,n])=>a+n,0);
+  const allowed = L => onProps
+    ? !!(propSports[L.id] || counts[L.id] || ui.sport===L.id)
+    : (restrict ? goodEligibleLeague(L.id) : (S.enabled.includes(L.id) || !!counts[L.id]));
+  const show = L => onProps || restrict ? allowed(L) : (allowed(L) && (counts[L.id] || ui.sport===L.id));
+  const total = onProps
+    ? Object.values(counts).reduce((a,n)=>a+n,0)
+    : (restrict
+      ? LEAGUES.filter(allowed).reduce((a,L)=>a+(counts[L.id]||0),0)
+      : Object.entries(counts).reduce((a,[id,n])=>a+n,0));
   $('#sportChips').innerHTML = `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
     LEAGUES.filter(show).map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${sportChipLabel(L)}<span class="n">${counts[L.id]||0}</span></span>`).join('');
-  const note = ui.tab==='good' ? goodPlaysExcludeLine() : '';
+  const note = (!onProps && ui.tab==='good') ? goodPlaysExcludeLine() : '';
   const el = $('#chipNote');
   if (el){ el.hidden = !note; el.textContent = note; }
 }
@@ -4838,7 +4867,12 @@ function render(){
   const watch = vis('watch').sort((a,b)=>b.score-a.score);
   const avoid = vis('avoid').sort((a,b)=>a.g.start-b.g.start);
   const allG = filtered(games, false).sort((a,b)=>a.start-b.start);
-  setTabCount('good', good.length); setTabCount('watch', watch.length); setTabCount('avoid', avoid.length); setTabCount('all', allG.length);
+  const gamesLive = (ui.board||'games')!=='props';
+  const hideOnly = (list, v) => list.filter(p=>p.verdict===v && !(ui.hideStarted && p.g && p.g.state!=='pre')).length;
+  setTabCount('good', gamesLive ? good.length : hideOnly(plays,'good'));
+  setTabCount('watch', gamesLive ? watch.length : hideOnly(plays,'watch'));
+  setTabCount('avoid', gamesLive ? avoid.length : hideOnly(plays,'avoid'));
+  setTabCount('all', allG.length);
   if (typeof updatePropTabCounts==='function') updatePropTabCounts();
   updatePullDots();
   if (typeof updateFilterChrome==='function') updateFilterChrome();
@@ -7005,24 +7039,78 @@ function buildPropPlay(raw, side, feat, est){
   const label = `${raw.playerName||'Player'} ${side==='over'?'Over':'Under'} ${raw.line} ${PROP_KIND_LABEL[raw.kind]||raw.kind}`;
   const win = [], lose = [];
   const f = feat||{};
-  const hitTxt = (r,n,avg) => (r==null||!n) ? null : `${Math.round(r*n)}/${n} (${avg!=null?avg.toFixed(1)+' avg':'—' })`;
-  const l10t = hitTxt(f.l10hit, f.l10n, f.l10avg);
-  const l5t = hitTxt(f.l5hit, f.l5n, f.l5avg);
-  if (l10t){ (f.l10hit>=0.6?win:f.l10hit<0.5?lose:win).push({txt:`Hit the over in ${l10t} of the last 10`}); }
-  if (l5t){ (f.l5avg!=null && ((side==='over'?f.l5avg: -f.l5avg) > (side==='over'?raw.line:-raw.line)) ? win : lose).push({txt:`Last 5 average ${f.l5avg!=null?f.l5avg.toFixed(1):'—'} vs the line ${raw.line}`}); }
-  if (f.seasonAvg!=null){ ((side==='over'?f.seasonAvg>=raw.line:f.seasonAvg<=raw.line)?win:lose).push({txt:`Season average ${f.seasonAvg.toFixed(1)} ${f.seasonHit!=null?`· over in ${Math.round(f.seasonHit*f.n)}/${f.n}`:''}`}); }
-  if (f.minL5!=null && f.minSzn!=null){ ((f.minL5>=f.minSzn)?win:lose).push({txt:`Minutes trending ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`}); }
-  if (f.splitN>=3 && f.splitHit!=null){ (f.splitHit>=0.55?win:lose).push({txt:`${f.home?'At home':'On the road'}, hit the over in ${Math.round(f.splitHit*f.splitN)}/${f.splitN}`}); }
-  if (f.rest!=null && f.rest<=1) lose.push({txt:'Short rest / back-to-back — usage and counting stats often dip'});
-  if (f.rest!=null && f.rest>=3) win.push({txt:`${f.rest} days of rest`});
-  if (f.h2hn>=2 && f.h2hhit!=null){ (f.h2hhit>=0.55?win:lose).push({txt:`Vs ${((raw.opp&&raw.opp.short)||'this opponent')}: over in ${Math.round(f.h2hhit*f.h2hn)}/${f.h2hn}`}); }
+  const isUnder = side==='under';
+  const l10n = f.l10n||0, nSzn = f.n||0;
+  const avgTxt = f.l10avg!=null ? f.l10avg.toFixed(1)+' avg' : '—';
+  if (f.l10hit!=null && l10n){
+    const overN = Math.round(f.l10hit*l10n), underN = l10n-overN;
+    if (isUnder){
+      if ((1-f.l10hit)>=0.6) win.push({txt:`Stayed under in ${underN}/${l10n} (${avgTxt})`});
+      else if (f.l10hit>=0.6) lose.push({txt:`Went over in ${overN}/${l10n} (${avgTxt})`});
+      else win.push({txt:`Stayed under in ${underN}/${l10n} (${avgTxt})`});
+    } else {
+      const txt = `Hit the over in ${overN}/${l10n} (${avgTxt})`;
+      (f.l10hit>=0.6?win:f.l10hit<0.5?lose:win).push({txt});
+    }
+  }
+  if (f.l5avg!=null){
+    const txt = `Last 5 average ${f.l5avg.toFixed(1)} vs the line ${raw.line}`;
+    const below = f.l5avg < raw.line, above = f.l5avg > raw.line;
+    if (isUnder ? below : above) win.push({txt});
+    else if (isUnder ? above : below) lose.push({txt});
+    else win.push({txt});
+  }
+  if (f.seasonAvg!=null){
+    const below = f.seasonAvg <= raw.line;
+    const overN = (f.seasonHit!=null && nSzn) ? Math.round(f.seasonHit*nSzn) : null;
+    const extra = overN==null ? '' : (isUnder ? ` · stayed under in ${nSzn-overN}/${nSzn}` : ` · over in ${overN}/${nSzn}`);
+    const txt = `Season average ${f.seasonAvg.toFixed(1)}${extra}`;
+    ((isUnder?below:f.seasonAvg>=raw.line)?win:lose).push({txt});
+  }
+  if (f.minL5!=null && f.minSzn!=null){
+    const down = f.minL5 < f.minSzn-0.3, up = f.minL5 > f.minSzn+0.3;
+    if (isUnder){
+      if (down) win.push({txt:`Minutes down to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
+      else if (up) lose.push({txt:`Minutes up to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season — more usage is over upside`});
+      else win.push({txt:`Minutes trending ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
+    } else {
+      if (up) win.push({txt:`Minutes up to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
+      else if (down) lose.push({txt:`Minutes down to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
+      else win.push({txt:`Minutes trending ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
+    }
+  }
+  if (f.splitN>=3 && f.splitHit!=null){
+    const overN = Math.round(f.splitHit*f.splitN), underN = f.splitN-overN;
+    const place = f.home?'At home':'On the road';
+    if (isUnder){
+      const underRate = 1-f.splitHit;
+      (underRate>=0.55?win:lose).push({txt: underRate>=0.55 ? `${place}, stayed under in ${underN}/${f.splitN}` : `${place}, went over in ${overN}/${f.splitN}`});
+    } else {
+      (f.splitHit>=0.55?win:lose).push({txt:`${place}, hit the over in ${overN}/${f.splitN}`});
+    }
+  }
+  if (f.rest!=null && f.rest<=1){
+    const t = 'Short rest / back-to-back — usage and counting stats often dip';
+    (isUnder?win:lose).push({txt:t});
+  }
+  if (f.rest!=null && f.rest>=3){
+    if (isUnder) lose.push({txt:`${f.rest} days of rest can mean a fuller workload and more scoring upside`});
+    else win.push({txt:`${f.rest} days of rest`});
+  }
+  if (f.h2hn>=2 && f.h2hhit!=null){
+    const overN = Math.round(f.h2hhit*f.h2hn), underN = f.h2hn-overN;
+    const opp = ((raw.opp&&raw.opp.short)||'this opponent');
+    if (isUnder){
+      const underRate = 1-f.h2hhit;
+      (underRate>=0.55?win:lose).push({txt: underRate>=0.55 ? `Vs ${opp}: stayed under in ${underN}/${f.h2hn}` : `Vs ${opp}: went over in ${overN}/${f.h2hn}`});
+    } else {
+      (f.h2hhit>=0.55?win:lose).push({txt:`Vs ${opp}: over in ${overN}/${f.h2hn}`});
+    }
+  }
   if (f.l10sd!=null && raw.line && f.l10sd>raw.line*0.45) lose.push({txt:'The last 10 are streaky, so a single line is a coin flip more often than it looks'});
   if (price!=null && price<PROP_ODDS_LO) lose.push({txt:`Juice is heavy (${fmtAm(price)})`});
-  if (side==='under') lose.push({txt:'An early blowout or foul trouble can wreck an under as well as an over'});
+  if (isUnder) lose.push({txt:'A hot shooting night, a teammate injury that opens usage, or a soft opponent defense can push this over the line'});
   else lose.push({txt:'A blowout, foul trouble, or a cold shooting night can leave this under the line'});
-  if (side==='under'){
-    // Flip wording that was written from the over's point of view for under cards.
-  }
   const J = gates.verdict==='good'?'BET':gates.verdict==='watch'?'MAYBE LATER':'SKIP';
   const sentence = pSide==null
     ? 'We still need this player’s recent game log before the judge can speak with any confidence.'
@@ -7397,7 +7485,10 @@ function renderPropsBoard(tab, errs){
 }
 
 function updatePropTabCounts(){
-  const vis = v => filteredProps((props||[]).filter(p=>p.verdict===v)).length;
+  const live = (ui.board||'games')==='props' && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+  const vis = v => live
+    ? filteredProps((props||[]).filter(p=>p.verdict===v)).length
+    : (props||[]).filter(p=>p.verdict===v && !(ui.hideStarted && p.g && p.g.state!=='pre')).length;
   if (typeof setTabCount==='function'){
     setTabCount('props-good', vis('good'));
     setTabCount('props-watch', vis('watch'));
@@ -7670,6 +7761,30 @@ function setMoreOpen(open){
   if (btn) btn.setAttribute('aria-expanded', open?'true':'false');
   if (open && typeof setNavPop==='function') setNavPop(null);
 }
+function syncSubbar(){
+  const bar = $('#tabSubbar');
+  if (!bar) return;
+  const tab = ui.tab, board = ui.board||'games';
+  const slate = !!SLATE_TABS[tab];
+  bar.hidden = !slate;
+  bar.querySelectorAll('[data-sub]').forEach(b=>{
+    const sub = b.getAttribute('data-sub');
+    b.classList.toggle('on', slate && tab===sub);
+    const key = board==='props' ? 'props-'+sub : sub;
+    const src = document.querySelector('#tabCountStore [data-cnt="'+key+'"]') || document.querySelector('[data-cnt="'+key+'"]');
+    const cnt = b.querySelector('[data-sub-cnt]');
+    if (cnt && src) cnt.textContent = src.textContent || '0';
+    const dot = b.querySelector('[data-sub-pull]');
+    if (dot){
+      if (board==='props'){ dot.hidden = true; }
+      else {
+        const n = typeof visiblePulled==='function' ? visiblePulled(sub).length : 0;
+        dot.hidden = n===0;
+        if (n) dot.title = n+' pulled play'+(n===1?'':'s')+' from this tab';
+      }
+    }
+  });
+}
 function syncTabChrome(){
   const tab = ui.tab, board = ui.board||'games';
   const slate = !!SLATE_TABS[tab];
@@ -7679,8 +7794,9 @@ function syncTabChrome(){
     const on = sameTab && (!xb || (slate && xb===board) || (!slate && !xb));
     x.classList.toggle('on', !!on);
   });
-  document.querySelectorAll('#tabs [data-board-group]').forEach(g=>{
-    g.classList.toggle('is-on', slate && g.getAttribute('data-board-group')===board);
+  document.querySelectorAll('#tabs [data-board-parent]').forEach(b=>{
+    const pb = b.getAttribute('data-board-parent');
+    b.classList.toggle('on', slate && board===pb);
   });
   document.querySelectorAll('#bottomNav button[data-tab="picks"]').forEach(b=>b.classList.toggle('on', tab==='picks'));
   document.querySelectorAll('#bottomNav [data-board-parent]').forEach(b=>{
@@ -7690,14 +7806,23 @@ function syncTabChrome(){
   });
   const moreBtn = $('#btnMore');
   if (moreBtn) moreBtn.classList.toggle('on', !!MORE_TABS[tab]);
+  syncSubbar();
 }
 function setNavPop(board){
   const pop = $('#navPop');
-  if (!pop){ ui.navPop = null; return; }
+  const scrim = $('#navPopBack');
+  if (!pop){ ui.navPop = null; if (scrim){ scrim.classList.remove('open'); scrim.hidden = true; } return; }
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const closeScrim = ()=>{
+    if (!scrim) return;
+    scrim.classList.remove('open');
+    const hideS = ()=>{ if (!scrim.classList.contains('open')) scrim.hidden = true; };
+    if (reduce) hideS(); else setTimeout(hideS, 280);
+  };
   if (!board){
     ui.navPop = null;
     pop.classList.remove('open');
+    closeScrim();
     document.querySelectorAll('#bottomNav [data-board-parent]').forEach(b=>b.classList.remove('pop-on'));
     const hide = ()=>{ if (!pop.classList.contains('open')) pop.hidden = true; };
     if (reduce) hide(); else setTimeout(hide, 280);
@@ -7705,6 +7830,11 @@ function setNavPop(board){
     return;
   }
   ui.navPop = board;
+  if (scrim){
+    scrim.hidden = false;
+    if (reduce) scrim.classList.add('open');
+    else { scrim.classList.remove('open'); requestAnimationFrame(()=>requestAnimationFrame(()=>scrim.classList.add('open'))); }
+  }
   const items = [
     {tab:'good', lab:'Picks', cnt: board==='props'?'props-good':'good', ic:'target'},
     {tab:'watch', lab:'Watch', cnt: board==='props'?'props-watch':'watch', ic:'eye'},
@@ -7772,9 +7902,14 @@ if ($('#navPop')) $('#navPop').addEventListener('click', e=>{
 });
 if ($('#moreSheet')) $('#moreSheet').addEventListener('click', onTabClick);
 if ($('#moreBackdrop')) $('#moreBackdrop').addEventListener('click', ()=>setMoreOpen(false));
+if ($('#navPopBack')) $('#navPopBack').addEventListener('click', ()=>setNavPop(null));
+if ($('#tabSubbar')) $('#tabSubbar').addEventListener('click', e=>{
+  const b = e.target.closest('[data-sub]'); if (!b) return;
+  setTab(b.getAttribute('data-sub'), {board: ui.board||'games'}); render(); window.scrollTo({top:0});
+});
 document.addEventListener('click', e=>{
   if (!ui.navPop) return;
-  if (e.target.closest('#navPop') || e.target.closest('#bottomNav')) return;
+  if (e.target.closest('#navPop') || e.target.closest('#bottomNav') || e.target.closest('#navPopBack')) return;
   setNavPop(null);
 });
 $('#sportChips').addEventListener('click', e=>{ const c=e.target.closest('[data-sport]'); if(!c) return; ui.sport=c.dataset.sport; if (typeof saveFilters==='function') saveFilters(); render(); });
