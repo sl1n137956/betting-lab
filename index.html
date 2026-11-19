@@ -223,6 +223,40 @@ code{background:var(--inset);border:1px solid var(--line2);border-radius:5px;pad
 .ln-tab td{vertical-align:top;white-space:normal}.ln-tab td:nth-child(3){min-width:300px;width:46%}.ln-tab td:nth-child(4){min-width:230px}.ln-pre{font-size:12px;line-height:1.5;margin-bottom:3px}.ln-pre b{color:var(--txt2);font-weight:600}.nowrap,.ln-tab td.nowrap{white-space:nowrap}
 .ln-off{margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--watch-bg);border:1px solid rgba(224,168,74,.25);font-size:12.5px;line-height:1.55}
 .ln-panel .kpi .hint{margin-top:3px;font-size:11px}
+.ln-card{position:relative;overflow:hidden;margin-bottom:16px;padding:20px 18px 18px;border-radius:18px;border:1px solid rgba(96,165,250,.28);background:linear-gradient(180deg,rgba(37,99,235,.10) 0%,rgba(15,23,42,.88) 42%,rgba(12,18,34,.96) 100%);box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 18px 40px -24px rgba(15,23,42,.9),0 0 0 1px rgba(59,130,246,.08)}
+.ln-card:before{content:'';position:absolute;inset:0 auto auto 0;width:100%;height:110px;pointer-events:none;background:radial-gradient(120% 80% at 12% 0%,rgba(96,165,250,.16),transparent 60%)}
+.ln-card .ln-head,.ln-card .ln-kpis,.ln-card .ln-prog,.ln-card .ln-knobs,.ln-card .ln-actions,.ln-card .hint,.ln-card h3,.ln-card .overflow,.ln-card details{position:relative}
+.ln-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}
+.ln-head-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.ln-head h3{margin:0;font-size:16px;display:flex;align-items:center;gap:6px;letter-spacing:-.02em}
+.ln-head-meta{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ln-status-pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;border:1px solid transparent}
+.ln-status-pill.on{color:#86efac;background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.38);box-shadow:0 0 16px -6px rgba(16,185,129,.7)}
+.ln-status-pill.off{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(251,191,36,.38)}
+.ln-dot{width:7px;height:7px;border-radius:99px;background:#34d399;box-shadow:0 0 0 0 rgba(52,211,153,.7);animation:lnPulse 1.8s ease-out infinite}
+@keyframes lnPulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55)}70%{box-shadow:0 0 0 8px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+.ln-ver{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:800;letter-spacing:.08em;color:#dbeafe;background:linear-gradient(180deg,rgba(59,130,246,.32),rgba(29,78,216,.22));border:1px solid rgba(147,197,253,.45);box-shadow:0 0 18px -6px rgba(59,130,246,.85)}
+.ln-card .ln-kpis,.ln-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:0 0 16px}
+.ln-card .kpi,.ln-kpis .kpi{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(15,23,42,.35));border:1px solid rgba(148,163,184,.16);border-radius:14px;padding:12px 13px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+.ln-card .kpi .k,.ln-kpis .kpi .k{color:var(--mut);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em}
+.ln-card .kpi .v,.ln-kpis .kpi .v{font-size:22px;font-weight:750;margin-top:4px;letter-spacing:-.03em}
+.ln-prog{margin:0 0 14px}
+.ln-prog-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin:0 0 7px}
+.ln-prog-top b{color:var(--txt2);font-weight:700}
+.ln-prog-track{height:8px;border-radius:999px;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.16);overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
+.ln-prog-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#3b82f6,#22c55e);box-shadow:0 0 16px rgba(52,211,153,.45);transition:width .4s ease}
+.ln-knobs{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px}
+.ln-knob{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-size:11.5px;font-weight:650;color:#e2e8f0;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.22);box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+.ln-actions .btn,.btn.ln-btn{border-radius:999px;padding:8px 16px}
+.ln-actions .btn.primary,.btn.ln-btn.primary{background:linear-gradient(180deg,#60a5fa,#2563eb);border-color:transparent;color:#fff;font-weight:750;box-shadow:0 0 0 1px rgba(255,255,255,.14) inset,0 8px 20px -8px rgba(37,99,235,.8)}
+.ln-actions .btn.sm:not(.primary):not(.danger),.btn.ln-btn-ghost{border-radius:999px;background:rgba(255,255,255,.04);border-color:rgba(148,163,184,.22)}
+.bt-card h3{margin:16px 0 8px;font-size:13.5px}
+.bt-card h3:first-child{margin-top:0}
+.bt-runbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 16px;padding:12px;border-radius:14px;background:rgba(15,23,42,.35);border:1px solid rgba(148,163,184,.14)}
+.bt-runbar .form{margin:0}
+.bt-runbar .filters{margin:0}
+.bt-runbar .btn.primary{border-radius:999px;padding:9px 18px;font-weight:750}
+.bt-foot{margin-top:12px;color:var(--mut);font-size:12px;line-height:1.55}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#3a3450;border-radius:10px;border:2px solid var(--bg)}::-webkit-scrollbar-thumb:hover{background:#5a45a8}::-webkit-scrollbar-track{background:transparent}
 
 .beton{margin:8px 0 2px;padding:9px 12px;border-radius:10px;border:1px solid var(--line2);background:rgba(255,255,255,.02);font-size:13px;font-weight:550}
@@ -1033,13 +1067,14 @@ const SPORT_EMOJI = {nba:'🏀',nhl:'🏒',nfl:'🏈',mlb:'⚾',ncaaf:'🏈',nca
 function sportEmoji(id){ return SPORT_EMOJI[id]||'🏟️'; }
 function sportChipLabel(L){ return `<span class="sp-emo" aria-hidden="true">${sportEmoji(L.id)}</span>${L.label}`; }
 
-const BOOK_NAMES = {draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
+const BOOK_NAMES = {polymarket:'Polymarket',polymarket_us:'Polymarket US',kalshi:'Kalshi',draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
 const ALL_PROP_STATS = ['pts','reb','ast','threes','pra','pr','pa','ar','stl','blk','tov','sog','saves','goals','hpts','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td','ks'];
 const ALL_GAME_MKTS = ['h2h','spreads','totals','ml','spread','total'];
 const TRAD_BOOKS = ['bovada','draftkings','fanduel','betmgm','williamhill_us','espnbet','fanatics','betrivers','betonlineag'];
+const PM_BOOK_CAPS = { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] };
 const BOOK_CAPABILITIES = Object.assign(
-  { polymarket: { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] } },
-  Object.fromEntries(TRAD_BOOKS.map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
+  { polymarket: Object.assign({}, PM_BOOK_CAPS), polymarket_us: Object.assign({}, PM_BOOK_CAPS) },
+  Object.fromEntries(TRAD_BOOKS.concat(['kalshi']).map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
 );
 
 function fmtUnitDollars(u){
@@ -1094,9 +1129,16 @@ function selectedBooks(){
     ? myBookList()
     : String((typeof S!=='undefined' && S.myBooks) || '').toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);
 }
+function isPolymarketBook(k){
+  k = String(k||'').toLowerCase();
+  return k==='polymarket' || k==='polymarket_us';
+}
 function bookLabelOf(k){
   k = String(k||'').toLowerCase();
-  return k==='polymarket' ? 'Polymarket' : (BOOK_NAMES[k] || k);
+  if (k==='polymarket') return 'Polymarket';
+  if (k==='polymarket_us') return 'Polymarket US';
+  if (k==='kalshi') return 'Kalshi';
+  return BOOK_NAMES[k] || k;
 }
 function capOf(book){
   const k = String(book||'').toLowerCase();
@@ -1144,7 +1186,9 @@ function polymarketFeedLive(){
 }
 function polymarketOnlyFilterActive(){
   const books = selectedBooks();
-  return books.length===1 && books[0]==='polymarket' && polymarketFeedLive();
+  if (!books.length) return false;
+  if (!books.every(b => b==='polymarket' || b==='polymarket_us')) return false;
+  return polymarketFeedLive();
 }
 function playHasPolymarketLine(p){
   if (!p || !p.g || !p.g.pm) return false;
@@ -1163,6 +1207,8 @@ const PM_SPORT_SLUG = {nba:'nba',nhl:'nhl',nfl:'nfl',mlb:'mlb',ncaab:'cbb',ncaaf
 const BOOK_HOME_URL = {
   bovada:'https://www.bovada.lv/sports',
   polymarket:'https://polymarket.com/sports',
+  polymarket_us:'https://polymarket.us/sports',
+  kalshi:'https://kalshi.com/calendar/sports',
   draftkings:'https://sportsbook.draftkings.com/',
   fanduel:'https://sportsbook.fanduel.com/',
   betmgm:'https://sports.betmgm.com/en/sports',
@@ -1198,7 +1244,16 @@ function bookOpenUrl(bookKey, item, kind){
   if (book==='polymarket'){
     const slug = g && g.pm && g.pm.slug;
     if (slug) return 'https://polymarket.com/event/'+slug;
-    return 'https://polymarket.com/sports/'+(PM_SPORT_SLUG[lg] || 'nba');
+    const path = PM_SPORT_SLUG[lg];
+    return path ? 'https://polymarket.com/sports/'+path : 'https://polymarket.com/sports';
+  }
+  if (book==='polymarket_us'){
+    // Own US domain only — never fall through to polymarket.com. Sport paths verified 200.
+    const path = PM_SPORT_SLUG[lg];
+    return path ? 'https://polymarket.us/sports/'+path : 'https://polymarket.us/sports';
+  }
+  if (book==='kalshi'){
+    return 'https://kalshi.com/calendar/sports';
   }
   const mapped = BOOK_LEAGUE_URL[book] && lg && BOOK_LEAGUE_URL[book][lg];
   return mapped || BOOK_HOME_URL[book] || BOOK_HOME_URL.bovada;
@@ -2592,7 +2647,7 @@ function evaluateAll(){
 
 /* ================= YOUR BOOKS (Bovada / Polymarket / any Odds API key) ================= */
 const myBookList = () => String(S.myBooks||'').toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);
-const BOOK_LABEL = k => k==='polymarket' ? 'Polymarket' : (BOOK_NAMES[k]||k);
+const BOOK_LABEL = k => (typeof bookLabelOf==='function' ? bookLabelOf(k) : (BOOK_NAMES[k]||k));
 // fair price helpers
 const probToAm = p => p==null||p<=0||p>=1 ? null : (p>=0.5 ? -100*p/(1-p) : 100*(1-p)/p);
 const pmCost = (c, rate) => c + (rate==null?+S.pmFeeRate:rate)*c*(1-c);         // what one share really costs a taker
@@ -3348,7 +3403,7 @@ function btScore(rows, mode, unit){
     const p = cands[0]; if (!p) continue; // one per game
     const res = btResult(r, p.mk, p.side, p.sd.point); if (!res) continue;
     const price = p.sd.best.price; const pl = res==='win' ? profitOn(price, unit) : res==='loss' ? -unit : 0;
-    bets.push({day:ymd(new Date(r.t)), lg:r.l, mk:p.mk, label:`${p.label} (${g.away.short} @ ${g.home.short})`, price, res, pl, nv:p.sd.nv});
+    bets.push({day:ymd(new Date(r.t)), lg:r.l, mk:p.mk, label:`${p.label} (${g.away.short} @ ${g.home.short})`, price, res, pl, nv:p.sd.nv, est:p.est});
   }
   return btSummary(bets, unit);
 }
@@ -6927,77 +6982,263 @@ function bindResultsBoardSeg(){
     b.onclick=()=>{ ui.resultsBoard=b.getAttribute('data-res-board'); renderResults(); };
   });
 }
-function learnCardHead(board){
+function learnCardHead(board, opts){
   const lab = board==='props'?'Props':board==='parlay'?'Parlays':board==='verdict'?'Verdict':'Games';
-  return `<div class="ln-head"><h3><span class="h-emo" aria-hidden="true">🧠</span> Model learning · ${lab}</h3>${resultsBoardSegHTML('learnBoardSeg')}</div>`;
+  const o = opts||{};
+  const paused = !!o.paused;
+  const ver = o.version!=null ? o.version : (o.cur!=null ? o.cur : 1);
+  return `<div class="ln-head"><div class="ln-head-left"><h3><span class="h-emo" aria-hidden="true">🧠</span> Model learning · ${lab}</h3><div class="ln-head-meta"><span class="ln-status-pill ${paused?'off':'on'}">${paused?'⏸ Paused':'<i class="ln-dot" aria-hidden="true"></i> Auto-learning ON'}</span><span class="ln-ver">v${ver}</span></div></div>${resultsBoardSegHTML('learnBoardSeg')}</div>`;
+}
+function learnProgHTML(have, need, readyLabel){
+  const n = Math.max(0, +have||0), m = Math.max(1, +need||1);
+  const pct = Math.min(100, Math.round((n/m)*100));
+  const ready = n>=m;
+  const msg = ready ? (readyLabel||'Ready for weekly walk-forward retune') : `${n} / ${m} graded picks toward next auto-retune`;
+  return `<div class="ln-prog"><div class="ln-prog-top"><span>${ready?'<b>'+msg+'</b>':msg}</span><span class="mut">${pct}%</span></div><div class="ln-prog-track"><div class="ln-prog-fill" style="width:${pct}%"></div></div></div>`;
+}
+function learnKnobsHTML(pills){
+  const list = (pills||[]).filter(Boolean);
+  if (!list.length) return '';
+  return `<div class="ln-knobs">${list.map(p=>`<span class="ln-knob">${esc(p)}</span>`).join('')}</div>`;
+}
+function boardLearnKnobs(board){
+  if (board==='verdict'){
+    const t = (typeof LEARN!=='undefined' && LEARN && LEARN.verdict) || {};
+    const vp = Object.assign({}, (typeof VERDICT_LEARN_DEFAULTS!=='undefined'?VERDICT_LEARN_DEFAULTS:{}), t.params||{});
+    const edge = (typeof fmtEdge==='function') ? fmtEdge(vp.edgeFloor) : (((+vp.edgeFloor||0)*100).toFixed(1)+'%');
+    return [
+      `Shrink: ${Math.round((+vp.probShrink||0)*100)}%`,
+      `BET bar: ${typeof fmtPct==='function'?fmtPct(vp.betMinProb,0):Math.round((vp.betMinProb||0)*100)+'%'}`,
+      `Watch: ${typeof fmtPct==='function'?fmtPct(vp.watchMinProb,0):Math.round((vp.watchMinProb||0)*100)+'%'}`,
+      `Edge floor: ${edge}`
+    ];
+  }
+  const cfg = (typeof boardS==='function') ? boardS(board==='parlay'?'parlay':board==='props'?'props':'games') : (typeof S!=='undefined'?S:{});
+  const pills = [];
+  if (cfg && cfg.sMinWin!=null) pills.push(`Win bar: ${Math.round((+cfg.sMinWin)*100)}%`);
+  if (cfg && cfg.sModelMin!=null) pills.push(`ESPN bar: ${Math.round((+cfg.sModelMin)*100)}%`);
+  if (board==='games' && cfg && cfg.sMinPos!=null) pills.push(`Reasons: ${cfg.sMinPos}`);
+  if (board==='parlay' && cfg){
+    if (cfg.sFavMin!=null && typeof fmtAm==='function') pills.push(`Legs: ${fmtAm(cfg.sFavMin)}–${fmtAm(cfg.sDogMax)}`);
+    if (cfg.payoutSweetMin!=null) pills.push(`Payout: ${(+cfg.payoutSweetMin).toFixed(1)}x–${(+cfg.payoutSweetMax||3).toFixed(1)}x`);
+  }
+  return pills;
+}
+function isRecommendedSnap(x){
+  const v = String((x&&x.verdict)||'').toLowerCase();
+  return v==='' || v==='good' || v==='pick' || v==='bet';
+}
+function liveRecordFromPlays(plays, opts){
+  const o = opts||{};
+  const unit = +S.unit||25;
+  const settled = plays.filter(r=>r.res==='win'||r.res==='loss');
+  const pushes = plays.filter(r=>r.res==='push').length;
+  const w = settled.filter(r=>r.res==='win').length, l = settled.length-w;
+  const pend = plays.filter(r=>!r.res || r.res==='pending').length;
+  let net = 0;
+  for (const r of settled){
+    if (typeof o.netFn==='function') net += o.netFn(r, unit);
+    else if (r.res==='win') net += (r.dec!=null ? unit*(+r.dec-1) : (typeof profitOn==='function' && (r.lastPrice??r.price)!=null ? profitOn(r.lastPrice??r.price, unit) : unit));
+    else net -= unit;
+  }
+  const clvList = plays.filter(r=>r.clv!=null);
+  return {
+    w, l, p:pushes, pend, n:plays.length, graded:settled.length,
+    wr: settled.length? w/settled.length : null,
+    net, roi: settled.length? net/(settled.length*unit) : null,
+    clv: clvList.length? clvList.reduce((a,r)=>a+r.clv,0)/clvList.length : null
+  };
+}
+function liveRecordHTML(board){
+  const unit = +S.unit||25;
+  const lgOf = id => (typeof LMAP!=='undefined' && LMAP[id] && LMAP[id].label) || (id||'—');
+  const resCell = r => `<td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}</td>`;
+  let plays=[], title, empty, fifthLabel='Graded', fifthVal, fifthCls='', cols, rows, pulled='';
+  if (board==='props'){
+    const snaps = [...((typeof PROP_SNAPS!=='undefined' && PROP_SNAPS)?PROP_SNAPS.values():[])];
+    plays = snaps.filter(isRecommendedSnap).map(x=>({
+      d: x.t?isoDate(new Date(x.t)):'—', lg:x.league, label:`${x.playerName||'Player'} ${x.side||''} ${x.line??''}`.trim(),
+      game:'', price:x.price, est:x.p, res:x.y===1?'win':x.y===0?'loss':(x.res||null), start:x.t||0
+    })).sort((a,b)=>b.start-a.start);
+    title = `Recommended plays (${plays.length})`;
+    empty = 'No graded or pending prop picks yet — they log automatically as picks appear.';
+    cols = `<tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Our est.</th><th>Result</th></tr>`;
+    rows = plays.slice(0,120).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(lgOf(r.lg))}</td><td>${esc(r.label)}</td><td>${r.price!=null?fmtAm(r.price):'—'}</td><td>${r.est!=null?fmtPct(r.est,0):'—'}</td>${resCell(r)}</tr>`).join('');
+  } else if (board==='parlay'){
+    const snaps = [...((typeof PARLAY_SNAPS!=='undefined' && PARLAY_SNAPS)?PARLAY_SNAPS.values():[])];
+    plays = snaps.filter(isRecommendedSnap).map(x=>{
+      const lab = (x.legs||[]).map(l=>l.label||l.playerName||'').filter(Boolean).join(' + ') || `${x.n||'?'} -leg ticket`;
+      return {d:x.t?isoDate(new Date(x.t)):'—', lg:x.mix||((x.legs||[])[0]&&(x.legs||[])[0].league)||'', label:lab, n:x.n, dec:x.dec, am:x.am, est:x.p, res:x.y===1?'win':x.y===0?'loss':(x.res||null), start:x.t||0};
+    }).sort((a,b)=>b.start-a.start);
+    title = `Recommended plays (${plays.length})`;
+    empty = 'No graded or pending parlay tickets yet — they log automatically as tickets appear.';
+    cols = `<tr><th>Date</th><th>Type</th><th>Ticket</th><th>Payout</th><th>Our est.</th><th>Result</th></tr>`;
+    rows = plays.slice(0,120).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc((r.n||'?')+'-leg')}</td><td>${esc(r.label)}</td><td>${r.dec!=null?(Number(r.dec).toFixed(2)+'x'+(r.am!=null?` / ${fmtAm(r.am)}`:'')):'—'}</td><td>${r.est!=null?fmtPct(r.est,0):'—'}</td>${resCell(r)}</tr>`).join('');
+  } else if (board==='verdict'){
+    const checks = ((typeof VCHECKS!=='undefined' && VCHECKS) || []).slice();
+    const callOf = v => v==='BET'?'BET':(v==='WATCHLIST'||v==='WATCH'||v==='watch'||v==='MAYBE LATER')?'MAYBE LATER':'SKIP';
+    plays = checks.map(x=>({
+      d: x.gameDate || (x.startMs?isoDate(new Date(x.startMs)):(x.createdAt?isoDate(new Date(x.createdAt)):'—')),
+      lg:x.sport, label:x.pickText||x.label||'—', call:callOf(x.verdict), price:x.odds, est:x.winProb,
+      res:x.res==='win'||x.res==='loss'||x.res==='push'?x.res:null, start:x.startMs||x.createdAt||0
+    })).sort((a,b)=>b.start-a.start);
+    title = `Checked picks (${plays.length})`;
+    empty = 'No graded or pending checked picks yet — they log automatically when you check a pick in Verdict.';
+    cols = `<tr><th>Date</th><th>Sport</th><th>Pick</th><th>Call</th><th>Our est.</th><th>Result</th></tr>`;
+    rows = plays.slice(0,120).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(lgOf(r.lg))}</td><td>${esc(r.label)}</td><td>${esc(r.call)}</td><td>${r.est!=null?fmtPct(r.est,0):'—'}</td>${resCell(r)}</tr>`).join('');
+  } else {
+    plays = (results||[]).filter(r=>r.status==='active').map(r=>({
+      d:r.d||isoDate(new Date(r.start)), lg:r.lg, label:r.label, game:r.game, price:r.lastPrice??r.price, est:r.est, res:r.res||null, score:r.score, clv:r.clv, start:r.start||0
+    })).sort((a,b)=>b.start-a.start);
+    title = `Recommended plays (${plays.length})`;
+    empty = 'Nothing yet. Strict Picks are recorded the first time they appear (the app has to be open).';
+    cols = `<tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Our est.</th><th>Result</th><th>CLV</th></tr>`;
+    rows = plays.slice(0,120).map(r=>`<tr><td>${esc(r.d)}</td><td>${esc(lgOf(r.lg))}</td><td>${esc(r.label)} <span class="mut">${esc(r.game||'')}</span></td><td>${fmtAm(r.price)}</td><td>${fmtPct(r.est,0)}</td>${resCell(r)}<td class="${r.clv==null?'mut':r.clv>=0?'pos':'neg'}">${r.clv==null?'—':fmtEdge(r.clv)}</td></tr>`).join('');
+    const wd = (results||[]).filter(r=>r.status==='withdrawn');
+    if (wd.length){
+      const wdLine = pullSummaryLine(wd);
+      const wdRows = wd.slice().sort((a,b)=>(b.pulledAt||b.start)-(a.pulledAt||a.start)).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(lgOf(r.lg))}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span><div><span class="badge b-pulled">Pulled from ${esc((typeof TAB_NAME!=='undefined' && TAB_NAME[r.pulledFrom||'good'])||'Picks')}</span></div></td><td>${fmtAm(r.lastPrice??r.price)}</td><td style="white-space:normal">${esc(r.pullReason||(typeof LEGACY_PULL!=='undefined'?LEGACY_PULL:'pulled (reason not recorded — older version)'))}${r.pulledAt?`<div class="mut">${esc(fmtTime(new Date(r.pulledAt)))}</div>`:''}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}${pullRightWrong(r)}</td></tr>`).join('');
+      pulled = `<div class="panel overflow"><h3>🟠 Pulled plays (${wd.length})</h3>
+    <p class="pull-note">These were recommended, then dropped before the game started. They do not count in the record above. After the game finishes they are graded anyway so you can see whether pulling was right.</p>
+    ${wdLine?`<p class="pull-note"><b>${esc(wdLine)}</b></p>`:''}
+    <table><tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Why it was pulled</th><th>Result</th></tr>${wdRows}</table></div>`;
+    }
+  }
+  const st = liveRecordFromPlays(plays);
+  if (board==='games'){
+    fifthLabel = 'Avg CLV';
+    fifthVal = st.clv==null?'—':fmtEdge(st.clv);
+    fifthCls = st.clv==null?'':st.clv>=0?'pos':'neg';
+  } else {
+    fifthVal = String(st.graded);
+  }
+  return `<div class="kpis">
+    <div class="kpi"><div class="k">Live record</div><div class="v">${st.w}-${st.l}${st.p?'-'+st.p:''}</div></div>
+    <div class="kpi"><div class="k">Win rate</div><div class="v">${st.wr==null?'—':(st.wr*100).toFixed(1)+'%'}</div></div>
+    <div class="kpi"><div class="k">Profit at $${unit.toFixed(0)} flat</div><div class="v ${st.net>=0?'pos':'neg'}">${money(st.net)}</div></div>
+    <div class="kpi"><div class="k">ROI</div><div class="v ${(st.roi||0)>=0?'pos':'neg'}">${st.roi==null?'—':(st.roi*100).toFixed(1)+'%'}</div></div>
+    <div class="kpi"${board==='games'?' title="Closing line value: our price vs the final DraftKings line (house cut removed). Positive = we beat the close, the best long-run sign of real skill."':''}><div class="k">${fifthLabel}</div><div class="v ${fifthCls}">${fifthVal}</div></div>
+    <div class="kpi"><div class="k">Pending</div><div class="v">${st.pend}</div></div>
+  </div>
+  <div class="panel overflow"><h3>${esc(title)}</h3>
+    <table>${cols}${rows||`<tr><td colspan="7" class="mut">${esc(empty)}</td></tr>`}</table>
+    <div style="margin-top:8px"><button class="btn sm" id="btnGrade">Grade now</button> <span class="hint">Grading also runs on every refresh.</span></div></div>
+  ${pulled}`;
+}
+function bindLiveRecordGrade(board){
+  const btn = $('#btnGrade'); if (!btn) return;
+  btn.onclick = ()=>{
+    const run = board==='props' ? (typeof propLearnGrade==='function'&&propLearnGrade)
+      : board==='parlay' ? async()=>{ if (typeof propLearnGrade==='function') try{await propLearnGrade();}catch(e){} return typeof parlayLearnGrade==='function'?parlayLearnGrade():null; }
+      : board==='verdict' ? (typeof verdictGradeChecks==='function'?verdictGradeChecks:(typeof verdictChecksGrade==='function'?verdictChecksGrade:null))
+      : gradeAll;
+    Promise.resolve(typeof run==='function'?run():null).then(()=>{ toast('Graded'); renderResults(); }).catch(e=>{ console.warn('grade', e); toast('Graded'); renderResults(); });
+  };
+}
+function btDash(v){ return v==null||v===''?'—':v; }
+function btCalibFromBets(bets, unit){
+  unit = unit||+S.unit||25;
+  const bins = [{bin:'50–55%',lo:.50,hi:.55},{bin:'55–60%',lo:.55,hi:.60},{bin:'60–65%',lo:.60,hi:.65},{bin:'65–70%',lo:.65,hi:.70},{bin:'70%+',lo:.70,hi:1.01}];
+  const hasEst = (bets||[]).some(b=>b.est!=null);
+  if (!hasEst) return bins.map(b=>({bin:b.bin,n:0,hit:null,roi:null}));
+  return bins.map(b=>{
+    const list = (bets||[]).filter(x=>x.est!=null && x.est>=b.lo && x.est<b.hi && (x.res==='win'||x.res==='loss'));
+    if (!list.length) return {bin:b.bin,n:0,hit:null,roi:null};
+    const w = list.filter(x=>x.res==='win').length;
+    const net = list.reduce((a,x)=>a+(x.pl||0),0);
+    return {bin:b.bin,n:list.length,hit:w/list.length,roi:net/(list.length*unit)};
+  });
+}
+function btWalkFromBets(bets, unit){
+  unit = unit||+S.unit||25;
+  const days = [...new Set((bets||[]).map(b=>b.day))].sort();
+  if (!days.length) return {cut:null, train:{n:0,w:0,l:0,p:0,wr:null,net:0,roi:null}, test:{n:0,w:0,l:0,p:0,wr:null,net:0,roi:null}};
+  const cutIdx = Math.floor(days.length*0.65);
+  const cut = days[Math.min(cutIdx, days.length-1)];
+  const train = (bets||[]).filter(b=>b.day<cut);
+  const test = (bets||[]).filter(b=>b.day>=cut);
+  const summ = list => (typeof btSummary==='function' ? btSummary(list, unit).all : {n:list.length,w:0,l:0,wr:null,net:null,roi:null});
+  return {cut, train:summ(train), test:summ(test)};
+}
+function btKpiTile(k, v, cls, hint){
+  return `<div class="kpi"><div class="k">${k}</div><div class="v${cls?' '+cls:''}">${v}</div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
+}
+function gamesBacktestCardHTML(){
+  const R = btState.res;
+  const cached = Object.values((typeof BT!=='undefined' && BT && BT.games) || {}).length;
+  const unit = +S.unit||25;
+  const s = R && R.strict, nrm = R && R.normal;
+  const pct = x => x==null?'—':(x*100).toFixed(1)+'%';
+  const ppd = (R && s) ? (s.all.n/Math.max(1,R.days)).toFixed(1) : '—';
+  const tbl = obj => Object.entries(obj||{}).sort((a,b)=>b[1].n-a[1].n).map(([k,x])=>`<tr><td>${esc((typeof LMAP!=='undefined'&&LMAP[k]&&LMAP[k].label)||(typeof MKN!=='undefined'&&MKN[k])||k)}</td>${fmtRow(x)}</tr>`).join('');
+  const emptyRow = cols => `<tr><td colspan="${cols}" class="mut">Run the backtest to fill this table from real ESPN / DraftKings history.</td></tr>`;
+  const bets = (s && s.bets) || [];
+  const calib = btCalibFromBets(bets, unit);
+  const wf = btWalkFromBets(bets, unit);
+  const calRows = calib.map(c=>`<tr><td>${esc(c.bin)}</td><td>${c.n||'—'}</td><td>${c.hit==null?'—':pct(c.hit)}</td><td class="${c.roi==null?'':c.roi>=0?'pos':'neg'}">${c.roi==null?'—':pct(c.roi)}</td></tr>`).join('');
+  const wfRow = (lab,x)=> !x||!x.n ? `<tr><td>${esc(lab)}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`
+    : `<tr><td>${esc(lab)}</td><td>${x.n}</td><td>${x.w}–${x.l}</td><td>${pct(x.wr)}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${pct(x.roi)}</td></tr>`;
+  const recent = bets.slice(-25).reverse().map(b=>`<tr><td>${esc(b.day)}</td><td>${esc((LMAP[b.lg]&&LMAP[b.lg].label)||b.lg)}</td><td>${esc(b.label)}</td><td>${fmtAm(b.price)}</td><td class="${b.res==='win'?'pos':b.res==='loss'?'neg':'mut'}">${b.res}</td></tr>`).join('');
+  const smallWarn = s && s.all.n < 100 ? `<li class="neg">Small sample (${s.all.n} plays). Treat these numbers as a rough hint only.</li>` : '';
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>Games Backtest</h2><span class="hint">Replays the model's current rules on past games using only info known before tip-off. This is not your personal Tracker record.</span></div>
+    <div class="panel bt-card">
+      <div class="bt-runbar">
+        <div class="form"><label>Days back<select id="btDays">${[30,45,60,90].map(d=>`<option ${btUI.days===d?'selected':''}>${d}</option>`).join('')}</select></label></div>
+        <div class="filters">${(typeof BT_LEAGUES!=='undefined'?BT_LEAGUES:btUI.leagues).map(id=>`<label class="chip ${btUI.leagues.includes(id)?'on':''}"><input type="checkbox" data-btl="${id}" ${btUI.leagues.includes(id)?'checked':''} hidden>${(LMAP[id]&&LMAP[id].label)||id}</label>`).join('')}</div>
+        <button class="btn primary" id="btnBt" ${btState.busy?'disabled':''}>${btState.busy?'Running…':'Run backtest'}</button>
+        <span class="hint" id="btProg">${esc(btState.prog||'')} ${cached?`· ${cached} past games cached on this PC`:''}</span>
+      </div>
+      ${btState.err?`<div class="err-list">${esc(btState.err)}</div>`:''}
+      <div class="kpis">
+        ${btKpiTile('Sample', R?R.games:'—', '', R?`${R.days} days with games`:'Waiting for a run')}
+        ${btKpiTile('Bets taken', s?s.all.n:'—', '', s?`${ppd} / day`:'')}
+        ${btKpiTile('Hit rate', s?pct(s.all.wr):'—')}
+        ${btKpiTile('ROI', s?pct(s.all.roi):'—', s?((s.all.roi||0)>=0?'pos':'neg'):'')}
+        ${btKpiTile('Net at $'+unit.toFixed(0)+' flat', s?money(s.all.net):'—', s?((s.all.net||0)>=0?'pos':'neg'):'')}
+        ${btKpiTile('Odds expected', s?pct(s.all.expW):'—')}
+      </div>
+      <h3>By league</h3>
+      <div class="overflow"><table><tr><th>League</th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>${(s&&tbl(s.bySport))||emptyRow(6)}</table></div>
+      <h3>By market</h3>
+      <div class="overflow"><table><tr><th>Market</th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>${(s&&tbl(s.byMkt))||emptyRow(6)}</table></div>
+      ${s&&nrm?`<h3>Compare (current settings vs normal rules)</h3>
+      <div class="overflow"><table><tr><th>Compare</th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>
+        <tr><td>Strict (current settings)</td>${fmtRow(s.all)}</tr><tr><td>Normal rules</td>${fmtRow(nrm.all)}</tr></table></div>`:''}
+      <h3>Calibration (estimated win chance vs actual)</h3>
+      <div class="overflow"><table><tr><th>Bucket</th><th>N</th><th>Actual hit</th><th>ROI</th></tr>${s?calRows:emptyRow(4)}</table></div>
+      <h3>Walk-forward (earlier 65% train, later 35% unseen)</h3>
+      <div class="overflow"><table><tr><th>Split</th><th>N</th><th>W-L</th><th>Win%</th><th>ROI</th></tr>
+        ${wfRow('Train (earlier 65%)', wf.train)}${wfRow('Unseen test (later 35%)', wf.test)}
+      </table></div>
+      <p class="bt-foot">${R
+        ? 'Prices are DraftKings closing lines from ESPN; your real prices (Bovada, Polymarket, earlier in the day) will differ. Injury reports, confirmed goalies/pitchers, extra books, and weather are not testable on past games — live plays per day will be lower. Strict thresholds were tuned on this same kind of data, so expect live results to be worse. The Live record above is the honest scoreboard.'
+        : 'First run downloads about 2 small files per past game (DraftKings open/close odds + ESPN’s win probability at tip-off), a few minutes for 60 days. After that it only fetches new days. Click Run backtest to fill the tables from real history — empty cells stay as — until then.'}
+        A prior chronological walk-forward on 75 days of real ESPN/DraftKings games (earlier 65% train, later 35% unseen) kept Games on v1: train 41–23, 64.1%, +14.8% ROI; unseen 24–8, 75.0%, +34.9% ROI. Extra filters did not beat v1 on both windows, so nothing was adopted.</p>
+      ${smallWarn?`<ul class="why">${smallWarn}</ul>`:''}
+      ${recent?`<details class="dd" data-dd="results-bt-recent" ${(ui.open&&ui.open.has('results-bt-recent'))?'open':''}><summary>Last 25 strict plays in the backtest</summary><table style="margin-top:6px"><tr><th>Day</th><th>Sport</th><th>Play</th><th>Price</th><th>Result</th></tr>${recent}</table></details>`:''}
+    </div>`;
+}
+function bindGamesBacktest(){
+  const days = $('#btDays'), btn = $('#btnBt');
+  if (days) days.onchange = e=>{ btUI.days = +e.target.value; };
+  document.querySelectorAll('[data-btl]').forEach(i=>i.onchange=()=>{ i.parentElement.classList.toggle('on', i.checked); btUI.leagues = [...document.querySelectorAll('[data-btl]')].filter(x=>x.checked).map(x=>x.dataset.btl); });
+  if (btn) btn.onclick = runBacktestUI;
 }
 function renderResults(){
-  const act = results.filter(r=>r.status==='active');
-  const st = resStats(act), pend = act.filter(r=>!r.res).length;
-  const rows = act.slice().sort((a,b)=>b.start-a.start).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(LMAP[r.lg]?LMAP[r.lg].label:r.lg)}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span></td><td>${fmtAm(r.lastPrice??r.price)}</td><td>${fmtPct(r.est,0)}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}</td><td class="${r.clv==null?'mut':r.clv>=0?'pos':'neg'}">${r.clv==null?'—':fmtEdge(r.clv)}</td></tr>`).join('');
-  const wd = results.filter(r=>r.status==='withdrawn');
-  const wdLine = pullSummaryLine(wd);
-  const wdRows = wd.slice().sort((a,b)=>(b.pulledAt||b.start)-(a.pulledAt||a.start)).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(LMAP[r.lg]?LMAP[r.lg].label:r.lg)}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span><div><span class="badge b-pulled">Pulled from ${esc((typeof TAB_NAME!=='undefined' && TAB_NAME[r.pulledFrom||'good'])||'Picks')}</span></div></td><td>${fmtAm(r.lastPrice??r.price)}</td><td style="white-space:normal">${esc(r.pullReason||(typeof LEGACY_PULL!=='undefined'?LEGACY_PULL:'pulled (reason not recorded — older version)'))}${r.pulledAt?`<div class="mut">${esc(fmtTime(new Date(r.pulledAt)))}</div>`:''}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}${pullRightWrong(r)}</td></tr>`).join('');
-  const R = btState.res;
-  const cached = Object.values(BT.games).length;
   const rb = ui.resultsBoard || 'games';
   const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, Parlay, or Verdict.</div></div>`;
   const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
-  const finish = ()=>{
-    bindResultsBoardSeg();
-    if (rb==='games' && typeof learnBind==='function') learnBind();
-    if ((rb==='props'||rb==='parlay'||rb==='verdict') && typeof boardLearnBind==='function') boardLearnBind(rb);
-  };
+  const live = liveRecordHTML(rb);
+  let body = '';
   if (rb==='props'){
-    $('#view').innerHTML = title+switcher+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
-    finish();
-    return;
-  }
-  if (rb==='parlay'){
-    $('#view').innerHTML = title+switcher+(typeof parlayLearnPanelHTML==='function'?parlayLearnPanelHTML():'<div class="hint">Parlay learning starts after a refresh.</div>')+(typeof parlayBacktestHTML==='function'?parlayBacktestHTML():'');
-    finish();
-    return;
-  }
-  if (rb==='verdict'){
-    $('#view').innerHTML = title+switcher+(typeof verdictLearnPanelHTML==='function'?verdictLearnPanelHTML():'<div class="hint">Verdict learning starts after a refresh.</div>');
-    finish();
-    return;
-  }
-  $('#view').innerHTML = title+switcher+`
-  <div class="kpis">
-    <div class="kpi"><div class="k">Live record</div><div class="v">${st.w}-${st.l}${st.p?'-'+st.p:''}</div></div>
-    <div class="kpi"><div class="k">Win rate</div><div class="v">${st.wr==null?'—':(st.wr*100).toFixed(1)+'%'}</div></div>
-    <div class="kpi"><div class="k">Profit at $${(+S.unit||25).toFixed(0)} flat</div><div class="v ${st.net>=0?'pos':'neg'}">${money(st.net)}</div></div>
-    <div class="kpi"><div class="k">ROI</div><div class="v ${(st.roi||0)>=0?'pos':'neg'}">${st.roi==null?'—':(st.roi*100).toFixed(1)+'%'}</div></div>
-    <div class="kpi" title="Closing line value: our price vs the final DraftKings line (house cut removed). Positive = we beat the close, the best long-run sign of real skill."><div class="k">Avg CLV</div><div class="v ${st.clv==null?'':st.clv>=0?'pos':'neg'}">${st.clv==null?'—':fmtEdge(st.clv)}</div></div>
-    <div class="kpi"><div class="k">Pending</div><div class="v">${pend}</div></div>
-  </div>
-  <div class="panel overflow"><h3>Recommended plays (${act.length})</h3>
-    <table><tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Our est.</th><th>Result</th><th>CLV</th></tr>${rows||'<tr><td colspan="7" class="mut">Nothing yet. Strict Picks are recorded the first time they appear (the app has to be open).</td></tr>'}</table>
-    <div style="margin-top:8px"><button class="btn sm" id="btnGrade">Grade now</button> <span class="hint">Grading also runs on every refresh.</span></div></div>
-  ${wd.length?`<div class="panel overflow"><h3>🟠 Pulled plays (${wd.length})</h3>
-    <p class="pull-note">These were recommended, then dropped before the game started. They do not count in the record above. After the game finishes they are graded anyway so you can see whether pulling was right.</p>
-    ${wdLine?`<p class="pull-note"><b>${esc(wdLine)}</b></p>`:''}
-    <table><tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Why it was pulled</th><th>Result</th></tr>${wdRows}</table></div>`:''}
-
-
-  ${typeof learnPanelHTML==='function' ? learnPanelHTML() : ''}
-  <div class="panel" style="margin-top:12px"><h3>Games v2 check (kept v1)</h3>
-    <p class="hint">A chronological walk-forward on 75 days of real ESPN/DraftKings games (earlier 65% of bet days train, later 35% unseen) was run on the live Super picky moneyline rules. v1 itself was already strong on the holdout (train 41–23, 64.1%, +14.8% ROI; unseen 24–8, 75.0%, +34.9% ROI). Extra filters (road back-to-backs, juice caps, dropping NHL, adding spreads/totals) either failed to beat v1 on the training window, or looked better on train and then got worse on the unseen test. Nothing was adopted — Games stays on v1.</p>
-  </div>
-
-  <div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Backtest</h2><span class="hint">Replays the model's current rules on past games to measure and improve the model. Uses only info known before tip-off. This is not your personal Tracker record.</span></div>
-  <div class="panel"><h3>Run it</h3>
-    <div class="form">
-      <label>Days back<select id="btDays">${[30,45,60,90].map(d=>`<option ${btUI.days===d?'selected':''}>${d}</option>`).join('')}</select></label>
-    </div>
-    <div class="filters" style="margin-top:10px">${BT_LEAGUES.map(id=>`<label class="chip ${btUI.leagues.includes(id)?'on':''}"><input type="checkbox" data-btl="${id}" ${btUI.leagues.includes(id)?'checked':''} hidden>${LMAP[id].label}</label>`).join('')}</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn primary" id="btnBt" ${btState.busy?'disabled':''}>${btState.busy?'Running…':'Run backtest'}</button><span class="hint" id="btProg">${esc(btState.prog||'')} ${cached?`· ${cached} past games cached on this PC`:''}</span></div>
-    <div class="hint" style="margin-top:8px">First run downloads about 2 small files per past game (DraftKings open/close odds + ESPN's win probability at tip-off), a few minutes for 60 days. After that it only fetches new days.</div>
-    ${btState.err?`<div class="err-list">${esc(btState.err)}</div>`:''}</div>
-  ${R ? btResultsHTML(R) : ''}
-  <p class='hint'>Props and Parlay backtests are on their own boards in the switcher above.</p>
-  <details class="dd" data-dd="results-math-origin" ${ui.open.has('results-math-origin')?'open':''}><summary>How the courtroom's math was set</summary>
+    body = live+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
+  } else if (rb==='parlay'){
+    body = live+(typeof parlayLearnPanelHTML==='function'?parlayLearnPanelHTML():'<div class="hint">Parlay learning starts after a refresh.</div>')+(typeof parlayBacktestHTML==='function'?parlayBacktestHTML():'');
+  } else if (rb==='verdict'){
+    body = live+(typeof verdictLearnPanelHTML==='function'?verdictLearnPanelHTML():'<div class="hint">Verdict learning starts after a refresh.</div>')+(typeof verdictBacktestHTML==='function'?verdictBacktestHTML():'');
+  } else {
+    body = live+(typeof learnPanelHTML==='function'?learnPanelHTML():'')+gamesBacktestCardHTML()+`
+  <details class="dd" data-dd="results-math-origin" ${(ui.open&&ui.open.has('results-math-origin'))?'open':''}><summary>How the courtroom's math was set</summary>
   <div class="panel" style="margin-top:8px">
     <table class="ftab"><tr><th>Factor</th><th>Fitted effect</th><th>t</th><th>Games</th><th>Used</th></tr>
     ${['model','form','split','rest','b2b','h2h','margin','totMove'].map(k=>{ const c=CAL[k]; return `<tr><td>${esc(c.what)}</td><td>${c.fit}</td><td>${c.t}</td><td>${c.n}</td><td class="${c.coef?'pos':'mut'}">${c.coef?c.coef:'0 (no proven value beyond the odds)'}</td></tr>`; }).join('')}
@@ -7008,11 +7249,13 @@ function renderResults(){
       <li>The odds already include injuries, ESPN's computer and recent form; in the test none of them predicted results better than the odds. That is why they are shown with their measured size but mostly add 0.</li>
       <li>Injury size: NBA/WNBA from each player's season points and minutes (0.18×PPG + 0.05×MPG − 1.5 points of margin, converted to win chance with a normal curve). Other sports use a rule of thumb (starting QB 6 pts, leaders smaller). Not testable on history: ESPN keeps no past injury reports.</li>
       <li>Biggest real edges: a better price than the market (line shopping, Polymarket), and betting before the line moves (shown as CLV).</li></ul></div></details>`;
-  $('#btnGrade').onclick = ()=>{ gradeAll().then(()=>{ toast('Graded'); renderResults(); }); };
-  $('#btDays').onchange = e=>{ btUI.days = +e.target.value; };
-  $('#view').querySelectorAll('[data-btl]').forEach(i=>i.onchange=()=>{ i.parentElement.classList.toggle('on', i.checked); btUI.leagues = [...$('#view').querySelectorAll('[data-btl]')].filter(x=>x.checked).map(x=>x.dataset.btl); });
-  $('#btnBt').onclick = runBacktestUI;
-  finish();
+  }
+  $('#view').innerHTML = title+switcher+body;
+  bindResultsBoardSeg();
+  bindLiveRecordGrade(rb);
+  if (rb==='games') bindGamesBacktest();
+  if (rb==='games' && typeof learnBind==='function') learnBind();
+  if ((rb==='props'||rb==='parlay'||rb==='verdict') && typeof boardLearnBind==='function') boardLearnBind(rb);
 }
 async function runBacktestUI(){
   if (btState.busy) return; btState = {busy:true, prog:'Starting…', res:btState.res, err:null}; renderResults();
@@ -7029,32 +7272,6 @@ async function runBacktestUI(){
     btState.prog = `Done: ${rows.length} past games with odds`;
   }catch(e){ btState.err = String(e.message||e); }
   btState.busy = false; if (ui.tab==='results') renderResults();
-}
-function btResultsHTML(R){
-  const s = R.strict, n = R.normal, ppd = x => (x.all.n/Math.max(1,R.days)).toFixed(1);
-  const tbl = obj => Object.entries(obj).sort((a,b)=>b[1].n-a[1].n).map(([k,x])=>`<tr><td>${esc(LMAP[k]?LMAP[k].label:MKN[k]||k)}</td>${fmtRow(x)}</tr>`).join('');
-  const recent = s.bets.slice(-25).reverse().map(b=>`<tr><td>${esc(b.day)}</td><td>${esc(LMAP[b.lg].label)}</td><td>${esc(b.label)}</td><td>${fmtAm(b.price)}</td><td class="${b.res==='win'?'pos':b.res==='loss'?'neg':'mut'}">${b.res}</td></tr>`).join('');
-  const smallWarn = s.all.n < 100 ? `<li class="neg">Small sample (${s.all.n} plays). Treat these numbers as a rough hint only.</li>` : '';
-  return `<div class="panel"><h3>Backtest result (${R.days} days with games, ${R.games} games with odds)</h3>
-    <div class="kpis">
-      <div class="kpi"><div class="k">Strict plays</div><div class="v">${s.all.n}</div></div>
-      <div class="kpi"><div class="k">Plays per day</div><div class="v">${ppd(s)}</div></div>
-      <div class="kpi"><div class="k">Win rate</div><div class="v">${s.all.wr==null?'—':(s.all.wr*100).toFixed(1)+'%'}</div></div>
-      <div class="kpi"><div class="k">Odds expected</div><div class="v">${s.all.expW==null?'—':(s.all.expW*100).toFixed(1)+'%'}</div></div>
-      <div class="kpi"><div class="k">Profit at $${(+S.unit||25).toFixed(0)}</div><div class="v ${s.all.net>=0?'pos':'neg'}">${money(s.all.net)}</div></div>
-      <div class="kpi"><div class="k">ROI</div><div class="v ${(s.all.roi||0)>=0?'pos':'neg'}">${s.all.roi==null?'—':(s.all.roi*100).toFixed(1)+'%'}</div></div>
-    </div>
-    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(440px,1fr))">
-      <div class="overflow"><table><tr><th>Sport</th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>${tbl(s.bySport)||'<tr><td colspan="6" class="mut">no plays</td></tr>'}</table></div>
-      <div class="overflow"><table><tr><th>Compare</th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>
-        <tr><td>Strict (current settings)</td>${fmtRow(s.all)}</tr><tr><td>Normal rules</td>${fmtRow(n.all)}</tr>
-        <tr><td>Strict, first half (before ${esc(R.half.slice(0,4)+'-'+R.half.slice(4,6)+'-'+R.half.slice(6))})</td>${fmtRow(R.a)}</tr><tr><td>Strict, second half</td>${fmtRow(R.b)}</tr></table></div>
-    </div>
-    <ul class="why" style="margin-top:10px">${smallWarn}
-      <li>Prices are DraftKings closing lines from ESPN; your real prices (Bovada, Polymarket, earlier in the day) will differ.</li>
-      <li>Not testable on past games: injury reports, confirmed goalies/pitchers, extra books, weather. The live app adds those checks, so live plays per day will be lower.</li>
-      <li>The strict thresholds were tuned on this same data, so expect live results to be worse than this. The Results table above is the honest scoreboard.</li></ul>
-    <details class="dd" data-dd="results-bt-recent" ${ui.open.has('results-bt-recent')?'open':''}><summary>Last 25 strict plays in the backtest</summary><table style="margin-top:6px"><tr><th>Day</th><th>Sport</th><th>Play</th><th>Price</th><th>Result</th></tr>${recent}</table></details></div>`;
 }
 /* ================= AUTO-LEARNING (no AI, no tokens: plain statistics that re-run by themselves) ================= */
 // What it does while the app is open:
@@ -7440,10 +7657,14 @@ function learnPanelHTML(){
   const off = Object.entries(LEARN.autoOff||{});
   const nextTxt = LEARN.paused ? 'Paused' : due.due ? 'Due now (runs on the next refresh)' : `${dt(due.next.getTime())}`;
   const sooner = LEARN.paused ? '' : `or sooner (from ${dt(due.soonest.getTime())}) once 50 new live games are graded: ${due.newLive}/50 so far`;
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Games</h2><span class="hint">The app re-learns from new results by itself. No AI, no tokens: the same statistics, re-run on fresh games, with safety checks. Use the Games | Props | Parlay switcher to see the other tracks.</span></div>
-  <div class="panel ln-panel">
-    ${typeof learnCardHead==='function'?learnCardHead('games'):''}
-    <div class="kpis">
+  const needN = (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50);
+  const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('games'):[];
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Games</h2><span class="hint">The app re-learns from new results by itself. No AI, no tokens: the same statistics, re-run on fresh games, with safety checks. Use the Games | Props | Parlay | Verdict switcher to see the other tracks.</span></div>
+  <div class="ln-card ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('games',{paused:!!LEARN.paused, version:cur.id, cur:cur.id}):''}
+    ${typeof learnProgHTML==='function'?learnProgHTML(due.newLive||0, needN):''}
+    ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
+    <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${cur.id}</div><div class="hint">since ${dt(cur.at)}</div></div>
       <div class="kpi"><div class="k">Live record (v${cur.id})</div><div class="v">${lvN ? `${lv.w}-${lv.l}` : '—'}</div><div class="hint">${lvN ? pctS(lv.wr)+(lvN<100?' · small sample':'') : 'no graded strict plays yet'}</div></div>
       <div class="kpi"><div class="k">Games learned from</div><div class="v">${(cur.games||0).toLocaleString()}</div><div class="hint">${cur.live ? cur.live+' captured live' : 'past games (backtest)'}</div></div>
@@ -7451,8 +7672,8 @@ function learnPanelHTML(){
       <div class="kpi"><div class="k">Next learning check</div><div class="v" style="font-size:16px">${esc(nextTxt)}</div><div class="hint">${esc(sooner)}</div></div>
     </div>
     <div class="ln-actions">
-      <button class="btn primary sm" id="lnRun" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Run a learning check now'}</button>
-      <button class="btn sm" id="lnPause">${LEARN.paused?'▶ Resume auto-learning':'❚❚ Pause auto-learning'}</button>
+      <button class="btn primary sm ln-btn" id="lnRun" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
+      <button class="btn sm ln-btn-ghost" id="lnPause">${LEARN.paused?'Resume auto-learning':'Pause auto-learning'}</button>
       <button class="btn danger sm" id="lnBack" ${prev?'':'disabled'} title="${prev?'Go back to v'+prev.id:'There is no earlier version yet'}">↶ Roll back to ${prev?'v'+prev.id:'previous version'}</button>
       <span class="hint" id="lnProg">${esc(learnState.prog||'')}</span>
     </div>
@@ -8165,8 +8386,9 @@ function filteredProps(list){
 function propsUnsupportedNote(){
   const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   if (!books.length) return '';
-  if (books.length===1 && books[0]==='polymarket'){
-    return "Polymarket doesn't offer combo/niche props (PRA, P+R, P+A, R+A, turnovers) or NHL/MLB player props, so those are hidden. Select another book like Bovada or DraftKings in Settings → My books to see them.";
+  if (books.length && books.every(b => b==='polymarket' || b==='polymarket_us')){
+    const who = [...new Set(books.map(b=>b==='polymarket_us'?'Polymarket US':'Polymarket'))].join(' / ');
+    return who+" doesn't offer combo/niche props (PRA, P+R, P+A, R+A, turnovers) or NHL/MLB player props, so those are hidden. Select another book like Bovada, Kalshi, or DraftKings in Settings → My books to see them.";
   }
   return '';
 }
@@ -8413,7 +8635,7 @@ function propsBacktestHTML(){
   const kinds = Object.values(R.byKind||{}).map(k=>`<tr><td>${esc(k.label)}</td><td>${k.n}</td><td>${k.hits}-${k.n-k.hits}</td><td>${pct(k.hitRate)}</td><td class="${k.roi>=0?'pos':'neg'}">${pct(k.roi)}</td></tr>`).join('');
   const cal = (R.calibration||[]).map(c=>`<tr><td>${esc(c.bin)}</td><td>${c.n}</td><td>${c.hit==null?'—':pct(c.hit)}</td><td class="${c.roi==null?'':c.roi>=0?'pos':'neg'}">${c.roi==null?'—':pct(c.roi)}</td></tr>`).join('');
   return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏀</span>Player Props Backtest</h2><span class="hint">A real out-of-sample check on ESPN athlete game logs — not sportsbook historical lines, and not your Tracker.</span></div>
-    <div class="panel">
+    <div class="panel bt-card">
       <div class="kpis">
         <div class="kpi"><div class="k">Players</div><div class="v">${R.playersN}</div></div>
         <div class="kpi"><div class="k">Player-games</div><div class="v">${R.gamesSampled}</div></div>
@@ -8912,40 +9134,46 @@ function renderParlayBoard(tab, errs){
 function parlayBacktestHTML(){
   const B = (typeof PARLAY_BACKTEST!=='undefined' && PARLAY_BACKTEST) || null;
   if (!B || !B.v1) return '';
-  const v=B.v1, by=v.byLegs||{};
-  const row = (lab,x)=> !x||!x.n ? `<tr><td>${esc(lab)}</td><td colspan="5" class="mut">no bets</td></tr>`
-    : `<tr><td>${esc(lab)}</td><td>${x.n}</td><td>${x.hits}-${x.n-x.hits}</td><td>${x.hitRate==null?'—':(x.hitRate*100).toFixed(1)+'%'}</td><td class="${(x.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(x.net):x.net}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${x.roi==null?'—':(x.roi*100).toFixed(1)+'%'}</td></tr>`;
-  const presets = B.byPreset||{};
-  const prow = (name,x)=>{
-    if (!x||!x.betsN) return `<tr><td>${esc(name)}</td><td colspan="5" class="mut">no bets</td></tr>`;
-    return `<tr><td>${esc(name)}</td><td>${x.betsN}</td><td>${x.hits}-${x.losses|| (x.betsN-x.hits)}</td><td>${x.hitRate==null?'—':(x.hitRate*100).toFixed(1)+'%'}</td><td class="${(x.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(x.net):x.net}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${x.roi==null?'—':(x.roi*100).toFixed(1)+'%'}</td></tr>`;
-  };
-  const v2=B.v2, oos=B.oos||{};
-  const oosRow=(lab,x)=>!x||!x.n?`<tr><td>${esc(lab)}</td><td colspan="4" class="mut">—</td></tr>`
-    :`<tr><td>${esc(lab)}</td><td>${x.n}</td><td>${x.w}–${x.l}</td><td>${x.wr==null?'—':(x.wr*100).toFixed(1)+'%'}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${x.roi==null?'—':((x.roi>=0?'+':'')+(x.roi*100).toFixed(1)+'%')}</td></tr>`;
-  return `<div class="section-title"><h2>Parlays backtest</h2><span class="hint">Real DraftKings closing moneylines, ${B.days}-day window. Live default is Parlays v2 (leg odds −300 to −150) after a chronological walk-forward. v1 is kept below for comparison.</span></div>
-    <div class="panel">
+  const v=B.v1, by=v.byLegs||{}, v2=B.v2, oos=B.oos||{};
+  const live = v2||v;
+  const pct = x => x==null?'—':(x*100).toFixed(1)+'%';
+  const moneyN = n => n==null?'—':((n>=0?'+':'')+Number(n).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}));
+  const row = (lab,x)=> !x||!x.n ? `<tr><td>${esc(lab)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`
+    : `<tr><td>${esc(lab)}</td><td>${x.n}</td><td>${(x.hits!=null?x.hits:x.w)}-${(x.n-(x.hits!=null?x.hits:x.w))}</td><td>${x.hitRate!=null?pct(x.hitRate):(x.wr!=null?pct(x.wr):'—')}</td><td class="${(x.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(x.net):moneyN(x.net)}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${pct(x.roi)}</td></tr>`;
+  const oosRow=(lab,x)=>!x||!x.n?`<tr><td>${esc(lab)}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`
+    :`<tr><td>${esc(lab)}</td><td>${x.n}</td><td>${x.w}–${x.l}</td><td>${pct(x.wr)}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${pct(x.roi)}</td></tr>`;
+  const sportSrc = (live.bySport&&Object.keys(live.bySport).length?live.bySport:(v.bySport||{}));
+  const sportRows = Object.entries(sportSrc).sort((a,b)=>(b[1].n||0)-(a[1].n||0)).map(([k,x])=>row(k,x)).join('')
+    || '<tr><td colspan="6" class="mut">no sports in this sample</td></tr>';
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🎟️</span>Parlay Backtest</h2><span class="hint">Real DraftKings closing moneylines, ${B.days}-day window. Live default is Parlays v2 after a chronological walk-forward. Settled at $100 flat.</span></div>
+    <div class="panel bt-card">
       <div class="kpis">
-        <div class="kpi"><div class="k">Live model</div><div class="v">${v2?'v2':'v1'}</div><div class="hint">${esc((v2&&v2.label)||'Picky')}</div></div>
-        <div class="kpi"><div class="k">v2 full window</div><div class="v">${v2?`${v2.hits}–${v2.losses}`:v.hits+'–'+v.losses}</div><div class="hint">${v2?v2.betsN:v.betsN} bets</div></div>
-        <div class="kpi"><div class="k">v2 hit / ROI</div><div class="v">${v2&&v2.hitRate!=null?(v2.hitRate*100).toFixed(1)+'%':'—'}</div><div class="hint">${v2&&v2.roi!=null?((v2.roi>=0?'+':'')+(v2.roi*100).toFixed(1)+'% ROI'):''}</div></div>
-        <div class="kpi"><div class="k">Unseen holdout (v2)</div><div class="v">${oos.v2&&oos.v2.test?`${oos.v2.test.w}–${oos.v2.test.l}`:'—'}</div><div class="hint">${oos.v2&&oos.v2.test&&oos.v2.test.wr!=null?(oos.v2.test.wr*100).toFixed(1)+'% · '+(oos.v2.test.roi>=0?'+':'')+(oos.v2.test.roi*100).toFixed(1)+'% ROI':''}</div></div>
+        <div class="kpi"><div class="k">Sample</div><div class="v">${B.gamesWithCloseML||'—'}</div><div class="hint">${B.days||'—'} days · closing MLs</div></div>
+        <div class="kpi"><div class="k">Bets taken</div><div class="v">${live.betsN||'—'}</div><div class="hint">${esc((live.label||'v2').split('(')[0].trim())}</div></div>
+        <div class="kpi"><div class="k">Hit rate</div><div class="v">${pct(live.hitRate)}</div></div>
+        <div class="kpi"><div class="k">ROI</div><div class="v ${(live.roi||0)>=0?'pos':'neg'}">${pct(live.roi)}</div></div>
+        <div class="kpi"><div class="k">Net at $100 flat</div><div class="v ${(live.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(live.net):moneyN(live.net)}</div></div>
       </div>
-      <h3>Walk-forward (earlier 65% train, later 35% unseen test)</h3>
-      <div class="overflow"><table><tr><th></th><th>N</th><th>W-L</th><th>Win%</th><th>ROI</th></tr>
+      <h3>By leg count</h3>
+      <div class="overflow"><table><tr><th>Legs</th><th>N</th><th>W-L</th><th>Hit</th><th>Net</th><th>ROI</th></tr>
+        ${row('v2 2-leg', v2&&v2.byLegs&&v2.byLegs['2'])}${row('v2 3-leg', v2&&v2.byLegs&&v2.byLegs['3'])}
+        ${row('v1 2-leg', by['2'])}${row('v1 3-leg', by['3'])}
+      </table></div>
+      <h3>By sport</h3>
+      <div class="overflow"><table><tr><th>Sport / mix</th><th>N</th><th>W-L</th><th>Hit</th><th>Net</th><th>ROI</th></tr>${sportRows}</table></div>
+      <h3>Calibration (estimated win chance vs actual)</h3>
+      <div class="overflow"><table><tr><th>Bucket</th><th>N</th><th>Actual hit</th><th>ROI</th></tr>
+        <tr><td colspan="4" class="mut">No estimated-win-chance buckets in this historical sample — the parlay test stored ticket results, not per-ticket model probabilities.</td></tr>
+      </table></div>
+      <h3>Walk-forward v1 vs v2 (earlier 65% of slates train, later 35% unseen)</h3>
+      <div class="overflow"><table><tr><th>Split</th><th>N</th><th>W-L</th><th>Win%</th><th>ROI</th></tr>
         ${oosRow('v1 train', oos.v1&&oos.v1.train)}${oosRow('v1 unseen test', oos.v1&&oos.v1.test)}
         ${oosRow('v2 train (−300 to −150)', oos.v2&&oos.v2.train)}${oosRow('v2 unseen test', oos.v2&&oos.v2.test)}
       </table></div>
-      <h3 style="margin-top:14px">Full-window record</h3>
-      <div class="overflow"><table><tr><th></th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>
-        ${row('v1 Picky (−650 to −140)', {n:v.betsN,hits:v.hits,hitRate:v.hitRate,net:v.net,roi:v.roi})}
-        ${v2?row('v2 Picky (−300 to −150)', {n:v2.betsN,hits:v2.hits,hitRate:v2.hitRate,net:v2.net,roi:v2.roi}):''}
-        ${row('v1 2-leg', by['2'])}${row('v1 3-leg', by['3'])}
-        ${v2&&v2.byLegs?row('v2 2-leg', v2.byLegs['2'])+row('v2 3-leg', v2.byLegs['3']):''}
-      </table></div>
-      <p class="hint" style="margin-top:10px">${esc(B.methodology||'')}</p>
+      <p class="bt-foot">${esc(B.methodology||'Real ESPN finals + DraftKings closing moneylines. Live Parlays v2 uses Picky 62%+ / no negative model edge and leg odds −300 to −150. Settled at $100 flat.')}</p>
     </div>`;
 }
+
 
 const PARLAY_BACKTEST = {"generatedAt":"2026-11-19T05:03:17Z","methodology":"Real ESPN finals + DraftKings closing moneylines, 75-day window (NBA, WNBA, NHL, NFL, NCAAF). v1 used favorite legs from -650 to -140 targeting 2.0x\u20133.0x (allowed 1.85x\u20133.25x), no same-game legs, Picky 62%+ per-leg with no negative ESPN-model edge. A later chronological walk-forward (earlier 65% of slates to train, later 35% unseen to test) found that capping legs at -300 to -150 improved both the training window and the unseen holdout versus v1 (unseen: 27\u201325, 51.92%, +13.64% ROI vs v1 unseen 27\u201327, 50.00%, +8.86% ROI). Other ideas (banning NHL, requiring home favorites, dropping faded legs, 2-leg-only) looked better on train or on test, but not both, so they were not adopted. Live Parlays v2 keeps Picky 62%+ / no negative model edge and uses leg odds -300 to -150. Settled at $100 flat.","days":75,"sports":["nba","wnba","nhl","nfl","ncaaf"],"gamesWithCloseML":1493,"eligibleLegs":972,"legsWithEspnWp":771,"legOdds":[-650,-140],"payoutWindow":[1.85,3.25],"sweetSpot":[2.0,3.0],"stake":100.0,"v1":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"byPreset":{"super":{"label":"Super picky (68%+ per leg, no negative model edge)","minLegP":0.68,"requireModelEdge":true,"betsN":101,"hits":40,"losses":61,"pushes":2,"hitRate":0.396,"net":-1560.1,"roi":-0.1545,"avgPayout":2.133,"avgCombinedP":0.5602,"sweetN":93,"byLegs":{"2":{"n":72,"hits":28,"hitRate":0.3889,"net":-1312.47,"roi":-0.1823,"avgPayout":2.099},"3":{"n":29,"hits":12,"hitRate":0.4138,"net":-247.63,"roi":-0.0854,"avgPayout":2.218}},"bySport":{"nba+ncaaf+nhl":{"n":2,"hits":1,"net":26.48,"hitRate":0.5,"roi":0.1324},"nba":{"n":9,"hits":2,"net":-456.29,"hitRate":0.2222,"roi":-0.507},"nba+nhl":{"n":10,"hits":5,"net":20.48,"hitRate":0.5,"roi":0.0205},"nba+ncaaf":{"n":12,"hits":6,"net":97.55,"hitRate":0.5,"roi":0.0813},"nfl":{"n":9,"hits":5,"net":237.1,"hitRate":0.5556,"roi":0.2634},"nba+nfl":{"n":3,"hits":1,"net":-88.29,"hitRate":0.3333,"roi":-0.2943},"ncaaf":{"n":34,"hits":9,"net":-1537.85,"hitRate":0.2647,"roi":-0.4523},"ncaaf+nhl":{"n":7,"hits":2,"net":-310.14,"hitRate":0.2857,"roi":-0.4431},"nhl":{"n":8,"hits":5,"net":274.99,"hitRate":0.625,"roi":0.3437},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804},"nfl+nhl":{"n":4,"hits":3,"net":259.99,"hitRate":0.75,"roi":0.65}}},"picky":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"relaxed":{"label":"Relaxed (58%+ per leg)","minLegP":0.58,"requireModelEdge":false,"betsN":169,"hits":69,"losses":100,"pushes":2,"hitRate":0.4083,"net":-2199.47,"roi":-0.1301,"avgPayout":2.137,"avgCombinedP":0.5196,"sweetN":167,"byLegs":{"2":{"n":147,"hits":58,"hitRate":0.3946,"net":-2311.03,"roi":-0.1572,"avgPayout":2.143},"3":{"n":22,"hits":11,"hitRate":0.5,"net":111.56,"roi":0.0507,"avgPayout":2.095}},"bySport":{"ncaaf+nhl":{"n":25,"hits":8,"net":-835.83,"hitRate":0.32,"roi":-0.3343},"nba":{"n":15,"hits":6,"net":-185.14,"hitRate":0.4,"roi":-0.1234},"ncaaf":{"n":37,"hits":10,"net":-1600.39,"hitRate":0.2703,"roi":-0.4325},"nba+ncaaf":{"n":14,"hits":8,"net":341.94,"hitRate":0.5714,"roi":0.2442},"nba+nhl":{"n":17,"hits":6,"net":-432.6,"hitRate":0.3529,"roi":-0.2545},"nfl":{"n":11,"hits":8,"net":573.2,"hitRate":0.7273,"roi":0.5211},"nba+nfl":{"n":6,"hits":4,"net":254.84,"hitRate":0.6667,"roi":0.4247},"nfl+nhl":{"n":10,"hits":5,"net":42.82,"hitRate":0.5,"roi":0.0428},"nhl":{"n":23,"hits":10,"net":-148.8,"hitRate":0.4348,"roi":-0.0647},"nhl+wnba":{"n":3,"hits":1,"net":-55.23,"hitRate":0.3333,"roi":-0.1841},"nfl+wnba":{"n":6,"hits":2,"net":-181.75,"hitRate":0.3333,"roi":-0.3029},"ncaaf+wnba":{"n":1,"hits":0,"net":-100.0,"hitRate":0.0,"roi":-1.0},"ncaaf+nfl+wnba":{"n":1,"hits":1,"net":127.47,"hitRate":1.0,"roi":1.2747}}}},"v2":{"label":"Picky v2 (62%+ per leg, legs \u2212300 to \u2212150, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"legOdds":[-300,-150],"betsN":133,"hits":60,"losses":73,"pushes":0,"hitRate":0.4511,"net":-288.81,"roi":-0.0217,"avgPayout":2.159,"byLegs":{"2":{"n":133,"hits":60,"hitRate":0.4511,"net":-288.81,"roi":-0.0217,"avgPayout":2.159},"3":{"n":0,"hits":0,"hitRate":null,"net":0,"roi":null,"avgPayout":null}}},"oos":{"cut":"20261101","split":"earlier 65% of parlay slates train, later 35% unseen test","v1":{"train":{"n":85,"w":33,"l":52,"wr":0.3882,"net":-1480.6,"roi":-0.1742},"test":{"n":54,"w":27,"l":27,"wr":0.5,"net":478.27,"roi":0.0886}},"v2":{"train":{"n":81,"w":33,"l":48,"wr":0.4074,"net":-998.05,"roi":-0.1232},"test":{"n":52,"w":27,"l":25,"wr":0.5192,"net":709.24,"roi":0.1364}}}};
 /* ================= PER-BOARD AUTO-LEARN (props + parlays; games stays in 12_learn.js) ================= */
@@ -9416,18 +9644,22 @@ function propsLearnPanelHTML(){
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
   const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Props</h2><span class="hint">Snapshots, daily box-score grading, and weekly walk-forward retunes are independent from Games and Parlay.</span></div>
-  <div class="panel ln-panel">
-    ${typeof learnCardHead==='function'?learnCardHead('props'):''}
-    <div class="kpis">
+  const needN = (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50);
+  const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('props'):[];
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Props</h2><span class="hint">Snapshots, daily box-score grading, and weekly walk-forward retunes are independent from Games, Parlay, and Verdict.</span></div>
+  <div class="ln-card ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('props',{paused:!!t.paused, version:t.cur||1, cur:t.cur||1}):''}
+    ${typeof learnProgHTML==='function'?learnProgHTML(due.newLive||0, needN):''}
+    ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
+    <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
       <div class="kpi"><div class="k">Live graded</div><div class="v">${st.n?`${st.w}–${st.l}`:'—'}</div><div class="hint">${st.wr==null?'no graded props yet':fmtPct(st.wr,1)}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
       <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
     <div class="ln-actions">
-      <button class="btn primary sm" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Run a learning check now'}</button>
-      <button class="btn sm" id="lnPauseBoard">${t.paused?'▶ Resume auto-learning':'❚❚ Pause auto-learning'}</button>
+      <button class="btn primary sm ln-btn" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
+      <button class="btn sm ln-btn-ghost" id="lnPauseBoard">${t.paused?'Resume auto-learning':'Pause auto-learning'}</button>
     </div>
     <p class="hint">Every upcoming prop card (Picks, Watch, and Avoid) is snapshotted. Once a day the app downloads ESPN box scores and grades the line. After a week, and once enough props are graded, it walk-forward tunes the Props win-chance bar and can auto-pause a cold sport or stat. Odds range is never changed automatically.</p>
     ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
@@ -9448,18 +9680,22 @@ function parlayLearnPanelHTML(){
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
   const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Parlays</h2><span class="hint">Every generated ticket is snapshotted and graded from finished legs. Weekly retunes are independent from Games and Props.</span></div>
-  <div class="panel ln-panel">
-    ${typeof learnCardHead==='function'?learnCardHead('parlay'):''}
-    <div class="kpis">
+  const needN = (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50);
+  const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('parlay'):[];
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Parlays</h2><span class="hint">Every generated ticket is snapshotted and graded from finished legs. Weekly retunes are independent from Games, Props, and Verdict.</span></div>
+  <div class="ln-card ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('parlay',{paused:!!t.paused, version:t.cur||1, cur:t.cur||1}):''}
+    ${typeof learnProgHTML==='function'?learnProgHTML(due.newLive||0, needN):''}
+    ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
+    <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
       <div class="kpi"><div class="k">Live graded</div><div class="v">${settled.length?`${w}–${l}`:'—'}</div><div class="hint">${settled.length?`2-leg ${two.filter(x=>x.y===1).length}–${two.filter(x=>x.y===0).length} · 3-leg ${three.filter(x=>x.y===1).length}–${three.filter(x=>x.y===0).length}`:'no graded parlays yet'}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
       <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
     <div class="ln-actions">
-      <button class="btn primary sm" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Run a learning check now'}</button>
-      <button class="btn sm" id="lnPauseBoard">${t.paused?'▶ Resume auto-learning':'❚❚ Pause auto-learning'}</button>
+      <button class="btn primary sm ln-btn" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
+      <button class="btn sm ln-btn-ghost" id="lnPauseBoard">${t.paused?'Resume auto-learning':'Pause auto-learning'}</button>
     </div>
     <p class="hint">Every generated parlay across Picks, Watch, and Avoid is snapshotted. Legs are graded from finished game finals and prop box scores (a ticket hits only if every leg hits). Weekly walk-forward tuning can nudge the per-leg win bar once enough live parlays are graded. The 2.0x–3.0x payout window is never changed automatically.</p>
     ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
@@ -9573,10 +9809,18 @@ function verdictLearnPanelHTML(){
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${dtt(l.at)}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
   const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
   const recent=checks.slice().sort((a,b)=>(b.lastChecked||b.graded||b.createdAt||0)-(a.lastChecked||a.graded||a.createdAt||0)).slice(0,12).map(x=>`<tr><td>${dtt(x.lastChecked||x.graded||x.createdAt)}</td><td>${esc(x.pickText||x.label||'—')}</td><td>${esc(callOf(x.verdict))}</td><td>${x.winProb!=null?fmtPct(x.winProb,0):'—'}</td><td class="${x.res==='win'?'pos':x.res==='loss'?'neg':'mut'}">${esc(x.res||'pending')}</td></tr>`).join('') || '<tr><td colspan="5" class="mut">No Verdict checks logged yet.</td></tr>';
+  const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('verdict'):[
+    `Shrink: ${Math.round((+vp.probShrink||0)*100)}%`,
+    `BET bar: ${fmtPct(vp.betMinProb,0)}`,
+    `Watch: ${fmtPct(vp.watchMinProb,0)}`,
+    `Edge floor: ${typeof fmtEdge==='function'?fmtEdge(vp.edgeFloor):(((vp.edgeFloor||0)*100).toFixed(1)+'%')}`
+  ];
   return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Verdict</h2><span class="hint">Independent from Games, Props, and Parlay. Daily grading and weekly 65/35 walk-forward retunes calibrate Verdict's own probabilities and BET bar.</span></div>
-  <div class="panel ln-panel">
-    ${typeof learnCardHead==='function'?learnCardHead('verdict'):''}
-    <div class="kpis">
+  <div class="ln-card ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('verdict',{paused:!!t.paused, version:t.cur||t.version||1, cur:t.cur||t.version||1}):''}
+    ${typeof learnProgHTML==='function'?learnProgHTML(graded.length, 30):''}
+    ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
+    <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||t.version||1}</div></div>
       <div class="kpi"><div class="k">Checks logged</div><div class="v">${checks.length}</div><div class="hint">${graded.length} graded · ${checks.length-graded.length} waiting</div></div>
       <div class="kpi"><div class="k">BET hit rate</div><div class="v" style="font-size:18px">${wr(bet)}</div></div>
@@ -9584,10 +9828,9 @@ function verdictLearnPanelHTML(){
       <div class="kpi"><div class="k">SKIP hit rate</div><div class="v" style="font-size:18px">${wr(skip)}</div></div>
       <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
-    <div class="hint" style="margin:0 0 10px">Active calibration: shrink ${Math.round((+vp.probShrink||0)*100)}% · BET bar ${fmtPct(vp.betMinProb,0)} · Watch ${fmtPct(vp.watchMinProb,0)} · Edge floor ${fmtEdge?fmtEdge(vp.edgeFloor):((vp.edgeFloor*100).toFixed(1)+'%')} · Dog adj ${vp.dogAdj||0}</div>
     <div class="ln-actions">
-      <button class="btn primary sm" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
-      <button class="btn sm" id="lnPauseBoard">${t.paused?'▶ Resume auto-learning':'❚❚ Pause auto-learning'}</button>
+      <button class="btn primary sm ln-btn" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
+      <button class="btn sm ln-btn-ghost" id="lnPauseBoard">${t.paused?'Resume auto-learning':'Pause auto-learning'}</button>
     </div>
     <p class="hint">Every pick checked in Verdict is saved and graded from ESPN finals. Once 30 graded checks are in, a weekly chronological 65/35 walk-forward test can nudge shrink, the BET bar, and the underdog adjustment — only if the unseen 35% improves Brier score or BET accuracy without shrinking the sample. Games, Props, and Parlay keep their own independent models.</p>
     ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
@@ -9595,6 +9838,85 @@ function verdictLearnPanelHTML(){
     <div class="overflow"><table class="ln-tab"><tr><th>When</th><th>Pick</th><th>Call</th><th>Est.</th><th>Result</th></tr>${recent}</table></div>
     <details class="dd" data-dd="verdict-learn-log" ${ui.open.has('verdict-learn-log')?'open':''}><summary>Learning log (${(t.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
   </div>`;
+}
+function verdictBacktestHTML(){
+  const checks = ((typeof VCHECKS!=='undefined' && VCHECKS) || []).slice();
+  const callOf = v => v==='BET'?'BET':(v==='WATCHLIST'||v==='WATCH'||v==='watch'||v==='MAYBE LATER')?'MAYBE LATER':'SKIP';
+  const unit = 100;
+  const graded = checks.filter(x=>x.res==='win'||x.res==='loss');
+  const pct = x => x==null?'—':(x*100).toFixed(1)+'%';
+  const moneyN = n => n==null?'—':((n>=0?'+':'')+Number(n).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}));
+  const profit = (x)=>{
+    if (x.res!=='win' && x.res!=='loss') return 0;
+    if (x.res==='loss') return -unit;
+    if (x.odds!=null && typeof profitOn==='function') return profitOn(x.odds, unit);
+    return unit;
+  };
+  const agg = list => {
+    const st = list.filter(x=>x.res==='win'||x.res==='loss');
+    const w = st.filter(x=>x.res==='win').length, l = st.length-w;
+    const net = st.reduce((a,x)=>a+profit(x),0);
+    return {n:st.length, w, l, wr:st.length?w/st.length:null, net, roi:st.length?net/(st.length*unit):null};
+  };
+  const bets = graded.filter(x=>callOf(x.verdict)==='BET');
+  const all = agg(graded), bet = agg(bets);
+  const empty = graded.length<1;
+  const byCall = {};
+  for (const lab of ['BET','MAYBE LATER','SKIP']) byCall[lab] = agg(graded.filter(x=>callOf(x.verdict)===lab));
+  const bySport = {};
+  for (const x of graded){
+    const k = x.sport || '—';
+    (bySport[k]=bySport[k]||[]).push(x);
+  }
+  const sportRows = Object.entries(bySport).sort((a,b)=>b[1].length-a[1].length).map(([k,list])=>{
+    const s=agg(list); return `<tr><td>${esc((typeof LMAP!=='undefined'&&LMAP[k]&&LMAP[k].label)||k)}</td><td>${s.n}</td><td>${s.w}–${s.l}</td><td>${pct(s.wr)}</td><td class="${(s.roi||0)>=0?'pos':'neg'}">${pct(s.roi)}</td></tr>`;
+  }).join('');
+  const callRows = ['BET','MAYBE LATER','SKIP'].map(lab=>{
+    const s=byCall[lab];
+    return empty?`<tr><td>${lab}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`
+      :`<tr><td>${lab}</td><td>${s.n||'—'}</td><td>${s.n?`${s.w}–${s.l}`:'—'}</td><td>${pct(s.wr)}</td><td class="${s.roi==null?'':(s.roi>=0?'pos':'neg')}">${pct(s.roi)}</td></tr>`;
+  }).join('');
+  const bins = [{bin:'50–55%',lo:.50,hi:.55},{bin:'55–60%',lo:.55,hi:.60},{bin:'60–65%',lo:.60,hi:.65},{bin:'65–70%',lo:.65,hi:.70},{bin:'70%+',lo:.70,hi:1.01}];
+  const calRows = bins.map(b=>{
+    if (empty) return `<tr><td>${esc(b.bin)}</td><td>—</td><td>—</td><td>—</td></tr>`;
+    const list = graded.filter(x=>x.winProb!=null && x.winProb>=b.lo && x.winProb<b.hi);
+    if (!list.length) return `<tr><td>${esc(b.bin)}</td><td>0</td><td>—</td><td>—</td></tr>`;
+    const s = agg(list);
+    return `<tr><td>${esc(b.bin)}</td><td>${s.n}</td><td>${pct(s.wr)}</td><td class="${(s.roi||0)>=0?'pos':'neg'}">${pct(s.roi)}</td></tr>`;
+  }).join('');
+  const dated = graded.filter(x=>x.startMs||x.createdAt||x.graded).slice().sort((a,b)=>(a.startMs||a.createdAt||a.graded)-(b.startMs||b.createdAt||b.graded));
+  let trainS={n:0,w:0,l:0,wr:null,roi:null}, testS={n:0,w:0,l:0,wr:null,roi:null};
+  if (dated.length){
+    const cutIdx = Math.floor(dated.length*0.65);
+    trainS = agg(dated.slice(0, cutIdx));
+    testS = agg(dated.slice(cutIdx));
+  }
+  const wfRow = (lab,s)=> empty||!s||!s.n ? `<tr><td>${esc(lab)}</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`
+    : `<tr><td>${esc(lab)}</td><td>${s.n}</td><td>${s.w}–${s.l}</td><td>${pct(s.wr)}</td><td class="${(s.roi||0)>=0?'pos':'neg'}">${pct(s.roi)}</td></tr>`;
+  const dash = empty;
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">⚖️</span>Verdict Backtest</h2><span class="hint">Built only from real graded Verdict checks — never placeholder numbers. Settled at $100 flat.</span></div>
+    <div class="panel bt-card">
+      <div class="kpis">
+        <div class="kpi"><div class="k">Checks graded</div><div class="v">${dash?'—':graded.length}</div></div>
+        <div class="kpi"><div class="k">BETs taken</div><div class="v">${dash?'—':bet.n}</div></div>
+        <div class="kpi"><div class="k">BET hit rate</div><div class="v">${dash?'—':pct(bet.wr)}</div></div>
+        <div class="kpi"><div class="k">ROI</div><div class="v ${!dash&&(bet.roi||0)>=0?'pos':!dash?'neg':''}">${dash?'—':pct(bet.roi)}</div></div>
+        <div class="kpi"><div class="k">Net at $100 flat</div><div class="v ${!dash&&(bet.net||0)>=0?'pos':!dash?'neg':''}">${dash?'—':moneyN(bet.net)}</div></div>
+      </div>
+      <h3>By verdict</h3>
+      <div class="overflow"><table><tr><th>Verdict</th><th>N</th><th>W-L</th><th>Hit</th><th>ROI</th></tr>${callRows}</table></div>
+      <h3>By sport</h3>
+      <div class="overflow"><table><tr><th>Sport</th><th>N</th><th>W-L</th><th>Hit</th><th>ROI</th></tr>${sportRows||'<tr><td colspan="5" class="mut">Builds automatically as Verdict picks grade</td></tr>'}</table></div>
+      <h3>Calibration (estimated win chance vs actual)</h3>
+      <div class="overflow"><table><tr><th>Bucket</th><th>N</th><th>Actual hit</th><th>ROI</th></tr>${calRows}</table></div>
+      <h3>Walk-forward v1 vs active (earlier 65% train, later 35% unseen)</h3>
+      <div class="overflow"><table><tr><th>Split</th><th>N</th><th>W-L</th><th>Win%</th><th>ROI</th></tr>
+        ${wfRow('Active train (earlier 65%)', trainS)}${wfRow('Active unseen (later 35%)', testS)}
+      </table></div>
+      <p class="bt-foot">${dash
+        ? 'Builds automatically as Verdict picks grade. Tables stay as — until at least one checked pick is graded from an ESPN final. No numbers are filled in ahead of real results.'
+        : 'Computed strictly from graded Verdict checks (ESPN finals). ROI and net use $100 flat stakes on BET calls when odds are present, otherwise even-money. The 65/35 split is chronological on the graded sample. Games, Props, and Parlay keep their own independent historical tests.'}</p>
+    </div>`;
 }
 function boardLearnBind(kind){
   const run=$('#lnRunBoard'), pause=$('#lnPauseBoard');
@@ -9709,7 +10031,7 @@ const PRESETS = {
 const PRESET_KEYS = ['strictMode','sMarkets','sMinWin','sModelMin','sModelEdge','sNoModelSports','sMaxAdvPct','sMinPos','sMinScore','sMinConf','sMinEV'];
 function applyPreset(name){ const P = PRESETS[name]; if (!P) return; if (name==='relaxed'){ Object.assign(S, Object.fromEntries(PRESET_KEYS.map(k=>[k, PRESETS.super[k]]))); S.strictMode = false; } else for (const k of PRESET_KEYS) S[k] = P[k]; S.preset = name; }
 function detectPreset(){ if (!S.strictMode) return 'relaxed'; for (const n of ['super','picky']){ const P = PRESETS[n]; if (PRESET_KEYS.every(k=>String(S[k])===String(P[k]))) return n; } return 'custom'; }
-const MY_BOOK_CHOICES = [['bovada','Bovada'],['polymarket','Polymarket'],['draftkings','DraftKings'],['fanduel','FanDuel'],['betmgm','BetMGM'],['williamhill_us','Caesars'],['espnbet','ESPN BET'],['fanatics','Fanatics'],['betrivers','BetRivers'],['betonlineag','BetOnline']];
+const MY_BOOK_CHOICES = [['bovada','Bovada'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi'],['draftkings','DraftKings'],['fanduel','FanDuel'],['betmgm','BetMGM'],['williamhill_us','Caesars'],['espnbet','ESPN BET'],['fanatics','Fanatics'],['betrivers','BetRivers'],['betonlineag','BetOnline']];
 const LOST_IN_TEST = new Set(['ncaab','mls','epl','ucl','laliga','seriea','bund']);
 function applyPickSportsLive(){
   const board = ui.settingsBoard || 'games';
