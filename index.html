@@ -3075,7 +3075,8 @@ function ntfyPush(title, body, opts, topicOverride){
   const rawP = opts && opts.priority;
   const priority = typeof rawP==='number' ? rawP : (NTFY_PRIO[String(rawP||'default').toLowerCase()] || 3);
   const tags = opts && opts.tags ? (Array.isArray(opts.tags) ? opts.tags : String(opts.tags).split(',').map(x=>x.trim()).filter(Boolean)) : [];
-  const payload = { topic, title: String(title||'Verdict'), message: String(body||''), priority, click: NTFY_CLICK };
+  const clickUrl = (opts && opts.click) ? String(opts.click) : NTFY_CLICK;
+  const payload = { topic, title: String(title||'Verdict'), message: String(body||''), priority, click: clickUrl };
   if (tags.length) payload.tags = tags;
   const sendOnce = () => fetch('https://ntfy.sh', {
     method:'POST',
@@ -3161,9 +3162,22 @@ function checkLockAlerts(board){
         && (typeof selectedBooksAllowParlay!=='function' || selectedBooksAllowParlay(pl))
       );
     }
+    const fv = typeof ensureFilterView==='function' ? ensureFilterView(b+':good') : null;
+    const fH = fv ? fv.horizon : '24h';
+    const fSp = fv && Array.isArray(fv.sports) ? fv.sports : null;
     const pending = src.filter(item => {
       const startMs = typeof itemStartMs==='function' ? itemStartMs(item) : 0;
       if (typeof isOfficialLock==='function' && !isOfficialLock(startMs, lm)) return false;
+      if (typeof inHorizon==='function' && !inHorizon(startMs, 'pre', fH, b)) return false;
+      if (fSp){
+        if (b==='parlay'){
+          const sp = (item.sports && item.sports.length) ? item.sports : [item.league];
+          if (sp.filter(Boolean).some(lg=>!fSp.includes(lg))) return false;
+        } else {
+          const lg = item.league || (item.g && item.g.league);
+          if (lg && !fSp.includes(lg)) return false;
+        }
+      }
       const lk = lockItemKey(b, item);
       if (!lk || newPlayNotified[lk] || _lockPushInFlight.has(lk)) return false;
       if (b==='games' && newPlayNotified[playResultKey(item)]) return false;
@@ -3190,7 +3204,7 @@ function checkLockAlerts(board){
 ${body}`, tag: pending.length===1 ? 'bl-'+keys[0] : 'bl-lock-'+b});
     }
     if (ntfyEnabled()){
-      ntfyPush(title, body, {priority:'high', tags:tagIcon}).then(ok => {
+      ntfyPush(title, body, {priority:'high', tags:tagIcon, click: NTFY_CLICK+'?board='+b}).then(ok => {
         if (ok || localOk) markSent();
         else for (const lk of keys) _lockPushInFlight.delete(lk);
       });
@@ -3229,7 +3243,7 @@ function notifyPulled(r){
     const localOk = canNotify();
     if (localOk) postNotification(title, {body, tag:'bl-pull-'+pk});
     if (ntfyEnabled()){
-      ntfyPush(title, body, {priority:'urgent', tags:'rotating_light,warning'}).then(ok => {
+      ntfyPush(title, body, {priority:'urgent', tags:'rotating_light,warning', click: NTFY_CLICK+'?tab=pulled'}).then(ok => {
         if (ok || localOk) markSent();
         else if (pk) _pullPushInFlight.delete(pk);
       });
@@ -10798,7 +10812,14 @@ function renderSettings(){
       if (typeof applyBoardPreset==='function' && chosen) applyBoardPreset(sb, chosen);
       else B.preset = chosen;
     }
-    saveJSON(LS.settings, S); if (typeof startRefreshWatch==='function') startRefreshWatch();
+    saveJSON(LS.settings, S); if (typeof startRefreshWatch==='function') try{
+  const qp = new URLSearchParams(location.search||'');
+  const qb = qp.get('board'), qt = qp.get('tab');
+  if (qt==='pulled'){ ui.tab='pulled'; }
+  else if (qb==='games'||qb==='props'||qb==='parlay'){ ui.tab='good'; ui.board=qb; }
+  if (qb || qt){ history.replaceState(null, '', location.pathname + (location.hash||'')); }
+}catch(e){}
+startRefreshWatch();
     toast('Saved. Refreshing…'); refresh(); renderSettings();
   };
   $('#btnDefaults').onclick = ()=>{ if(!confirm('Reset everything except your key, books, sports and bet size to the recommended settings?')) return;
