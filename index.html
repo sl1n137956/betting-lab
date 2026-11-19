@@ -962,6 +962,90 @@ function sportEmoji(id){ return SPORT_EMOJI[id]||'🏟️'; }
 function sportChipLabel(L){ return `<span class="sp-emo" aria-hidden="true">${sportEmoji(L.id)}</span>${L.label}`; }
 
 const BOOK_NAMES = {draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
+const ALL_PROP_STATS = ['pts','reb','ast','threes','pra','pr','pa','ar','stl','blk','tov','sog','saves','goals','hpts','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td','ks'];
+const ALL_GAME_MKTS = ['h2h','spreads','totals','ml','spread','total'];
+const TRAD_BOOKS = ['bovada','draftkings','fanduel','betmgm','williamhill_us','espnbet','fanatics','betrivers','betonlineag'];
+const BOOK_CAPABILITIES = Object.assign(
+  { polymarket: { games: ['h2h','spreads','totals','ml','spread','total'], props: [] } },
+  Object.fromEntries(TRAD_BOOKS.map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
+);
+function selectedBooks(){
+  return (typeof myBookList==='function')
+    ? myBookList()
+    : String((typeof S!=='undefined' && S.myBooks) || '').toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);
+}
+function bookLabelOf(k){
+  k = String(k||'').toLowerCase();
+  return k==='polymarket' ? 'Polymarket' : (BOOK_NAMES[k] || k);
+}
+function capOf(book){
+  const k = String(book||'').toLowerCase();
+  return BOOK_CAPABILITIES[k] || { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() };
+}
+function bookKeyMatch(map, book){
+  if (!map || typeof map!=='object') return false;
+  const k = String(book||'').toLowerCase();
+  const aliases = [k, (BOOK_NAMES[k]||'').toLowerCase(), k.replace(/_/g,''), (BOOK_NAMES[k]||'').toLowerCase().replace(/[^a-z0-9]/g,'')];
+  return Object.keys(map).some(x=>{
+    const n = String(x).toLowerCase(), compact = n.replace(/[^a-z0-9]/g,'');
+    return aliases.includes(n) || aliases.includes(compact);
+  });
+}
+function bookSupportsMarket(books, kind, item){
+  const list = (Array.isArray(books) && books.length) ? books.map(b=>String(b).toLowerCase()) : selectedBooks();
+  if (!list.length) return true;
+  const isProp = kind==='props' || kind==='prop' || (item && item.isProp);
+  if (isProp){
+    const stat = item && (item.kind || item.stat || (item.mk && !['ml','spread','total','h2h'].includes(item.mk) ? item.mk : null));
+    const anyCap = list.some(b=>{
+      const caps = capOf(b).props;
+      if (caps==='all') return true;
+      if (!Array.isArray(caps) || !caps.length) return false;
+      return !stat || caps.includes(stat);
+    });
+    if (!anyCap) return false;
+    if (list.length===1 && item){
+      const prices = item.bookPrices || item.books || (item.raw && (item.raw.bookPrices || item.raw.books));
+      if (prices && typeof prices==='object' && Object.keys(prices).length){
+        return bookKeyMatch(prices, list[0]);
+      }
+    }
+    return true;
+  }
+  const rawMk = item && item.mk;
+  const mk = rawMk==='ml' ? 'h2h' : rawMk==='spread' ? 'spreads' : rawMk==='total' ? 'totals' : rawMk;
+  return list.some(b=>{
+    const caps = capOf(b).games;
+    if (caps==='all') return true;
+    if (!Array.isArray(caps) || !caps.length) return false;
+    if (!mk) return true;
+    return caps.includes(mk) || caps.includes(rawMk);
+  });
+}
+function polymarketFeedLive(){
+  return (typeof games!=='undefined' && (games||[]).some(g=>g && g.pm && (
+    (g.pm.ml && (g.pm.ml.home || g.pm.ml.away)) ||
+    (g.pm.spread && Object.keys(g.pm.spread).length) ||
+    (g.pm.total && Object.keys(g.pm.total).length)
+  )));
+}
+function polymarketOnlyFilterActive(){
+  const books = selectedBooks();
+  return books.length===1 && books[0]==='polymarket' && polymarketFeedLive();
+}
+function playHasPolymarketLine(p){
+  if (!p || !p.g || !p.g.pm) return false;
+  const mk = p.mk || 'ml';
+  return !!(p.g.pm[mk] && ((p.side && p.g.pm[mk][p.side]) || Object.keys(p.g.pm[mk]).length));
+}
+function gameHasPolymarketLine(g){
+  return !!(g && g.pm && (
+    (g.pm.ml && (g.pm.ml.home || g.pm.ml.away)) ||
+    (g.pm.spread && Object.keys(g.pm.spread).length) ||
+    (g.pm.total && Object.keys(g.pm.total).length)
+  ));
+}
+
 const DEFAULTS = {
   refreshMin:1, refreshSec:60, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
   oddsKey:'', oddsRegions:'us', oddsEveryMin:120, oddsBooks:'', sharpWeight:2,
@@ -4716,9 +4800,14 @@ function gameCard(g){
 }
 function filtered(list, isPlay){
   const q = norm(ui.q);
+  const pmOnly = typeof polymarketOnlyFilterActive==='function' && polymarketOnlyFilterActive();
   return list.filter(x=>{
     const g = isPlay ? x.g : x;
     if (g && g.pickOnly) return false;
+    if (pmOnly){
+      if (isPlay){ if (typeof playHasPolymarketLine==='function' && !playHasPolymarketLine(x)) return false; }
+      else if (typeof gameHasPolymarketLine==='function' && !gameHasPolymarketLine(g)) return false;
+    }
     if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)) return false;
     if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt) return false;
     if (ui.hideStarted && g.state!=='pre') return false;
@@ -5138,18 +5227,20 @@ function render(){
     v.innerHTML = renderPropsBoard(ui.tab, errs);
     return;
   }
+  const pmHint = (typeof polymarketOnlyFilterActive==='function' && polymarketOnlyFilterActive())
+    ? `<div class="banner">Filtered to Polymarket-available lines · add another book in Settings to see all sportsbook lines</div>` : '';
   if (ui.tab==='good'){
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
-    v.innerHTML = slateLayout('good', section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
+    v.innerHTML = slateLayout('good', pmHint + section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
     const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
     const watchMain = section('<span class="h-emo" aria-hidden="true">👀</span>Watchlist', 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, sportFilterEmpty(over.length?'No other watchlist items.':'Nothing on the watchlist.'))
       + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '') + errs;
-    v.innerHTML = slateLayout('watch', watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
+    v.innerHTML = slateLayout('watch', pmHint + watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
   }
-  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
+  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', pmHint + section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
   else if (ui.tab==='pulled'){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
     const unloggedN = list.filter(r => !(typeof isLoggedKey==='function' && isLoggedKey(r.k))).length;
@@ -5157,7 +5248,7 @@ function render(){
     const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No pulled plays from Picks.</div>`;
     v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">🟠</span>Pulled</h2>${clearBtn}<span class="hint">Plays that dropped off Picks. Tailed bets stay at the top in red so you don't miss them.</span></div>` + items + errs;
   }
-  else if (ui.tab==='all') v.innerHTML = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
+  else if (ui.tab==='all') v.innerHTML = pmHint + `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
 
 /* ================= PULL TO REFRESH (mobile / iOS PWA) ================= */
@@ -7619,7 +7710,8 @@ function buildPropPlay(raw, side, feat, est){
     playerName: raw.playerName, playerId: raw.playerId, headshot: raw.headshot, pos: raw.pos,
     league: raw.league, team: raw.team, opp: raw.opp, home: raw.home,
     g: raw.g, line: raw.line, price, overPrice:raw.overPrice, underPrice:raw.underPrice,
-    source: raw.source, sourceNote: raw.sourceNote, oa: !!raw.oa,
+    source: /polymarket/i.test(String(raw.source||'')) ? 'Sportsbook' : raw.source, sourceNote: raw.sourceNote, oa: !!raw.oa,
+    bookPrices: raw.bookPrices, books: raw.books,
     feat:f, est, p:pSide, pOver, implied, edge: (pSide!=null && implied!=null) ? pSide-implied : null,
     ev: (pSide!=null && price!=null) ? (pSide*(price>0?price/100:100/Math.abs(price)) - (1-pSide)) : null,
     verdict: gates.verdict, strictFails: gates.fails, reasons: [sentence].concat(gates.fails||[]),
@@ -7733,19 +7825,30 @@ async function mergeOddsApiProps(slate, allRaw){
         const over = qs.find(q=>q.side==='over'), under = qs.find(q=>q.side==='under');
         // If ESPN already has this player+kind, just annotate source; do not invent a second line.
         const already = allRaw.find(r => r.g===g && r.kind===kind && Math.abs(r.line-line)<1e-9 && nameScore && nameScore(nm, r.playerName)>=7);
+        const bookKey = String(b.key||'').toLowerCase();
+        const stampBook = (row)=>{
+          if (!bookKey) return;
+          row.bookPrices = row.bookPrices || {};
+          row.books = row.books || {};
+          row.bookPrices[bookKey] = {over: over && over.price, under: under && under.price};
+          row.books[bookKey] = true;
+        };
         if (already){
           already.oa = true;
+          stampBook(already);
           if (over && already.overPrice==null) already.overPrice = over.price;
           if (under && already.underPrice==null) already.underPrice = under.price;
           continue;
         }
         // Only add a new row when ESPN did not post this player/stat.
-        allRaw.push({
+        const row = {
           eventId:g.eventId, league:g.league, g, playerId:'oa:'+nm, playerName:nm, kind, line,
           overPrice:over&&over.price, underPrice:under&&under.price,
           source:'The Odds API', sourceNote:'Live sportsbook prop from The Odds API (cached up to 30 minutes).',
-          oa:true, headshot:''
-        });
+          oa:true, headshot:'', bookPrices:{}, books:{}
+        };
+        stampBook(row);
+        allRaw.push(row);
       }
     }
   }
@@ -7789,8 +7892,10 @@ function espnPropForPlayer(g, playerName, stat){
 
 function filteredProps(list){
   const q = typeof norm==='function' ? norm(ui.q) : String(ui.q||'').toLowerCase();
+  const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   return (list||[]).filter(p=>{
     const g = p.g;
+    if (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p)) return false;
     if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
     if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
     if (ui.hideStarted && g && g.state!=='pre') return false;
@@ -7803,6 +7908,21 @@ function filteredProps(list){
     }
     return true;
   });
+}
+function propsUnsupportedNote(){
+  const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
+  if (!books.length) return '';
+  const any = books.some(b => typeof bookSupportsMarket==='function' ? bookSupportsMarket([b], 'props', {kind:'pts', isProp:true}) : true);
+  if (any) return '';
+  const names = books.map(b => typeof bookLabelOf==='function' ? bookLabelOf(b) : (b==='polymarket'?'Polymarket':b));
+  const who = names.length===1 ? names[0] : names.slice(0,-1).join(', ') + ' and ' + names[names.length-1];
+  const verb = names.length===1 ? "doesn't" : "don't";
+  return who + ' ' + verb + " offer player props (like rebounds, assists, or points). Select another book like Bovada or DraftKings in Settings → My books to see player props.";
+}
+function propSourceLabel(p){
+  let s = String((p && p.source) || 'line').replace('ESPN DraftKings prop feed','DraftKings');
+  if (/polymarket/i.test(s)) s = s.replace(/polymarket/ig,'').replace(/[\s·,./-]+/g,' ').trim() || 'Sportsbook';
+  return s;
 }
 
 function l10PropChartHTML(p){
@@ -7908,7 +8028,7 @@ function propCard(p){
   const bo = (p.implied!=null && p.p!=null)
     ? `<div class="beton ${p.edge>=0?'ok':'bad'}"><div>These odds break even at about ${typeof outOf10==='function'?outOf10(p.implied):Math.round(p.implied*10)} wins in 10. We estimate ${typeof outOf10==='function'?outOf10(p.p):Math.round(p.p*10)} in 10.</div></div>`
     : (p.p==null?`<div class="beton"><div class="mut">Researching this player’s real game log…</div></div>`:'');
-  const price = p.price!=null ? `${fmtAm(p.price)}<small>${esc((p.source||'line').replace('ESPN DraftKings prop feed','DraftKings'))}</small>` : `<span class="mut">no price</span><small>typed / research</small>`;
+  const price = p.price!=null ? `${fmtAm(p.price)}<small>${esc(propSourceLabel(p))}</small>` : `<span class="mut">no price</span><small>typed / research</small>`;
   const lazy = (id, sum, kind, body) => {
     const open = ui.open.has(id);
     return `<details class="dd${kind==='court'?' court-dd':''}" data-dd="${esc(id)}" data-lazy="${kind}" data-lazy-id="${esc(p.id)}" ${open?'open':''}><summary>${sum}</summary>${open?body:''}</details>`;
@@ -7916,7 +8036,7 @@ function propCard(p){
   return `<div class="${cardCls}">
     ${logMarks}
     ${propHead(p)}
-    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.source||'Research')}</div><div class="what">${esc(p.label)}</div></div>
+    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(propSourceLabel(p)==='line'?'Research':propSourceLabel(p))}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${price}</div></div>
     ${bo}
     ${p.strictFails && p.strictFails.length && p.verdict!=='good' ? `<div class="hint" style="margin:6px 2px 0">Missed: ${esc(p.strictFails[0])}${p.strictFails.length>1?` (+${p.strictFails.length-1} more)`:''}</div>`:''}
@@ -7992,9 +8112,11 @@ function renderPropsBoard(tab, errs){
   const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
   const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
   const st = propStatusHTML();
-  if (tab==='good') return slateLayout('good', st + sectionProps('<span class="h-emo" aria-hidden="true">🎯</span>Prop Picks', 'Player props that clear the same singles discipline as games (−150 to +150, 60%+ estimate). Zero picks is fine.', good, sportFilterEmpty('No player props passed today. <b>Zero picks is fine.</b> Never force a bet. You can still type a prop in Verdict.')) + errs, counts);
-  if (tab==='watch') return slateLayout('watch', st + sectionProps('<span class="h-emo" aria-hidden="true">👀</span>Prop Watchlist', 'Leans that are close, thin-sample, or just outside the singles gates.', watch, sportFilterEmpty('Nothing on the prop watchlist.')) + errs, counts);
-  return slateLayout('avoid', st + sectionProps('<span class="h-emo" aria-hidden="true">🚫</span>Prop Avoid', 'No edge, heavy juice, or not enough of a sample to trust the lean.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, counts);
+  const bookNote = propsUnsupportedNote();
+  const bookEmpty = bookNote ? (esc(bookNote) + ` <div style="margin-top:12px"><button type="button" class="btn primary" data-open-settings="1">Open Settings</button></div>`) : '';
+  if (tab==='good') return slateLayout('good', st + sectionProps('<span class="h-emo" aria-hidden="true">🎯</span>Prop Picks', 'Player props that clear the same singles discipline as games (−150 to +150, 60%+ estimate). Zero picks is fine.', good, bookEmpty || sportFilterEmpty('No player props passed today. <b>Zero picks is fine.</b> Never force a bet. You can still type a prop in Verdict.')) + errs, counts);
+  if (tab==='watch') return slateLayout('watch', st + sectionProps('<span class="h-emo" aria-hidden="true">👀</span>Prop Watchlist', 'Leans that are close, thin-sample, or just outside the singles gates.', watch, bookEmpty || sportFilterEmpty('Nothing on the prop watchlist.')) + errs, counts);
+  return slateLayout('avoid', st + sectionProps('<span class="h-emo" aria-hidden="true">🚫</span>Prop Avoid', 'No edge, heavy juice, or not enough of a sample to trust the lean.', avoid, bookEmpty || sportFilterEmpty('Nothing flagged to avoid.')) + errs, counts);
 }
 
 function updatePropTabCounts(){
@@ -8210,8 +8332,10 @@ function gameParlaySides(){
 }
 function propParlaySides(){
   const out = [];
+  const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   for (const p of (props||[])){
     if (!p || p.price==null || p.p==null) continue;
+    if (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p)) continue;
     const g = p.g;
     if (g && g.state && g.state!=='pre') continue;
     const lg = p.league || (g && g.league);
@@ -9553,6 +9677,7 @@ document.addEventListener('click', e=>{
 window.addEventListener('resize', ()=>{ if (document.body.classList.contains('filters-open') && typeof syncFilterDrawerPos==='function') syncFilterDrawerPos(); });
 $('#btnRefresh').onclick = ()=>refresh(false);
 $('#view').addEventListener('click', e=>{
+  if (e.target.closest('[data-open-settings]')){ setTab('settings'); if (typeof updateFilterChrome==='function') updateFilterChrome(); render(); window.scrollTo({top:0}); return; }
   if (e.target.closest('[data-clear-unlogged]')){ if (typeof clearUnloggedPulled==='function') clearUnloggedPulled(); return; }
   const d = e.target.closest('[data-dismiss-pull]');
   if (d){
