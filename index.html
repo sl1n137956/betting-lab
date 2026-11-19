@@ -1226,6 +1226,29 @@ function gameHasPolymarketLine(g){
     (g.pm.total && Object.keys(g.pm.total).length)
   ));
 }
+function selectedBooksAllowGame(g){
+  if (!g) return false;
+  if (polymarketOnlyFilterActive()) return gameHasPolymarketLine(g);
+  return true;
+}
+function selectedBooksAllowPlay(p){
+  if (!p) return false;
+  const books = selectedBooks();
+  if (!bookSupportsMarket(books, 'games', p)) return false;
+  if (polymarketOnlyFilterActive()) return playHasPolymarketLine(p);
+  return true;
+}
+function selectedBooksAllowProp(p){
+  if (!p) return false;
+  const books = selectedBooks();
+  if (!bookSupportsMarket(books, 'props', p)) return false;
+  if (polymarketOnlyFilterActive() && p.g && !gameHasPolymarketLine(p.g)) return false;
+  return true;
+}
+function selectedBooksAllowParlay(pl){
+  if (!pl || !Array.isArray(pl.legs) || !pl.legs.length) return false;
+  return pl.legs.every(l => l && (l.isProp ? selectedBooksAllowProp(l) : selectedBooksAllowPlay(l)));
+}
 
 const PM_SPORT_SLUG = {nba:'nba',nhl:'nhl',nfl:'nfl',mlb:'mlb',ncaab:'cbb',ncaaf:'cfb',wnba:'wnba',mls:'soccer',epl:'soccer',ucl:'soccer',laliga:'soccer',seriea:'soccer',bund:'soccer',ufc:'ufc',atp:'tennis',wta:'tennis'};
 const BOOK_HOME_URL = {
@@ -2825,15 +2848,18 @@ function pmMaxCents(fair, rate){ // highest ask whose fee-inclusive cost is stil
   let lo=0, hi=1; for (let i=0;i<30;i++){ const m=(lo+hi)/2; if (pmCost(m,rate) <= fair) lo=m; else hi=m; } return lo; }
 function myBooks(p){
   const list = myBookList(); if (!list.length) return null;
-  const {g, mk, sd} = p; const fair = sd.nv; const out = {names: list.map(BOOK_LABEL).join(', '), quotes:[], required: list.some(b=>b!=='polymarket')};
+  const {g, mk, sd} = p; const fair = sd.nv;
+  const hasPm = list.includes('polymarket') || list.includes('polymarket_us');
+  const pmLabel = (list.includes('polymarket_us') && !list.includes('polymarket')) ? 'Polymarket US' : 'Polymarket';
+  const out = {names: list.map(BOOK_LABEL).join(', '), quotes:[], required: list.some(b=>b!=='polymarket' && b!=='polymarket_us')};
   for (const q of (g.quotes[mk][p.side]||[])){
     const k = (q.bk||'').toLowerCase(); if (!list.includes(k)) continue;
     if (mk!=='ml' && q.point!==sd.point) continue;
     out.quotes.push({book:BOOK_LABEL(k), price:q.price, edge: fair - imp(q.price), kind:'book'});
   }
-  if (list.includes('polymarket') && g.pm && g.pm[mk] && g.pm[mk][p.side]){
+  if (hasPm && g.pm && g.pm[mk] && g.pm[mk][p.side]){
     const m = g.pm[mk][p.side];
-    if (mk==='ml' || m.point===sd.point){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:'Polymarket', price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:m.thin, pm:m}); }
+    if (mk==='ml' || m.point===sd.point){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:pmLabel, price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:m.thin, pm:m}); }
   }
   out.quotes.sort((a,b)=>b.edge-a.edge); out.best = out.quotes[0] || null;
   out.fairAm = probToAm(fair); out.maxCents = pmMaxCents(fair);
@@ -2841,7 +2867,7 @@ function myBooks(p){
 }
 function priceSourceNote(){
   if (S.oddsKey) return '';
-  const pm = myBookList().includes('polymarket') && S.pmOn!==false;
+  const pm = myBookList().some(b=>b==='polymarket'||b==='polymarket_us') && S.pmOn!==false;
   const text = pm
     ? 'Prices from DraftKings and Polymarket — add Odds API key in Settings for Bovada prices'
     : 'Prices from DraftKings — add Odds API key in Settings for Bovada prices';
@@ -5295,14 +5321,11 @@ function gameCard(g){
 }
 function filtered(list, isPlay){
   const q = norm(ui.q);
-  const pmOnly = typeof polymarketOnlyFilterActive==='function' && polymarketOnlyFilterActive();
   return list.filter(x=>{
     const g = isPlay ? x.g : x;
     if (g && g.pickOnly) return false;
-    if (pmOnly){
-      if (isPlay){ if (typeof playHasPolymarketLine==='function' && !playHasPolymarketLine(x)) return false; }
-      else if (typeof gameHasPolymarketLine==='function' && !gameHasPolymarketLine(g)) return false;
-    }
+    if (isPlay){ if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(x)) return false; }
+    else { if (typeof selectedBooksAllowGame==='function' && !selectedBooksAllowGame(g)) return false; }
     if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)) return false;
     if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt) return false;
     if (ui.hideStarted && g.state!=='pre') return false;
@@ -5718,6 +5741,7 @@ function render(){
     const sp = fv && Array.isArray(fv.sports) ? fv.sports : null;
     return list.filter(p=>{
       if (p.verdict!==v) return false;
+      if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(p)) return false;
       if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
       if (hs && p.g && p.g.state!=='pre') return false;
       if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h)) return false;
@@ -5754,29 +5778,27 @@ function render(){
     v.innerHTML = renderPropsBoard(ui.tab, errs);
     return;
   }
-  const pmHint = (typeof polymarketOnlyFilterActive==='function' && polymarketOnlyFilterActive())
-    ? `<div class="banner">Filtered to Polymarket-available lines · add another book in Settings to see all sportsbook lines</div>` : '';
   if (ui.tab==='good'){
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
     const body = (typeof picksBoardHTML==='function')
       ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), good, 'games', playCard)
       : section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'));
-    v.innerHTML = slateLayout('good', pmHint + body + errs, counts);
+    v.innerHTML = slateLayout('good', body + errs, counts);
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
     const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
     const watchMain = section('<span class="h-emo" aria-hidden="true">👀</span>Watchlist', 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, sportFilterEmpty(over.length?'No other watchlist items.':'Nothing on the watchlist.'))
       + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '') + errs;
-    v.innerHTML = slateLayout('watch', pmHint + watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
+    v.innerHTML = slateLayout('watch', watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
   }
-  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', pmHint + section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
+  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
   else if (ui.tab==='pulled'){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
     const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No tailed picks have flipped to Avoid.</div>`;
     v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">🟠</span>Pulled</h2><span class="hint">Picks you tailed that flipped to Avoid. Untailed picks that drop off are removed quietly and still tracked for the model.</span></div>` + items + errs;
   }
-  else if (ui.tab==='all') v.innerHTML = pmHint + `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
+  else if (ui.tab==='all') v.innerHTML = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
 
 /* ================= PULL TO REFRESH (mobile / iOS PWA) ================= */
@@ -8617,7 +8639,7 @@ function filteredProps(list){
   const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   return (list||[]).filter(p=>{
     const g = p.g;
-    if (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p)) return false;
+    if (typeof selectedBooksAllowProp==='function' ? !selectedBooksAllowProp(p) : (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p))) return false;
     if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
     if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
     if (ui.hideStarted && g && g.state!=='pre') return false;
@@ -8860,6 +8882,7 @@ function updatePropTabCounts(){
     ? filteredProps((props||[]).filter(p=>p.verdict===v)).length
     : (props||[]).filter(p=>{
         if (p.verdict!==v) return false;
+        if (typeof selectedBooksAllowProp==='function' && !selectedBooksAllowProp(p)) return false;
         if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
         if (hs && p.g && p.g.state!=='pre') return false;
         if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h)) return false;
@@ -9065,6 +9088,7 @@ function gameParlaySides(){
         p.p = (p.E && p.E.final!=null) ? p.E.final : (p.est!=null?p.est:(sd.nv||p.implied));
         p.edge = (p.p!=null && p.implied!=null) ? p.p-p.implied : null;
         p.league = g.league;
+        if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(p)) continue;
         out.push(p);
       }
     }
@@ -9076,7 +9100,7 @@ function propParlaySides(){
   const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   for (const p of (props||[])){
     if (!p || p.price==null || p.p==null) continue;
-    if (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p)) continue;
+    if (typeof selectedBooksAllowProp==='function' ? !selectedBooksAllowProp(p) : (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p))) continue;
     const g = p.g;
     if (g && g.state && g.state!=='pre') continue;
     const lg = p.league || (g && g.league);
@@ -9357,6 +9381,7 @@ function parlayCard(pl){
 function filteredParlays(list){
   const q = typeof norm==='function' ? norm(ui.q) : String(ui.q||'').toLowerCase();
   return (list||[]).filter(pl=>{
+    if (typeof selectedBooksAllowParlay==='function' && !selectedBooksAllowParlay(pl)) return false;
     if (typeof sportOnFilter==='function'){
       const sports = (pl.sports && pl.sports.length) ? pl.sports : [pl.league];
       if (sports.filter(Boolean).some(lg=>!sportOnFilter(lg))) return false;
@@ -9388,6 +9413,7 @@ function updateParlayTabCounts(){
   const vis = v => live ? filteredParlays((parlays||[]).filter(p=>p.verdict===v)).length
     : (parlays||[]).filter(p=>{
         if (p.verdict!==v) return false;
+        if (typeof selectedBooksAllowParlay==='function' && !selectedBooksAllowParlay(p)) return false;
         const sports = (p.sports && p.sports.length) ? p.sports : [p.league];
         if (sp && sports.filter(Boolean).some(lg=>!sp.includes(lg))) return false;
         const started = (p.legs||[]).some(l=>l.g&&l.g.state&&l.g.state!=='pre');
