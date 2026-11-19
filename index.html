@@ -1066,6 +1066,11 @@ main.wrap{padding-top:16px}
 .v42-v{font-size:13px;margin-top:4px}
 .v42-b .hint{font-size:12px;line-height:1.4;margin-top:3px}
 @media (max-width:1023.98px){ .v42-grid{grid-template-columns:1fr} }
+.uni-card{margin-bottom:16px}
+.uni-buckets{margin-top:10px;border-top:1px solid rgba(148,163,184,.15);padding-top:6px}
+.uni-row{display:grid;grid-template-columns:70px 1fr auto;gap:8px;align-items:baseline;font-size:13px;padding:3px 0}
+.uni-row .k{color:var(--mut,#94a3b8)}
+.uni-row .n{font-size:11px;white-space:nowrap}
 .v42-tbl td{vertical-align:top}
 .v42-tbl td .hint{margin-top:4px;font-size:12px;line-height:1.35;white-space:normal}
 .v42-tbl td div{line-height:1.4}
@@ -8596,7 +8601,7 @@ function renderResults(){
   const rb = ui.resultsBoard || 'games';
   const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, Parlay, or Verdict.</div></div>`;
   const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
-  const live = (typeof v42ResultsHTML==='function' ? v42ResultsHTML() : '') + (typeof v41ScoreboardHTML==='function' ? v41ScoreboardHTML() : '') + liveRecordHTML(rb);
+  const live = (typeof v42ResultsHTML==='function' ? v42ResultsHTML() : '') + (typeof uniResultsHTML==='function' ? uniResultsHTML() : '') + (typeof v41ScoreboardHTML==='function' ? v41ScoreboardHTML() : '') + liveRecordHTML(rb);
   let body = '';
   if (rb==='props'){
     body = live+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
@@ -8674,11 +8679,17 @@ const sleep0 = () => new Promise(r=>setTimeout(r, 0));
 /* ---------- IndexedDB (no 5 MB limit) ---------- */
 let _idb = null;
 function idbOpen(){
+  // v43: one schema for every store (v1 games snaps, v2 props/parlay snaps, v3 tracked universe). Opening at the
+  // highest version everywhere fixes reloads where the old v1 open failed on a v2 database and snapshots fell back to localStorage.
   if (_idb) return _idb;
   _idb = new Promise((res, rej)=>{ if (!window.indexedDB) return rej(new Error('IndexedDB not available'));
-    const r = indexedDB.open('bettinglab', 1);
-    r.onupgradeneeded = ()=>{ const d = r.result; if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv'); if (!d.objectStoreNames.contains('snaps')) d.createObjectStore('snaps', {keyPath:'i'}); };
-    r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); r.onblocked = ()=>rej(new Error('IndexedDB blocked')); });
+    const r = indexedDB.open('bettinglab', 3);
+    r.onupgradeneeded = ()=>{ const d = r.result;
+      if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+      for (const n of ['snaps','propSnaps','parlaySnaps','uni','uniDone','uniSum']) if (!d.objectStoreNames.contains(n)) d.createObjectStore(n, {keyPath:'i'}); };
+    r.onsuccess = ()=>{ const db = r.result; db._v = 3; db.onversionchange = ()=>{ try{ db.close(); }catch(e){} }; res(db); };
+    r.onerror = ()=>rej(r.error); r.onblocked = ()=>console.warn('IndexedDB upgrade waiting for another Verdict tab to close'); });
+  _idb._v = 3;
   return _idb;
 }
 const idbReq = q => new Promise((res, rej)=>{ q.onsuccess = ()=>res(q.result); q.onerror = ()=>rej(q.error); });
@@ -8724,7 +8735,9 @@ async function learnInit(){
   const v = LEARN.versions.find(x=>x.id===LEARN.cur) || LEARN.versions[0]; LEARN.cur = v.id; learnApply(v, false);
   if (typeof ensureLockMins==='function') ensureLockMins();
   try{ if (localStorage.getItem('bl_bt_idb')==='1'){ const b = await withTimeout(idbGet('bt'), 4000); if (b && b.games) BT = b; } }catch(e){ console.warn('backtest cache (IndexedDB)', e); }
-  try{ const all = await withTimeout(snapsLoad(), 4000); for (const x of all||[]) SNAPS.set(String(x.i), x); learnState.idb = true; }
+  try{ const all = await withTimeout(snapsLoad(), 4000); for (const x of all||[]) SNAPS.set(String(x.i), x); learnState.idb = true;
+    // v43: earlier reloads could fall back to localStorage (old schema-version clash). Move those snapshots into IndexedDB once.
+    try{ const ls = loadJSON('bl_snaps', null); if (Array.isArray(ls) && ls.length){ const add = []; for (const x of ls){ const k = String(x.i), o = SNAPS.get(k); if (!o || (o.y==null && x.y!=null)){ SNAPS.set(k, x); add.push(x); } } if (add.length) await snapsWrite(add); localStorage.removeItem('bl_snaps'); } }catch(e){ console.warn('snap migrate', e); } }
   catch(e){ learnState.idb = false; for (const x of loadJSON('bl_snaps', [])) SNAPS.set(String(x.i), x); console.warn('IndexedDB unavailable, using localStorage for snapshots', e); }
 }
 
@@ -10480,6 +10493,8 @@ function buildParlays(){
   // ensure some avoids if we have weak combos leftover
   for (const c of kept){ if (typeof isFinalPulled==='function' && isFinalPulled(c.id) && c.verdict!=='avoid'){ c.verdict='avoid'; c.C={J:'SKIP'}; (c.reasons||(c.reasons=[])).unshift('Pulled earlier. It stays off the board.'); } }
   parlays = kept;
+  // v43: every qualifying candidate the builder considered (cleared the tested base bar), shown or not, is tracked and graded
+  try{ window.__parlayCands = combos.filter(c=>c.sg || c.verdict!=='avoid').sort((a,b)=>(vOrd(a.verdict)-vOrd(b.verdict)) || (b.edge-a.edge)).slice(0, 300); }catch(e){ window.__parlayCands = []; }
   try{ if (typeof v42ApplyAutoOff==='function') v42ApplyAutoOff('parlay'); }catch(e){}
   try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('parlay'); }catch(e){}
   if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
@@ -11022,27 +11037,7 @@ function ensureBoardLearn(){
   }
   if (dirty){ try{ learnSave(); }catch(e){} }
 }
-function idbOpenV2(){
-  // Re-open at schema v2 when props/parlay stores are needed. Safe if already on v2.
-  if (_idb && _idb._v>=2) return _idb;
-  const prev = _idb;
-  _idb = new Promise((res, rej)=>{
-    if (!window.indexedDB) return rej(new Error('IndexedDB not available'));
-    const r = indexedDB.open('bettinglab', 2);
-    r.onupgradeneeded = ()=>{
-      const d = r.result;
-      if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
-      if (!d.objectStoreNames.contains('snaps')) d.createObjectStore('snaps', {keyPath:'i'});
-      if (!d.objectStoreNames.contains('propSnaps')) d.createObjectStore('propSnaps', {keyPath:'i'});
-      if (!d.objectStoreNames.contains('parlaySnaps')) d.createObjectStore('parlaySnaps', {keyPath:'i'});
-    };
-    r.onsuccess = ()=>{ const db=r.result; db._v=2; res(db); };
-    r.onerror = ()=>rej(r.error);
-    r.onblocked = ()=>rej(new Error('IndexedDB blocked'));
-  });
-  _idb._v = 2;
-  return _idb;
-}
+function idbOpenV2(){ return idbOpen(); } // v43: single schema (see idbOpen)
 const storeGetAll = async name => {
   const d = await idbOpenV2();
   if (!d.objectStoreNames.contains(name)) return [];
@@ -11068,6 +11063,10 @@ async function boardLearnInit(){
     const ys = await withTimeout(storeGetAll('parlaySnaps'), 4000);
     for (const x of ys||[]) PARLAY_SNAPS.set(String(x.i), x);
     boardLearnReady = true;
+    // v43: move any localStorage fallback snapshots (old schema-version clash) into IndexedDB once
+    for (const [ls, map, store] of [['bl_prop_snaps', PROP_SNAPS, 'propSnaps'], ['bl_parlay_snaps', PARLAY_SNAPS, 'parlaySnaps']]){
+      try{ const arr = loadJSON(ls, null); if (Array.isArray(arr) && arr.length){ const add = []; for (const x of arr){ const k = String(x.i), o = map.get(k); if (!o || (o.y==null && x.y!=null)){ map.set(k, x); add.push(x); } } if (add.length) await storeWrite(store, add, []); localStorage.removeItem(ls); } }catch(e){ console.warn('snap migrate', ls, e); }
+    }
   }catch(e){
     boardLearnReady = false;
     for (const x of loadJSON('bl_prop_snaps', [])) PROP_SNAPS.set(String(x.i), x);
@@ -11075,11 +11074,12 @@ async function boardLearnInit(){
     console.warn('board-learn snapshots falling back to localStorage', e);
   }
 }
-function boardSnapsSave(kind){
+function boardSnapsSave(kind, list, del){
   const map = kind==='props'?PROP_SNAPS:PARLAY_SNAPS;
   const name = kind==='props'?'propSnaps':'parlaySnaps';
   const ls = kind==='props'?'bl_prop_snaps':'bl_parlay_snaps';
-  if (boardLearnReady) storeWrite(name, [...map.values()], []).catch(e=>console.warn('snap save', e));
+  // v43: write only what changed (the full map is large now that every candidate is tracked)
+  if (boardLearnReady) storeWrite(name, list || [...map.values()], del || []).catch(e=>console.warn('snap save', e));
   else {
     const arr = [...map.values()].sort((a,b)=>b.t-a.t).slice(0, 2500);
     try{ saveJSON(ls, arr); }catch(e){}
@@ -11088,7 +11088,7 @@ function boardSnapsSave(kind){
 
 function propLearnCapture(){
   ensureBoardLearn();
-  let n=0;
+  let n=0; const added=[];
   for (const p of (props||[])){
     if (!p || !p.id || p.p==null || p.line==null || !p.g) continue;
     const t = p.g.start ? +p.g.start : 0;
@@ -11101,44 +11101,58 @@ function propLearnCapture(){
       price:p.price, p:p.p, implied:p.implied, verdict:p.verdict, sg:(p.verdict==='good'||p.autoOffFrom==='good')?1:0, y:null,
       minsToTip: Math.round((t - Date.now())/60000)
     });
-    n++;
+    added.push(PROP_SNAPS.get(p.id)); n++;
   }
-  if (n) boardSnapsSave('props');
+  if (n) boardSnapsSave('props', added);
   return n;
 }
 function parlayLearnCapture(){
   ensureBoardLearn();
-  let n=0;
-  for (const pl of (parlays||[])){
+  let n=0; const added=[];
+  // v43: shown parlays plus every qualifying candidate the builder considered (cleared the tested base bar), shown or not
+  const shownIds = new Set((parlays||[]).map(p=>p&&p.id));
+  const cands = (typeof window!=='undefined' && Array.isArray(window.__parlayCands)) ? window.__parlayCands : [];
+  // shadow cap: at most 500 new unshown candidates a day and 12,000 kept, so a 24/7 tab cannot bloat
+  const today = new Date().toDateString(); let shadowToday = 0, shadowAll = 0;
+  for (const x of PARLAY_SNAPS.values()) if (x.shown===0){ shadowAll++; if (x.cd===today) shadowToday++; }
+  for (const pl of (parlays||[]).concat(cands)){
     if (!pl || !pl.id || !pl.legs) continue;
+    if (!shownIds.has(pl.id) && !PARLAY_SNAPS.has(pl.id)){ if (shadowToday>=500 || shadowAll>=12000) continue; }
     const t = isFinite(pl.start) ? pl.start : Date.now();
     if (t < Date.now()-2*86400000) continue;
     if (PARLAY_SNAPS.has(pl.id)) continue;
-    PARLAY_SNAPS.set(pl.id, {
+    const x = {
       i:pl.id, t, n:pl.n, dec:pl.dec, am:pl.am, p:pl.p, implied:pl.implied, edge:pl.edge, verdict:pl.verdict, mix:pl.mix, sg:(pl.sg||pl.verdict==='good')?1:0, minLegP:(pl.legs||[]).reduce((m,l)=>l&&l.p!=null?Math.min(m,+l.p):m,1),
+      shown: shownIds.has(pl.id) ? 1 : 0, cd: today,
       minsToTip: Math.round((t - Date.now())/60000),
       legs: pl.legs.map(l=>({
         type: (l.isProp||l.playerName)?'prop':'game',
         id:l.id, eventId:parlayEventId(l), league:l.league||(l.g&&l.g.league),
         mk:l.mk, kind:l.kind, side:l.side, line:l.line, point:l.sd&&l.sd.point, price:l.price, p:l.p,
-        playerId:l.playerId, playerName:l.playerName, label:l.label||l.playerName
+        playerId:l.playerId, playerName:l.playerName, label:l.label||l.playerName, start:l.g&&l.g.start?+l.g.start:null
       })),
       y:null
-    });
+    };
+    PARLAY_SNAPS.set(pl.id, x); added.push(x); if (!x.shown){ shadowToday++; shadowAll++; }
     n++;
   }
-  if (n) boardSnapsSave('parlay');
+  if (n) boardSnapsSave('parlay', added);
   return n;
 }
 
-function boxStat(ath, kind){
+function boxStat(ath, kind, lg){
   const st0 = ath && (ath.stats||ath.statistics||ath);
+  if (st0 && !Array.isArray(st0) && typeof st0==='object' && !Object.keys(st0).length) return null;
+  // v43: league-aware reader for every prop stat (NBA, NHL, NFL, MLB). Unknown stats return null (ungradeable), never points.
+  if (st0 && !Array.isArray(st0) && typeof uniStatValue==='function'){
+    const v = uniStatValue(st0, kind, lg);
+    if (v!==undefined) return v;
+  }
   // v41: ESPN summary box scores use upper-case labels (PTS, REB, AST, 3PT "made-attempted") — match case-insensitively
   let st = st0;
   if (st0 && !Array.isArray(st0) && typeof st0==='object'){
     st = {}; for (const k of Object.keys(st0)){ const v = st0[k]; const lk = String(k).toLowerCase(); st[k] = v; st[lk] = (typeof v==='string' && /^\d+-\d+$/.test(v)) ? +v.split('-')[0] : v; }
     if (st['3pt']!=null && st.threes==null) st.threes = st['3pt'];
-    if (!Object.keys(st0).length) return null;
   }
   const num = (keys)=>{
     for (const k0 of keys){
@@ -11161,8 +11175,8 @@ function boxStat(ath, kind){
   if (kind==='pra') return (pts==null||reb==null||ast==null)?null:pts+reb+ast;
   if (kind==='pr') return (pts==null||reb==null)?null:pts+reb;
   if (kind==='pa') return (pts==null||ast==null)?null:pts+ast;
-  if (kind==='ra') return (reb==null||ast==null)?null:reb+ast;
-  return pts;
+  if (kind==='ra'||kind==='ar') return (reb==null||ast==null)?null:reb+ast;
+  return null;
 }
 async function fetchEventBox(lg, eventId){
   const L = LMAP[lg]; if (!L || !eventId) return null;
@@ -11172,43 +11186,47 @@ async function fetchEventBox(lg, eventId){
   }catch(e){ return null; }
 }
 function athletesFromSummary(data){
-  const out = [];
+  // v43: ESPN lists a player once per stat group (NFL passing/rushing/receiving/defense, NHL skaters/goalies, MLB batting/pitching).
+  // Merge every group into one record per player. Labels (PTS) and keys (points) are both kept; a group-prefixed copy
+  // (passing.interceptions, p.strikeouts) keeps colliding names apart.
+  const out = [], byId = new Map();
   const box = data && (data.boxscore||data.boxScore);
   const teams = (box && (box.players||box.athletes||box.teams)) || [];
+  const rec = (id, name, teamId) => { const k = id || ('n:'+String(name||'').toLowerCase()); let r = byId.get(k); if (!r){ r = {id, name, teamId, stats:{}}; byId.set(k, r); out.push(r); } return r; };
   for (const t of teams){
-    const stats = t.statistics || t.stats || [];
+    const teamId = String((t.team&&t.team.id)||'');
     const aths = t.athletes || t.roster || [];
     if (aths.length){
+      const stats = t.statistics || t.stats || [];
       for (const a of aths){
         const id = String((a.athlete&&a.athlete.id)||a.id||'');
-        const st = {};
-        const keys = (a.stats && !Array.isArray(a.stats) ? a.stats : null) || {};
-        Object.assign(st, keys);
+        const r = rec(id, (a.athlete&&(a.athlete.displayName||a.athlete.fullName))||a.displayName, teamId);
+        if (a.stats && !Array.isArray(a.stats)) Object.assign(r.stats, a.stats);
         if (Array.isArray(a.stats)){
           const labels = (stats[0] && (stats[0].names||stats[0].keys||stats[0].labels)) || [];
-          labels.forEach((k,i)=>{ if (a.stats[i]!=null) st[k]=a.stats[i]; });
+          labels.forEach((k,i)=>{ if (a.stats[i]!=null) r.stats[k]=a.stats[i]; });
         }
-        out.push({id, name:(a.athlete&&(a.athlete.displayName||a.athlete.fullName))||a.displayName, stats:st});
       }
     }
-  }
-  // fallback: data.boxscore.players[].statistics[].athletes[]
-  if (!out.length && box && Array.isArray(box.players)){
-    for (const t of box.players){
-      for (const blk of (t.statistics||[])){
-        const names = blk.names||blk.keys||[];
-        for (const a of (blk.athletes||[])){
-          const st={};
-          (a.stats||[]).forEach((v,i)=>{ if (names[i]) st[names[i]]=v; });
-          out.push({id:String((a.athlete&&a.athlete.id)||a.id||''), name:(a.athlete&&a.athlete.displayName)||'', stats:st});
-        }
+    for (const blk of (Array.isArray(t.statistics) ? t.statistics : [])){
+      if (!blk || !Array.isArray(blk.athletes)) continue;
+      const names = blk.names||blk.labels||[], keys = blk.keys||[];
+      const pitch = keys.some(k=>/fullInnings/i.test(k)) || names.some(k=>k==='IP');
+      const pre = blk.name ? blk.name+'.' : (pitch ? 'p.' : (keys.includes('atBats') ? 'b.' : ''));
+      for (const a of blk.athletes){
+        const id = String((a.athlete&&a.athlete.id)||a.id||'');
+        const r = rec(id, (a.athlete&&a.athlete.displayName)||'', teamId);
+        (a.stats||[]).forEach((v,i)=>{
+          for (const k of [names[i], keys[i]]){ if (!k) continue; if (r.stats[k]==null) r.stats[k]=v; if (pre) r.stats[pre+k]=v; }
+        });
+        r.groups = (r.groups||[]).concat(blk.name||(pitch?'pitching':'batting'));
       }
     }
   }
   return out;
 }
 async function propLearnGrade(){
-  const now=Date.now(); let n=0;
+  const now=Date.now(); let n=0; const graded=[], del=[];
   const due = [...PROP_SNAPS.values()].filter(x=>x.y==null && x.t < now-3*3600000);
   // group by event
   const byEv = new Map();
@@ -11226,7 +11244,7 @@ async function propLearnGrade(){
     for (const x of list){
       const ath = aths.find(a=>a.id && String(a.id)===String(x.playerId)) || aths.find(a=>x.playerName && a.name && a.name.toLowerCase()===String(x.playerName).toLowerCase());
       if (!ath) continue;
-      const val = boxStat(ath, x.kind);
+      const val = boxStat(ath, x.kind, lg);
       if (val==null || x.line==null) continue;
       let res = 'push';
       if (val===x.line) res='push';
@@ -11234,14 +11252,14 @@ async function propLearnGrade(){
       else res = val<x.line?'win':'loss';
       x.y = res==='win'?1:res==='loss'?0:-1;
       x.res = res; x.actual=val; x.graded=now;
-      n++;
+      graded.push(x); n++;
     }
     done++;
     if (done%4===0) await new Promise(r=>setTimeout(r,0));
   }
   // prune old
-  for (const [k,x] of [...PROP_SNAPS]) if (x.t < now-150*86400000) PROP_SNAPS.delete(k);
-  if (n) boardSnapsSave('props');
+  for (const [k,x] of [...PROP_SNAPS]) if (x.t < now-150*86400000){ PROP_SNAPS.delete(k); del.push(k); }
+  if (n || del.length) boardSnapsSave('props', graded, del);
   return n;
 }
 function gradeGameLeg(leg){
@@ -11251,16 +11269,20 @@ function gradeGameLeg(leg){
   try{ return typeof btResult==='function' ? btResult(r, leg.mk||'ml', leg.side, leg.point!=null?leg.point:leg.line) : null; }catch(e){ return null; }
 }
 async function parlayLearnGrade(){
-  const now=Date.now(); let n=0;
+  const now=Date.now(); let n=0; const graded=[], del=[];
   const due=[...PARLAY_SNAPS.values()].filter(x=>x.y==null && x.t < now-3*3600000);
+  if (!due.length && !PARLAY_SNAPS.size) return 0;
+  // v43: index prop snapshots once (shadow candidates make this list long), then fall back to the tracked universe
+  const pidx = new Map();
+  for (const s0 of PROP_SNAPS.values()) if (s0.res) pidx.set(`${s0.eventId}|${s0.playerId}|${s0.kind}|${s0.side}|${s0.line}`, s0.res);
   for (const pl of due){
     const results=[];
     let pending=false;
     for (const leg of (pl.legs||[])){
       if (leg.type==='prop'){
-        const snap = [...PROP_SNAPS.values()].find(s=>s.eventId==leg.eventId && String(s.playerId)===String(leg.playerId) && s.kind===leg.kind && s.side===leg.side && s.line===leg.line);
-        if (snap && snap.res){ results.push(snap.res); continue; }
-        // try grading this one prop inline
+        let r0 = pidx.get(`${leg.eventId}|${leg.playerId}|${leg.kind}|${leg.side}|${leg.line}`);
+        if (!r0 && typeof uniPropLegResult==='function'){ try{ r0 = await uniPropLegResult(leg); }catch(e){} }
+        if (r0){ results.push(r0); continue; }
         pending = true;
       } else {
         const res = gradeGameLeg(leg);
@@ -11268,13 +11290,16 @@ async function parlayLearnGrade(){
         results.push(res);
       }
     }
-    if (pending || results.length!==(pl.legs||[]).length) continue;
+    if (pending || results.length!==(pl.legs||[]).length){
+      if (pl.t < now-4*86400000){ pl.y=-2; pl.res='ungradeable'; pl.graded=now; graded.push(pl); }
+      continue;
+    }
     let res='win';
-    for (const r of results){ if (r==='loss'){ res='loss'; break; } if (r==='push' && res!=='loss') res='push'; }
-    pl.y = res==='win'?1:res==='loss'?0:-1; pl.res=res; pl.graded=now; n++;
+    for (const r of results){ if (r==='loss'){ res='loss'; break; } if ((r==='push'||r==='void') && res!=='loss') res='push'; }
+    pl.y = res==='win'?1:res==='loss'?0:-1; pl.res=res; pl.graded=now; graded.push(pl); n++;
   }
-  for (const [k,x] of [...PARLAY_SNAPS]) if (x.t < now-150*86400000) PARLAY_SNAPS.delete(k);
-  if (n) boardSnapsSave('parlay');
+  for (const [k,x] of [...PARLAY_SNAPS]) if (x.t < now-(x.shown===0 ? 60 : 150)*86400000){ PARLAY_SNAPS.delete(k); del.push(k); }
+  if (graded.length || del.length) boardSnapsSave('parlay', graded, del);
   return n;
 }
 
@@ -11432,9 +11457,11 @@ async function propsLearnRetune(opts){
   learnState.busy=true;
   try{
     await propLearnGrade();
+    try{ if (typeof uniLoadLearn==='function') await uniLoadLearn(true); }catch(e){}
     const steps=[0.56,0.58,0.60,0.62,0.64,0.66];
     const cur = +boardS('props').sMinWin || 0.60;
-    const r = retuneThresholds([...PROP_SNAPS.values()], steps, cur);
+    // v43: the board's prop cards plus every graded DraftKings prop the tracked universe saw (same walk-forward, same 40 minimum)
+    const r = retuneThresholds(typeof propLearnRows==='function' ? propLearnRows() : [...PROP_SNAPS.values()], steps, cur);
     track.lastTune=Date.now(); track.lastTry=Date.now();
     const ver = track.cur||1;
     if (r.adopted){
@@ -11810,7 +11837,8 @@ async function boardLearnTick(){
   try{ await propLearnGrade(); }catch(e){ console.warn('prop grade', e); }
   try{ await parlayLearnGrade(); }catch(e){ console.warn('parlay grade', e); }
   const now=Date.now();
-  if (LEARN && LEARN.props && !LEARN.props.paused && boardLearnDue(LEARN.props, [...(typeof PROP_SNAPS!=='undefined'?PROP_SNAPS.values():[])]).due && now-(LEARN.props.lastTry||0)>20*3600000)
+  try{ if (typeof uniLoadLearn==='function') await uniLoadLearn(false); }catch(e){}
+  if (LEARN && LEARN.props && !LEARN.props.paused && boardLearnDue(LEARN.props, typeof propLearnRows==='function' ? propLearnRows() : [...(typeof PROP_SNAPS!=='undefined'?PROP_SNAPS.values():[])]).due && now-(LEARN.props.lastTry||0)>20*3600000)
     await propsLearnRetune({});
   if (LEARN && LEARN.parlay && !LEARN.parlay.paused && boardLearnDue(LEARN.parlay, [...(typeof PARLAY_SNAPS!=='undefined'?PARLAY_SNAPS.values():[])]).due && now-(LEARN.parlay.lastTry||0)>20*3600000)
     await parlayLearnRetune({});
@@ -12477,7 +12505,7 @@ try{
   if (qb || qt){ history.replaceState(null, '', location.pathname + (location.hash||'')); }
 }catch(e){}
 startRefreshWatch();
-learnInit().catch(e=>console.warn('learning', e)).then(()=>{ try{ if (typeof v42Init==='function') v42Init(); }catch(e){ console.warn('v42 init', e); } render(); refresh(); });
+learnInit().catch(e=>console.warn('learning', e)).then(()=>{ try{ if (typeof v42Init==='function') v42Init(); }catch(e){ console.warn('v42 init', e); } render(); refresh(); try{ if (typeof uniInit==='function') uniInit().then(()=>uniStart()).catch(e=>console.warn('universe', e)); }catch(e){ console.warn('universe', e); } });
 /* ================= ACCOUNT + CLOUD SYNC (Firebase Auth + Firestore) =================
    Loads the Firebase compat SDK only on http(s), so file:// and offline stay error-free.
    Synced per account at users/{uid}: settings, filters, bets, profitPeriod, profile, updatedAt. */
@@ -13816,7 +13844,7 @@ function v42AutoPresetProps(){
   const B = boardS('props'); const lo = B.sFavMin!=null ? +B.sFavMin : -150, hi = B.sDogMax!=null ? +B.sDogMax : 150;
   const skip = (typeof PROP_V2_SKIP_KINDS!=='undefined') ? PROP_V2_SKIP_KINDS : {};
   const unit = +S.unit||25;
-  const rows = [...PROP_SNAPS.values()].filter(x=>(x.y===0||x.y===1) && x.p!=null && x.price!=null && x.price>=lo && x.price<=hi && !((skip[x.league]||[]).includes(x.kind))).sort((a,b)=>a.t-b.t);
+  const rows = (typeof propLearnRows==='function' ? propLearnRows() : [...PROP_SNAPS.values()]).filter(x=>(x.y===0||x.y===1) && x.p!=null && x.price!=null && x.price>=lo && x.price<=hi && !((skip[x.league]||[]).includes(x.kind))).sort((a,b)=>a.t-b.t);
   const A = AUTO();
   if (rows.length < 40){ A.boards.props.presetWhy = `Not enough graded props to compare presets yet (${rows.length}, needs 40). Staying on the tested default, Super picky.`; A.boards.props.presetChecked = Date.now(); v42Save(); return null; }
   const holdN = Math.max(20, Math.round(rows.length*0.3)); const cut = rows[rows.length-holdN].t;
@@ -13930,7 +13958,7 @@ function v42PruneBoard(board){
   const tr = LEARN[board]; if (!tr) return null; tr.autoOff = tr.autoOff || {};
   const snaps = board==='props' ? PROP_SNAPS : PARLAY_SNAPS;
   const unit = +S.unit||25; const now = Date.now(); const rc = now - 45*86400e3;
-  const rows = [...snaps.values()].filter(x=>(x.y===0||x.y===1) && (x.sg===1 || (x.sg==null && x.verdict==='good')));
+  const rows = (board==='props' && typeof propLearnRows==='function' ? propLearnRows() : [...snaps.values()]).filter(x=>(x.y===0||x.y===1) && (x.sg===1 || (x.sg==null && x.verdict==='good')));
   const groups = new Map(); const add = (k, x) => { if (!k) return; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); };
   for (const x of rows){
     if (board==='props'){ add(x.league, x); if (x.kind) add('mk:'+x.kind, x); }
@@ -14120,6 +14148,786 @@ function v42FilterPickHTML(board){
       learnInit = async function(){ const r = await orig2.apply(this, arguments); try{ v42Init(); }catch(e){ console.warn('v42 init', e); } return r; };
     }
   }catch(e){ console.warn('v42 hooks', e); }
+})();
+/* ================= v43: TRACKED UNIVERSE — every market, every side, every verdict, graded =================
+   Free sources only (no Odds API credits):
+   - Games: every game in every supported league from ESPN scoreboards (DraftKings moneyline both sides, spread both
+     sides, total over/under), plus every side of every market the board priced. Board games carry the model's verdict;
+     games the board did not load (sports off in Settings) are tracked as "no-call".
+   - Props: every player market in ESPN's free DraftKings prop feed (main lines + "milestone" alternate lines + yes/no
+     scorer props), Over and Under, for every NBA/WNBA/NHL/NFL/MLB game in the next 36 hours.
+   - Polymarket: every game market (moneyline, every spread and total line, team totals, halves and quarters) and every
+     player O/U market, matched to an ESPN game.
+   - Kalshi: moneylines, when the board already has Kalshi prices (Kalshi blocks browsers without a relay).
+   Storage: open rows in IndexedDB "uni" (and memory); graded rows move to "uniDone" (kept 30 days, used by the learners)
+   and are counted into daily summary rows in "uniSum" (kept 120 days). Snapshot writes are throttled to once per market
+   per 15 minutes, plus one at the board's lock time and one near the start. */
+const UNI_THROTTLE = 15*60000, UNI_HORIZON = 36*3600000, UNI_RAW_DAYS = 30, UNI_SUM_DAYS = 120, UNI_TICK_MS = 5*60000;
+const UNI_LEARN_CAP = 40000, UNI_EXPIRE_DAYS = 4;
+const UNI = new Map(), UNI_SUM = new Map(), UNI_DIRTY = new Set(), UNI_SUM_DIRTY = new Set(), UNI_GAMES = new Map();
+let UNI_OUT = [];
+const UNI_ST = {ready:false, busy:false, idb:null, ticks:0, lastTickMs:0, last:{}, evAt:{}, notTracked:{}, errs:[], created:0, writes:0, pm:{events:0, markets:0, mapped:0, unmapped:0}, dk:{events:0, recs:0}, sb:{leagues:0, games:0}};
+let UNI_LEARN = {props:[], at:0};
+const UNI_BOX = new Map(), UNI_FIN = new Map();
+const uniDay = ts => ymd(new Date(ts));
+const uniV = r => (r.lk ? r.lk.v : r.v) || 'nocall';
+const uniPrice = r => r.lk && r.lk.price!=null ? r.lk.price : r.price;
+const uniP = r => r.lk && r.lk.p!=null ? r.lk.p : r.p;
+function uniErr(where, e){ UNI_ST.errs.unshift({at:Date.now(), where, msg:String(e&&e.message||e)}); UNI_ST.errs = UNI_ST.errs.slice(0, 20); }
+function uniNT(k){ UNI_ST.notTracked[k] = (UNI_ST.notTracked[k]||0) + 1; }
+
+/* ---------- snapshot (throttled upsert) ---------- */
+function uniUpsert(b, src, id, base, snap){
+  const now = Date.now();
+  let r = UNI.get(id);
+  if (!r){
+    if (!(base.t > now - 5*60000)) return null;               // never start tracking a game that already began
+    if (base.t - now > UNI_HORIZON + 6*3600000) return null;
+    r = Object.assign({i:id, b, src, first:now, fd:uniDay(now), at:0, y:null}, base);
+    UNI.set(id, r); UNI_ST.created++;
+  }
+  if (r.y!=null || base.t <= now) return r;                      // frozen once the game starts
+  const mins = Math.round((base.t - now)/60000);
+  const lead = (typeof lockLeadMins==='function') ? lockLeadMins(b==='props' ? 'props' : 'games') : 30;
+  const lockNow = mins <= lead && !r.lk, closeNow = mins <= 10 && !r.cl;
+  if (r.at && now - r.at < UNI_THROTTLE && !lockNow && !closeNow){
+    if (snap.shown && !r.shown){ r.shown = 1; UNI_DIRTY.add(id); }
+    return r;
+  }
+  r.at = now; r.price = snap.price; r.v = snap.v || 'nocall'; r.p = snap.p!=null ? Math.round(snap.p*10000)/10000 : null; r.mins = mins;
+  if (snap.shown) r.shown = 1;
+  if (snap.X) r.X = snap.X;
+  if (lockNow) r.lk = {price:r.price, v:r.v, p:r.p, at:now};
+  if (closeNow) r.cl = {price:r.price, v:r.v, p:r.p, at:now};
+  UNI_DIRTY.add(id);
+  return r;
+}
+
+/* ---------- games known to the universe (board + ESPN scoreboards) ---------- */
+function uniTeam(T){ return T ? {id:String(T.id||''), name:T.name||'', short:T.short||'', nick:T.nick||'', loc:T.loc||''} : {}; }
+function uniNoteGame(o){ const k = String(o.ev); const old = UNI_GAMES.get(k); UNI_GAMES.set(k, Object.assign(old||{}, o)); }
+function uniBoardGames(){
+  for (const g of (typeof games!=='undefined' ? games : [])||[]){
+    if (!g || !g.eventId || !g.start || g.pickOnly) continue;
+    uniNoteGame({l:g.league, ev:String(g.eventId), t:+g.start, home:uniTeam(g.home), away:uniTeam(g.away), state:g.state, board:1, g});
+  }
+}
+const UNI_AM = x => { if (x==null || x==='') return null; const s = String(x).trim().toUpperCase(); if (s==='EVEN' || s==='EV') return 100; const n = parseFloat(s.replace(/^[OU]/,'')); return isFinite(n) && Math.abs(n)>=100 ? n : null; };
+const UNI_PT = x => { if (x==null || x==='') return null; const n = parseFloat(String(x).replace(/^[ou]/i,'')); return isFinite(n) ? n : null; };
+function uniSbOdds(c){
+  const o = (c.odds||[]).find(x=>x && x.provider && String(x.provider.id)==='100') || (c.odds||[])[0];
+  if (!o) return null;
+  const cur = x => x && (x.close || x.current || x.open) || {};
+  const out = {};
+  const mlH = UNI_AM(cur(o.moneyline&&o.moneyline.home).odds) ?? UNI_AM(o.homeTeamOdds&&o.homeTeamOdds.moneyLine);
+  const mlA = UNI_AM(cur(o.moneyline&&o.moneyline.away).odds) ?? UNI_AM(o.awayTeamOdds&&o.awayTeamOdds.moneyLine);
+  if (mlH!=null && mlA!=null){ out.ml = {home:mlH, away:mlA}; const dr = UNI_AM(o.drawOdds && (o.drawOdds.moneyLine)); if (dr!=null) out.ml.draw = dr; }
+  const sH = cur(o.pointSpread&&o.pointSpread.home), sA = cur(o.pointSpread&&o.pointSpread.away);
+  if (UNI_PT(sH.line)!=null && UNI_AM(sH.odds)!=null && UNI_AM(sA.odds)!=null) out.spread = {home:[UNI_PT(sH.line), UNI_AM(sH.odds)], away:[UNI_PT(sA.line)!=null?UNI_PT(sA.line):-UNI_PT(sH.line), UNI_AM(sA.odds)]};
+  const tO = cur(o.total&&o.total.over), tU = cur(o.total&&o.total.under);
+  if (UNI_PT(tO.line)!=null && UNI_AM(tO.odds)!=null && UNI_AM(tU.odds)!=null) out.total = {over:[UNI_PT(tO.line), UNI_AM(tO.odds)], under:[UNI_PT(tU.line)!=null?UNI_PT(tU.line):UNI_PT(tO.line), UNI_AM(tU.odds)]};
+  else if (o.overUnder!=null && UNI_AM(o.overOdds)!=null && UNI_AM(o.underOdds)!=null) out.total = {over:[+o.overUnder, UNI_AM(o.overOdds)], under:[+o.overUnder, UNI_AM(o.underOdds)]};
+  return (out.ml||out.spread||out.total) ? out : null;
+}
+async function uniScanScoreboards(){
+  const now = Date.now(); if (now - (UNI_ST.last.sb||0) < UNI_THROTTLE) return 0; UNI_ST.last.sb = now;
+  const days = [new Date(now), new Date(now+86400000)];
+  const tasks = [];
+  for (const L of LEAGUES){ if (L.kind!=='team') continue; for (const d of days) tasks.push(async()=>{ const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${ymd(d)}${L.q?'&'+L.q:''}`, 20000); if (!r.ok || !r.data) throw new Error(L.id+' HTTP '+r.status); return {L, data:r.data}; }); }
+  const res = await pool(tasks, 4);
+  let n = 0; const lgs = new Set();
+  for (const x of res){
+    if (!x || x.error){ if (x && x.error) uniErr('scoreboard', x.error); continue; }
+    lgs.add(x.L.id);
+    for (const ev of (x.data.events||[])){
+      const c = ev.competitions && ev.competitions[0]; if (!c || !Array.isArray(c.competitors)) continue;
+      const H = c.competitors.find(z=>z.homeAway==='home'), A = c.competitors.find(z=>z.homeAway==='away'); if (!H || !A) continue;
+      const t = Date.parse(c.date || ev.date); if (!isFinite(t)) continue;
+      const tm = z => { const T = z.team||{}; return {id:String(T.id||''), name:T.displayName||T.name||'', short:T.abbreviation||T.shortDisplayName||'', nick:T.name||T.shortDisplayName||'', loc:T.location||''}; };
+      const st = (c.status && c.status.type && c.status.type.state) || 'pre';
+      uniNoteGame({l:x.L.id, ev:String(ev.id), t, home:tm(H), away:tm(A), state:st, sbOdds:uniSbOdds(c)});
+      n++;
+    }
+  }
+  UNI_ST.sb = {leagues:lgs.size, games:n, at:now};
+  return n;
+}
+
+/* ---------- 1. games: every side of every market ---------- */
+function uniFeatX(g, side){ try{ if (typeof featVals!=='function') return null; const X = featVals(g, side); if (!X) return null; const o = {}; for (const k in X){ const v = X[k]; if (v!=null && isFinite(v)) o[k] = Math.round(v*1000)/1000; } return o; }catch(e){ return null; } }
+function uniCaptureGames(){
+  const now = Date.now(); let n = 0;
+  const onBoard = new Set();
+  for (const g of (typeof games!=='undefined' ? games : [])||[]){
+    if (!g || !g.eventId || !g.start || g.pickOnly) continue;
+    const t = +g.start; if (t - now > UNI_HORIZON || t < now - 5*60000) continue;
+    onBoard.add(String(g.eventId));
+    for (const mk of ['ml','spread','total']){
+      const A = g.analysis && g.analysis[mk]; if (!A || !A.sides) continue;
+      const play = g.verdicts && g.verdicts[mk];
+      for (const s in A.sides){
+        const sd = A.sides[s]; if (!sd || !sd.best || sd.best.price==null) continue;
+        const pt = mk==='ml' ? null : sd.point;
+        let v, p = sd.nv!=null ? sd.nv : null, shown = 0;
+        if (play && play.side===s){
+          v = play.verdict==='started' ? (play.base||'avoid') : play.verdict; if (play.est!=null) p = play.est; shown = v==='good'||v==='watch' ? 1 : 0;
+        } else { const jv = sd.judge && sd.judge.verdict; v = jv==='good' ? 'watch' : jv==='watch' ? 'watch' : 'avoid'; }
+        if (v==='none' || v==='started' || !v) v = 'avoid';
+        if (typeof isFinalPulled==='function' && play && play.side===s && isFinalPulled(play.id)) v = 'avoid';
+        const id = `g:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`;
+        if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
+      }
+    }
+    // Kalshi moneylines (only when the board already fetched them; Kalshi blocks browsers without a relay)
+    if (g.kalshi && g.kalshi.ml){
+      for (const s in g.kalshi.ml){
+        const q = g.kalshi.ml[s]; if (!q || !(q.ask>0 && q.ask<1)) continue;
+        const cost = typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask; const am = decToAm(1/cost);
+        const rowSb = UNI.get(`g:${g.eventId}:ml:${s}:`);
+        if (uniUpsert('games', 'kalshi', `k:${g.eventId}:ml:${s}`, {l:g.league, ev:String(g.eventId), t, mk:'ml', side:s, pt:null, game:`${g.away.short} @ ${g.home.short}`, book:'Kalshi'}, {price:am, v: rowSb ? rowSb.v : 'nocall', p: rowSb ? rowSb.p : null})) n++;
+      }
+    }
+  }
+  // every other game (sports off in Settings, or outside the board window): DraftKings lines from ESPN, no model call
+  for (const gm of UNI_GAMES.values()){
+    if (!gm.sbOdds || onBoard.has(gm.ev) || gm.state!=='pre') continue;
+    if (gm.t - now > UNI_HORIZON || gm.t < now - 5*60000) continue;
+    const o = gm.sbOdds, game = `${gm.away.short||'Away'} @ ${gm.home.short||'Home'}`;
+    const put = (mk, s, pt, price) => { if (price==null) return; if (uniUpsert('games', 'sb', `g:${gm.ev}:${mk}:${s}:${pt==null?'':pt}`, {l:gm.l, ev:gm.ev, t:gm.t, mk, side:s, pt, game, book:'DraftKings'}, {price, v:'nocall', p:null})) n++; };
+    if (o.ml) for (const s in o.ml) put('ml', s, null, o.ml[s]);
+    if (o.spread) for (const s in o.spread) put('spread', s, o.spread[s][0], o.spread[s][1]);
+    if (o.total) for (const s in o.total) put('total', s, o.total[s][0], o.total[s][1]);
+  }
+  return n;
+}
+
+/* ---------- 2. props: every DraftKings prop in ESPN's free feed, Over and Under ---------- */
+const UNI_MODEL_KINDS = new Set(['pts','reb','ast','threes','pra','pr','pa','ar','stl','blk','tov','sog','saves','goals','hpts','pass_yds','rush_yds','rec_yds','rec']);
+const UNI_DK_BASE = {
+  basketball: {'Points':'pts','Rebounds':'reb','Assists':'ast','3-Point Field Goals':'threes','Made Threes':'threes','Points, Rebounds, and Assists':'pra','Points + Assists + Rebounds':'pra','Points + Rebounds + Assists':'pra',
+    'Points and Rebounds':'pr','Points + Rebounds':'pr','Points and Assists':'pa','Points + Assists':'pa','Assists and Rebounds':'ar','Rebounds and Assists':'ar','Assists + Rebounds':'ar','Rebounds + Assists':'ar',
+    'Steals':'stl','Blocks':'blk','Turnovers':'tov','Steals + Blocks':'sb','Steals and Blocks':'sb'},
+  hockey: {'Points':'pts','Hockey Points':'pts','Assists':'ast','Goals':'goals','Shots on Goal':'sog','Saves':'saves','Goalkeeper Saves':'saves','Goalie Saves':'saves','Blocked Shots':'hblk','Powerplay Points':'ppp','Power Play Points':'ppp'},
+  football: {'Passing Yards':'pass_yds','Rushing Yards':'rush_yds','Receiving Yards':'rec_yds','Receptions':'rec','Passing Touchdowns':'pass_td','Rushing Touchdowns':'rush_td','Receiving Touchdowns':'rec_td',
+    'Pass Completions':'pass_cmp','Passing Attempts':'pass_att','Passing Interceptions':'pass_int','Carries':'rush_att','Rushing Attempts':'rush_att','Passing Plus Rushing Yards':'pass_rush_yds','Rushing Plus Receiving Yards':'rush_rec_yds',
+    'Tackles':'tkl','Assists':'tkl_ast','Tackles Plus Assists':'tkl_tot','Sacks':'sacks','Kicking Points':'kick_pts','Field Goals Made':'fgm','Extra Points Made':'xpm'},
+  baseball: {'Hits':'hits','Runs':'runs','Runs Scored':'runs','RBIs':'rbi','Home Runs':'hr','Walks':'bb','Stolen Bases':'sbase','Strikeouts':'p_k','Pitcher Strikeouts':'p_k','Strikeouts Thrown':'p_k','Outs Recorded':'p_outs','Pitching Outs':'p_outs','Earned Runs Allowed':'p_er','Hits Allowed':'p_hits','Walks Allowed':'p_bb','Hits + Runs + RBIs':'hrr','Hits Runs and RBIs':'hrr','Bases':'tb','Total Bases':'tb'}
+};
+const UNI_DK_YES = {
+  'To Record a Double Double':['dd',0.5], 'To Record a Triple Double':['tdbl',0.5], 'Anytime Goalscorer':['goals',0.5], 'To Score 2+ Goals':['goals',1.5], 'To Score 3+ Goals':['goals',2.5],
+  'Anytime Touchdown Scorer':['anytd',0.5], 'Player to score 2 or more touchdowns':['anytd',1.5], 'Player to score 3 or more touchdowns':['anytd',2.5], 'To Hit a Home Run':['hr',0.5], 'To Record a Hit':['hits',0.5], 'To Record an RBI':['rbi',0.5], 'To Record a Stolen Base':['sbase',0.5]
+};
+function uniDkType(lg, name){
+  const sport = (PROP_SPORTS[lg]||{}).espnSport || '';
+  let nm = String(name||'').replace(/\s*\(incl\.? overtime\)\s*/i,'').trim();
+  if (UNI_DK_YES[nm]) return {kind:UNI_DK_YES[nm][0], line:UNI_DK_YES[nm][1], yes:true};
+  if (/(1st|2nd|3rd|4th)\s+(quarter|half|period|inning)|first\s+(quarter|half|period|five)|^1st |^2nd |^3rd |^4th | - 1st| - 2nd/i.test(nm)) return {kind:'other:'+nm, period:true};
+  let mile = false;
+  if (/ Milestones$/i.test(nm)){ mile = true; nm = nm.replace(/ Milestones$/i,''); }
+  nm = nm.replace(/^Total /i,'');
+  const map = UNI_DK_BASE[sport] || {};
+  const kind = map[nm] || null;
+  if (kind) return {kind, mile};
+  return {kind:'other:'+String(name||'').slice(0,40), mile};
+}
+async function uniPropRecs(gm){
+  const meta = PROP_SPORTS[gm.l]; if (!meta) return [];
+  const ck = 'pb:'+gm.ev, c0 = propBoardCache[ck];
+  if (c0 && Date.now()-c0.t < 5*60000 && (c0.full || (c0.items||[]).length < 800)) return c0.items;
+  const r = await fetchJSON(`https://sports.core.api.espn.com/v2/sports/${meta.espnSport}/leagues/${meta.espnLeague}/events/${gm.ev}/competitions/${gm.ev}/odds`, 20000);
+  if (!r.ok || !r.data) throw new Error('prop odds HTTP '+(r.status||''));
+  let items = r.data.items || [], href = '';
+  for (const it of items){
+    if (it && it.propBets && it.propBets.$ref){ href = String(it.propBets.$ref).replace('http://','https://'); break; }
+    if (it && it.$ref && /odds\/100\b/.test(it.$ref)){ const d = await fetchJSON(String(it.$ref).replace('http://','https://'), 15000); if (d.ok && d.data && d.data.propBets && d.data.propBets.$ref){ href = String(d.data.propBets.$ref).replace('http://','https://'); break; } }
+  }
+  if (!href) return [];
+  const recs = []; let page = 1, pages = 1;
+  while (page <= pages && page <= 20){
+    const pr = await fetchJSON(`${href}${href.includes('?')?'&':'?'}limit=100&page=${page}`, 20000);
+    if (!pr.ok || !pr.data) break;
+    pages = Math.max(1, +pr.data.pageCount || 1);
+    for (const x of (pr.data.items||[])){
+      // keep only what the universe needs (the raw records are large)
+      recs.push({athlete:x.athlete?{$ref:x.athlete.$ref}:null, type:x.type?{name:x.type.name}:null, odds:x.odds?{american:x.odds.american?{value:x.odds.american.value}:null, total:x.odds.total?{value:x.odds.total.value}:null}:null, current:x.current?{target:x.current.target}:null});
+    }
+    page++;
+  }
+  // the board reads this cache too; it gets the complete list (it only keeps the stats it shows)
+  if (gm.board) propBoardCache[ck] = {t:Date.now(), items:recs, full:true};
+  return recs;
+}
+function uniPairDk(recs, gm){
+  const groups = new Map(), out = [];
+  for (const rec of recs||[]){
+    const aid = athleteIdFromRef(rec.athlete && rec.athlete.$ref);
+    const typ = (rec.type && rec.type.name) || '';
+    if (!aid){ uniNT('DraftKings game-level extras (team totals, periods; no side labels in the feed)'); continue; }
+    const T = uniDkType(gm.l, typ);
+    const price = rec.odds && rec.odds.american && rec.odds.american.value!=null ? +rec.odds.american.value : null;
+    if (price==null || !isFinite(price)) continue;
+    let line = null;
+    if (T.yes) line = T.line;
+    else {
+      const tv = rec.odds && rec.odds.total && rec.odds.total.value!=null ? String(rec.odds.total.value) : (rec.current && rec.current.target && rec.current.target.value!=null ? String(rec.current.target.value) : null);
+      if (tv==null) continue;
+      if (/\+$/.test(tv) || T.mile){ const n = parseFloat(tv); if (!isFinite(n)) continue; line = /\+$/.test(tv) ? n - 0.5 : n; T.mile = true; }
+      else { line = parseFloat(tv); if (!isFinite(line)) continue; }
+    }
+    if (T.yes || T.mile){ out.push({pid:aid, kind:T.kind, line, side:'over', price, alt:T.mile?1:0, yes:T.yes?1:0}); continue; }
+    const k = aid+'|'+T.kind+'|'+line;
+    if (!groups.has(k)) groups.set(k, {aid, kind:T.kind, line, prices:[]});
+    groups.get(k).prices.push(price);
+  }
+  for (const g0 of groups.values()){
+    out.push({pid:g0.aid, kind:g0.kind, line:g0.line, side:'over', price:g0.prices[0]});
+    if (g0.prices.length>1) out.push({pid:g0.aid, kind:g0.kind, line:g0.line, side:'under', price:g0.prices[1]});
+  }
+  // same player/stat/line can appear as a main line and a milestone; keep one row per side
+  const seen = new Set();
+  return out.filter(x=>{ const k = `${x.pid}|${x.kind}|${x.line}|${x.side}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+function uniGameObj(gm){ return gm.g || {league:gm.l, eventId:gm.ev, start:new Date(gm.t), home:gm.home||{}, away:gm.away||{}}; }
+function uniPropModel(gm, pid, kind, line, side, price){
+  if (!UNI_MODEL_KINDS.has(kind) || !pid) return {v:'nocall', p:null, need:false};
+  const c = propLogCache[gm.l+':'+pid];
+  if (!c || !Array.isArray(c.rows)) return {v:'nocall', p:null, need:true};
+  if (!c.rows.length) return {v:'nocall', p:null, need:false};
+  try{
+    const a = propAthleteCache[gm.l+':'+pid] || {};
+    const home = a.teamId && gm.home && String(gm.home.id)===String(a.teamId);
+    const g = uniGameObj(gm);
+    const feat = propFeatures(c.rows, kind, line, g, home);
+    const est = estimateProp(feat);
+    if (est.pOver==null) return {v:'nocall', p:null, need:false};
+    const gates = strictPropGates(est.pOver, price, feat, side, {league:gm.l, kind, g});
+    return {v:gates.verdict, p: side==='under' ? 1-est.pOver : est.pOver, need:false};
+  }catch(e){ return {v:'nocall', p:null, need:false}; }
+}
+async function uniCaptureProps(){
+  const now = Date.now(); let n = 0;
+  const board = new Map(); for (const p of (typeof props!=='undefined' ? props : [])||[]) if (p && p.id) board.set(p.id, p);
+  const due = [...UNI_GAMES.values()].filter(gm=>PROP_SPORTS[gm.l] && gm.state==='pre' && gm.t > now && gm.t - now <= UNI_HORIZON)
+    .filter(gm=>{ const last = UNI_ST.evAt[gm.ev]||0; const lead = (typeof lockLeadMins==='function'?lockLeadMins('props'):30); const until = gm.t - now;
+      // be gentle with ESPN: hourly when the game is 6h+ away, every 30m inside 6h, every 10m around lock time
+      const every = until <= (lead+20)*60000 ? 10*60000 : until <= 6*3600000 ? 2*UNI_THROTTLE : 4*UNI_THROTTLE;
+      return now - last >= every; })
+    .sort((a,b)=>(UNI_ST.evAt[a.ev]||0)-(UNI_ST.evAt[b.ev]||0) || a.t-b.t).slice(0, 8);
+  const needAth = new Set(), needLog = new Set();
+  await pool(due.map(gm=>async()=>{
+    try{
+      const recs = await uniPropRecs(gm); UNI_ST.evAt[gm.ev] = Date.now();
+      UNI_ST.dk.events++; UNI_ST.dk.recs += recs.length;
+      const rows = uniPairDk(recs, gm);
+      for (const x of rows){
+        const id = `prop:${gm.ev}:${x.pid}:${x.kind}:${x.side}:${x.line}`;
+        const bp = board.get(id);
+        let m;
+        if (bp && bp.verdict){ m = {v:bp.verdict, p:bp.p}; }
+        else m = uniPropModel(gm, x.pid, x.kind, x.line, x.side, x.price);
+        if (m.need) needLog.add(gm.l+':'+x.pid);
+        const a = propAthleteCache[gm.l+':'+x.pid];
+        if (!a || !a.name) needAth.add(gm.l+':'+x.pid);
+        if (uniUpsert('props', 'sb', id, {l:gm.l, ev:gm.ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {price:x.price, v:m.v, p:m.p, shown: bp && (bp.verdict==='good'||bp.verdict==='watch') ? 1 : 0})) n++;
+      }
+    }catch(e){ UNI_ST.evAt[gm.ev] = Date.now(); uniErr('props '+gm.ev, e); }
+  }), 2);
+  // names (cached for good) and game logs (for the model's estimate), a few per tick so the feed is never hammered
+  const athList = [...needAth].slice(0, 40);
+  if (athList.length){
+    await pool(athList.map(k=>async()=>{ const [lg, id] = k.split(':'); try{ await fetchEspnAthlete(lg, id); }catch(e){} }), 4);
+    try{ saveJSON('bl_prop_athletes', propAthleteCache); }catch(e){}
+    for (const r of UNI.values()) if (r.b==='props' && !r.pn && r.pid){ const a = propAthleteCache[r.l+':'+r.pid]; if (a && a.name) r.pn = a.name; }
+  }
+  const logList = [...needLog].slice(0, 30);
+  if (logList.length) await pool(logList.map(k=>async()=>{ const [lg, id] = k.split(':'); try{ await loadPropGamelog(lg, id); }catch(e){ propLogCache[k] = {t:Date.now(), rows:[]}; } }), 3);
+  return n;
+}
+
+/* ---------- 3. Polymarket: every sports market that maps to a game ---------- */
+const UNI_PM_SERIES = {nba:10345, nhl:10346, nfl:12185, ncaaf:12756, ncaab:10470, wnba:10105, mlb:3, mls:10189, epl:10188, ucl:10204, laliga:10193, seriea:10203, bund:10194};
+const UNI_PM_PROP = {points:'pts', rebounds:'reb', assists:'ast', threes:'threes', steals:'stl', blocks:'blk', turnovers:'tov', receiving_yards:'rec_yds', rushing_yards:'rush_yds', passing_yards:'pass_yds', receptions:'rec', passing_touchdowns:'pass_td', passing_attempts:'pass_att', passing_completions:'pass_cmp', longest_reception:'rec_long', shots_on_goal:'sog', saves:'saves', goals:'goals', soccer_player_goals:'sgoals', soccer_player_goals_plus_assists:'sga', soccer_player_shots_on_target:'ssot', soccer_player_assists:'sast'};
+const UNI_PM_YES = {anytime_touchdowns:['anytd',0.5], two_plus_touchdowns:['anytd',1.5], soccer_anytime_goalscorer:['sgoals',0.5]};
+const UNI_PM_GAME = /^(first_half_|second_half_|q[1-4]_|soccer_first_half_|soccer_)?(moneyline|spreads|totals|team_totals)$/;
+function uniPmMatch(lg, base, ev){
+  const toks = String(base||'').split('-'); const a = (toks[1]||'').toLowerCase(), h = (toks[2]||'').toLowerCase();
+  const st = Date.parse(ev.startTime || ev.endDate || '');
+  const fix = x => (typeof KALSHI_ABBR_FIX!=='undefined' && KALSHI_ABBR_FIX[x]) || x;
+  const N = s => (typeof norm==='function' ? norm(s) : String(s||'').toLowerCase());
+  const title = N(ev.title||'');
+  let best = null, bs = 0;
+  for (const gm of UNI_GAMES.values()){
+    if (gm.l!==lg || (isFinite(st) && Math.abs(gm.t - st) > 4*3600000)) continue;
+    let sc = 0;
+    const sa = fix(String(gm.away.short||'').toLowerCase()), sh = fix(String(gm.home.short||'').toLowerCase());
+    if (sa && (sa===fix(a) || sa.indexOf(a)===0 || a.indexOf(sa)===0)) sc += 2;
+    if (sh && (sh===fix(h) || sh.indexOf(h)===0 || h.indexOf(sh)===0)) sc += 2;
+    for (const T of [gm.away, gm.home]) if ([T.nick, T.loc, T.name].filter(Boolean).some(x=>{ const n = N(x); return n.length>2 && title.includes(n); })) sc += 1.5;
+    if (sc > bs){ bs = sc; best = gm; }
+  }
+  return bs >= 3 ? best : null;
+}
+function uniPmSide(gm, outcome){
+  const N = s => (typeof norm==='function' ? norm(s) : String(s||'').toLowerCase()); const o = N(outcome);
+  const hit = T => [T.nick, T.loc, T.name, T.short].filter(Boolean).map(N).some(x=>x && (x===o || (o.length>3 && x.includes(o)) || (x.length>3 && o.includes(x))));
+  const h = hit(gm.home||{}), a = hit(gm.away||{});
+  return h && !a ? 'home' : a && !h ? 'away' : null;
+}
+function uniPmAm(c, rate){ if (!(c>0 && c<1)) return null; const cost = typeof pmCost==='function' ? pmCost(c, rate) : c; return cost>0 && cost<1 ? decToAm(1/cost) : null; }
+async function uniCapturePolymarket(){
+  const now = Date.now(); if (now - (UNI_ST.last.pm||0) < UNI_THROTTLE) return 0; UNI_ST.last.pm = now;
+  const iso = new Date(now - 6*3600000).toISOString().replace(/\.\d+Z$/,'Z');
+  const lgs = Object.keys(UNI_PM_SERIES).filter(lg=>[...UNI_GAMES.values()].some(g=>g.l===lg && g.t>now && g.t-now<=UNI_HORIZON));
+  let n = 0;
+  for (const lg of lgs){
+    try{
+      for (let off = 0; off < 60; off += 5){
+        const r = await fetchJSON(`https://gamma-api.polymarket.com/events?series_id=${UNI_PM_SERIES[lg]}&closed=false&end_date_min=${iso}&limit=5&offset=${off}&order=startTime&ascending=true`, 20000);
+        if (!r.ok || !Array.isArray(r.data)) throw new Error('Polymarket HTTP '+r.status);
+        let past = false;
+        for (const ev of r.data){
+          const st = Date.parse(ev.startTime||''); if (isFinite(st) && st - now > UNI_HORIZON){ past = true; continue; }
+          UNI_ST.pm.events++;
+          const base = String(ev.slug||'').split('-').slice(0, 6).join('-');
+          const gm = uniPmMatch(lg, base, ev);
+          const mkts = (ev.markets||[]);
+          UNI_ST.pm.markets += mkts.length;
+          if (!gm){ UNI_ST.pm.unmapped += mkts.length; continue; }
+          UNI_ST.pm.mapped += mkts.length;
+          for (const m of mkts) n += uniPmMarket(gm, m);
+        }
+        if (past || r.data.length < 5) break;
+        await new Promise(res=>setTimeout(res, 50));
+      }
+    }catch(e){ uniErr('polymarket '+lg, e); }
+  }
+  return n;
+}
+function uniPmMarket(gm, m){
+  if (!m || m.closed || m.acceptingOrders===false) return 0;
+  const type = String(m.sportsMarketType||''); const outs = safeArr(m.outcomes); const pr = safeArr(m.outcomePrices).map(Number);
+  if (outs.length!==2){ uniNT('Polymarket '+(type||'other')+' (not two-sided)'); return 0; }
+  const rate = m.feesEnabled===false ? 0 : (m.feeSchedule && m.feeSchedule.rate!=null ? +m.feeSchedule.rate : null);
+  const ask0 = m.bestAsk!=null && +m.bestAsk>0 ? +m.bestAsk : pr[0], ask1 = m.bestBid!=null && +m.bestBid>0 ? 1-(+m.bestBid) : pr[1];
+  const am = [uniPmAm(ask0, rate), uniPmAm(ask1, rate)];
+  const slug = String(m.slug||''); const line = m.line!=null && m.line!=='' ? +m.line : null;
+  let n = 0;
+  const game = `${gm.away.short||'Away'} @ ${gm.home.short||'Home'}`;
+  // player props: "Name: Points O/U 24.5" (Yes/No or Over/Under) and yes/no scorer props ("Name: Anytime Touchdown")
+  const pq = /^(.+?):\s*(.+?)\s+O\/U\s+(-?[\d.]+)/i.exec(String(m.question||''));
+  const yesT = UNI_PM_YES[type] || (type==='soccer_player_goals' && line!=null ? ['sgoals', line] : null);
+  const isGame = UNI_PM_GAME.test(type);
+  if (!isGame && ((pq && /^(yes|over)$/i.test(outs[0]) && !/\bvs\.?\b/i.test(pq[1])) || (yesT && /^yes$/i.test(outs[0])))){
+    const kind = yesT ? yesT[0] : (UNI_PM_PROP[type] || ('other:'+type));
+    const ln = yesT ? +yesT[1] : (line!=null ? line : +pq[3]);
+    const name = String(m.question||'').split(':')[0].trim();
+    const pid = uniPidByName(gm, name);
+    [['over',0],['under',1]].forEach(([side, i])=>{
+      if (am[i]==null) return;
+      const mm = pid ? uniPropModel(gm, pid, kind, ln, side, am[i]) : {v:'nocall', p:null};
+      if (uniUpsert('props', 'pm', `pm:${m.id}:${side}`, {l:gm.l, ev:gm.ev, t:gm.t, kind, side, pt:ln, pid:pid||'', pn:name, mkt:type, yes:yesT?1:0}, {price:am[i], v:mm.v, p:mm.p})) n++;
+    });
+    return n;
+  }
+  const soccer = typeof SOCCER!=='undefined' && SOCCER.has(gm.l);
+  // soccer 3-way moneyline: one yes/no market per result ("Will X win?", "...end in a draw?") — Yes side tracked
+  if (type==='moneyline' && soccer && /^yes$/i.test(outs[0])){
+    const q = String(m.question||'');
+    const side = /-draw$/.test(slug) || /draw\?$/i.test(q) ? 'draw' : uniPmSide(gm, q.replace(/^will\s+/i,'').replace(/\s+win.*$/i,''));
+    if (!side){ uniNT('Polymarket moneyline (team names did not match)'); return 0; }
+    const twin = UNI.get(`g:${gm.ev}:ml:${side}:`);
+    if (am[0]!=null && uniUpsert('games', 'pm', `pm:${m.id}:${side}`, {l:gm.l, ev:gm.ev, t:gm.t, mk:'ml', side, pt:null, game, book:'Polymarket', mkt:type}, {price:am[0], v: twin ? twin.v : 'nocall', p: twin ? twin.p : null})) n++;
+    return n;
+  }
+  if (soccer && /first_half|second_half|^q[1-4]_/.test(type)){ uniNT('Polymarket soccer half markets (ESPN has no half scores to grade them)'); return 0; }
+  const per = /^first_half_/.test(type) ? 'h1' : (/^q([1-4])_/.exec(type)||[])[1] ? 'q'+(/^q([1-4])_/.exec(type)[1]) : /^second_half_/.test(type) ? 'h2' : '';
+  const baseT = type.replace(/^(soccer_first_half_|soccer_|first_half_|second_half_|q[1-4]_)/,'');
+  if (per==='h2'){ uniNT('Polymarket second-half markets (overtime rules differ)'); return 0; }
+  const put = (mk, side, pt, price) => { if (price==null || !side) return; const mkF = per ? per+'_'+mk : mk;
+    const twin = !per && (mk==='ml'||mk==='spread'||mk==='total') ? UNI.get(`g:${gm.ev}:${mk}:${side}:${pt==null?'':pt}`) : null;
+    if (uniUpsert('games', 'pm', `pm:${m.id}:${side}`, {l:gm.l, ev:gm.ev, t:gm.t, mk:mkF, side, pt, game, book:'Polymarket', mkt:type}, {price, v: twin ? twin.v : 'nocall', p: twin ? twin.p : null})) n++; };
+  if (baseT==='moneyline'){ const s0 = uniPmSide(gm, outs[0]), s1 = uniPmSide(gm, outs[1]); if (!s0 || !s1 || s0===s1){ uniNT('Polymarket moneyline (team names did not match)'); return 0; } put('ml', s0, null, am[0]); put('ml', s1, null, am[1]); }
+  else if (baseT==='spreads'){
+    let s0 = /spread-home/.test(slug) ? 'home' : /spread-away/.test(slug) ? 'away' : uniPmSide(gm, outs[0]);
+    if (!s0 || line==null){ uniNT('Polymarket spreads (side unclear)'); return 0; }
+    const s1 = s0==='home' ? 'away' : 'home'; put('spread', s0, line, am[0]); put('spread', s1, -line, am[1]);
+  }
+  else if (baseT==='totals'){ if (line==null || !/^over$/i.test(outs[0])) { uniNT('Polymarket totals (no line)'); return 0; } put('total', 'over', line, am[0]); put('total', 'under', line, am[1]); }
+  else if (baseT==='team_totals'){
+    const ab = (/team-total-([a-z0-9]+)-/.exec(slug)||[])[1] || '';
+    if (ab==='home' || ab==='away'){ if (line==null){ uniNT('Polymarket team totals (no line)'); return 0; } put('tt_'+ab, 'over', line, am[0]); put('tt_'+ab, 'under', line, am[1]); return n; }
+    const fix = x => (typeof KALSHI_ABBR_FIX!=='undefined' && KALSHI_ABBR_FIX[x]) || x;
+    let ts = null; for (const s of ['home','away']){ const sh = fix(String(gm[s].short||'').toLowerCase()); if (ab && sh && (sh===fix(ab) || sh.indexOf(ab)===0 || ab.indexOf(sh)===0)) ts = s; }
+    if (!ts) ts = uniPmSide(gm, String(m.question||'').split(/ (1H |2H )?Team Total/i)[0]);
+    if (!ts || line==null){ uniNT('Polymarket team totals (team unclear)'); return 0; }
+    put('tt_'+ts, 'over', line, am[0]); put('tt_'+ts, 'under', line, am[1]);
+  }
+  else uniNT('Polymarket '+(type||'other'));
+  return n;
+}
+function uniPidByName(gm, name){
+  const N = s => (typeof norm==='function' ? norm(s) : String(s||'').toLowerCase()); const want = N(name);
+  for (const k in propAthleteCache){ if (k.indexOf(gm.l+':')!==0) continue; const a = propAthleteCache[k]; if (a && a.name && N(a.name)===want) return k.slice(gm.l.length+1); }
+  return '';
+}
+
+/* ---------- grading ---------- */
+function uniStatValue(st0, kind, lg){
+  if (!st0 || typeof st0!=='object') return null;
+  const st = {}; for (const k of Object.keys(st0)){ st[k] = st0[k]; st[String(k).toLowerCase()] = st0[k]; }
+  const raw = (...keys) => { for (const k of keys){ const v = st[k]!=null ? st[k] : st[String(k).toLowerCase()]; if (v!=null && v!=='' && v!=='--') return v; } return null; };
+  const num = (...keys) => { const v = raw(...keys); if (v==null) return null; const n = parseFloat(String(v).split(/[-\/]/)[0]); return isFinite(n) ? n : null; };
+  const second = (...keys) => { const v = raw(...keys); if (v==null) return null; const p = String(v).split(/[-\/]/); const n = parseFloat(p[1]); return isFinite(n) ? n : null; };
+  const has = k => raw(k)!=null;
+  const sport = lg ? ((PROP_SPORTS[lg]||{}).espnSport || ((LMAP[lg]||{}).path||'').split('/')[0]) :
+    (has('shotsTotal') || has('saves') || has('blockedShots') || has('shotsAgainst')) ? 'hockey' :
+    (has('passingYards') || has('rushingYards') || has('receivingYards') || has('totalTackles') || has('totalKickingPoints')) ? 'football' :
+    (has('atBats') || has('b.hits') || has('p.strikeouts') || has('H-AB')) ? 'baseball' : 'basketball';
+  const add = (...xs) => xs.some(x=>x==null) ? null : xs.reduce((a,b)=>a+b, 0);
+  if (sport==='basketball'){
+    const pts = num('points','PTS'), reb = num('rebounds','REB','totalRebounds'), ast = num('assists','AST');
+    const th = num('threePointFieldGoalsMade-threePointFieldGoalsAttempted','3PT','threePointFieldGoalsMade','threes');
+    const stl = num('steals','STL'), blk = num('blocks','BLK'), tov = num('turnovers','TO');
+    const M = {pts, reb, ast, threes:th, stl, blk, tov, pra:add(pts,reb,ast), pr:add(pts,reb), pa:add(pts,ast), ar:add(reb,ast), ra:add(reb,ast), sb:add(stl,blk)};
+    if (kind==='dd' || kind==='tdbl'){ const c = [pts,reb,ast,stl,blk].filter(x=>x!=null && x>=10).length; if (pts==null) return null; return kind==='dd' ? (c>=2?1:0) : (c>=3?1:0); }
+    return kind in M ? M[kind] : undefined;
+  }
+  if (sport==='hockey'){
+    const goals = num('goals','G'), ast = num('assists','A'), sog = num('shotsTotal','S','shots'), saves = num('saves','SV'), hblk = num('blockedShots','BS'), hits = num('hits','HT');
+    const M = {goals, ast, pts:add(goals,ast), hpts:add(goals,ast), sog, saves, hblk, hits};
+    return kind in M ? M[kind] : undefined;
+  }
+  if (sport==='football'){
+    const z = v => v==null ? 0 : v;   // a stat group the player has no line in = 0 (he is in the box score)
+    const passY = num('passing.passingYards','passingYards'), rushY = num('rushing.rushingYards','rushingYards'), recY = num('receiving.receivingYards','receivingYards');
+    const rushTd = num('rushing.rushingTouchdowns','rushingTouchdowns'), recTd = num('receiving.receivingTouchdowns','receivingTouchdowns');
+    const tot = num('defensive.totalTackles','totalTackles'), solo = num('defensive.soloTackles','soloTackles');
+    const M = {
+      pass_yds:z(passY), rush_yds:z(rushY), rec_yds:z(recY), rec:z(num('receiving.receptions','receptions')),
+      pass_td:z(num('passing.passingTouchdowns','passingTouchdowns')), rush_td:z(rushTd), rec_td:z(recTd),
+      pass_cmp:z(num('passing.completions/passingAttempts','completions/passingAttempts')), pass_att:z(second('passing.completions/passingAttempts','completions/passingAttempts')),
+      pass_int:z(num('passing.interceptions')), rush_att:z(num('rushing.rushingAttempts','rushingAttempts')),
+      pass_rush_yds:z(passY)+z(rushY), rush_rec_yds:z(rushY)+z(recY),
+      rush_long:z(num('rushing.longRushing','longRushing')), rec_long:z(num('receiving.longReception','longReception')),
+      tkl:z(solo), tkl_tot:z(tot), tkl_ast: z(tot)-z(solo), sacks:z(num('defensive.sacks')),
+      kick_pts:z(num('kicking.totalKickingPoints','totalKickingPoints')), fgm:z(num('kicking.fieldGoalsMade/fieldGoalAttempts','fieldGoalsMade/fieldGoalAttempts')), xpm:z(num('kicking.extraPointsMade/extraPointAttempts','extraPointsMade/extraPointAttempts')),
+      anytd: z(rushTd)+z(recTd)+z(num('kickReturns.kickReturnTouchdowns'))+z(num('puntReturns.puntReturnTouchdowns'))+z(num('interceptions.interceptionTouchdowns'))+z(num('defensive.defensiveTouchdowns'))
+    };
+    return kind in M ? M[kind] : undefined;
+  }
+  if (sport==='soccer'){
+    const app = num('appearances'); if (app===0) return null;
+    const goals = num('totalGoals'), ast = num('goalAssists');
+    const M = {sgoals:goals, sast:ast, sga:add(goals, ast), ssot:num('shotsOnTarget'), sshots:num('totalShots')};
+    return kind in M ? M[kind] : undefined;
+  }
+  if (sport==='baseball'){
+    const ip = raw('p.fullInnings.partInnings','p.IP'); let outs = null;
+    if (ip!=null){ const p = String(ip).split('.'); outs = (+p[0]||0)*3 + (+p[1]||0); }
+    const hits = num('b.hits','b.H'), runs = num('b.runs','b.R'), rbi = num('b.RBIs','b.RBI');
+    const M = {hits, runs, rbi, hr:num('b.homeRuns','b.HR'), bb:num('b.walks','b.BB'), bso:num('b.strikeouts','b.K'), hrr:add(hits,runs,rbi),
+      p_k:num('p.strikeouts','p.K'), p_outs:outs, p_er:num('p.earnedRuns','p.ER'), p_hits:num('p.hits','p.H'), p_bb:num('p.walks','p.BB')};
+    return kind in M ? M[kind] : undefined;
+  }
+  return undefined;
+}
+async function uniBoxFor(lg, ev){
+  const k = lg+'|'+ev, c = UNI_BOX.get(k);
+  if (c && Date.now()-c.at < 20*60000) return c;
+  const d = await fetchEventBox(lg, ev);
+  const comp = d && d.header && d.header.competitions && d.header.competitions[0];
+  const stt = comp && comp.status && comp.status.type || {};
+  let aths = d ? athletesFromSummary(d) : [];
+  if (d && !aths.length && Array.isArray(d.rosters)){   // soccer: player stats live in rosters, not the box score
+    for (const t of d.rosters) for (const p of (t.roster||[])){ const st = {}; for (const x of (p.stats||[])) if (x && x.name) st[x.name] = x.value; aths.push({id:String((p.athlete&&p.athlete.id)||''), name:(p.athlete&&p.athlete.displayName)||'', stats:st}); }
+  }
+  const o = {at:Date.now(), aths, done: !!stt.completed, canc: /postpon|cancel/i.test(stt.name||stt.description||'')};
+  UNI_BOX.set(k, o); return o;
+}
+async function uniFinFor(lg, ev, t){
+  const k = lg+'|'+ev, c = UNI_FIN.get(k);
+  if (c && Date.now()-c.at < 20*60000) return c.f;
+  let f = null; try{ f = await eventFinal(lg, ev, t); }catch(e){}
+  UNI_FIN.set(k, {at:Date.now(), f}); return f;
+}
+function uniGradeGameRow(r, fin){
+  const m = /^(h1|q[1-4])_(.+)$/.exec(r.mk||''); let per = m ? m[1] : '', mk = m ? m[2] : r.mk;
+  let hs = fin.hs, as = fin.as;
+  if (per){
+    const sp = ((LMAP[r.l]||{}).path||'').split('/')[0];
+    if (sp!=='basketball' && sp!=='football') return {res:'ungradeable'};
+    const ls = z => (z && Array.isArray(z.linescores)) ? z.linescores.map(x=>+(x.value!=null?x.value:x.displayValue)) : null;
+    const H = ls(fin.H), A = ls(fin.A); if (!H || !A) return {res:'ungradeable'};
+    const idx = per==='h1' ? [0,1] : [+per.slice(1)-1];
+    if (idx.some(i=>H[i]==null || A[i]==null || !isFinite(H[i]) || !isFinite(A[i]))) return {res:'ungradeable'};
+    hs = idx.reduce((a,i)=>a+H[i],0); as = idx.reduce((a,i)=>a+A[i],0);
+  }
+  if (!isFinite(hs) || !isFinite(as)) return null;
+  if (mk==='tt_home' || mk==='tt_away'){ const v = mk==='tt_home' ? hs : as; if (v===r.pt) return {res:'push', act:v}; return {res:(r.side==='over') === (v>r.pt) ? 'win' : 'loss', act:v}; }
+  if (per && mk==='ml'){ const d = r.side==='home' ? hs-as : as-hs; return {res: d>0?'win':d<0?'loss':'push', act:`${as}-${hs}`}; }
+  if (mk==='ml' || mk==='spread' || mk==='total'){ const res = btResult({l:r.l, h:{s:hs}, a:{s:as}}, mk, r.side, r.pt); return res ? {res, act:`${as}-${hs}`} : null; }
+  return {res:'ungradeable'};
+}
+function uniGradePropRow(r, bx){
+  if (bx.canc) return {res:'void'};
+  if (!bx.done) return null;
+  if (!bx.aths.length) return null;
+  if (String(r.kind||'').indexOf('other:')===0) return {res:'ungradeable'};
+  const N = s => (typeof norm==='function' ? norm(s) : String(s||'').toLowerCase());
+  const a = bx.aths.find(x=>r.pid && String(x.id)===String(r.pid)) || (r.pn ? bx.aths.find(x=>x.name && N(x.name)===N(r.pn)) : null);
+  if (!a) return {res:'void'};                                   // not in the box score: did not play
+  if (!a.stats || !Object.keys(a.stats).length) return {res:'void'};
+  if (a.stats.appearances!=null && +a.stats.appearances===0) return {res:'void'};
+  const v = uniStatValue(a.stats, r.kind, r.l);
+  if (v===undefined || v==null) return {res:'ungradeable'};
+  if (v===r.pt) return {res:'push', act:v};
+  return {res: (r.side==='over') === (v>r.pt) ? 'win' : 'loss', act:v};
+}
+// parlay prop legs that are not in the props snapshot list (shadow candidates)
+async function uniPropLegResult(leg){
+  if (!leg || !leg.eventId || !leg.league) return null;
+  if (leg.start && leg.start > Date.now()-3*3600000) return null;
+  const bx = await uniBoxFor(leg.league, leg.eventId);
+  const g = uniGradePropRow({l:leg.league, kind:leg.kind, pid:leg.playerId, pn:leg.playerName, side:leg.side, pt:+leg.line}, bx);
+  return g ? (g.res==='ungradeable' ? null : g.res) : null;
+}
+function uniSumAdd(r){
+  const v = uniV(r), k = `${r.fd}|${r.b}|${r.src}|${r.l}|${v}`;
+  let s = UNI_SUM.get(k);
+  if (!s){ s = {i:k, fd:r.fd, b:r.b, src:r.src, l:r.l, v, n:0, w:0, ls:0, pu:0, vd:0, un:0, stake:0, pf:0, sp:0, spn:0, si:0, sin:0, sh:0}; UNI_SUM.set(k, s); }
+  s.n++; if (r.shown) s.sh++;
+  if (r.res==='win' || r.res==='loss'){
+    const pr = uniPrice(r), unit = 100; s.stake += unit;
+    if (r.res==='win'){ s.w++; s.pf += pr!=null ? profitOn(pr, unit) : unit; } else { s.ls++; s.pf -= unit; }
+    const pp = uniP(r); if (pp!=null){ s.sp += pp; s.spn++; }
+    if (pr!=null){ s.si += imp(pr); s.sin++; }
+  } else if (r.res==='push') s.pu++; else if (r.res==='void') s.vd++; else s.un++;
+  s.pf = Math.round(s.pf*100)/100;
+  UNI_SUM_DIRTY.add(k);
+}
+function uniFinalize(r, res, act){
+  r.res = res; r.y = res==='win' ? 1 : res==='loss' ? 0 : res==='push' ? -1 : -2; r.g = Date.now(); if (act!=null) r.act = act;
+  delete r.X;   // features are only needed while open (the games learner replays finals itself)
+  UNI.delete(r.i); UNI_DIRTY.delete(r.i); UNI_OUT.push(r); uniSumAdd(r);
+}
+async function uniGrade(){
+  const now = Date.now(); let n = 0;
+  const due = [...UNI.values()].filter(r=>r.t < now - 3*3600000);
+  const byEv = new Map(); for (const r of due){ const k = r.l+'|'+r.ev; if (!byEv.has(k)) byEv.set(k, []); byEv.get(k).push(r); }
+  let i = 0;
+  for (const [k, list] of byEv){
+    const [lg, ev] = k.split('|'); const t = list[0].t;
+    let fin = null, bx = null;
+    try{
+      if (list.some(r=>r.b==='games')) fin = await uniFinFor(lg, ev, t);
+      if (list.some(r=>r.b==='props')) bx = await uniBoxFor(lg, ev);
+    }catch(e){ uniErr('grade '+k, e); }
+    for (const r of list){
+      let g = null;
+      try{
+        if (r.b==='games'){ if (fin){ if (fin.canceled) g = {res:'void'}; else if (fin.done) g = uniGradeGameRow(r, fin); } }
+        else if (bx) g = uniGradePropRow(r, bx);
+      }catch(e){ g = null; }
+      if (!g && r.t < now - UNI_EXPIRE_DAYS*86400000) g = {res:'ungradeable'};
+      if (g){ uniFinalize(r, g.res, g.act); n++; }
+    }
+    if (++i % 5 === 0) await new Promise(res=>setTimeout(res, 0));
+  }
+  for (const [k, c] of UNI_BOX) if (now - c.at > 30*60000) UNI_BOX.delete(k);
+  for (const [k, c] of UNI_FIN) if (now - c.at > 30*60000) UNI_FIN.delete(k);
+  return n;
+}
+
+/* ---------- storage: flush, init, compaction ---------- */
+async function uniFlush(){
+  if (UNI_ST.idb===false) return 0;
+  const open = [...UNI_DIRTY].map(k=>UNI.get(k)).filter(Boolean);
+  const done = UNI_OUT; UNI_OUT = [];
+  const sums = [...UNI_SUM_DIRTY].map(k=>UNI_SUM.get(k)).filter(Boolean);
+  UNI_DIRTY.clear(); UNI_SUM_DIRTY.clear();
+  try{
+    if (open.length) await storeWrite('uni', open, []);
+    if (done.length){
+      await storeWrite('uniDone', done.map(r=>Object.assign({}, r, {i:uniDay(r.t)+'|'+r.i, id:r.i})), []);
+      await storeWrite('uni', [], done.map(r=>r.i));
+    }
+    if (sums.length) await storeWrite('uniSum', sums, []);
+    UNI_ST.writes += open.length + done.length + sums.length;
+  }catch(e){ uniErr('flush', e); for (const r of open) UNI_DIRTY.add(r.i); UNI_OUT = done.concat(UNI_OUT); for (const s of sums) UNI_SUM_DIRTY.add(s.i); }
+  return open.length + done.length;
+}
+async function uniDeleteBelow(store, key){
+  const d = await idbOpen(); if (!d.objectStoreNames.contains(store)) return 0;
+  return new Promise((res, rej)=>{ const tx = d.transaction(store, 'readwrite'); tx.objectStore(store).delete(IDBKeyRange.upperBound(key, true)); tx.oncomplete = ()=>res(1); tx.onerror = ()=>rej(tx.error); });
+}
+async function uniCompact(force){
+  const now = Date.now(); if (!force && now - (UNI_ST.last.compact||0) < 20*3600000) return; UNI_ST.last.compact = now;
+  try{
+    // raw graded rows: 30 days (what the learners read); daily summary rows: 120 days
+    await uniDeleteBelow('uniDone', uniDay(now - UNI_RAW_DAYS*86400000));
+    const cut = uniDay(now - UNI_SUM_DAYS*86400000);
+    await uniDeleteBelow('uniSum', cut);
+    for (const k of [...UNI_SUM.keys()]) if (k < cut) UNI_SUM.delete(k);
+    // games the universe no longer needs
+    for (const [k, gm] of UNI_GAMES) if (gm.t < now - 12*3600000) UNI_GAMES.delete(k);
+    for (const k in UNI_ST.evAt) if (now - UNI_ST.evAt[k] > 2*86400000) delete UNI_ST.evAt[k];
+    // prop caches: keep game logs for 18h, prop-feed pages for 30 minutes
+    if (typeof propLogCache!=='undefined') for (const k in propLogCache) if (now - (propLogCache[k].t||0) > 18*3600000) delete propLogCache[k];
+    if (typeof propBoardCache!=='undefined') for (const k in propBoardCache) if (now - (propBoardCache[k].t||0) > 30*60000) delete propBoardCache[k];
+  }catch(e){ uniErr('compact', e); }
+}
+async function uniInit(){
+  if (UNI_ST.ready) return;
+  try{
+    const open = await withTimeout(storeGetAll('uni'), 8000);
+    for (const r of open||[]) if (r && r.i && r.y==null) UNI.set(r.i, r);
+    const sums = await withTimeout(storeGetAll('uniSum'), 8000);
+    for (const s of sums||[]) if (s && s.i) UNI_SUM.set(s.i, s);
+    UNI_ST.idb = true;
+  }catch(e){ UNI_ST.idb = false; uniErr('init (IndexedDB unavailable, universe tracking is off this visit)', e); }
+  UNI_ST.ready = true;
+}
+
+/* ---------- 5. learning feed ---------- */
+// Props: the props learner (bar tuning, preset choice, sport/stat auto-off) reads every graded DraftKings prop the
+// universe tracked (both sides, alt lines), not only the board's cards. Same walk-forward split and the same 40-ticket
+// minimum; shown and not-shown rows count the same. Polymarket copies of the same player line are left out so one
+// outcome is never counted twice.
+async function uniLoadLearn(force){
+  if (!force && Date.now() - UNI_LEARN.at < 6*3600000) return UNI_LEARN.props;
+  if (UNI_ST.idb===false) return UNI_LEARN.props;
+  const out = [];
+  try{
+    const d = await idbOpen();
+    const lo = uniDay(Date.now() - UNI_RAW_DAYS*86400000);
+    await new Promise((res, rej)=>{
+      const req = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound(lo), 'prev');
+      req.onsuccess = ()=>{ const c = req.result; if (!c || out.length >= UNI_LEARN_CAP) return res();
+        const r = c.value;
+        if (r.b==='props' && r.src==='sb' && (r.y===0 || r.y===1) && uniP(r)!=null && uniPrice(r)!=null){
+          const v = uniV(r);
+          out.push({i:r.id||r.i, t:r.t, eventId:r.ev, league:r.l, playerId:r.pid, kind:r.kind, side:r.side, line:r.pt, price:uniPrice(r), p:uniP(r), implied:imp(uniPrice(r)), verdict:v, sg:v==='good'?1:0, y:r.y, res:r.res, graded:r.g, minsToTip:r.mins, uni:1});
+        }
+        c.continue(); };
+      req.onerror = ()=>rej(req.error);
+    });
+  }catch(e){ uniErr('learn load', e); return UNI_LEARN.props; }
+  UNI_LEARN = {props:out, at:Date.now()};
+  return out;
+}
+function propLearnRows(){
+  const base = [...PROP_SNAPS.values()];
+  const u = UNI_LEARN.props || []; if (!u.length) return base;
+  const ids = new Set(base.map(x=>x.i));
+  return base.concat(u.filter(x=>!ids.has(x.i)));
+}
+
+/* ---------- the tick ---------- */
+async function uniTick(opts){
+  opts = opts || {};
+  if (!UNI_ST.ready) await uniInit();
+  if (UNI_ST.busy) return null;
+  UNI_ST.busy = true; const t0 = performance.now(); const out = {};
+  try{
+    uniBoardGames();
+    const backoff = typeof feedBackoffActive==='function' && feedBackoffActive();   // ESPN is rate-limiting the board: skip the extra reads this round
+    if (backoff) out.backoff = true;
+    if (!backoff) try{ out.sb = await uniScanScoreboards(); }catch(e){ uniErr('scoreboards', e); }
+    try{ out.games = uniCaptureGames(); }catch(e){ uniErr('games', e); }
+    if (!backoff) try{ out.props = await uniCaptureProps(); }catch(e){ uniErr('props', e); }
+    try{ out.pm = await uniCapturePolymarket(); }catch(e){ uniErr('polymarket', e); }
+    if (opts.grade!==false && Date.now() - (UNI_ST.last.grade||0) > 10*60000){ UNI_ST.last.grade = Date.now(); try{ out.graded = await uniGrade(); }catch(e){ uniErr('grade', e); } }
+    out.flushed = await uniFlush();
+    await uniCompact(false);
+  }finally{ UNI_ST.busy = false; UNI_ST.ticks++; UNI_ST.lastTickMs = Math.round(performance.now()-t0); UNI_ST.lastTick = Date.now(); }
+  try{ if (typeof ui!=='undefined' && ui.tab==='results' && typeof renderResults==='function' && !opts.quiet) renderResults(); }catch(e){}
+  return out;
+}
+// cheap capture of what is already in memory (the board's own verdicts), every minute
+function uniQuickCapture(){ if (!UNI_ST.ready || UNI_ST.busy) return; try{ uniBoardGames(); uniCaptureGames(); }catch(e){} }
+function uniStart(){
+  if (window.__uniStarted) return; window.__uniStarted = true;
+  setTimeout(()=>{ uniTick().catch(e=>uniErr('tick', e)); }, 20000);
+  setInterval(()=>{ uniTick().catch(e=>uniErr('tick', e)); }, UNI_TICK_MS);
+  setInterval(()=>{ uniQuickCapture(); uniFlush().catch(()=>{}); }, 60000);
+}
+
+/* ---------- 7. Results: "Tracked universe" ---------- */
+function uniCounts(){
+  const today = uniDay(Date.now());
+  const B = {games:{}, props:{}};
+  const mk = () => ({today:0, total:0, open:0, graded:0, tv:{good:0, watch:0, avoid:0, nocall:0}, src:{}, bucket:{good:{w:0,l:0,pf:0,st:0,n:0}, watch:{w:0,l:0,pf:0,st:0,n:0}, avoid:{w:0,l:0,pf:0,st:0,n:0}, nocall:{w:0,l:0,pf:0,st:0,n:0}}, un:0, vd:0, pu:0, gradedToday:0});
+  B.games = mk(); B.props = mk();
+  for (const r of UNI.values()){
+    const b = B[r.b]; if (!b) continue; const v = uniV(r);
+    b.open++; b.total++; b.src[r.src] = (b.src[r.src]||0) + 1;
+    if (r.fd===today){ b.today++; b.tv[v] = (b.tv[v]||0) + 1; }
+  }
+  for (const s of UNI_SUM.values()){
+    const b = B[s.b]; if (!b) continue;
+    b.total += s.n; b.src[s.src] = (b.src[s.src]||0) + s.n;
+    b.graded += s.w + s.ls + s.pu; b.un += s.un; b.vd += s.vd; b.pu += s.pu;
+    if (s.fd===today){ b.today += s.n; b.tv[s.v] = (b.tv[s.v]||0) + s.n; b.gradedToday += s.w + s.ls + s.pu; }
+    const k = b.bucket[s.v] || (b.bucket[s.v] = {w:0,l:0,pf:0,st:0,n:0});
+    k.w += s.w; k.l += s.ls; k.pf += s.pf; k.st += s.stake; k.n += s.w + s.ls;
+  }
+  // parlays: every shown parlay plus every qualifying candidate the builder considered
+  const P = mk();
+  for (const x of (typeof PARLAY_SNAPS!=='undefined' ? PARLAY_SNAPS.values() : [])){
+    const v = x.verdict==='good' ? 'good' : x.verdict==='watch' ? 'watch' : 'avoid';
+    P.total++; const d = uniDay(x.t); if (d===today){ P.today++; P.tv[v]++; }
+    P.src[x.shown===0 ? 'shadow' : 'shown'] = (P.src[x.shown===0 ? 'shadow' : 'shown']||0) + 1;
+    if (x.y==null) P.open++;
+    if (x.y===0 || x.y===1){
+      P.graded++; if (d===today) P.gradedToday++;
+      const k = P.bucket[v]; const dec = x.dec || (x.am!=null ? amToDec(x.am) : null);
+      k.n++; k.st += 100; if (x.y===1){ k.w++; k.pf += dec ? 100*(dec-1) : 100; } else { k.l++; k.pf -= 100; }
+    } else if (x.y===-1) P.pu++; else if (x.y===-2) P.un++;
+  }
+  B.parlay = P;
+  return B;
+}
+function uniResultsHTML(){
+  const B = uniCounts();
+  const f = n => (+n||0).toLocaleString();
+  const pct = x => x==null ? '—' : Math.round(x*100)+'%';
+  const roi = k => k.st ? (k.pf/k.st) : null;
+  const roiS = x => x==null ? '—' : (x>=0?'+':'')+(x*100).toFixed(1)+'%';
+  const NAMES = {good:'Picks', watch:'Watch', avoid:'Avoid', nocall:'No call'};
+  const card = (b, title) => {
+    const c = B[b];
+    const tv = ['good','watch','avoid'].concat(b==='parlay'?[]:['nocall']).map(v=>`${NAMES[v]} ${f(c.tv[v]||0)}`).join(' · ');
+    const rows = ['good','watch','avoid'].concat(b==='parlay'?[]:['nocall']).map(v=>{
+      const k = c.bucket[v] || {w:0,l:0,pf:0,st:0,n:0};
+      const r = roi(k), hr = k.n ? k.w/k.n : null;
+      const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
+      return `<div class="uni-row"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `${pct(hr)} hit · <b class="${cls}">${roiS(r)}</b> ROI` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
+    }).join('');
+    const src = Object.entries(c.src).map(([k,v])=>`${({sb:'sportsbook',pm:'Polymarket',kalshi:'Kalshi',shown:'shown',shadow:'tracked quietly'})[k]||k} ${f(v)}`).join(' · ');
+    const extra = (c.un||c.vd||c.pu) ? ` Pushes ${f(c.pu)}, voids ${f(c.vd)} (did not play / postponed), ungradeable ${f(c.un)}.` : '';
+    return `<div class="v42-b uni-b"><h3>${title}</h3>
+      <div class="v42-kv"><span class="k">Tracked today</span><span class="v">${f(c.today)} markets</span></div><div class="hint">${tv}</div>
+      <div class="v42-kv"><span class="k">All time (120 days)</span><span class="v">${f(c.total)} tracked · ${f(c.graded)} graded</span></div><div class="hint">${esc(src||'Nothing yet.')} · ${f(c.open)} waiting on a final.${extra}</div>
+      <div class="uni-buckets">${rows}</div></div>`;
+  };
+  const nt = Object.entries(UNI_ST.notTracked).sort((a,b)=>b[1]-a[1]).slice(0, 4).map(([k,v])=>`${k} (${f(v)})`).join('; ');
+  return `<div class="card uni-card">
+    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</span></div>
+    <div class="v42-grid">${card('games','Games')}${card('props','Props')}${card('parlay','Parlays')}</div>
+    <div class="hint" style="margin-top:10px">Sources: ESPN scoreboards (DraftKings main lines, every league), ESPN's DraftKings prop feed (every player market, alt lines included), and every Polymarket game and player market that matches a game. No Odds API credits. "No call" means the model had no read (a sport off in Settings, or a stat it does not model yet). ${UNI_ST.lastTick ? `Last scan ${new Date(UNI_ST.lastTick).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.'}${nt ? ` Not tracked: ${esc(nt)}.` : ''}</div>
+  </div>`;
+}
+window.uniTick = uniTick; window.uniCounts = uniCounts;
+window.uniStats = () => ({open:UNI.size, sums:UNI_SUM.size, games:UNI_GAMES.size, st:JSON.parse(JSON.stringify(UNI_ST)), learnRows:(UNI_LEARN.props||[]).length});
+
+// hooks: start after learning state loads (IndexedDB is open by then)
+(function uniHook(){
+  try{
+    if (typeof learnInit==='function'){
+      const orig = learnInit;
+      learnInit = async function(){ const r = await orig.apply(this, arguments); try{ await uniInit(); uniStart(); }catch(e){ console.warn('universe init', e); } return r; };
+    }
+  }catch(e){ console.warn('universe hook', e); }
 })();
 </script>
 </body>
