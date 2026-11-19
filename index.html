@@ -2032,7 +2032,12 @@ async function fetchOddsApi(force){
   if (!why) return;
   const key = encodeURIComponent(S.oddsKey.trim());
   const sp = await fetchJSON(`https://api.the-odds-api.com/v4/sports/?apiKey=${key}`); // free, no credits
-  if (!sp.ok || !Array.isArray(sp.data)){ oddsErrors.push(`Sports list: HTTP ${sp.status} ${sp.data&&sp.data.message||''}`); return; }
+  const isQuotaErr = (st, msg) => /quota|usage|credit|out_of_usage|limit/i.test(String(msg||'')) || (st===401 && /usage|quota|credit/i.test(String(msg||'')));
+  if (!sp.ok || !Array.isArray(sp.data)){
+    const msg = sp.data && sp.data.message || '';
+    if (isQuotaErr(sp.status, msg)){ oddsCache = Object.assign({t:Date.now(), events:[]}, oddsCache||{}, {t:Date.now(), remaining:0}); saveJSON(LS.oddsCache, oddsCache); return; }
+    oddsErrors.push(`Sports list: HTTP ${sp.status} ${msg}`); return;
+  }
   const active = sp.data.filter(s=>s.active).map(s=>s.key);
   const wanted = [];
   for (const L of LEAGUES){
@@ -2049,11 +2054,15 @@ async function fetchOddsApi(force){
     const r = await fetchJSON(`https://api.the-odds-api.com/v4/sports/${w.key}/odds/?apiKey=${key}${books}&markets=h2h,spreads,totals&oddsFormat=american`);
     const rem = r.headers.get('x-requests-remaining'), us = r.headers.get('x-requests-used');
     if (rem!=null && isFinite(+rem)) remaining = +rem; if (us!=null && isFinite(+us)) used = +us;
-    if (!r.ok || !Array.isArray(r.data)) throw new Error(`${w.key}: HTTP ${r.status} ${r.data&&r.data.message||''}`);
+    if (!r.ok || !Array.isArray(r.data)){
+      const msg = r.data && r.data.message || '';
+      if (isQuotaErr(r.status, msg) || remaining===0){ remaining = 0; return {L:w.L, data:[], quota:true}; }
+      throw new Error(`${w.key}: HTTP ${r.status} ${msg}`);
+    }
     return {L:w.L, data:r.data};
   }), 3);
   const events = [];
-  for (const r of res){ if (!r || r.error){ oddsErrors.push(String(r&&r.error&&r.error.message||'error')); continue; } for (const ev of r.data) events.push({league:r.L.id, ev}); }
+  for (const r of res){ if (!r || r.error){ const em = String(r&&r.error&&r.error.message||'error'); if (!/quota|usage|credit|out_of_usage/i.test(em)) oddsErrors.push(em); continue; } for (const ev of r.data) events.push({league:r.L.id, ev}); }
   const boosts = Object.assign({}, (oddsCache && oddsCache.boosts) || {});
   if (why==='boost' || force){
     for (const w of upcomingGoodOddsWindows()) boosts[w.id] = Date.now();
@@ -5154,7 +5163,7 @@ async function refresh(forceOdds=false){
     const keepPick = (games||[]).filter(g=>g && g.pickOnly);
     games = parseEspnGames(results);
     for (const g of keepPick){ if (!games.some(x=>x.id===g.id)) games.push(g); }
-    try{ await fetchOddsApi(forceOdds); }catch(e){ oddsErrors.push(String(e.message||e)); }
+    try{ await fetchOddsApi(forceOdds); }catch(e){ const m=String(e.message||e); if (!/quota|usage|credit|out_of_usage/i.test(m)) oddsErrors.push(m); }
     mergeOddsApi();
     try{ await fetchPolymarket(); }catch(e){ pmErr = String(e.message||e); }
     mergePolymarket();
@@ -5919,7 +5928,8 @@ function render(){
   if (typeof updateFilterChrome==='function') updateFilterChrome();
   if (typeof syncTabChrome==='function') syncTabChrome();
   const v = $('#view');
-  const errs = (feedErrors.length||oddsErrors.length) ? `<div class="err-list">${feedErrors.slice(0,4).map(esc).join('<br>')}${feedErrors.length>4?`<br>…and ${feedErrors.length-4} more feed errors`:''}${oddsErrors.length?'<br>Odds API: '+oddsErrors.map(esc).join('<br>'):''}</div>` : '';
+  const shownOddsErrs = (oddsErrors||[]).filter(m=>!/quota|usage|credit|out_of_usage/i.test(String(m||'')));
+  const errs = (feedErrors.length||shownOddsErrs.length) ? `<div class="err-list">${feedErrors.slice(0,4).map(esc).join('<br>')}${feedErrors.length>4?`<br>…and ${feedErrors.length-4} more feed errors`:''}${shownOddsErrs.length?'<br>Odds API: '+shownOddsErrs.map(esc).join('<br>'):''}</div>` : '';
   if (ui.tab==='pulled' && !(typeof pulledCount==='function' ? pulledCount() : (typeof visiblePulled==='function' && (visiblePulled('good')||[]).length))){
     if (typeof setTab==='function') setTab('good', {board: ui.board||'games'});
     else ui.tab = 'good';
