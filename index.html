@@ -1438,7 +1438,7 @@ function applyFilterView(key){
   syncSportAlias();
   ui.mkt = v.mkt || 'all';
   ui.mix = v.mix || 'all';
-  ui.q = v.q || '';
+  ui.q = '';
   if (typeof v.hideLogged==='boolean') ui.hideLogged = v.hideLogged;
   if (typeof v.hideStarted==='boolean') ui.hideStarted = v.hideStarted;
 }
@@ -1449,7 +1449,7 @@ function applyFilterView(key){
     if (f.mkt) ui.mkt = f.mkt;
     if (typeof f.hideLogged==='boolean') ui.hideLogged = f.hideLogged;
     if (typeof f.hideStarted==='boolean') ui.hideStarted = f.hideStarted;
-    if (typeof f.q==='string') ui.q = f.q;
+    ui.q = '';
     if (f.board==='games'||f.board==='props'||f.board==='parlay') ui.board = f.board;
   }
   // Seed any missing per-view copies from the last-used bl_filters so a first visit isn't empty.
@@ -1469,11 +1469,11 @@ function applyFilterView(key){
   syncSportAlias();
 })();
 function saveFilters(){
-  try{ saveJSON(LS.filters, {sport:ui.sport||'all', mkt:ui.mkt||'all', hideLogged:!!ui.hideLogged, hideStarted:!!ui.hideStarted, q:ui.q||'', board:ui.board||'games', tab:ui.tab}); }catch(e){}
+  try{ saveJSON(LS.filters, {sport:ui.sport||'all', mkt:ui.mkt||'all', hideLogged:!!ui.hideLogged, hideStarted:!!ui.hideStarted, q:'', board:ui.board||'games', tab:ui.tab}); }catch(e){}
   const key = filterViewKey(ui.board||'games', ui.tab);
   if (key){
     syncSportAlias();
-    filterViews[key] = {sport:ui.sport||'all', sports:(ui.sports||defaultSportsList(ui.board||'games')).slice(), mkt:ui.mkt||'all', mix:ui.mix||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+    filterViews[key] = {sport:ui.sport||'all', sports:(ui.sports||defaultSportsList(ui.board||'games')).slice(), mkt:ui.mkt||'all', mix:ui.mix||'all', q:'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
     try{ saveJSON(LS.filterViews, filterViews); }catch(e){}
   }
 }
@@ -10409,10 +10409,16 @@ function setTab(t, opts){
   const prevBoard = ui.board||'games';
   if (prev==='tracker' && t!=='tracker' && typeof resetTrackerOpen==='function') resetTrackerOpen();
   if (typeof filterViewKey==='function' && filterViewKey(prevBoard, prev) && typeof saveFilters==='function') saveFilters();
+  const nextBoard = (opts && opts.board) ? opts.board : prevBoard;
+  const switched = (t !== prev) || (nextBoard !== prevBoard);
   if (opts && opts.board) ui.board = opts.board;
   ui.tab=t;
   if ((t==='good'||t==='watch'||t==='avoid') && typeof applyFilterView==='function'){
     applyFilterView(filterViewKey(ui.board||'games', t));
+  }
+  if (switched){
+    ui.q = '';
+    const sEl = $('#search'); if (sEl) sEl.value = '';
   }
   setMoreOpen(false);
   setNavPop(null);
