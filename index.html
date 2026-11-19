@@ -826,6 +826,18 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 .unit-pill.u-skip{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.25);color:var(--mut)}
 .cfoot-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .unit-judge{margin-top:6px;font-size:12.5px;color:var(--txt);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+.pl-court-legs{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.pl-court-leg{border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.55);border-radius:14px;padding:12px 14px}
+.pl-court-leg-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.pl-court-leg-title{font-weight:700;font-size:13.5px;color:var(--txt);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.pl-court-leg-stats{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pl-court-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:680px){.pl-court-grid{grid-template-columns:1fr}}
+.pl-court-leg .c-col{padding:9px 11px;border-radius:11px;margin:0}
+.pl-court-leg .c-col ul{margin:6px 0 0;padding-left:16px}
+.pl-court-leg .c-col li{font-size:12.5px;margin-bottom:4px}
+.pl-court-leg details.dd{margin-top:8px}
 </style>
 </head>
 <body>
@@ -8513,39 +8525,123 @@ function parlayLegRow(l){
     <div class="pp">${l.p!=null?fmtPct(l.p,0):'—'}</div>
   </div>`;
 }
+function parlayLegCourtData(l){
+  const isProp = !!(l.isProp || (l.kind && l.playerName));
+  let C = null, win = [], lose = [];
+  if (isProp){
+    C = l.C || null;
+    win = (C && C.win) ? C.win.slice() : [];
+    lose = (C && C.lose) ? C.lose.slice() : [];
+  } else {
+    try{
+      C = (typeof courtModel==='function') ? courtModel(l) : null;
+      if (C){
+        win = (C.win||[]).slice();
+        lose = (C.lose||[]).slice();
+      }
+    }catch(e){}
+  }
+  return {isProp, C, win, lose};
+}
 function parlayCourtroomHTML(pl){
   const win=[], lose=[];
-  win.push({txt:`${pl.n} independent legs (different games) so the combined chance is the product of each leg: ${fmtPct(pl.p,0)}.`});
-  if (pl.dec>=2 && pl.dec<=3) win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) sits in the 2.0x–3.0x sweet spot.`});
-  else win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) is inside the allowed window.`});
-  for (const l of pl.legs){
-    const kind = (l.isProp||l.playerName) ? 'prop' : (l.mk||'game');
-    if (l.p!=null && l.p>=0.62) win.push({txt:`${l.playerName||l.label} is a ${fmtPct(l.p,0)} lean at ${fmtAm(l.price)} (${kind}).`});
-    else if (l.p!=null) lose.push({txt:`${l.playerName||l.label} is the weaker link at ${fmtPct(l.p,0)} / ${fmtAm(l.price)}.`});
-    (l._fails||[]).forEach(f=>lose.push({txt:`${l.playerName||l.label}: ${f}`}));
+  const legData = pl.legs.map(l => Object.assign({leg:l}, parlayLegCourtData(l)));
+  const sortedByProb = legData.slice().sort((a,b)=>(a.leg.p||0)-(b.leg.p||0));
+  const weakest = sortedByProb[0] && sortedByProb[0].leg;
+  const strongest = sortedByProb[sortedByProb.length-1] && sortedByProb[sortedByProb.length-1].leg;
+  const legTitle = l => (l.isProp || l.playerName) ? (l.label || l.playerName) : l.label;
+
+  // Ticket-level case FOR
+  win.push({txt:`${pl.n} independent legs from different games — combined hit estimate is ${fmtPct(pl.p,0)} (${outOf10 ? outOf10(pl.p) : (pl.p*10).toFixed(1)} in 10).`});
+  if (pl.dec>=2 && pl.dec<=3) win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) sits right in the 2.0x–3.0x sweet spot.`});
+  else win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) is inside the allowed range.`});
+  if (pl.edge!=null && pl.edge>=0) win.push({txt:`Our combined estimate beats the ${fmtDecX(pl.dec)} break-even (${fmtPct(pl.implied,0)}) by +${(pl.edge*100).toFixed(1)} pts.`});
+  for (const d of legData){
+    const name = legTitle(d.leg);
+    const topFor = d.win.slice(0, 2);
+    if (topFor.length){
+      topFor.forEach(x => win.push({txt:`${name}: ${x.txt||x}`}));
+    } else if (d.leg.p!=null && d.leg.p>=0.60){
+      win.push({txt:`${name} carries a ${fmtPct(d.leg.p,0)} estimated hit rate at ${fmtAm(d.leg.price)}.`});
+    }
   }
-  if (pl.edge!=null && pl.edge<0) lose.push({txt:`Combined juice leaves this about ${fmtPct(Math.abs(pl.edge),1)} short of break-even — parlays compound the book's margin.`});
-  else if (pl.edge!=null && pl.edge>=0) win.push({txt:`Our combined estimate beats the ${fmtDecX(pl.dec)} break-even by ${fmtPct(pl.edge,1)}.`});
-  lose.push({txt:'Any one leg can lose and the whole ticket is dead — variance is higher than a single.'});
+
+  // Ticket-level case AGAINST
+  if (weakest && weakest.p!=null){
+    lose.push({txt:`Weakest link: ${legTitle(weakest)} at ${fmtPct(weakest.p,0)} (${fmtAm(weakest.price)}) — if this leg misses, the whole ticket loses.`});
+  }
+  if (pl.edge!=null && pl.edge<0){
+    lose.push({txt:`Combined book juice puts this ${Math.abs(pl.edge*100).toFixed(1)} pts under break-even (${fmtPct(pl.implied,0)} needed vs ${fmtPct(pl.p,0)} estimated).`});
+  }
+  for (const d of legData){
+    const name = legTitle(d.leg);
+    const realLose = d.lose.filter(x => !/no side wins every night/i.test(String(x.txt||x))).slice(0, 2);
+    realLose.forEach(x => lose.push({txt:`${name}: ${x.txt||x}`}));
+    (d.leg._fails||[]).forEach(f => lose.push({txt:`${name}: ${f}`}));
+  }
+  lose.push({txt:'Every leg has to hit — one cold night, foul trouble, or late injury sinks the entire ticket.'});
+
   const J = (pl.C&&pl.C.J)||'SKIP';
   const cls = J==='BET'?'b-good':J==='MAYBE LATER'?'b-watch':'b-avoid';
+  const strongTxt = strongest ? `${legTitle(strongest)} (${fmtPct(strongest.p,0)})` : 'the top leg';
+  const weakTxt = weakest ? `${legTitle(weakest)} (${fmtPct(weakest.p,0)})` : 'the weakest leg';
   const sentence = J==='BET'
-    ? `This ${pl.n}-leg ticket is built from high-probability favorites and lands in a ${fmtDecX(pl.dec)} payout. The judge will take it as a single parlay, not as three separate bets.`
+    ? `This ${pl.n}-leg ticket pays ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) and every leg clears our favorite-leg filters. Anchored by ${strongTxt}, with ${weakTxt} as the leg to watch closest.`
     : J==='MAYBE LATER'
-      ? `There's a real lean, but a weak link, a slightly short price, or a payout just outside the sweet spot keeps this on the watchlist.`
-      : `The judge passes. Either a leg is too shaky, the combined juice is too heavy, or the payout is not a clean 2–3x.`;
+      ? `There is a real lean here led by ${strongTxt}, but ${weakTxt} or the combined juice keeps this on the watchlist rather than a full play.`
+      : `Pass on this combo. Between ${weakTxt} and the compounded juice on a ${fmtDecX(pl.dec)} ticket, the risk outweighs the payout.`;
   const wr = (pl.implied!=null && pl.p!=null)
-    ? `This ${fmtDecX(pl.dec)} parlay breaks even at about ${typeof outOf10==='function'?outOf10(pl.implied): (pl.implied*10).toFixed(1)} wins in 10 (${fmtPct(pl.implied,0)}). We estimate ${typeof outOf10==='function'?outOf10(pl.p):(pl.p*10).toFixed(1)} in 10 (${fmtPct(pl.p,0)}).`
+    ? `This ${fmtDecX(pl.dec)} parlay breaks even at about ${typeof outOf10==='function'?outOf10(pl.implied):(pl.implied*10).toFixed(1)} wins in 10 (${fmtPct(pl.implied,0)}). We estimate ${typeof outOf10==='function'?outOf10(pl.p):(pl.p*10).toFixed(1)} in 10 (${fmtPct(pl.p,0)}).`
     : '';
-  const rows = pl.legs.map(l=>`<tr><td>${esc(l.playerName||l.label)}</td><td>${l.price!=null?fmtAm(l.price):'—'}</td><td>${l.implied!=null?fmtPct(l.implied,0):'—'}</td><td>${l.p!=null?fmtPct(l.p,0):'—'}</td></tr>`).join('');
+
+  const li = x => `<li><span>${esc(x.txt||x)}</span></li>`;
+
+  // Per-leg detailed courtroom breakdown (same real data as Games & Props!)
+  const legCards = legData.map((d, idx) => {
+    const l = d.leg;
+    const lgLabel = (LMAP[l.league||(l.g&&l.g.league)]||{}).label || (l.league||'').toUpperCase();
+    const matchTxt = l.g ? `${(l.g.away&&l.g.away.short)||''} @ ${(l.g.home&&l.g.home.short)||''}` : '';
+    const isWeak = weakest && l === weakest;
+    const tag = d.isProp
+      ? ((typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[l.kind]) || 'Prop')
+      : (MKN[l.mk] || 'Game');
+    const lWin = d.win.length ? d.win.map(li).join('') : '<li class="mut">Supported mainly by market strength and team baseline.</li>';
+    const lLose = d.lose.length ? d.lose.map(li).join('') : '<li class="mut">No major red flags logged — normal game variance still applies.</li>';
+    const detailTables = d.isProp
+      ? ((typeof propStatTableHTML==='function' ? propStatTableHTML(l) : '') + (typeof l10PropChartHTML==='function' ? l10PropChartHTML(l) : ''))
+      : ((typeof matchupTableHTML==='function' && d.C ? matchupTableHTML(l, d.C) : '') + (typeof marginChartsHTML==='function' ? marginChartsHTML(l) : ''));
+    const statsSummary = d.isProp ? '📊 Player L5/L10 & season splits' : '📊 Team matchup splits, L5/L10 & margins';
+    return `<div class="pl-court-leg">
+      <div class="pl-court-leg-h">
+        <div class="pl-court-leg-title">
+          <span class="lg">${esc(lgLabel)}</span>
+          <span>Leg ${idx+1}: ${esc(legTitle(l))}</span>
+          <span class="mut" style="font-weight:500">${esc(tag)}${matchTxt?` · ${esc(matchTxt)}`:''}</span>
+          ${isWeak ? `<span class="badge b-watch">Weakest link</span>` : ''}
+        </div>
+        <div class="pl-court-leg-stats">
+          <span>Odds <b>${l.price!=null?fmtAm(l.price):'—'}</b></span>
+          <span>Implied <b>${l.implied!=null?fmtPct(l.implied,0):'—'}</b></span>
+          <span>Est. <b>${l.p!=null?fmtPct(l.p,0):'—'}</b></span>
+        </div>
+      </div>
+      <div class="pl-court-grid">
+        <div class="c-col win"><div class="ct">✅ Why Leg ${idx+1} could hit</div><ul>${lWin}</ul></div>
+        <div class="c-col lose"><div class="ct">⚠️ Why Leg ${idx+1} could miss</div><ul>${lLose}</ul></div>
+      </div>
+      ${detailTables ? `<details class="dd"><summary>${statsSummary}</summary><div style="margin-top:8px">${detailTables}</div></details>` : ''}
+    </div>`;
+  }).join('');
+
   return `<div class="court2">
     ${parlayChanceBarHTML(pl)}
-    <div class="c-col win"><div class="ct">✅ Why this parlay could hit</div><ul>${win.map(x=>`<li><span>${esc(x.txt)}</span></li>`).join('')}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this parlay could miss</div><ul>${lose.map(x=>`<li><span>${esc(x.txt)}</span></li>`).join('')}</ul></div>
+    <div class="c-col win"><div class="ct">✅ Why this parlay could hit</div><ul>${win.map(li).join('')}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this parlay could miss</div><ul>${lose.map(li).join('')}</ul></div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(J)}</span></div>
       <div class="c-sent">${esc(sentence)}</div>
       ${unitJudgeLineHTML(pl,"parlay")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
-    <table class="ftab" style="margin-top:10px"><tr><th>Leg</th><th>Odds</th><th>Implied</th><th>Our estimate</th></tr>${rows}</table>
+    <div class="ct" style="margin-top:14px">⚖️ Leg-by-leg courtroom breakdown</div>
+    <div class="pl-court-legs">${legCards}</div>
   </div>`;
 }
 function parlayInjBody(pl){
