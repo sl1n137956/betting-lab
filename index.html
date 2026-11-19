@@ -1003,14 +1003,7 @@ function bookSupportsMarket(books, kind, item){
       if (!Array.isArray(caps) || !caps.length) return false;
       return !stat || caps.includes(stat);
     });
-    if (!anyCap) return false;
-    if (list.length===1 && item){
-      const prices = item.bookPrices || item.books || (item.raw && (item.raw.bookPrices || item.raw.books));
-      if (prices && typeof prices==='object' && Object.keys(prices).length){
-        return bookKeyMatch(prices, list[0]);
-      }
-    }
-    return true;
+    return anyCap;
   }
   const rawMk = item && item.mk;
   const mk = rawMk==='ml' ? 'h2h' : rawMk==='spread' ? 'spreads' : rawMk==='total' ? 'totals' : rawMk;
