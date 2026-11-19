@@ -1,7 +1,7 @@
 /* Verdict app-shell cache. Never caches live API responses.
    v2: HTML pages are network-first with cache: 'no-store' so a new
    deploy is not stuck behind GitHub Pages or a stale iOS shell. */
-const CACHE = 'betting-lab-shell-v40';
+const CACHE = 'betting-lab-shell-v41';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png', './favicon-32.png'];
 
 self.addEventListener('install', event => {

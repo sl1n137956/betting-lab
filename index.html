@@ -1002,6 +1002,29 @@ main.wrap{padding-top:16px}
 .eb-tag,.lk-tag{white-space:normal;max-width:100%;line-height:1.35;overflow-wrap:anywhere}
 @media (max-width:600px){.pulled-list{gap:14px}.pulled-list .card.pulled-item{padding:16px 15px 12px}}
 
+/* v41: roomy desktop Pulled sidebar, cooled-lock note, parlay record + paused banner, profit scoreboard */
+.slate-side{gap:22px}
+.side-card.pulled-card{padding:20px 18px 18px}
+.side-card.pulled-card h3{margin-bottom:6px}
+.side-list{gap:16px !important;margin-top:14px;max-height:min(60vh,560px)}
+.side-row,.side-row.you-bet{padding:16px 36px 14px 16px !important;margin:0 !important;line-height:1.5;border-radius:16px}
+.side-row .what{font-size:14px;line-height:1.4;margin-top:4px}
+.side-row .hop,.side-row .why,.side-row .logged-line{margin-top:6px;line-height:1.45;overflow-wrap:anywhere;white-space:normal}
+.side-row .you-bet-lab{margin-bottom:4px}
+.side-row .side-x{top:10px;right:10px;width:28px;height:28px}
+.side-acts{margin-top:10px;display:flex;gap:10px}
+.side-untrack{margin-top:0}
+.side-empty{margin-top:10px;color:var(--mut);font-size:12.5px;line-height:1.5}
+.cool-note{margin:0 0 10px;padding:7px 11px;border-radius:12px;font-size:12.5px;line-height:1.4;color:#c7d2fe;background:rgba(99,102,241,.14);border:1px solid rgba(129,140,248,.35)}
+.parlay-warn .pw-rec{display:inline-block;margin-top:4px;font-weight:700;color:#fef3c7}
+.parlay-warn.parlay-paused{background:rgba(225,29,72,.12);border-color:rgba(244,63,94,.45);color:#fecdd3}
+.parlay-warn.parlay-paused .pw-rec{color:#ffe4e6}
+.v41-score{margin:0 0 18px;padding:16px}
+.v41-score .tbl{width:100%;border-collapse:collapse;font-size:13px}
+.v41-score .tbl th,.v41-score .tbl td{padding:8px 10px;text-align:left;border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap}
+.v41-score .tbl-wrap{overflow-x:auto}
+.v41-score .meta-pill{display:inline-block;margin:4px 6px 0 0}
+
 /* v40: parlay heads-up + pending-only bets */
 .parlay-warn{display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;padding:10px 12px 10px 14px;border-radius:14px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.42);color:#fde68a;font-size:13px;line-height:1.45}
 .parlay-warn .pw-txt{flex:1;min-width:0}
@@ -1743,6 +1766,8 @@ function defaultLockMins(board){
 function boardLockMins(board){
   const b = board || (typeof ui!=='undefined' && ui.board) || 'games';
   // v38: parlays lock on the same window as Games singles, timed from the EARLIEST leg (never "as soon as they qualify")
+  // v41: one lock lead for every board (parlays count from their earliest leg)
+  if (typeof lockLeadMins==='function') return lockLeadMins();
   if (b==='parlay'){ const gm = boardLockMins('games'); return (gm!=null && +gm>0) ? +gm : 60; }
   try{
     if (typeof LEARN!=='undefined' && LEARN){
@@ -1810,7 +1835,7 @@ function earlyLockBadgeHTML(startMs, board){
   return `<span class="lock-badge" title="Preview only — locks into official Picks ${fmtLockWindow(lock)} before tip">⏳ ${esc(fmtLocksIn(startMs, lock))}</span>`;
 }
 function isEarlyPreview(x, board){
-  if (x && (x.pulledNote || x.tailedKeep)) return false;
+  if (x && (x.pulledNote || x.tailedKeep || x.lockedKeep)) return false;
   const lock = boardLockMins(board);
   if (lock==null || lock<=0) return false;
   if (!isOfficialLock(itemStartMs(x), lock)) return true;
@@ -1826,7 +1851,7 @@ function splitLockedEarly(list, board){
   const locked=[], early=[];
   for (const x of (list||[])){
     if (!x) continue;
-    if (x.pulledNote || x.tailedKeep) { locked.push(x); continue; }
+    if (x.pulledNote || x.tailedKeep || x.lockedKeep) { x._ebTag = ''; locked.push(x); continue; }
     const st = typeof lockStatus==='function' ? lockStatus(x, board) : {locked:isOfficialLock(itemStartMs(x), lock)};
     x._ebTag = st.locked ? '' : (st.tag || '');
     if (st.locked) locked.push(x);
@@ -1836,7 +1861,8 @@ function splitLockedEarly(list, board){
 }
 function picksBoardHTML(title, lockedSub, emptyMsg, list, board, cardFnRaw){
   // v38: pulled tailed bets render red with a "Pulled · …" tag; tailed bets count as locked (you already bet them)
-  const cardFn = x => (x && x.pulledNote && typeof injectPulledCard==='function') ? injectPulledCard(cardFnRaw(x), x.pulledNote) : cardFnRaw(x);
+  const cardFn = x => (x && x.pulledNote && typeof injectPulledCard==='function') ? injectPulledCard(cardFnRaw(x), x.pulledNote)
+    : (x && x.coolNote && typeof injectCoolNote==='function') ? injectCoolNote(cardFnRaw(x), x) : cardFnRaw(x);
   const {locked, early, lockMins:lock} = splitLockedEarly(list, board);
   const grid = arr => arr.length ? `<div class="grid">${arr.map(cardFn).join('')}</div>` : '';
   let html = '';
@@ -2340,6 +2366,8 @@ function legShortName(leg){ try{ return typeof parlayLegLabel==='function' ? par
 /* Lock decision for one board item → {locked, tag} (tag = why it's still Early Bird) */
 function lockStatus(x, board){
   const now = Date.now();
+  // v41: once locked, it stays locked (only an urgent reason can pull it)
+  try{ const rec = typeof lockedRec==='function' ? lockedRec(board, x) : null; if (rec && !rec.pulled) return {locked:true, tag:''}; }catch(e){}
   const lm = boardLockMins(board);
   const start = itemStartMs(x);
   if (!isOfficialLock(start, lm)) return {locked:false, tag:fmtLocksIn(start, lm)};
@@ -3268,6 +3296,8 @@ function evaluateAll(){
     else if (p.verdict==='good' && inMyRange(p)===false){ p.verdict='watch'; p.reasons.unshift(`Outside your ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)} range`); }
     else if (p.verdict==='good' && p.my && p.my.best && p.my.best.edge<0){ p.verdict='watch'; p.reasons.unshift(`${p.my.best.book} price is worse than fair`); }
   }
+  // v41: a pick that was pulled stays off every list for the rest of that game
+  try{ if (typeof applyPulledFinal==='function') applyPulledFinal('games'); }catch(e){ console.warn('pulled final', e); }
   // one Good per game (avoid correlated stacks); favorites first, then score
   const goods = plays.filter(p=>p.verdict==='good').sort((a,b)=>(b.est||0)-(a.est||0) || (b.score + b.j.conf.v/50) - (a.score + a.j.conf.v/50));
   const seen = new Set(); let n=0;
@@ -3705,6 +3735,8 @@ function lockItemKey(board, item){
   return `lock:${board}|${item.id||''}`;
 }
 function checkLockAlerts(board){
+  // v41: record official locks and run the urgent-only check even when alerts are off
+  try{ for (const b0 of (board ? [board] : ['games','props','parlay'])) if (typeof recordLocks==='function') recordLocks(b0); if (typeof checkLockedUrgent==='function') checkLockedUrgent(); }catch(e){ console.warn('locks', e); }
   if (!canAlert('new')) return;
   const boards = board ? [board] : ['games','props','parlay'];
   for (const b of boards){
@@ -3721,7 +3753,7 @@ function checkLockAlerts(board){
         && (typeof selectedBooksAllowProp!=='function' || selectedBooksAllowProp(p))
       );
     } else if (b==='parlay'){
-      src = (typeof parlays!=='undefined' ? parlays : []).filter(pl =>
+      src = (typeof parlayGuardPaused==='function' && parlayGuardPaused()) ? [] : (typeof parlays!=='undefined' ? parlays : []).filter(pl =>
         pl && pl.verdict==='good' && pl.id
         && !(pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')
         && (typeof selectedBooksAllowParlay!=='function' || selectedBooksAllowParlay(pl))
@@ -3835,6 +3867,7 @@ function checkTailedBoardPulls(board){
       return;
     }
     const note = Object.assign({k, board:brd, from:'good', to:'avoid', at:now, reason, label, game:gameTxt||'', start:startMs||now+3600000, pullNotified:false, pulledTo:'avoid'}, extra||{});
+    try{ if (typeof v41FinalPull==='function'){ v41FinalPull(k, {board:brd, start:note.start, reason, label, tailed:true}); (extra && extra.finalKeys || []).forEach(fk=>v41FinalPull(fk, {board:brd, start:note.start, reason, label, tailed:true})); } }catch(e){}
     pullNotes.unshift(note);
     dirty = true;
     notifyPulled(note);
@@ -3845,7 +3878,8 @@ function checkTailedBoardPulls(board){
     if (!k) continue;
     if (boards.includes('games')){
       const p = (typeof plays!=='undefined' ? plays : []).find(x=>x && x.g && x.g.eventId && (playResultKey(x)===k || x.id===k));
-      if (p && p.g && p.g.state==='pre'){
+      const gLocked = !!(p && p.g && p.g.state==='pre' && typeof ensureTailedLockRec==='function' && ensureTailedLockRec(b, 'games', p));
+      if (p && p.g && p.g.state==='pre' && !gLocked){
         if (p.verdict==='avoid'){
           ensureNote(k, 'games', p.label||b.label||k, `${p.g.away.short} @ ${p.g.home.short}`, p.g.start&&p.g.start.getTime?p.g.start.getTime():+p.g.start, pullReasonFor({k}));
         } else if (p.verdict==='good'){
@@ -3857,19 +3891,24 @@ function checkTailedBoardPulls(board){
       // v37: match the tailed prop by its saved key, or by game + player + stat + side + line for older bets
       const PI = typeof propBetInfo==='function' ? propBetInfo(b) : null;
       const PP = (typeof props!=='undefined' ? props : []);
-      const pr = PP.find(x=>x && x.id===k) || (PI ? PP.find(x=>propMatchesInfo(x, PI)) : null);
-      if (!pr && PI){
+      let pr = PP.find(x=>x && x.id===k) || (PI ? PP.find(x=>propMatchesInfo(x, PI)) : null);
+      // v41: inside the lock window a tailed prop follows the urgent-only rule (checkLockedUrgent)
+      const anyP = pr || (PI ? PP.find(x=>propMatchesInfo(x, PI, true)) : null);
+      const tailedSide = anyP ? Object.assign({}, anyP, {side: PI ? PI.side : anyP.side, line: PI && PI.line!=null ? PI.line : anyP.line, price: pr ? pr.price : anyP.price}) : null;
+      const pLocked = !!(tailedSide && typeof ensureTailedLockRec==='function' && ensureTailedLockRec(b, 'props', tailedSide));
+      if (pLocked) pr = null;
+      if (!pr && PI && !pLocked){
         const other = PP.find(x=>propMatchesInfo(x, PI, true));
         if (other && (!other.g || other.g.state==='pre') && String(other.side)!==String(PI.side)){
           const gm = other.g && other.g.away && other.g.home ? `${other.g.away.short} @ ${other.g.home.short}` : (b.game||'');
-          ensureNote(k, 'props', b.pick||k, gm, typeof itemStartMs==='function'?itemStartMs(other):0, `the props model now leans ${other.side==='under'?'Under':'Over'} ${other.line} instead`);
+          ensureNote(k, 'props', b.pick||k, gm, typeof itemStartMs==='function'?itemStartMs(other):0, `the props model now leans ${other.side==='under'?'Under':'Over'} ${other.line} instead`, {finalKeys:[typeof propKeyOf==='function' ? propKeyOf(Object.assign({}, other, {side:PI.side})) : '']});
         }
       }
       if (pr && (!pr.g || pr.g.state==='pre')){
         if (pr.verdict==='avoid'){
           const why = (pr.reasons && pr.reasons[0]) || (pr.j && pr.j.judge && pr.j.judge.why) || 'no longer passes prop gates';
           const gm = pr.g && pr.g.away && pr.g.home ? `${pr.g.away.short} @ ${pr.g.home.short}` : (b.game||'');
-          ensureNote(k, 'props', pr.label||b.label||k, gm, typeof itemStartMs==='function'?itemStartMs(pr):0, why);
+          ensureNote(k, 'props', pr.label||b.label||k, gm, typeof itemStartMs==='function'?itemStartMs(pr):0, why, {finalKeys:[typeof propKeyOf==='function' ? propKeyOf(pr) : '']});
         } else if (pr.verdict==='good'){
           markReadded(k, now, 'avoid');
         }
@@ -3879,7 +3918,17 @@ function checkTailedBoardPulls(board){
       // v38: any leg that turns into an Avoid (or flips side / contradicts a Pick / a moneyline favorite stops being one)
       // pulls the WHOLE tailed parlay, to be safe. The note names the leg.
       const chk = typeof parlayLegPullCheck==='function' ? parlayLegPullCheck(b, k) : {started:false};
-      if (!chk.started){
+      // v41: inside the lock window (earliest leg) a tailed parlay follows the urgent-only rule
+      let parLocked = false;
+      if (!chk.started && typeof V41==='function'){
+        const st41 = V41(); const ms = isFinite(chk.minStart) ? chk.minStart : ((b.link && +b.link.start) || 0);
+        if (st41.locked[k]) parLocked = true;
+        else if (ms && isOfficialLock(ms, lockLeadMins())){
+          const pl0 = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===k) || (typeof tailedParlayFromBet==='function' ? tailedParlayFromBet(b) : null);
+          if (pl0){ ensureTailedLockRec(b, 'parlay', pl0); parLocked = true; }
+        }
+      }
+      if (!chk.started && !parLocked){
         const pl = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===k);
         const betLabel = (typeof parlayBetLegNames==='function' ? parlayBetLegNames(b) : []).join(' + ') || b.pick || 'Tailed parlay';
         const stMs = isFinite(chk.minStart) ? chk.minStart : ((b.link && b.link.start) || (pl && isFinite(pl.start) ? pl.start : now+3600000));
@@ -4063,8 +4112,12 @@ function trackPlayTabs(){
     if (wasGood && cur!=='good') delete newPlayNotified[k];
     if (prev && prev.tab && prev.tab!==cur && TAB_RANK[prev.tab] && TAB_RANK[cur]){
       if (TAB_RANK[cur] < TAB_RANK[prev.tab]){
-        if (shouldPullPick(prev.tab, cur, prev && (prev.wasPick || prev.tab==='good'))){
+        const lockedNow = typeof V41==='function' && !!V41().locked[k] && !V41().locked[k].pulled;
+        if (lockedNow && shouldPullPick(prev.tab, cur, prev && (prev.wasPick || prev.tab==='good'))){
+          meta.cooled = cur; meta.cooledAt = now;      // v41: locked → quiet note only, never a pull for drift
+        } else if (shouldPullPick(prev.tab, cur, prev && (prev.wasPick || prev.tab==='good'))){
           const reason = pullReasonFor({k});
+          try{ if (typeof v41FinalPull==='function') v41FinalPull(k, {board:'games', start:meta.start, reason, label:meta.label, early:true}); }catch(e){}
           meta.pulledFrom = 'good'; meta.pulledAt = now; meta.pullReason = reason; meta.pulledTo = 'avoid';
           meta.upgradedFrom = null; meta.upgradedAt = null;
           for (const n of pullNotes) if (n.k===k && !n.resolved) n.to = cur;
@@ -4130,8 +4183,8 @@ function recordResults(){
   }
   for (const r of results){
     if (r.status==='active' && r.start > now && !goodIds.has(r.k) && games.some(g=>String(g.eventId)===String(r.ev))){
-      const cur = liveVerdictOfKey(r.k);
-      if (cur!=='avoid') continue; // Pick → Watchlist stays active; only a full flip to Avoid is pulled
+      // v41: a locked pick is only withdrawn for an urgent reason (it is then in the final pulled set)
+      if (!(typeof isFinalPulled==='function' ? isFinalPulled(r.k) : liveVerdictOfKey(r.k)==='avoid')) continue;
       r.status = 'withdrawn';
       r.pulledAt = now;
       r.pullReason = pullReasonFor(r);
@@ -4163,6 +4216,7 @@ function checkLoggedKeyOutPulls(){
     const note = {k, from, to:'avoid', at:now, reason, label:p.label, game:`${p.g.away.short} @ ${p.g.home.short}`, start:p.g.start.getTime(), pulledTo:'avoid'};
     pullNotes.unshift(note);
     saveJSON(LS.pullNotes, pullNotes);
+    try{ if (typeof v41FinalPull==='function') v41FinalPull(k, {board:'games', start:note.start, reason, label:note.label, urgent:true}); }catch(e){}
     notifyPulled(note);
   }
 }
@@ -4237,6 +4291,7 @@ async function gradeAll(){
       }
     }
     if (bc) saveBets();
+    try{ if (typeof gradeLockedRecords==='function') await gradeLockedRecords(); }catch(e){ console.warn('grade locked', e); }
     if ((changed||bc) && (ui.tab==='tracker'||ui.tab==='results')) render();
     if (bc) toast(`Auto-graded ${bc} bet${bc===1?'':'s'}`);
   } finally { gradingBusy = false; }
@@ -6202,9 +6257,9 @@ function pulledSidebarHTML(fromTab, counts){
       ${logged?'<div class="you-bet-lab">YOU TAILED THIS</div>':''}
       <div class="what">${esc(r.legLabel ? r.legLabel+' → now Avoid' : r.label)}</div>
       <div class="hop">${esc(r.legLabel ? 'From your parlay: '+(r.betLabel||'') : hopTxt(r))}</div>
-      <button type="button" class="side-untrack" data-untrack="${esc(r.k)}">Untrack</button>
       ${b?`<div class="logged-line">${esc(loggedBadgeText(b))}</div>`:''}
-      <div class="why">${esc(r.reason||r.pullReason||'no longer passes the filters')} · ${esc(r.start?fmtTime(new Date(r.start)):'')}</div>
+      <div class="why">${esc(r.reason||r.pullReason||'no longer passes the filters')}${r.start?' · '+esc(fmtTime(new Date(r.start))):''}</div>
+      <div class="side-acts"><button type="button" class="side-untrack" data-untrack="${esc(r.k)}">Untrack</button></div>
     </div>`;
     }).join('')}</div>` : '';
   const c = counts || {good:0, watch:0, avoid:0};
@@ -6219,7 +6274,7 @@ function pulledSidebarHTML(fromTab, counts){
           </span>
         </h3>
         ${items}
-      </div>` : '';
+      </div>` : `<div class="side-card pulled-card pulled-empty" id="pulledSidebar"><h3><span>🟠 Pulled plays</span><span class="n mute">0</span></h3><div class="side-empty">None of your tailed bets were pulled. If one is, it shows up here with the reason.</div></div>`;
   return `<button type="button" class="side-toggle" id="btnSideToggle" aria-expanded="${ui.sideOpen?'true':'false'}"><span>${list.length?('Pulled ('+list.length+')'):'Today'}</span><span class="chev">${ui.sideOpen?'▾':'▸'}</span></button>
     <div class="side-body">
       ${pulledCardHTML}
@@ -6634,7 +6689,7 @@ function render(){
   if (ui.tab==='good'){
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
     const body = (typeof picksBoardHTML==='function')
-      ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), (typeof withPulledTailed==='function' ? withPulledTailed(good, 'games') : good), 'games', playCard)
+      ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), (typeof withPulledTailed==='function' ? withPulledTailed(good.concat(typeof lockedKeepItems==='function' ? lockedKeepItems('games', good) : []), 'games') : good), 'games', playCard)
       : section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'));
     v.innerHTML = slateLayout('good', body + errs, counts);
   }
@@ -8517,7 +8572,7 @@ function renderResults(){
   const rb = ui.resultsBoard || 'games';
   const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, Parlay, or Verdict.</div></div>`;
   const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
-  const live = liveRecordHTML(rb);
+  const live = (typeof v41ScoreboardHTML==='function' ? v41ScoreboardHTML() : '') + liveRecordHTML(rb);
   let body = '';
   if (rb==='props'){
     body = live+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
@@ -9548,7 +9603,7 @@ async function loadLiveProps(opts){
         ? `Live lines from ESPN’s DraftKings prop feed on ${espnGames} game${espnGames===1?'':'s'} (${espnN} player-stat lines). Over is listed first, Under second — the feed does not label the side. ${S.oddsKey?'Odds API player markets are merged when a cached fetch is available.':'Add an Odds API key in Settings for more books.'}`
         : (espnErr ? 'Could not reach ESPN prop lines just now.' : 'No live prop lines posted for the upcoming games in this window. You can still type a prop in Verdict and we will research the player’s real game log.')
     };
-    try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
+    try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('props'); if (typeof applyPulledFinal==='function') applyPulledFinal('props'); }catch(e){} try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
     if (typeof checkLockAlerts==='function') checkLockAlerts('props');
     if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props');
     if (typeof softRender==='function') softRender();
@@ -9672,7 +9727,7 @@ async function runPropEnrichment(){
       }
     }
   }catch(e){}
-  try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
+  try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('props'); if (typeof applyPulledFinal==='function') applyPulledFinal('props'); }catch(e){} try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
   try{ if (typeof checkLockAlerts==='function') checkLockAlerts('props'); }catch(e){}
   try{ if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props'); }catch(e){}
   flush(true);
@@ -9933,6 +9988,7 @@ function renderPropsBoard(tab, errs){
   const watch = vis('watch').sort((a,b)=>(b.p||0)-(a.p||0));
   const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
   try{ good = good.concat(tailedPropsToKeep([...good, ...watch, ...avoid])); }catch(e){ console.warn('tailed props keep', e); }
+  try{ if (typeof lockedKeepItems==='function') good = good.concat(lockedKeepItems('props', good)); }catch(e){ console.warn('locked keep', e); }
   if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'props');
   const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
   const st = propStatusHTML();
@@ -10301,7 +10357,8 @@ function buildParlays(){
   const sweetLo = +cfg.payoutSweetMin || 2.0, sweetHi = +cfg.payoutSweetMax || 3.0;
   const gamesL = gameParlaySides();
   const propsL = propParlaySides();
-  const raw = gamesL.concat(propsL);
+  // v41: a pulled leg can never come back inside a parlay
+  const raw = gamesL.concat(propsL).filter(l=>!(typeof isFinalPulled==='function' && (isFinalPulled(legKeyOf(l)) || isFinalPulled(l.id))));
   for (const p of raw) p._fails = parlayLegFails(p, cfg);
   // Eligible: price in range. Clean legs have no fails. Near legs have only soft misses.
   const inRange = raw.filter(p=>p.price!=null && p.price>=cfg.sFavMin && p.price<=cfg.sDogMax && p.p!=null);
@@ -10377,7 +10434,9 @@ function buildParlays(){
     if (kept.length>=24) break;
   }
   // ensure some avoids if we have weak combos leftover
+  for (const c of kept){ if (typeof isFinalPulled==='function' && isFinalPulled(c.id) && c.verdict!=='avoid'){ c.verdict='avoid'; c.C={J:'SKIP'}; (c.reasons||(c.reasons=[])).unshift('Pulled earlier. It stays off the board.'); } }
   parlays = kept;
+  try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('parlay'); }catch(e){}
   if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
   try{ if (typeof parlayLearnCapture==='function') parlayLearnCapture(); }catch(e){}
   try{ if (typeof checkLockAlerts==='function') checkLockAlerts('parlay'); }catch(e){}
@@ -10636,12 +10695,13 @@ function renderParlayBoard(tab, errs){
   let good=vis('good'); const watch=vis('watch'), avoid=vis('avoid');
   // v37: a pending tailed parlay never vanishes — if it isn't on any tab (and wasn't pulled), keep it under Picks
   try{ const shown = new Set([...good, ...watch, ...avoid].map(x=>x.id)); good = good.concat(tailedParlaysToKeep(shown)); }catch(e){ console.warn('tailed keep', e); }
+  try{ if (typeof lockedKeepItems==='function') good = good.concat(lockedKeepItems('parlay', good)); }catch(e){ console.warn('locked keep', e); }
   if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'parlay');
+  // v41: auto-guard — paused Parlays only show what you tailed / what already locked
+  if (typeof parlayGuardPaused==='function' && parlayGuardPaused()) good = good.filter(x=>x.tailedKeep || x.pulledNote || x.lockedKeep || (typeof isLoggedKey==='function' && isLoggedKey(x.id)));
   const counts={good:good.length, watch:watch.length, avoid:avoid.length};
-  // v40: amber heads-up at the top of the Parlay tab (hide for this session)
-  let warnHidden = false; try{ warnHidden = sessionStorage.getItem('bl_parlayWarnHidden')==='1'; }catch(e){}
-  const W = typeof fmtLockWindow==='function' && typeof boardLockMins==='function' ? fmtLockWindow(boardLockMins('parlay')) : '1h';
-  const st = warnHidden ? '' : `<div class="parlay-warn" role="note"><span class="pw-txt">⚠️ Parlays lock ${esc(W)} before the first game. Early Bird parlays can still change or get pulled. Tailing early raises the chance of a pull.</span><button type="button" class="pw-x" data-hide-parlay-warn aria-label="Hide this note for now">×</button></div>`;
+  // v41: lock note + automatic record (or the paused banner)
+  const st = typeof parlayBannerHTML==='function' ? parlayBannerHTML() : '';
   const section = (title, sub, list, empty) => `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length?`<div class="grid">${list.map(parlayCard).join('')}</div>`:`<div class="empty-state">${empty}</div>`);
   const empty = (typeof sportFilterEmpty==='function'?sportFilterEmpty('No parlays in this range right now. Zero tickets is fine.'):'No parlays right now.');
   if (tab==='good'){
@@ -11027,9 +11087,18 @@ function parlayLearnCapture(){
 }
 
 function boxStat(ath, kind){
-  const st = ath && (ath.stats||ath.statistics||ath);
+  const st0 = ath && (ath.stats||ath.statistics||ath);
+  // v41: ESPN summary box scores use upper-case labels (PTS, REB, AST, 3PT "made-attempted") — match case-insensitively
+  let st = st0;
+  if (st0 && !Array.isArray(st0) && typeof st0==='object'){
+    st = {}; for (const k of Object.keys(st0)){ const v = st0[k]; const lk = String(k).toLowerCase(); st[k] = v; st[lk] = (typeof v==='string' && /^\d+-\d+$/.test(v)) ? +v.split('-')[0] : v; }
+    if (st['3pt']!=null && st.threes==null) st.threes = st['3pt'];
+    if (!Object.keys(st0).length) return null;
+  }
   const num = (keys)=>{
-    for (const k of keys){
+    for (const k0 of keys){
+      const k = String(k0).toLowerCase();
+      if (st[k0]!=null && isFinite(+st[k0])) return +st[k0];
       if (st[k]!=null && isFinite(+st[k])) return +st[k];
       const hit = Array.isArray(st) ? st.find(s=>String(s.name||s.abbreviation||'').toLowerCase()===k.toLowerCase()) : null;
       if (hit && isFinite(+(hit.value||hit.displayValue))) return +(hit.value||hit.displayValue);
@@ -11039,7 +11108,7 @@ function boxStat(ath, kind){
   const pts = num(['points','pts']);
   const reb = num(['rebounds','totalRebounds','reb']);
   const ast = num(['assists','ast']);
-  const th  = num(['threePointFieldGoalsMade','threes','fg3m','3PM']);
+  const th  = num(['threePointFieldGoalsMade','threes','fg3m','3PM','3pt']);
   if (kind==='pts') return pts;
   if (kind==='reb') return reb;
   if (kind==='ast') return ast;
@@ -11304,7 +11373,7 @@ function evalLockPolicy(rows, maxMins, payoutFn){
 }
 function sameLock(a,b){ return (a==null||a<=0) ? (b==null||b<=0) : a===b; }
 function retuneLockMins(board){
-  if (board==='parlay') return {adopted:false, why:'Parlays use the Games lock window, timed from the first leg.'};
+  return {adopted:false, why:'Lock lead is fixed at 30 minutes before start for every board (v41: lock close to game time).'};
   const rec=v=>v==='good'||v==='pick'||v==='bet';
   const rows = lockTuneRows(board).filter(x=>(x.y===0||x.y===1) && x.minsToTip!=null && rec(x.verdict));
   if (rows.length < 40) return {adopted:false, why:'Need 40 graded timed snapshots first ('+rows.length+' so far).'};
@@ -11857,7 +11926,10 @@ function renderSettings(){
     <div class="s-row"><div class="s-h">Target parlay payout</div>
       <div class="s-inline"><label>Min payout (×)<input name="payoutMin" type="number" step="0.05" min="1.2" max="10" value="${B.payoutMin??1.85}"></label>
       <label>Max payout (×)<input name="payoutMax" type="number" step="0.05" min="1.5" max="20" value="${B.payoutMax??3.25}"></label></div>
-      <div class="s-note">Sweet spot is 2.0x–3.0x (about +100 to +200). Tickets slightly outside still show, but Picks prefer the sweet spot. Example: −220 and −210 ≈ 2.15x; three legs around −280/−260/−240 ≈ 2.67x.</div></div>`
+      <div class="s-note">Sweet spot is 2.0x–3.0x (about +100 to +200). Tickets slightly outside still show, but Picks prefer the sweet spot. Example: −220 and −210 ≈ 2.15x; three legs around −280/−260/−240 ≈ 2.67x.</div></div>
+    <div class="s-row"><div class="s-h">Parlay auto-guard</div>
+      <label class="chk"><input type="checkbox" name="parlayForceOn" ${S.parlayForceOn?'checked':''}> Keep Parlays on even if they're losing money</label>
+      <div class="s-note">Off (recommended): once 30 locked parlays are graded and the last 30 are below −5% ROI, Parlays pause by themselves, then come back once the last 30 are above 0%. ${typeof parlayGuardPaused==='function' && typeof V41==='function' && V41().guard && V41().guard.paused ? '<b>Right now the guard says pause.</b>' : ''}</div></div>`
     : `<div class="s-row"><div class="s-h">My odds range</div>
       <div class="s-inline"><label>Most I'll lay<input name="sFavMin" type="number" step="1" value="${B.sFavMin??S.sFavMin}"></label>
       <label>Longest I'll take<input name="sDogMax" type="number" step="1" value="${B.sDogMax??S.sDogMax}"></label></div>
@@ -12024,6 +12096,7 @@ function renderSettings(){
       if (isFinite(fav)) B.sFavMin = fav;
       if (isFinite(dog)) B.sDogMax = dog;
       if (sb==='parlay'){
+        S.parlayForceOn = !!f.get('parlayForceOn');
         const pmn=parseFloat(f.get('payoutMin')), pmx=parseFloat(f.get('payoutMax'));
         if (isFinite(pmn)) B.payoutMin = pmn;
         if (isFinite(pmx)) B.payoutMax = pmx;
@@ -12598,6 +12671,8 @@ function localPayload(){
     filtersAt: syncMeta.filtersAt||0,
     bets: JSON.stringify(betsOut),
     betsDeleted: JSON.stringify(syncMeta.deleted||{}),
+    pulledFinal: JSON.stringify(typeof V41==='function' ? V41().pulled : {}),
+    parlayGuard: JSON.stringify(typeof V41==='function' ? V41().guard : {}),
     profitPeriod: (typeof trackerUI!=='undefined' && trackerUI.period) || 'all',
     profitPeriodAt: syncMeta.periodAt||0,
     profile: {displayName: (u && u.displayName)||'', email: (u && u.email)||''},
@@ -12650,6 +12725,15 @@ function applyRemote(d){
       trackerUI.period = d.profitPeriod; localStorage.setItem(TRACKER_LS, JSON.stringify({period:d.profitPeriod})); _lastPeriodStr = localStorage.getItem(TRACKER_LS);
       syncMeta.periodAt = +d.profitPeriodAt; touched = true; if (ui.tab==='tracker') needRender = true;
     }
+    if (d.pulledFinal && typeof V41==='function'){
+      const rp = parseJ(d.pulledFinal, {}) || {}; const st41 = V41(); let add = 0;
+      for (const k of Object.keys(rp)) if (!st41.pulled[k] && rp[k] && +rp[k].start > Date.now()-12*3600e3){ st41.pulled[k] = rp[k]; add++; }
+      if (add){ try{ localStorage.setItem('bl_pulledFinal_v1', JSON.stringify(st41.pulled)); }catch(e){} needRender = true; }
+    }
+    if (d.parlayGuard && typeof V41==='function'){
+      const rg = parseJ(d.parlayGuard, null); const st41 = V41();
+      if (rg && (+rg.checked||0) > (+(st41.guard||{}).checked||0)){ st41.guard = rg; try{ localStorage.setItem('bl_parlayGuard_v1', JSON.stringify(rg)); }catch(e){} }
+    }
     if (d.bets != null){
       const m = mergeBets(parseJ(d.bets, []), parseJ(d.betsDeleted, {}));
       const before = JSON.stringify(bets);
@@ -12673,6 +12757,7 @@ function localDiffersFrom(d){
   const rb = parseJ(d.bets, []); const rIds = new Set((rb||[]).map(b=>b && b.id));
   const rs = {}; (rb||[]).forEach(b=>{ if (b && b.id) rs[b.id] = +b._u||0; });
   if ((bets||[]).some(b=>!rIds.has(b.id) || (syncMeta.betStamps[b.id]||0) > (rs[b.id]||0))) return true;
+  if (typeof V41==='function'){ const rp = parseJ(d.pulledFinal, {}) || {}; if (Object.keys(V41().pulled).some(k=>!(k in rp))) return true; }
   const rd = parseJ(d.betsDeleted, {}) || {};
   if (Object.keys(syncMeta.deleted||{}).some(id=>!(id in rd))) return true;
   return false;
@@ -13150,6 +13235,396 @@ async function verdictEspnLookup(q){
     else out.message = `Matched ${out.name} (${leagueLabel}), but they don't have a game on today's ESPN schedule right now.`;
   }
   return out;
+}
+/* ================= v41: lock close to game time · pulled is final · urgent-only pulls after lock · automatic profit tracking =================
+   State lives on window.__v41 (lazy) so nothing depends on script order. Everything persists in localStorage;
+   the pulled set also rides along with account sync. */
+function lockLeadMins(){ return 30; }            // one lead for Games, Props and Parlays (parlays: from the earliest leg)
+function v41LS(){ return {pulled:'bl_pulledFinal_v1', locked:'bl_locked_v1', guard:'bl_parlayGuard_v1', flips:'bl_flipLog_v1', prevGood:'bl_prevGood_v1'}; }
+function V41(){
+  if (window.__v41) return window.__v41;
+  const lj = (k, d) => { try{ const o = JSON.parse(localStorage.getItem(k)||'null'); return (o && typeof o==='object') ? o : d; }catch(e){ return d; } };
+  const st = window.__v41 = {
+    pulled: lj(v41LS().pulled, {}), locked: lj(v41LS().locked, {}), guard: lj(v41LS().guard, {paused:false}),
+    flips: lj(v41LS().flips, []), prevGood: lj(v41LS().prevGood, {props:{}, parlay:{}})
+  };
+  if (!Array.isArray(st.flips)) st.flips = [];
+  if (!st.prevGood.props) st.prevGood.props = {}; if (!st.prevGood.parlay) st.prevGood.parlay = {};
+  try{ v41Migrate(st); }catch(e){ console.warn('v41 migrate', e); }
+  return st;
+}
+function v41Save(which){
+  const st = V41();
+  for (const w of (which ? [].concat(which) : Object.keys(v41LS()))){ try{ localStorage.setItem(v41LS()[w], JSON.stringify(st[w])); }catch(e){} }
+  if ((!which || [].concat(which).includes('pulled') || [].concat(which).includes('guard')) && typeof scheduleCloudPush==='function' && typeof AUTH!=='undefined' && AUTH && AUTH.user && !AUTH.applying){ try{ scheduleCloudPush(); }catch(e){} }
+}
+/* ---------- keys ---------- */
+function propKeyOf(p){
+  if (!p) return '';
+  const ev = (p.g && p.g.eventId) || p.eventId || p.ev || '';
+  return `pp|${ev}|${p.playerId || p.pid || p.playerName || ''}|${p.kind || p.stat || ''}|${String(p.side||'').toLowerCase()}`;
+}
+function canonKey(k){
+  const s = String(k||'');
+  if (s.startsWith('prop:')){ const p = s.split(':'); const n = p.length; if (n>=6) return `pp|${p[1]}|${p.slice(2,n-3).join(':')}|${p[n-3]}|${String(p[n-2]).toLowerCase()}`; }
+  return s;
+}
+function legKeyOf(l){
+  if (!l) return '';
+  if (l.isProp || (l.kind && l.playerName && !l.mk)) return propKeyOf(l);
+  if (l.g && l.g.eventId) return `${l.g.eventId}|${l.mk}|${l.side}`;
+  if (l.ev && l.mk) return `${l.ev}|${l.mk}|${l.side}`;
+  return canonKey(l.id||'');
+}
+function boardKeyOf(board, x){
+  if (!x) return '';
+  if (board==='parlay' || x.isParlay) return x.id || '';
+  if (board==='props' || x.isProp || (x.kind && x.playerName)) return propKeyOf(x);
+  return (x.g && x.g.eventId) ? playResultKey(x) : (x.id||'');
+}
+/* ---------- pulled is final ---------- */
+function isFinalPulled(k){ if (!k) return false; const st = V41(); return !!(st.pulled[k] || st.pulled[canonKey(k)]); }
+function v41FinalPull(k, info){
+  k = canonKey(k); if (!k) return false;
+  const st = V41(); if (st.pulled[k]) return false;
+  const now = Date.now();
+  st.pulled[k] = Object.assign({at:now, start:now+6*3600e3, board:'games', reason:'flipped to Avoid'}, info||{});
+  const s = +st.pulled[k].start || now;
+  st.flips.unshift({b:st.pulled[k].board, m:Math.round((s-now)/60000), at:now, locked:!!(info&&info.locked), urgent:!!(info&&info.urgent)});
+  st.flips = st.flips.slice(0, 600);
+  v41Save(['pulled','flips']);
+  return true;
+}
+function v41Migrate(st){
+  const now = Date.now();
+  // anything that was already pulled earlier today stays pulled (this is the pick that came back in Early Bird)
+  for (const n of ((typeof pullNotes!=='undefined' && pullNotes) || [])){
+    if (!n || !n.k || !(+n.start > now)) continue;
+    if ((n.from||'good')!=='good') continue;
+    if (n.to && n.to!=='avoid' && n.pulledTo!=='avoid') continue;
+    const k = canonKey(n.k); if (!st.pulled[k]) st.pulled[k] = {at:n.at||now, start:+n.start, board:n.board||'games', reason:n.reason||'flipped to Avoid', label:n.label||'', migrated:true};
+  }
+  for (const r of ((typeof results!=='undefined' && results) || [])){
+    if (!r || !r.k || !(+r.start > now) || !r.pulledAt) continue;
+    if (!st.pulled[r.k]) st.pulled[r.k] = {at:r.pulledAt, start:+r.start, board:'games', reason:r.pullReason||'flipped to Avoid', label:r.label||'', migrated:true};
+  }
+  v41Prune(st);
+  try{ for (const w of ['pulled']) localStorage.setItem(v41LS()[w], JSON.stringify(st[w])); }catch(e){}
+}
+function v41Prune(st){
+  st = st || V41(); const now = Date.now();
+  for (const k of Object.keys(st.pulled)){ const x = st.pulled[k]; if (!x || (+x.start||0) < now - 12*3600e3) delete st.pulled[k]; }
+  for (const k of Object.keys(st.locked)){ const x = st.locked[k]; if (!x || (+x.start||0) < now - 150*86400e3) delete st.locked[k]; }
+  for (const b of ['props','parlay']) for (const k of Object.keys(st.prevGood[b]||{})) if ((+st.prevGood[b][k]||0) < now - 12*3600e3) delete st.prevGood[b][k];
+}
+// force pulled items off Picks / Early Bird / Locked / Watchlist for the rest of that game
+function applyPulledFinal(board){
+  const MSG = 'Pulled earlier. It stays off the board for the rest of this game.';
+  if (board==='games'){
+    for (const p of ((typeof plays!=='undefined' && plays) || [])){
+      if (!p || !p.g || (p.verdict!=='good' && p.verdict!=='watch')) continue;
+      if (!isFinalPulled(playResultKey(p))) continue;
+      p.verdict = 'avoid'; p.pulledFinal = true; if (Array.isArray(p.reasons)) p.reasons.unshift(MSG);
+    }
+  } else if (board==='props'){
+    for (const p of ((typeof props!=='undefined' && props) || [])){
+      if (!p || (p.verdict!=='good' && p.verdict!=='watch')) continue;
+      if (!isFinalPulled(propKeyOf(p)) && !isFinalPulled(p.id)) continue;
+      p.verdict = 'avoid'; p.pulledFinal = true; if (p.C) p.C.J = 'SKIP'; if (Array.isArray(p.reasons)) p.reasons.unshift(MSG);
+    }
+  }
+}
+function parlayHasPulledLeg(pl){ return (pl && pl.legs || []).some(l=>isFinalPulled(legKeyOf(l)) || isFinalPulled(l.id)); }
+/* ---------- locks (frozen once locked) ---------- */
+function lockedRec(board, x){ const k = boardKeyOf(board, x); return k ? V41().locked[k] || null : null; }
+function curOuts(g){ try{ return (typeof currentKeyOuts==='function' ? currentKeyOuts(g) : []).map(x=>x.id||x.n); }catch(e){ return []; } }
+function legRecOf(l){
+  const m = typeof parlayLegSaveMeta==='function' ? parlayLegSaveMeta(l) : {id:l.id, label:l.label};
+  m.key = legKeyOf(l); m.isProp = !!(l.isProp || (l.kind && l.playerName));
+  if (l.g) m.outs = curOuts(l.g);
+  return m;
+}
+function makeLockRec(board, x, extra){
+  const now = Date.now();
+  const unit = (+S.unit||25);
+  if (board==='parlay'){
+    return Object.assign({board, k:x.id, at:now, start:itemStartMs(x), label:x.label||'Parlay', n:x.n, dec:x.dec, am:x.am, p:x.p, legs:(x.legs||[]).map(legRecOf), unit}, extra||{});
+  }
+  if (board==='props'){
+    const g = x.g;
+    return Object.assign({board, k:propKeyOf(x), at:now, start:itemStartMs(x), label:x.label||`${x.playerName} ${x.side} ${x.line}`, ev:(g&&g.eventId)||x.eventId, lg:x.league||(g&&g.league), pid:x.playerId||'', playerName:x.playerName||'', kind:x.kind, side:x.side, line:x.line, price:x.price, p:x.p, unit}, extra||{});
+  }
+  const g = x.g, price = (x.my && x.my.best) ? x.my.best.price : (x.sd && x.sd.best ? x.sd.best.price : null);
+  return Object.assign({board:'games', k:playResultKey(x), at:now, start:itemStartMs(x), label:x.label, game:g&&g.away&&g.home?`${g.away.short} @ ${g.home.short}`:'', ev:g.eventId, lg:g.league, mk:x.mk, side:x.side, point:x.sd?x.sd.point:null, price, p:x.est!=null?x.est:null, outs:curOuts(g), unit}, extra||{});
+}
+// record every item that is officially locked right now (runs whether or not alerts are on)
+function recordLocks(board){
+  const st = V41(); let dirty = false;
+  const now = Date.now();
+  let src = [];
+  if (board==='games') src = ((typeof plays!=='undefined' && plays) || []).filter(p=>p && p.verdict==='good' && p.g && p.g.state==='pre' && p.g.eventId);
+  else if (board==='props') src = ((typeof props!=='undefined' && props) || []).filter(p=>p && p.verdict==='good' && (!p.g || p.g.state==='pre'));
+  else if (board==='parlay') src = ((typeof parlays!=='undefined' && parlays) || []).filter(p=>p && p.verdict==='good' && !(p.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre'));
+  for (const x of src){
+    const k = boardKeyOf(board, x); if (!k || st.locked[k] || isFinalPulled(k)) continue;
+    if (itemStartMs(x) <= now) continue;
+    const ls = lockStatus(x, board); if (!ls.locked) continue;
+    st.locked[k] = makeLockRec(board, x, board==='parlay' && parlayGuardPaused() ? {shadow:true} : null);
+    dirty = true;
+  }
+  if (dirty) v41Save('locked');
+}
+// tailed bets inside the lock window get a lock record too (so they follow the urgent-only rule)
+function ensureTailedLockRec(b, board, x){
+  const st = V41(); const k = boardKeyOf(board, x); if (!k) return null;
+  if (st.locked[k]) return st.locked[k];
+  if (!isOfficialLock(itemStartMs(x), lockLeadMins())) return null;
+  st.locked[k] = makeLockRec(board, x, {tailedOnly:true}); v41Save('locked');
+  return st.locked[k];
+}
+/* ---------- urgent reasons (the only things that can pull a locked pick) ---------- */
+function amCents(am){ return am==null ? null : (am<0 ? (-am-100) : -(am-100)); }   // -150 → 50, +130 → -30
+function gameById(ev){ return ((typeof games!=='undefined' && games) || []).find(g=>g && String(g.eventId)===String(ev)) || null; }
+function postponedTxt(g){ return g && /postpon|cancel|suspend/i.test(String(g.statusText||'')) ? 'game postponed or canceled' : ''; }
+function urgentGameLeg(r){
+  const g = gameById(r.ev); if (!g) return '';
+  const pp = postponedTxt(g); if (pp) return pp;
+  const now = curOuts(g); const before = new Set(r.outs||[]);
+  const newOut = ((typeof currentKeyOuts==='function' ? currentKeyOuts(g) : [])||[]).find(x=>!before.has(x.id||x.n));
+  if (newOut && now.length) return `key player ruled out: ${newOut.n||'a starter'}`;
+  const sd = g.analysis && g.analysis[r.mk] && g.analysis[r.mk].sides && g.analysis[r.mk].sides[r.side];
+  if (sd && sd.best){
+    if (r.mk==='ml' && r.price!=null && sd.best.price!=null){
+      const mv = amCents(r.price) - amCents(sd.best.price);
+      if (mv >= 60) return `huge line move against it (${fmtAm(r.price)} → ${fmtAm(sd.best.price)})`;
+    } else if (r.point!=null && sd.point!=null){
+      const d = r.mk==='spread' ? (sd.point - r.point) : r.side==='over' ? (r.point - sd.point) : (sd.point - r.point);
+      if (d >= 2.5) return `huge line move against it (${r.point} → ${sd.point})`;
+    }
+  }
+  const opp = ((typeof plays!=='undefined' && plays) || []).find(x=>x && x.g===g && x.mk===r.mk && x.side!==r.side && x.verdict==='good');
+  if (opp && typeof legStabOf==='function' && legStabOf(opp).stable) return `the model now strongly backs the other side (${opp.label})`;
+  return '';
+}
+function urgentPropLeg(r){
+  const ev = r.ev, pid = String(r.pid||r.playerId||''), kind = r.kind||r.stat, side = String(r.side||'').toLowerCase();
+  const g = gameById(ev);
+  const pp = postponedTxt(g); if (pp) return pp;
+  const name = String(r.playerName||'').toLowerCase();
+  if (g && g.fx && g.fx.inj){
+    const hit = (g.fx.inj.home||[]).concat(g.fx.inj.away||[]).find(i=>(pid && String(i.id)===pid) || (name && String(i.n||'').toLowerCase()===name));
+    if (hit && typeof isRuledOutStatus==='function' && isRuledOutStatus(hit.st)) return `${r.playerName||'the player'} is ruled out (${hit.st})`;
+  }
+  const P = ((typeof props!=='undefined' && props) || []).filter(x=>x && String((x.g&&x.g.eventId)||x.eventId||'')===String(ev) && x.kind===kind && ((pid && String(x.playerId)===pid) || (name && String(x.playerName||'').toLowerCase()===name)));
+  if (P.length && r.line!=null){
+    const cur = P.slice().sort((a,b)=>Math.abs(a.line-r.line)-Math.abs(b.line-r.line))[0];
+    const d = side==='over' ? (cur.line - r.line) : (r.line - cur.line);
+    if (d >= 1.5) return `huge line move against it (${r.line} → ${cur.line})`;
+    const flip = P.find(x=>String(x.side).toLowerCase()!==side && x.verdict==='good');
+    if (flip && typeof legStabOf==='function' && legStabOf(Object.assign({isProp:true}, flip)).stable) return `the model now strongly backs the ${flip.side==='under'?'Under':'Over'} ${flip.line}`;
+  }
+  return '';
+}
+function urgentReasonFor(rec){
+  if (!rec) return null;
+  if (rec.board==='parlay'){
+    for (const l of (rec.legs||[])){
+      const why = l.isProp ? urgentPropLeg(l) : urgentGameLeg(Object.assign({}, l, {ev:l.ev}));
+      if (why) return {why, legLabel:l.label||''};
+    }
+    return null;
+  }
+  const why = rec.board==='props' ? urgentPropLeg(rec) : urgentGameLeg(rec);
+  return why ? {why} : null;
+}
+// check every locked (or tailed + in-window) item; only urgent reasons pull it
+function checkLockedUrgent(){
+  const st = V41(); const now = Date.now(); let any = false;
+  for (const k of Object.keys(st.locked)){
+    const rec = st.locked[k];
+    if (!rec || rec.res || rec.pulled || !(+rec.start > now)) continue;
+    const u = urgentReasonFor(rec); if (!u) continue;
+    rec.pulled = {at:now, why:u.why, legLabel:u.legLabel||''};
+    v41FinalPull(k, {board:rec.board, start:rec.start, reason:u.why, label:rec.label, locked:true, urgent:true});
+    any = true;
+    // games history: mark the official result as pulled
+    if (rec.board==='games'){ const r = (results||[]).find(x=>x.k===k); if (r && r.status==='active'){ r.status='withdrawn'; r.pulledAt=now; r.pullReason=u.why; r.pulledFrom='good'; r.pulledTo='avoid'; r.readded=false; r.legacyPull=false; saveJSON(LS.results, results); } }
+    // red pull + urgent alert only for bets he tailed
+    const tailedKeys = [k];
+    if (rec.board==='props') for (const b of ((typeof bets!=='undefined' && bets) || [])){ if (b.result && b.result!=='pending') continue; const I = typeof propBetInfo==='function' ? propBetInfo(b) : null; if (I && propKeyOf({eventId:I.ev, playerId:I.pid||I.name, kind:I.kind, side:I.side})===k) tailedKeys.push(betPlayKey(b)); }
+    for (const tk of tailedKeys){
+      if (!(typeof isTailedPullKey==='function' && isTailedPullKey(tk))) continue;
+      if ((pullNotes||[]).some(n=>n.k===tk && !n.resolved && !n.readded)) continue;
+      const note = {k:tk, board:rec.board, from:'good', to:'avoid', at:now, reason:`URGENT: ${u.why}`, label:u.legLabel||rec.label, game:rec.game||(rec.board==='parlay'?`${rec.n||''}-leg parlay`:''), start:rec.start, pullNotified:false, pulledTo:'avoid', urgent:true};
+      if (rec.board==='parlay'){ note.legPull = true; note.legLabel = u.legLabel||''; note.betLabel = (rec.legs||[]).map(l=>l.label).join(' + '); }
+      pullNotes.unshift(note); notifyPulled(note);
+    }
+  }
+  if (any){ v41Save('locked'); try{ saveJSON(LS.pullNotes, pullNotes); }catch(e){} if (typeof updatePullDots==='function') updatePullDots(); }
+}
+/* ---------- Early Bird drops (props / parlays): silent, but final ---------- */
+function trackEarlyDrops(board){
+  const st = V41(); const now = Date.now(); const prev = st.prevGood[board] || (st.prevGood[board] = {});
+  const curGood = {};
+  if (board==='props'){
+    const P = (typeof props!=='undefined' && props) || [];
+    for (const p of P) if (p && p.verdict==='good') curGood[propKeyOf(p)] = itemStartMs(p) || now;
+    for (const k of Object.keys(prev)){
+      if (curGood[k] || st.locked[k] || isFinalPulled(k)) continue;
+      const parts = k.split('|'); // pp|ev|pid|kind|side
+      const same = P.filter(x=>x && String((x.g&&x.g.eventId)||x.eventId||'')===parts[1] && String(x.playerId||x.playerName||'')===parts[2] && String(x.kind)===parts[3]);
+      const dropped = same.some(x=>String(x.side).toLowerCase()===parts[4] ? x.verdict==='avoid' : x.verdict!=='avoid');
+      if (dropped) v41FinalPull(k, {board:'props', start:prev[k], reason:'dropped to Avoid before lock', early:true});
+    }
+  } else if (board==='parlay'){
+    const PL = (typeof parlays!=='undefined' && parlays) || [];
+    for (const p of PL) if (p && p.verdict==='good') curGood[p.id] = itemStartMs(p) || now;
+    for (const k of Object.keys(prev)){
+      if (curGood[k] || st.locked[k] || isFinalPulled(k)) continue;
+      const pl = PL.find(x=>x.id===k);
+      if (pl && pl.verdict==='avoid') v41FinalPull(k, {board:'parlay', start:prev[k], reason:'dropped to Avoid before lock', early:true});
+    }
+  }
+  for (const k of Object.keys(curGood)) prev[k] = curGood[k];
+  for (const k of Object.keys(prev)) if (!curGood[k] && (prev[k] < now - 12*3600e3)) delete prev[k];
+  v41Save('prevGood');
+}
+/* ---------- locked items stay on the board (quiet note if the model cooled) ---------- */
+function coolNoteText(x, board){
+  const v = x.verdict==='avoid' ? 'Avoid' : x.verdict==='watch' ? 'Watchlist' : 'off the list';
+  return `🔒 Still locked. The model cooled on this (now ${v}), but that isn't an urgent reason, so it stays locked.`;
+}
+function lockedKeepItems(board, shownList){
+  const st = V41(); const now = Date.now(); const out = [];
+  const shown = new Set((shownList||[]).map(x=>boardKeyOf(board, x)));
+  for (const k of Object.keys(st.locked)){
+    const rec = st.locked[k];
+    if (!rec || rec.board!==board || rec.pulled || rec.res || rec.shadow || !(+rec.start > now) || shown.has(k) || isFinalPulled(k)) continue;
+    let item = null;
+    if (board==='games') item = ((typeof plays!=='undefined' && plays) || []).find(p=>p && p.g && p.g.eventId && playResultKey(p)===k && p.g.state==='pre');
+    else if (board==='props') item = ((typeof props!=='undefined' && props) || []).find(p=>p && propKeyOf(p)===k) || null;
+    else {
+      item = ((typeof parlays!=='undefined' && parlays) || []).find(p=>p && p.id===k);
+      if (!item && typeof tailedParlayFromBet==='function'){ try{ item = tailedParlayFromBet({playKey:k, link:{mk:'parlay', dec:rec.dec, start:rec.start, n:rec.n}, legs:rec.legs, pick:rec.label, odds:rec.am}); }catch(e){ item = null; } }
+    }
+    if (!item) continue;
+    const c = Object.assign({}, item, {lockedKeep:true, tailedKeep:false});
+    if (item.verdict!=='good') c.coolNote = coolNoteText(item, board);
+    if (board==='parlay'){ c.verdict = 'good'; c.C = Object.assign({}, item.C||{}, {J:'BET'}); }
+    out.push(c);
+  }
+  return out;
+}
+function injectCoolNote(html, x){
+  if (!x || !x.coolNote) return html;
+  return String(html).replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} locked-cooled"><div class="cool-note">${esc(x.coolNote)}</div>`);
+}
+/* ---------- automatic profit tracking (locked picks, graded from finals and box scores) ---------- */
+async function gradeLockedRecords(){
+  const st = V41(); const now = Date.now(); let n = 0;
+  const finCache = new Map(), boxCache = new Map();
+  const fin = async (lg, ev, start) => { const key = lg+'|'+ev; if (!finCache.has(key)) finCache.set(key, await eventFinal(lg, ev, start).catch(()=>null)); return finCache.get(key); };
+  const box = async (lg, ev) => { const key = lg+'|'+ev; if (!boxCache.has(key)){ const d = await fetchEventBox(lg, ev); const comp = d && d.header && d.header.competitions && d.header.competitions[0]; const done = !!(comp && comp.status && (comp.status.type||{}).completed); const canc = !!(comp && comp.status && /postpon|cancel/i.test(((comp.status.type||{}).name)||'')); boxCache.set(key, {aths: d ? athletesFromSummary(d) : [], done, canc}); } return boxCache.get(key); };
+  const gradeGame = async (r) => { const f = await fin(r.lg, r.ev, +r.start); if (!f) return null; if (f.canceled) return 'void'; if (!f.done) return null; return gradeSide(f, r.lg, r.mk, r.side, r.point); };
+  const gradeProp = async (r) => {
+    const bx = await box(r.lg, r.ev); if (bx.canc) return 'void'; if (!bx.done) return null;
+    const pid = String(r.pid||r.playerId||''), nm = String(r.playerName||'').toLowerCase();
+    const a = bx.aths.find(x=>pid && String(x.id)===pid) || bx.aths.find(x=>nm && String(x.name||'').toLowerCase()===nm);
+    if (!bx.aths.length) return null;                        // box score not readable yet
+    if (!a) return 'void';                                   // not in the box score: did not play
+    const v = boxStat(a, r.kind||r.stat);
+    if (v==null && a.stats && !Object.keys(a.stats).length) return 'void';   // listed but did not play
+    const line = r.line!=null ? +r.line : +r.point;
+    if (v==null || !isFinite(line)) return null;
+    if (v===line) return 'push';
+    return String(r.side).toLowerCase()==='over' ? (v>line?'win':'loss') : (v<line?'win':'loss');
+  };
+  for (const k of Object.keys(st.locked)){
+    const r = st.locked[k];
+    if (!r || r.res || !(+r.start < now - 3*3600e3)) continue;
+    try{
+      let res = null, dec = null;
+      if (r.board==='parlay'){
+        let pending = false, loss = false; const live = [];
+        for (const l of (r.legs||[])){
+          if (!l.res) l.res = l.isProp ? await gradeProp(l) : await gradeGame(Object.assign({}, l, {start:l.start||r.start}));
+          if (!l.res){ pending = true; continue; }
+          if (l.res==='loss') loss = true; else if (l.res==='win') live.push(l);
+        }
+        if (loss) res = 'loss';
+        else if (!pending){ if (!live.length) res = 'push'; else { res = 'win'; const ds = live.map(l=>l.price!=null?amToDec(l.price):null); dec = live.length===(r.legs||[]).length ? (+r.dec || ds.reduce((a,d)=>a*(d||1),1)) : ds.reduce((a,d)=>a*(d||1),1); } }
+      } else {
+        res = r.board==='props' ? await gradeProp(r) : await gradeGame(r);
+        if (res==='win') dec = r.price!=null ? amToDec(r.price) : null;
+      }
+      if (!res) continue;
+      const unit = +r.unit || (+S.unit||25);
+      r.res = res; r.graded = now;
+      r.profit = res==='win' ? (dec ? unit*(dec-1) : unit) : res==='loss' ? -unit : 0;
+      n++;
+    }catch(e){ console.warn('grade locked', k, e); }
+  }
+  if (n){ v41Save('locked'); updateParlayGuard(); if (typeof ui!=='undefined' && (ui.tab==='results' || ui.board==='parlay') && typeof render==='function') render(); }
+  return n;
+}
+function lockedBoardStats(board, opts){
+  opts = opts || {};
+  const st = V41();
+  let list = Object.values(st.locked).filter(r=>r && r.board===board && !r.tailedOnly && !(r.pulled && !opts.withPulled));
+  const settled = list.filter(r=>r.res==='win'||r.res==='loss').sort((a,b)=>(a.start||0)-(b.start||0));
+  const use = opts.last ? settled.slice(-opts.last) : settled;
+  const w = use.filter(r=>r.res==='win').length, l = use.length - w;
+  const staked = use.reduce((a,r)=>a+(+r.unit||(+S.unit||25)),0);
+  const net = use.reduce((a,r)=>a+(+r.profit||0),0);
+  return {n:use.length, w, l, push:list.filter(r=>r.res==='push'||r.res==='void').length, pending:list.filter(r=>!r.res).length,
+    pulled:Object.values(st.locked).filter(r=>r && r.board===board && r.pulled && !r.tailedOnly).length,
+    wr:use.length ? w/use.length : null, roi:staked ? net/staked : null, net, units: net/((+S.unit)||25)};
+}
+function fmtRec(s){ return s.n ? `${s.w}–${s.l}${s.roi!=null?`, ${s.roi>=0?'+':'−'}${Math.abs(s.roi*100).toFixed(0)}%`:''}` : 'no graded locked parlays yet'; }
+/* ---------- parlay auto-guard ---------- */
+function updateParlayGuard(){
+  const st = V41(); const g = st.guard || (st.guard = {paused:false});
+  const last = lockedBoardStats('parlay', {last:30});
+  const before = !!g.paused;
+  if (!g.paused && last.n>=30 && last.roi!=null && last.roi < -0.05){ g.paused = true; g.at = Date.now(); }
+  else if (g.paused && last.n>=30 && last.roi!=null && last.roi > 0){ g.paused = false; g.resumedAt = Date.now(); }
+  g.n = last.n; g.roi = last.roi; g.w = last.w; g.l = last.l; g.checked = Date.now();
+  if (before!==g.paused) v41Save('guard'); else { try{ localStorage.setItem(v41LS().guard, JSON.stringify(g)); }catch(e){} }
+  return g;
+}
+function parlayGuardPaused(){ const g = V41().guard || {}; return !!g.paused && !(typeof S!=='undefined' && S.parlayForceOn); }
+function parlayBannerHTML(){
+  const s = lockedBoardStats('parlay');
+  const W = fmtLockWindow(lockLeadMins());
+  const g = V41().guard || {};
+  if (parlayGuardPaused()){
+    return `<div class="parlay-warn parlay-paused" role="note"><span class="pw-txt">⏸️ <b>Parlays are paused</b> because they're losing money: the last ${g.n||30} locked parlays went ${g.w||0}–${g.l||0}, ${g.roi!=null?((g.roi>=0?'+':'−')+Math.abs(g.roi*100).toFixed(0)+'%'):'—'}. The model keeps tracking them quietly and turns Parlays back on by itself once the last ${30} are above 0%. You can force them on in Settings.<br><span class="pw-rec">Parlays so far: ${esc(fmtRec(s))}</span></span></div>`;
+  }
+  let hidden = false; try{ hidden = sessionStorage.getItem('bl_parlayWarnHidden')==='1'; }catch(e){}
+  if (hidden) return '';
+  return `<div class="parlay-warn" role="note"><span class="pw-txt">⚠️ Parlays lock ${esc(W)} before the first game. Early Bird parlays can still change or drop off. Tailing early raises the chance of a pull.<br><span class="pw-rec">Parlays so far: ${esc(fmtRec(s))}${s.pending?` · ${s.pending} waiting to be graded`:''}</span></span><button type="button" class="pw-x" data-hide-parlay-warn aria-label="Hide this note for now">×</button></div>`;
+}
+/* ---------- Results: plain profit scoreboard ---------- */
+function v41ScoreboardHTML(){
+  const rows = [['games','Games'],['props','Props'],['parlay','Parlays']].map(([b,lab])=>{
+    const s = lockedBoardStats(b);
+    const pct = v => v==null ? '—' : (v*100).toFixed(1)+'%';
+    const roi = s.roi==null ? '—' : `${s.roi>=0?'+':'−'}${Math.abs(s.roi*100).toFixed(1)}%`;
+    const verdict = s.n<10 ? 'Too early to tell' : s.roi>0.02 ? 'Making money' : s.roi<-0.02 ? 'Losing money' : 'About break-even';
+    return `<tr><td><b>${lab}</b></td><td>${s.w}–${s.l}${s.push?`–${s.push}`:''}</td><td>${pct(s.wr)}</td><td class="${s.roi>0?'pos':s.roi<0?'neg':''}">${roi}</td><td class="${s.units>0?'pos':s.units<0?'neg':''}">${s.n?(s.units>=0?'+':'')+s.units.toFixed(1)+'u':'—'}</td><td>${s.pending}</td><td>${s.pulled}</td><td>${verdict}</td></tr>`;
+  }).join('');
+  const st = V41(); const g = st.guard || {};
+  const flips = st.flips || [];
+  const bucket = m => m==null ? '?' : m<=30 ? '≤30m' : m<=60 ? '30–60m' : m<=120 ? '1–2h' : m<=360 ? '2–6h' : '6h+';
+  const bk = {}; for (const f of flips){ const b = bucket(f.m); bk[b] = (bk[b]||0)+1; }
+  const order = ['≤30m','30–60m','1–2h','2–6h','6h+'];
+  const flipRow = flips.length ? order.map(b=>`<span class="meta-pill">${b} before start: <b>${bk[b]||0}</b></span>`).join(' ') : '<span class="mut">No drops recorded yet. Each time a pick drops to Avoid, the time before start is logged here.</span>';
+  return `<div class="card v41-score">
+    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money? (locked picks, auto-graded)</h2><span class="hint">Every pick that locks ${esc(fmtLockWindow(lockLeadMins()))} before start is graded automatically from final scores and box scores at a flat ${esc('$'+(+S.unit||25))} unit. Pulled picks are listed but not counted.</span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Board</th><th>W–L</th><th>Win rate</th><th>ROI</th><th>Profit</th><th>Waiting</th><th>Pulled after lock</th><th>So far</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="hint" style="margin-top:10px">Parlay auto-guard: ${parlayGuardPaused() ? `<b class="neg">paused</b> (last ${g.n} locked parlays ${g.roi!=null?(g.roi*100).toFixed(1)+'%':''}).` : (typeof S!=='undefined' && S.parlayForceOn && g.paused) ? '<b>forced on</b> in Settings (it would be paused).' : `on. Pauses Parlays if the last ${30} graded locked parlays are below −5% ROI and turns them back on above 0%.`}</div>
+    <div class="hint" style="margin-top:10px"><b>Drops to Avoid by time before start:</b> ${flipRow}</div>
+  </div>`;
 }
 </script>
 </body>
