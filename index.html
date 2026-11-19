@@ -984,6 +984,23 @@ header .status{display:none !important}
 nav.tabs{margin-bottom:12px}
 .head-tools{padding-top:4px;padding-bottom:14px}
 main.wrap{padding-top:16px}
+
+/* v38: pulled tailed bets — red on Picks, roomy Pulled tab */
+.card.tailed-pulled{border:2px solid #e11d48 !important;border-style:solid !important;background:linear-gradient(180deg,rgba(225,29,72,.20),rgba(127,29,29,.12) 45%,var(--card,#132033)) !important;box-shadow:0 0 0 1px rgba(225,29,72,.25),0 0 26px -6px rgba(225,29,72,.55)}
+.card.tailed-pulled:before{background:#f43f5e;width:4px}
+.pulled-tag{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:5px 11px;border-radius:12px;font-size:12.5px;font-weight:750;line-height:1.35;color:#ffe4e6;background:rgba(225,29,72,.22);border:1px solid rgba(244,63,94,.55);white-space:normal;overflow-wrap:anywhere}
+.pulled-list{display:flex;flex-direction:column;gap:16px;max-width:760px}
+.pulled-list .card.pulled-item{padding:18px 18px 14px;margin:0;border-radius:20px;line-height:1.5}
+.pulled-item .pull-kind{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#fecdd3;background:rgba(225,29,72,.2);border:1px solid rgba(244,63,94,.4)}
+.pulled-item .pull-sub{color:var(--txt2);font-size:13.5px;line-height:1.5;margin:2px 0 8px;overflow-wrap:anywhere}
+.pulled-item .pull-why{color:#fecaca;font-size:13.5px;line-height:1.5;margin:0 0 10px;overflow-wrap:anywhere}
+.pulled-item .pull-meta{display:flex;flex-wrap:wrap;gap:8px}
+.pulled-item .pull-meta span{font-size:12px;color:var(--txt2);padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+.side-list{gap:12px}
+.side-row,.side-row.you-bet{padding:14px 34px 14px 14px;margin:0;line-height:1.45}
+
+.eb-tag,.lk-tag{white-space:normal;max-width:100%;line-height:1.35;overflow-wrap:anywhere}
+@media (max-width:600px){.pulled-list{gap:14px}.pulled-list .card.pulled-item{padding:16px 15px 12px}}
 </style>
 </head>
 <body>
@@ -1690,15 +1707,17 @@ function lockedSplitView(board){
 function boardHorizonOverride(board){
   if (!lockedSplitView(board)) return null;
   const lock = boardLockMins(board || ui.board || 'games');
-  return (lock!=null && +lock>0) ? '24h' : null;   // no lock window (parlays lock right away) = nothing to widen
+  return (lock!=null && +lock>0) ? '24h' : null;   // no lock window = nothing to widen
 }
 function defaultLockMins(board){
   if (board==='props') return 120;
-  if (board==='parlay') return null;
+  if (board==='parlay') return 60;
   return 60;
 }
 function boardLockMins(board){
   const b = board || (typeof ui!=='undefined' && ui.board) || 'games';
+  // v38: parlays lock on the same window as Games singles, timed from the EARLIEST leg (never "as soon as they qualify")
+  if (b==='parlay'){ const gm = boardLockMins('games'); return (gm!=null && +gm>0) ? +gm : 60; }
   try{
     if (typeof LEARN!=='undefined' && LEARN){
       if (b==='games'){ if (LEARN.lockMins!==undefined) return LEARN.lockMins; }
@@ -1765,9 +1784,11 @@ function earlyLockBadgeHTML(startMs, board){
   return `<span class="lock-badge" title="Preview only — locks into official Picks ${fmtLockWindow(lock)} before tip">⏳ ${esc(fmtLocksIn(startMs, lock))}</span>`;
 }
 function isEarlyPreview(x, board){
+  if (x && (x.pulledNote || x.tailedKeep)) return false;
   const lock = boardLockMins(board);
   if (lock==null || lock<=0) return false;
-  return !isOfficialLock(itemStartMs(x), lock);
+  if (!isOfficialLock(itemStartMs(x), lock)) return true;
+  return typeof lockStatus==='function' ? !lockStatus(x, board).locked : false;
 }
 function earlyPreviewTitle(lockMins){ return 'Early preview · locks '+fmtLockWindow(lockMins)+' before tip'; }
 function earlyEmptyNote(n, lockMins){
@@ -1778,24 +1799,37 @@ function splitLockedEarly(list, board){
   const lock = boardLockMins(board);
   const locked=[], early=[];
   for (const x of (list||[])){
-    if (isOfficialLock(itemStartMs(x), lock)) locked.push(x);
+    if (!x) continue;
+    if (x.pulledNote || x.tailedKeep) { locked.push(x); continue; }
+    const st = typeof lockStatus==='function' ? lockStatus(x, board) : {locked:isOfficialLock(itemStartMs(x), lock)};
+    x._ebTag = st.locked ? '' : (st.tag || '');
+    if (st.locked) locked.push(x);
     else early.push(x);
   }
   return {locked, early, lockMins: lock};
 }
-function picksBoardHTML(title, lockedSub, emptyMsg, list, board, cardFn){
+function picksBoardHTML(title, lockedSub, emptyMsg, list, board, cardFnRaw){
+  // v38: pulled tailed bets render red with a "Pulled · …" tag; tailed bets count as locked (you already bet them)
+  const cardFn = x => (x && x.pulledNote && typeof injectPulledCard==='function') ? injectPulledCard(cardFnRaw(x), x.pulledNote) : cardFnRaw(x);
   const {locked, early, lockMins:lock} = splitLockedEarly(list, board);
   const grid = arr => arr.length ? `<div class="grid">${arr.map(cardFn).join('')}</div>` : '';
   let html = '';
   if (lockedSplitView(board)){
     const tagCard = (html, cls, tag) => String(html).replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} ${cls}">${tag}`);
     const lockedCards = locked.map(x=>tagCard(cardFn(x), 'locked-pick', '<div class="lk-tag"><span aria-hidden="true">🔒</span> Locked</div>')).join('');
-    const earlyCards = early.map(x=>tagCard(cardFn(x), 'early-bird', `<div class="eb-tag">Not locked yet · ${esc(fmtLocksIn(itemStartMs(x), lock))}</div>`)).join('');
+    const earlyCards = early.map(x=>tagCard(cardFn(x), 'early-bird', `<div class="eb-tag">Not locked yet · ${esc(x._ebTag || fmtLocksIn(itemStartMs(x), lock))}</div>`)).join('');
     const hasWin = lock!=null && +lock>0;
-    html += `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🔒</span>Locked</h2><span class="hint">${hasWin?`Final picks, locked ${esc(fmtLockWindow(lock))} before start.`:'These lock as soon as they qualify.'}</span></div>`;
+    const W = esc(fmtLockWindow(lock));
+    const lockHint = board==='parlay'
+      ? `A parlay locks ${W} before its <b>first</b> game, and only if every leg is a Pick on Games/Props and has held steady for 30+ minutes.`
+      : `Final picks, locked ${W} before start once they've held steady.`;
+    const ebHint = board==='parlay'
+      ? `These qualify now but aren't locked. Parlays wait until ${W} before the first game so a leg can't drift to Avoid after you tail. Tailing early raises the chance it gets pulled.`
+      : `These qualify right now but aren't locked yet. They can still change or drop off before they lock.`;
+    html += `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🔒</span>Locked</h2><span class="hint">${hasWin?lockHint:'These lock as soon as they qualify.'}</span></div>`;
     html += locked.length ? `<div class="grid">${lockedCards}</div>` : `<div class="empty-state">No locked picks right now.</div>`;
-    html += `<div class="early-bird-sec"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">🐣</span>Early Bird</h2><span class="hint">These qualify right now but aren't locked yet. They can still change or drop off before they lock.</span></div>`;
-    html += early.length ? `<div class="grid">${earlyCards}</div>` : `<div class="empty-state">${hasWin?'No early bird picks in the next 24 hours.':'Nothing waiting here: these lock as soon as they qualify, so they show up under Locked.'}</div>`;
+    html += `<div class="early-bird-sec"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">🐣</span>Early Bird</h2><span class="hint">${ebHint}</span></div>`;
+    html += early.length ? `<div class="grid">${earlyCards}</div>` : `<div class="empty-state">No early bird picks in the next 24 hours.</div>`;
     html += `</div>`;
     return html;
   }
@@ -2214,6 +2248,90 @@ function addEspnOdds(g, oddsArr){
       pushQ(g, mk, side, {book, bk, price:pr, point:pt, openPrice:s.open?parseAm(s.open.odds):null, openPoint:s.open?parsePt(s.open.line):null, src:'espn'});
     }
   }
+}
+
+/* ================= v38: stability gate (persisted, survives reloads / the 24/7 VPS tab) =================
+   A side is "steady" once it has kept the same side with a non-Avoid verdict for >= 3 data refreshes AND >= 30 minutes. */
+const LEG_STAB_KEY = 'bl_legStab_v1';
+const STAB_MIN_N = 3, STAB_MIN_MS = 30*60000, STAB_GAP_MS = 90*1000, STAB_STALE_MS = 3*3600e3;
+let legStab = (()=>{ try{ const o = JSON.parse(localStorage.getItem(LEG_STAB_KEY)||'{}'); return (o && typeof o==='object') ? o : {}; }catch(e){ return {}; } })();
+if (!legStab.__boot) legStab.__boot = Date.now();
+function saveLegStab(){ try{ localStorage.setItem(LEG_STAB_KEY, JSON.stringify(legStab)); }catch(e){} }
+function stabKeyGame(g, mk, side){ return `g|${g && (g.eventId||g.id)}|${mk}|${side}`; }
+function stabKeyProp(p){ const ev = (p && ((p.g && p.g.eventId) || p.eventId)) || ''; return `p|${ev}|${(p && (p.playerId || p.playerName)) || ''}|${(p && p.kind) || ''}`; }
+function bumpStab(key, side, ok, now){
+  const r = legStab[key];
+  if (!ok){ if (r) delete legStab[key]; return; }
+  if (!r || r.side!==side || (now - r.last) > STAB_STALE_MS){ legStab[key] = {side, first:now, last:now, n:1}; return; }
+  if (now - r.last >= STAB_GAP_MS){ r.n++; r.last = now; }
+}
+function updateLegStability(kind, nowArg){
+  const now = nowArg || Date.now();
+  try{
+    if (kind==='games'){
+      const P = (typeof plays!=='undefined' ? plays : []) || [];
+      for (const p of P){
+        if (!p || !p.g || (p.g.state && p.g.state!=='pre')) continue;
+        const oppGood = P.some(x=>x && x!==p && x.g===p.g && x.mk===p.mk && x.side!==p.side && x.verdict==='good');
+        bumpStab(stabKeyGame(p.g, p.mk, p.side), p.side, p.verdict!=='avoid' && !oppGood, now);
+      }
+    } else if (kind==='props'){
+      const best = new Map();
+      for (const p of ((typeof props!=='undefined' ? props : []) || [])){
+        if (!p || (p.g && p.g.state && p.g.state!=='pre')) continue;
+        const k = stabKeyProp(p), cur = best.get(k);
+        const rank = x => x.verdict==='good' ? 2 : x.verdict==='avoid' ? 0 : 1;
+        if (!cur || rank(p) > rank(cur)) best.set(k, p);
+      }
+      for (const [k, p] of best) bumpStab(k, String(p.side||''), p.verdict!=='avoid', now);
+    }
+    for (const k of Object.keys(legStab)){ if (k!=='__boot' && legStab[k] && now - legStab[k].last > 2*86400000) delete legStab[k]; }
+    saveLegStab();
+  }catch(e){ console.warn('leg stability', e); }
+}
+function stabOf(key, side, now){
+  const r = legStab[key]; now = now || Date.now();
+  if (!r || String(r.side)!==String(side)) return {stable:false, n:0, mins:0};
+  const mins = Math.floor((now - r.first)/60000);
+  return {stable: r.n>=STAB_MIN_N && (now - r.first)>=STAB_MIN_MS, n:r.n, mins};
+}
+function legStabOf(leg, now){
+  if (!leg) return {stable:false, n:0, mins:0};
+  return leg.isProp ? stabOf(stabKeyProp(leg), String(leg.side||''), now) : stabOf(stabKeyGame(leg.g, leg.mk, leg.side), leg.side, now);
+}
+function settleTxt(st){ return `settling (${Math.min(st.n,STAB_MIN_N)}/${STAB_MIN_N} checks, ${Math.min(st.mins,30)}/30 min steady)`; }
+// is this parlay leg a Pick right now on its own board?
+function legIsBoardPick(leg){
+  if (!leg) return false;
+  if (leg.isProp){
+    const live = ((typeof props!=='undefined' ? props : []) || []).find(x=>x && x.id===leg.id) || leg;
+    return live.verdict==='good' && String(live.side||'')===String(leg.side||'');
+  }
+  const gp = ((typeof plays!=='undefined' ? plays : []) || []).find(x=>x && x.g && leg.g && (x.g===leg.g || x.g.id===leg.g.id) && x.mk===leg.mk && x.side===leg.side);
+  return !!(gp && gp.verdict==='good');
+}
+function legShortName(leg){ try{ return typeof parlayLegLabel==='function' ? parlayLegLabel(leg) : (leg.label||leg.playerName||'a leg'); }catch(e){ return leg.label||'a leg'; } }
+/* Lock decision for one board item → {locked, tag} (tag = why it's still Early Bird) */
+function lockStatus(x, board){
+  const now = Date.now();
+  const lm = boardLockMins(board);
+  const start = itemStartMs(x);
+  if (!isOfficialLock(start, lm)) return {locked:false, tag:fmtLocksIn(start, lm)};
+  if (board==='parlay'){
+    for (const l of (x.legs||[])){
+      if (!legIsBoardPick(l)) return {locked:false, tag:`waiting: ${legShortName(l)} isn't a Pick on ${l.isProp?'Props':'Games'}`};
+    }
+    for (const l of (x.legs||[])){
+      const st = legStabOf(l, now);
+      if (!st.stable) return {locked:false, tag:`${legShortName(l)} ${settleTxt(st)}`};
+    }
+    return {locked:true, tag:''};
+  }
+  // singles: a fresh install (no 30 min of history yet) locks exactly as before
+  if (now - (+legStab.__boot||now) < STAB_MIN_MS) return {locked:true, tag:''};
+  const st = legStabOf(board==='props' ? Object.assign({isProp:true}, x) : x, now);
+  if (!st.stable) return {locked:false, tag:settleTxt(st)};
+  return {locked:true, tag:''};
 }
 /* ---------- The Odds API (optional) ----------
    v35 credit saving:
@@ -3588,7 +3706,8 @@ function checkLockAlerts(board){
     const fSp = fv && Array.isArray(fv.sports) ? fv.sports : null;
     const pending = src.filter(item => {
       const startMs = typeof itemStartMs==='function' ? itemStartMs(item) : 0;
-      if (typeof isOfficialLock==='function' && !isOfficialLock(startMs, lm)) return false;
+      if (typeof lockStatus==='function'){ if (!lockStatus(item, b).locked) return false; }
+      else if (typeof isOfficialLock==='function' && !isOfficialLock(startMs, lm)) return false;
       if (typeof inHorizon==='function' && !inHorizon(startMs, 'pre', fH, b)) return false;
       if (fSp){
         if (b==='parlay'){
@@ -3654,7 +3773,9 @@ function notifyPulled(r){
     const boardTag = r.board==='props' ? 'Prop' : r.board==='parlay' ? 'Parlay' : 'Game';
     const where = r.game ? ` (${r.game})` : '';
     const title = '⚠️ Pulled — you tailed this bet';
-    const body = `${boardTag}: ${r.label}${where} flipped to Avoid — ${why}`;
+    const body = (r.board==='parlay' && r.legLabel)
+      ? `Parlay leg ${r.legLabel}: ${why}. Whole parlay pulled to be safe — ${r.betLabel||r.label}`
+      : `${boardTag}: ${r.label}${where} flipped to Avoid — ${why}`;
     const markSent = () => {
       r.pullNotified = true;
       if (pk) _pullPushInFlight.delete(pk);
@@ -3681,13 +3802,13 @@ function checkTailedBoardPulls(board){
   const now = Date.now();
   const boards = board ? [board] : ['games','props','parlay'];
   let dirty = false;
-  const ensureNote = (k, brd, label, gameTxt, startMs, reason) => {
+  const ensureNote = (k, brd, label, gameTxt, startMs, reason, extra) => {
     const existing = (pullNotes||[]).find(n=>n.k===k && !n.resolved && !n.readded);
     if (existing){
       if (!existing.pullNotified) notifyPulled(existing);
       return;
     }
-    const note = {k, board:brd, from:'good', to:'avoid', at:now, reason, label, game:gameTxt||'', start:startMs||now+3600000, pullNotified:false, pulledTo:'avoid'};
+    const note = Object.assign({k, board:brd, from:'good', to:'avoid', at:now, reason, label, game:gameTxt||'', start:startMs||now+3600000, pullNotified:false, pulledTo:'avoid'}, extra||{});
     pullNotes.unshift(note);
     dirty = true;
     notifyPulled(note);
@@ -3729,62 +3850,20 @@ function checkTailedBoardPulls(board){
       }
     }
     if (boards.includes('parlay') && (String(k).startsWith('parlay:') || (b.link && b.link.mk==='parlay'))){
-      const pl = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===k);
-      if (pl){
-        if (!(pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')){
-          if (pl.verdict==='avoid'){
-            const why = (pl.reasons && pl.reasons[0]) || 'no longer passes parlay gates';
-            ensureNote(k, 'parlay', pl.label||b.pick||b.label||k, `${pl.n||((pl.legs||[]).length)}-leg parlay`, typeof itemStartMs==='function'?itemStartMs(pl):0, why);
-          } else if (pl.verdict==='good'){
-            markReadded(k, now, 'avoid');
-          }
-        }
-      } else if (String(k).startsWith('parlay:')){
-        // Parlay is no longer on the board (e.g. a late Games/Props Pick flipped to the opposite side, or a leg lost favorite status).
-        const toks = String(k).slice(7).split('+').filter(Boolean);
-        let anyStarted = false, minStart = Infinity, pullWhy = '';
-        for (const tok of toks){
-          if (tok.endsWith('|parlay')){
-            const parts = tok.split('|');
-            const gid = parts[0], mk = parts[1], side = parts[2];
-            const g = (typeof games!=='undefined' ? games : []).find(x=>x && x.id===gid);
-            if (!g) continue;
-            if (g.state && g.state!=='pre'){ anyStarted = true; break; }
-            if (g.start && +g.start < minStart) minStart = +g.start;
-            const sd = g.analysis && g.analysis[mk] && g.analysis[mk].sides && g.analysis[mk].sides[side];
-            const leg = {isProp:false, g, eventId:g.eventId, mk, side};
-            const legName = typeof sideLabel==='function' ? sideLabel(g, mk, side, sd&&sd.point) : `${mk} ${side}`;
-            if (typeof contradictsBoardPick==='function' && contradictsBoardPick(leg)){
-              pullWhy = `Games Picks flipped to the opposite side of ${legName}`;
-              break;
-            }
-            // v37: "no longer a favorite" only makes sense for moneylines (a +1.5 puck line or a spread is not a favorite bet)
-            if (mk==='ml' && sd && sd.best && sd.best.price!=null && sd.best.price > -110){
-              pullWhy = `${legName} is no longer a favorite (${fmtAm(sd.best.price)})`;
-              break;
-            }
-          } else if (tok.startsWith('prop:')){
-            // v37: read from the right — Odds API player ids look like "oa:Name" and contain ":"
-            const parts = tok.split(':'); const n = parts.length;
-            const ev = parts[1], pid = parts.slice(2, n-3).join(':'), kind = parts[n-3], side = parts[n-2], line = parts[n-1];
-            const g = (typeof games!=='undefined' ? games : []).find(x=>x && String(x.eventId)===String(ev));
-            if (g && g.state && g.state!=='pre'){ anyStarted = true; break; }
-            if (g && g.start && +g.start < minStart) minStart = +g.start;
-            const leg = {isProp:true, g, eventId:ev, playerId:pid, kind, side, line};
-            if (typeof contradictsBoardPick==='function' && contradictsBoardPick(leg)){
-              pullWhy = 'Props Picks flipped to the opposite side of a leg in this parlay';
-              break;
-            }
-            const pr = (typeof props!=='undefined' ? props : []).find(x=>x && String((x.g&&x.g.eventId)||x.eventId||'')===String(ev) && String(x.playerId||'')===String(pid) && x.kind===kind);
-            if (pr && ((pr.side && side && String(pr.side).toLowerCase()!==String(side).toLowerCase()) || pr.verdict==='avoid')){
-              pullWhy = `${pr.playerName||'A prop leg'} flipped to Avoid or the opposite side`;
-              break;
-            }
-          }
-        }
-        if (!anyStarted && pullWhy){
-          const stMs = isFinite(minStart) ? minStart : ((b.link && b.link.start) || (now+3600000));
-          ensureNote(k, 'parlay', b.pick||b.label||'Tailed parlay', `${(b.link&&b.link.n)||toks.length}-leg parlay`, stMs, pullWhy);
+      // v38: any leg that turns into an Avoid (or flips side / contradicts a Pick / a moneyline favorite stops being one)
+      // pulls the WHOLE tailed parlay, to be safe. The note names the leg.
+      const chk = typeof parlayLegPullCheck==='function' ? parlayLegPullCheck(b, k) : {started:false};
+      if (!chk.started){
+        const pl = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===k);
+        const betLabel = (typeof parlayBetLegNames==='function' ? parlayBetLegNames(b) : []).join(' + ') || b.pick || 'Tailed parlay';
+        const stMs = isFinite(chk.minStart) ? chk.minStart : ((b.link && b.link.start) || (pl && isFinite(pl.start) ? pl.start : now+3600000));
+        const nLegs = (b.link&&b.link.n) || (pl&&pl.n) || (typeof parseParlayKey==='function' ? parseParlayKey(k).length : 0);
+        if (chk.why){
+          ensureNote(k, 'parlay', chk.legLabel || betLabel, `${nLegs}-leg parlay`, stMs, chk.why, {legLabel:chk.legLabel||'', betLabel, legPull:true});
+        } else if (pl && pl.verdict==='avoid'){
+          ensureNote(k, 'parlay', betLabel, `${nLegs}-leg parlay`, stMs, (pl.reasons && pl.reasons[0]) || 'no longer passes parlay gates', {betLabel});
+        } else if (pl && pl.verdict==='good' && !(pullNotes||[]).some(n=>n.k===k && n.legPull && !n.resolved)){
+          markReadded(k, now, 'avoid');   // a leg-based pull stays pulled (to be safe); only a plain parlay pull can come back
         }
       }
     }
@@ -3831,7 +3910,8 @@ function alertsPerm(){ return (typeof Notification==='undefined') ? 'unsupported
 function noteVisible(n, now, dismissed){
   if (!n || !n.from) return false;
   if (n.resolved || n.readded) return false;
-  const cur = typeof currentTabOf==='function' ? currentTabOf(n.k) : null;
+  // v38: a leg-based parlay pull stays put even if the generated parlay itself still rates as a Pick
+  const cur = (!n.legPull && typeof currentTabOf==='function') ? currentTabOf(n.k) : null;
   if (cur && TAB_RANK[cur] >= (TAB_RANK[n.from]||0)) return false;
   const isLegacy = !!(n.legacyPull || n.reason===LEGACY_PULL || (n.legacy && !n.at));
   if (isLegacy){ if (!(n.start > now)) return false; }
@@ -3993,6 +4073,7 @@ function trackPlayTabs(){
     }
     playTabs[k] = meta;
   }
+  try{ updateLegStability('games'); }catch(e){}
   checkLockAlerts('games');
   try{ checkTailedBoardPulls('games'); }catch(e){}
   const cut = now - 7*86400000;
@@ -4156,6 +4237,59 @@ function autoLink(b){
 
 function inMyRange(p, bt){ const pr = (!bt && p.my && p.my.best) ? p.my.best.price : p.sd.best.price; return pr==null ? null : (pr >= S.sFavMin && pr <= S.sDogMax); }
 function isExcluded(lg, userOnly){ if (!userOnly && typeof learnOff==='function' && learnOff(lg)) return true; return String(S.sExclude||'').split(',').map(x=>x.trim().toLowerCase()).includes(lg) || (S.sNoSoccer && SOCCER.has(lg)); }
+
+/* ================= v38: pulled tailed bets stay on Picks, highlighted red ================= */
+function pullTagText(n){
+  if (!n) return 'Pulled';
+  if (n.legLabel) return `Pulled · ${n.legLabel} — ${n.reason||'flipped to Avoid'}`;
+  return `Pulled · ${n.reason||n.pullReason||'flipped to Avoid'}`;
+}
+function pulledTailedItems(board){
+  const out = [], seen = new Set();
+  const list = typeof visiblePulled==='function' ? (visiblePulled()||[]) : [];
+  for (const n of list){
+    const nb = n.board || 'games';
+    if (nb!==board || seen.has(n.k)) continue; seen.add(n.k);
+    const b = typeof primaryLoggedBet==='function' ? primaryLoggedBet(n.k) : null;
+    if (!b || (b.result && b.result!=='pending')) continue;
+    let item = null;
+    try{
+      if (board==='parlay'){
+        const live = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===n.k);
+        item = live ? Object.assign({}, live) : (typeof tailedParlayFromBet==='function' ? tailedParlayFromBet(b) : null);
+        if (item && (item.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')) item = null;
+      } else if (board==='props'){
+        const I = typeof propBetInfo==='function' ? propBetInfo(b) : null;
+        const P = (typeof props!=='undefined' ? props : []);
+        let pr = P.find(x=>x && x.id===n.k) || (I && (P.find(x=>propMatchesInfo(x, I)) || P.find(x=>propMatchesInfo(x, I, true))));
+        if (pr && I && String(pr.side)!==String(I.side) && pr.raw && typeof buildPropPlay==='function'){ const r2 = buildPropPlay(pr.raw, I.side, pr.feat, pr.est); r2.raw = pr.raw; pr = r2; }
+        item = pr ? Object.assign({}, pr) : null;
+      } else {
+        const p = (typeof plays!=='undefined' ? plays : []).find(x=>x && x.g && x.g.eventId && playResultKey(x)===n.k);
+        item = p ? Object.assign({}, p) : null;
+      }
+    }catch(e){ item = null; }
+    if (!item) continue;
+    if (item.g && item.g.state && item.g.state!=='pre') continue;   // started → lives in the Tracker
+    item.pulledNote = n; item.tailedKeep = false;
+    if (board==='parlay'){ item.C = Object.assign({}, item.C||{}, {J:'SKIP'}); item.verdict = 'avoid'; }   // never show BET on a pulled parlay
+    out.push(item);
+  }
+  return out;
+}
+// put pulled tailed bets at the top of a Picks list (no duplicates)
+function withPulledTailed(list, board){
+  let extra = [];
+  try{ extra = pulledTailedItems(board); }catch(e){ console.warn('pulled tailed', e); }
+  if (!extra.length) return list;
+  const keys = new Set(extra.map(x=>x.pulledNote.k));
+  const keyOf = x => x.isParlay ? x.id : (board==='games' && x.g && x.g.eventId ? playResultKey(x) : null);
+  const rest = (list||[]).filter(x=>{ const k = keyOf(x); if (k && keys.has(k)) return false; if (x.id && keys.has(x.id)) return false; return true; });
+  return extra.concat(rest);
+}
+function injectPulledCard(html, n){
+  return String(html).replace(/<span class="lock-badge"[^>]*>[\s\S]*?<\/span>/g, '').replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} tailed-pulled logged-pulled"><div class="pulled-tag"><span aria-hidden="true">⛔</span> ${esc(pullTagText(n))}</div>`);
+}
 /* ================= BACKTEST (past ESPN data, no future leakage) ================= */
 // Data used per past game (all knowable before tip-off):
 //  - DraftKings opening + closing moneyline/spread/total (ESPN core odds API)
@@ -6029,7 +6163,7 @@ function pulledSidebarHTML(fromTab, counts){
   const all = !!ui.pullAll;
   const list = typeof visiblePulled==='function' ? (all ? visiblePulled() : visiblePulled(fromTab)) : [];
   const unloggedN = list.filter(r => !(typeof isLoggedKey==='function' && isLoggedKey(r.k))).length;
-  const clearBtn = unloggedN ? `<button type="button" class="side-chip clear-unlogged" data-clear-unlogged="1">Clear untailed</button>` : '';
+  const clearBtn = '';
   const perm = typeof alertsPerm==='function' ? alertsPerm() : 'unsupported';
   const alertBtn = perm==='default' ? `<button type="button" class="side-link" id="btnPullAlerts">Turn on alerts</button>` : '';
   const ncls = list.length ? 'n' : 'n mute';
@@ -6039,8 +6173,8 @@ function pulledSidebarHTML(fromTab, counts){
       return `<div class="side-row${logged?' you-bet':''}">
       <button type="button" class="side-x" data-dismiss-pull="${esc(r.k)}" data-pulled-at="${r.at||0}" title="Dismiss" aria-label="Dismiss">×</button>
       ${logged?'<div class="you-bet-lab">YOU TAILED THIS</div>':''}
-      <div class="what">${esc(r.label)}</div>
-      <div class="hop">${esc(hopTxt(r))}</div>
+      <div class="what">${esc(r.legLabel ? r.legLabel+' → now Avoid' : r.label)}</div>
+      <div class="hop">${esc(r.legLabel ? 'From your parlay: '+(r.betLabel||'') : hopTxt(r))}</div>
       ${b?`<div class="logged-line">${esc(loggedBadgeText(b))}</div>`:''}
       <div class="why">${esc(r.reason||r.pullReason||'no longer passes the filters')} · ${esc(r.start?fmtTime(new Date(r.start)):'')}</div>
     </div>`;
@@ -6103,14 +6237,30 @@ function updatePullDots(){
   });
   if (typeof syncSubbar==='function') syncSubbar();
 }
+function pulledWhenTxt(at){
+  if (!at) return '';
+  const d = new Date(at); if (!isFinite(d.getTime())) return '';
+  const mins = Math.round((Date.now()-at)/60000);
+  const ago = mins<1 ? 'just now' : mins<60 ? `${mins}m ago` : `${Math.round(mins/60)}h ago`;
+  return `Pulled ${d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})} (${ago})`;
+}
+// v38: one entry per tailed bet; for a parlay the headline is the leg that went bad
 function pulledCard(r){
-  const logged = typeof isLoggedKey==='function' && isLoggedKey(r.k);
-  const b = logged && typeof primaryLoggedBet==='function' ? primaryLoggedBet(r.k) : null;
-  return `<div class="card ${logged?'logged-pulled':''} pulled-item">
-    <div class="pull-marks">${logged?'<div class="you-bet-lab">YOU TAILED THIS</div>':''}${b?`<div class="logged-badge">${esc(loggedBadgeText(b))}</div>`:''}</div>
-    <div class="pull-title">${esc(r.label)}</div>
-    <div class="hop">${esc(hopTxt(r))}</div>
-    <div class="why">${esc(r.game||'')} · ${esc(r.reason||r.pullReason||'no longer passes the filters')} · ${esc(r.start?fmtTime(new Date(r.start)):'')}</div>
+  const b = typeof primaryLoggedBet==='function' ? primaryLoggedBet(r.k) : null;
+  const isPar = r.board==='parlay' || String(r.k||'').startsWith('parlay:');
+  const parNames = isPar && b && typeof parlayBetLegNames==='function' ? parlayBetLegNames(b) : [];
+  const betLabel = r.betLabel || (parNames.length ? parNames.join(' + ') : '') || r.label;
+  const head = r.legLabel ? `${r.legLabel} → now Avoid` : `${isPar ? 'Parlay' : r.label} → now Avoid`;
+  const sub = r.legLabel ? `From your parlay: ${betLabel}` : isPar ? `Your parlay: ${betLabel}` : (r.game||'');
+  const why = r.reason || r.pullReason || 'no longer passes the filters';
+  const tailed = b ? `You tailed $${typeof fmtStake==='function'?fmtStake(b.stake):b.stake} @ ${typeof fmtBetOdds==='function'?fmtBetOdds(b):b.odds}` : '';
+  const starts = r.start ? `Starts ${fmtTime(new Date(r.start))}` : '';
+  return `<div class="card logged-pulled pulled-item">
+    <div class="pull-marks"><span class="pull-kind">${isPar?'Parlay':r.board==='props'?'Prop':'Game'}</span>${b?'<span class="you-bet-lab">YOU TAILED THIS</span>':''}</div>
+    <div class="pull-title">${esc(head)}</div>
+    ${sub?`<div class="pull-sub">${esc(sub)}</div>`:''}
+    <div class="pull-why"><b>Why:</b> ${esc(why)}</div>
+    <div class="pull-meta">${[pulledWhenTxt(r.at), tailed, starts].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('')}</div>
     <div class="cfoot"><button type="button" class="btn sm" data-dismiss-pull="${esc(r.k)}" data-pulled-at="${r.at||0}">Dismiss</button></div>
   </div>`;
 }
@@ -6463,7 +6613,7 @@ function render(){
   if (ui.tab==='good'){
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
     const body = (typeof picksBoardHTML==='function')
-      ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), good, 'games', playCard)
+      ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), (typeof withPulledTailed==='function' ? withPulledTailed(good, 'games') : good), 'games', playCard)
       : section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'));
     v.innerHTML = slateLayout('good', body + errs, counts);
   }
@@ -6477,8 +6627,8 @@ function render(){
   else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
   else if (ui.tab==='pulled'){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
-    const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No tailed picks have flipped to Avoid.</div>`;
-    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">🟠</span>Pulled</h2><span class="hint">Picks you tailed that flipped to Avoid. Untailed picks that drop off are removed quietly and still tracked for the model.</span></div>` + items + errs;
+    const items = list.length ? `<div class="pulled-list">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">None of the bets you tailed has flipped to Avoid.</div>`;
+    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">⛔</span>Pulled</h2><span class="hint">Only bets you tailed. For a parlay, the line that went bad is shown, and the whole parlay is pulled to be safe. It also stays on Picks in red until the game starts.</span></div>` + items + errs;
   }
   else if (ui.tab==='all') v.innerHTML = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
@@ -9332,6 +9482,7 @@ async function loadLiveProps(opts){
         ? `Live lines from ESPN’s DraftKings prop feed on ${espnGames} game${espnGames===1?'':'s'} (${espnN} player-stat lines). Over is listed first, Under second — the feed does not label the side. ${S.oddsKey?'Odds API player markets are merged when a cached fetch is available.':'Add an Odds API key in Settings for more books.'}`
         : (espnErr ? 'Could not reach ESPN prop lines just now.' : 'No live prop lines posted for the upcoming games in this window. You can still type a prop in Verdict and we will research the player’s real game log.')
     };
+    try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
     if (typeof checkLockAlerts==='function') checkLockAlerts('props');
     if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props');
     if (typeof softRender==='function') softRender();
@@ -9455,6 +9606,7 @@ async function runPropEnrichment(){
       }
     }
   }catch(e){}
+  try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
   try{ if (typeof checkLockAlerts==='function') checkLockAlerts('props'); }catch(e){}
   try{ if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props'); }catch(e){}
   flush(true);
@@ -9715,6 +9867,7 @@ function renderPropsBoard(tab, errs){
   const watch = vis('watch').sort((a,b)=>(b.p||0)-(a.p||0));
   const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
   try{ good = good.concat(tailedPropsToKeep([...good, ...watch, ...avoid])); }catch(e){ console.warn('tailed props keep', e); }
+  if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'props');
   const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
   const st = propStatusHTML();
   const bookNote = propsUnsupportedNote();
@@ -10132,7 +10285,10 @@ function buildParlays(){
   for (let i=0;i<legs.length;i++) for (let j=i+1;j<legs.length;j++) pushCombo([legs[i],legs[j]]);
   for (let i=0;i<legs.length;i++) for (let j=i+1;j<legs.length;j++) for (let k=j+1;k<legs.length;k++) pushCombo([legs[i],legs[j],legs[k]]);
   const vOrd = v => v==='good'?0:v==='watch'?1:2;
-  combos.sort((a,b)=> (vOrd(a.verdict)-vOrd(b.verdict)) || (b.edge-a.edge) || (b.p-a.p));
+  // v38: prefer legs whose games start close together (≤4h apart) so the whole parlay locks near game time
+  for (const c of combos){ const st = c.legs.map(l=>l.g&&l.g.start?+l.g.start:null).filter(x=>x!=null); c.spreadH = st.length ? (Math.max(...st)-Math.min(...st))/3600e3 : 0; }
+  const farOrd = c => (c.spreadH||0) > 4 ? 1 : 0;
+  combos.sort((a,b)=> (vOrd(a.verdict)-vOrd(b.verdict)) || (farOrd(a)-farOrd(b)) || (b.edge-a.edge) || (b.p-a.p));
   const kept = [];
   const usedGood = new Set(), usedWatch = new Set(), usedAvoid = new Set();
   const legKey = l => parlayEventId(l) || l.id;
@@ -10414,6 +10570,7 @@ function renderParlayBoard(tab, errs){
   let good=vis('good'); const watch=vis('watch'), avoid=vis('avoid');
   // v37: a pending tailed parlay never vanishes — if it isn't on any tab (and wasn't pulled), keep it under Picks
   try{ const shown = new Set([...good, ...watch, ...avoid].map(x=>x.id)); good = good.concat(tailedParlaysToKeep(shown)); }catch(e){ console.warn('tailed keep', e); }
+  if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'parlay');
   const counts={good:good.length, watch:watch.length, avoid:avoid.length};
   const st = '';
   const section = (title, sub, list, empty) => `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length?`<div class="grid">${list.map(parlayCard).join('')}</div>`:`<div class="empty-state">${empty}</div>`);
@@ -10579,9 +10736,75 @@ const TAILED_KEEP_NOTE = '📌 Kept on your board because you tailed it. It drop
 function parlayLegSaveMeta(l){
   const g = l && l.g; const isProp = !!(l && (l.isProp || (l.kind && l.playerName)));
   const m = {id:l.id, label:parlayLegLabel(l), ev:g?g.eventId:(l.eventId||null), lg:(g&&g.league)||l.league||'', start:g&&g.start?+g.start:null, price:l.price!=null?l.price:null, p:l.p!=null?l.p:null, league:(g&&g.league)||l.league||''};
-  if (isProp) Object.assign(m, {kind:'prop', stat:l.kind, side:l.side, line:l.line, point:l.line, playerName:l.playerName||'', playerId:l.playerId||''});
-  else Object.assign(m, {mk:l.mk, side:l.side, point:l.sd && l.sd.point!=null ? l.sd.point : null});
+  if (isProp) Object.assign(m, {kind:'prop', stat:l.kind, side:l.side, line:l.line, point:l.line, playerName:l.playerName||'', playerId:l.playerId||'', verdictAtTail:l.verdict||''});
+  else {
+    const gp = (typeof plays!=='undefined' ? plays : []).find(x=>x && x.g===g && x.mk===l.mk && x.side===l.side);
+    Object.assign(m, {mk:l.mk, side:l.side, point:l.sd && l.sd.point!=null ? l.sd.point : null, verdictAtTail:(gp && gp.verdict) || ''});
+  }
   return m;
+}
+
+/* ================= v38: a tailed parlay is pulled as a whole when ANY leg turns bad ================= */
+function propsForLegTok(t, meta, nameHint){
+  const P = (typeof props!=='undefined' ? props : []);
+  const who = (meta && meta.playerName) || nameHint || (String(t.pid).startsWith('oa:') ? String(t.pid).slice(3) : '');
+  return P.filter(x=>x && String((x.g&&x.g.eventId)||x.eventId||'')===String(t.ev) && x.kind===t.kind
+      && ((t.pid && String(x.playerId||'')===String(t.pid)) || (who && typeof nameScore==='function' && nameScore(who, x.playerName||'')>=7))
+      && isFinite(+x.line) && Math.abs(+x.line - t.line) <= 1.0001)   // loose line: a typed 7.6 still matches 7.5
+    .sort((a,b)=>Math.abs(a.line-t.line)-Math.abs(b.line-t.line));
+}
+function legLabelForTok(b, t, meta){
+  if (meta && meta.label) return meta.label;
+  const names = (typeof parlayBetLegNames==='function' ? parlayBetLegNames(b) : []);
+  if (t.isProp){
+    const pr = (typeof props!=='undefined' ? props : []).find(x=>x && String(x.playerId||'')===String(t.pid));
+    const who = (pr && pr.playerName) || (String(t.pid).startsWith('oa:') ? String(t.pid).slice(3) : '');
+    const last = String(who).split(' ').pop().toLowerCase();
+    const hit = last && names.find(n=>n.toLowerCase().includes(last));
+    if (hit) return hit;
+  } else {
+    const lab = parlayTokLabel(t, meta);
+    const g = (typeof games!=='undefined' ? games : []).find(x=>x && x.id===t.gid);
+    const team = g && g[t.side] && (g[t.side].name || '').toLowerCase();
+    const hit = team && names.find(n=>n.toLowerCase().includes(team.split(' ').pop()));
+    return hit || lab;
+  }
+  return parlayTokLabel(t, meta);
+}
+function parlayLegPullCheck(b, k){
+  const out = {started:false, minStart:Infinity, why:'', legLabel:''};
+  const toks = parseParlayKey(k);
+  const names = typeof parlayBetLegNames==='function' ? parlayBetLegNames(b) : [];
+  for (const t of toks){
+    if (t.unknown) continue;
+    const meta = legMetaFor(b, t.tok);
+    const label = legLabelForTok(b, t, meta);
+    if (!t.isProp){
+      const g = (typeof games!=='undefined' ? games : []).find(x=>x && x.id===t.gid);
+      if (!g) continue;
+      if (g.state && g.state!=='pre'){ out.started = true; return out; }
+      if (g.start && +g.start < out.minStart) out.minStart = +g.start;
+      const sd = g.analysis && g.analysis[t.mk] && g.analysis[t.mk].sides && g.analysis[t.mk].sides[t.side];
+      if (contradictsBoardPick({isProp:false, g, eventId:g.eventId, mk:t.mk, side:t.side})){ out.why = 'Games Picks flipped to the other side'; out.legLabel = label; break; }
+      if (t.mk==='ml' && sd && sd.best && sd.best.price!=null && sd.best.price > -110){ out.why = `no longer a favorite (${fmtAm(sd.best.price)})`; out.legLabel = label; break; }
+      const gp = (typeof plays!=='undefined' ? plays : []).find(x=>x && x.g===g && x.mk===t.mk && x.side===t.side);
+      if (gp && gp.verdict==='avoid' && meta && meta.verdictAtTail && meta.verdictAtTail!=='avoid'){ out.why = 'flipped to Avoid on Games'; out.legLabel = label; break; }
+    } else {
+      const g = (typeof games!=='undefined' ? games : []).find(x=>x && String(x.eventId)===String(t.ev));
+      if (g && g.state && g.state!=='pre'){ out.started = true; return out; }
+      if (g && g.start && +g.start < out.minStart) out.minStart = +g.start;
+      if (contradictsBoardPick({isProp:true, g, eventId:t.ev, playerId:t.pid, kind:t.kind, side:t.side, line:t.line, playerName:(meta&&meta.playerName)||''})){ out.why = 'Props Picks flipped to the other side'; out.legLabel = label; break; }
+      const hint = (()=>{ const n = names.find(x=>/\b(over|under)\b/i.test(x) && x.toLowerCase().includes(String((meta&&meta.playerName)||'').toLowerCase()||'§')); return n ? n.replace(/\s+(over|under)\b.*$/i,'') : ''; })();
+      const cands = propsForLegTok(t, meta, hint);
+      const pr = cands[0];
+      if (!pr) continue;
+      if (pr.g && pr.g.state && pr.g.state!=='pre'){ out.started = true; return out; }
+      const sameSide = String(pr.side||'').toLowerCase()===String(t.side||'').toLowerCase();
+      if (!sameSide){ out.why = `the model now leans ${pr.side==='under'?'Under':'Over'} ${pr.line}`; out.legLabel = label; break; }
+      if (pr.verdict==='avoid' && !(meta && meta.verdictAtTail==='avoid')){ out.why = 'flipped to Avoid on Props'; out.legLabel = label; break; }
+    }
+  }
+  return out;
 }
 /* ================= PER-BOARD AUTO-LEARN (props + parlays; games stays in 12_learn.js) ================= */
 const PROP_STAT_KEYS = {pts:['points'], reb:['rebounds','totalRebounds'], ast:['assists'], threes:['threePointFieldGoalsMade','threes'], pra:null, pr:null, ra:null, pa:null};
@@ -11012,6 +11235,7 @@ function evalLockPolicy(rows, maxMins, payoutFn){
 }
 function sameLock(a,b){ return (a==null||a<=0) ? (b==null||b<=0) : a===b; }
 function retuneLockMins(board){
+  if (board==='parlay') return {adopted:false, why:'Parlays use the Games lock window, timed from the first leg.'};
   const rec=v=>v==='good'||v==='pick'||v==='bet';
   const rows = lockTuneRows(board).filter(x=>(x.y===0||x.y===1) && x.minsToTip!=null && rec(x.verdict));
   if (rows.length < 40) return {adopted:false, why:'Need 40 graded timed snapshots first ('+rows.length+' so far).'};
