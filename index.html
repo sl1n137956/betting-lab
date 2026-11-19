@@ -1309,9 +1309,9 @@ function bookOpenUrl(bookKey, item, kind){
 function openInBookHTML(item, kind){
   let books = [];
   try{ books = typeof selectedBooks==='function' ? selectedBooks() : []; }catch(e){ books = []; }
-  if (!Array.isArray(books) || !books.length) books = ['bovada','polymarket'];
+  if (!Array.isArray(books) || !books.length) books = DEFAULT_ALL_BOOKS.split(',');
   books = books.map(b=>String(b).toLowerCase()).filter(Boolean);
-  if (!books.length) books = ['bovada','polymarket'];
+  if (!books.length) books = DEFAULT_ALL_BOOKS.split(',');
   const label = (k)=> (typeof bookLabelOf==='function'?bookLabelOf(k):k);
   if (books.length===1){
     const url = bookOpenUrl(books[0], item, kind);
@@ -1358,6 +1358,7 @@ function openInBookHTML(item, kind){
 })();
 
 
+const DEFAULT_ALL_BOOKS = 'bovada,polymarket_us,polymarket,kalshi,draftkings,fanduel,betmgm,williamhill_us,espnbet,fanatics,betrivers,betonlineag';
 const DEFAULTS = {
   refreshMin:1, refreshSec:60, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
   oddsKey:'', oddsRegions:'us', oddsEveryMin:120, oddsBooks:'', sharpWeight:2,
@@ -1372,7 +1373,7 @@ const DEFAULTS = {
   // strict mode (tuned by backtest; see Backtest tab)
   strictMode:true, sMarkets:'ml', sFavMin:-150, sDogMax:150, sMinWin:0.50, sModelMin:0.58, sModelEdge:0, sNoModelSports:true, sNoSoccer:false, sExclude:'ncaab,mls,epl,ucl,laliga,seriea,bund', preset:'super', sMaxAdvPct:1.0, sMinPos:2, sMinScore:-99, sMinConf:80, sMinEV:-99,
   // your books
-  myBooks:'bovada,polymarket', pmOn:true, pmThinSpread:0.03, pmThinLiq:5000, pmFeeRate:0.05,
+  myBooks:DEFAULT_ALL_BOOKS, pmOn:true, pmThinSpread:0.03, pmThinLiq:5000, pmFeeRate:0.05,
   alertNewPlays:true, alertPulledPlays:true,
 };
 const LS = {settings:'bl_settings', firstSeen:'bl_firstseen', bets:'bl_bets', oddsCache:'bl_oddscache', sum:'bl_sumcache', geo:'bl_geo', wx:'bl_wxcache', results:'bl_results', pm:'bl_pmcache', pulledDismiss:'bl_pulled_dismiss', playTabs:'bl_play_tabs', pullNotes:'bl_pull_notes', newPlayNotified:'bl_new_play_notified', installTip:'bl_install_tip_dismiss', injSnap:'bl_inj_snap', filters:'bl_filters', filterViews:'bl_filter_views'};
@@ -1396,6 +1397,16 @@ if (!(+S.sVer >= 8)){
 // v9: free sources default to once a minute; 15s/30s remain available.
 if (!(+S.sVer >= 9)){
   S.refreshSec = 60; S.refreshMin = 1; S.sVer = 9;
+  try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+}
+// v10: signed-out / untouched installs default to every book; preserve any custom or synced book selection.
+if (!(+S.sVer >= 10)){
+  let syncedAt = 0;
+  try{ const sm = JSON.parse(localStorage.getItem('bl_sync_meta')||'{}'); syncedAt = +sm.settingsAt||0; }catch(e){}
+  if (!S.myBooksCustom && !syncedAt && (!S.myBooks || S.myBooks === 'bovada,polymarket')){
+    S.myBooks = DEFAULTS.myBooks;
+  }
+  S.sVer = 10;
   try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
 }
 if (S.refreshSec==null || !isFinite(+S.refreshSec)) S.refreshSec = Math.round((+S.refreshMin||1)*60);
@@ -2914,7 +2925,7 @@ function betOnText(p){
 const PM_TAGS = {nba:745, nhl:899, nfl:450, ncaaf:100351, ncaab:102114};
 let pmCache = loadJSON(LS.pm, null); let pmErr = null;
 async function fetchPolymarket(){
-  if (!S.pmOn || !myBookList().includes('polymarket')){ pmErr=null; return; }
+  if (!S.pmOn || !myBookList().some(b=>b==='polymarket'||b==='polymarket_us')){ pmErr=null; return; }
   const pmFresh = Math.max(10*1000, (typeof refreshIntervalMs==="function"?refreshIntervalMs():60000) - 2000);
   if (pmCache && Date.now()-pmCache.t < pmFresh) return;
   const want = Object.keys(PM_TAGS).filter(id=>S.enabled.includes(id) && games.some(g=>g.league===id && g.state==='pre'));
@@ -5697,7 +5708,7 @@ function pickinessLabel(board){
 }
 function compactPriceLine(){
   if (S.oddsKey) return 'Prices include your Odds API books (Bovada when available).';
-  const pm = typeof myBookList==='function' && myBookList().includes('polymarket') && S.pmOn!==false;
+  const pm = typeof myBookList==='function' && myBookList().some(b=>b==='polymarket'||b==='polymarket_us') && S.pmOn!==false;
   return pm
     ? 'Prices from DraftKings and Polymarket — add an Odds API key in Settings for Bovada.'
     : 'Prices from DraftKings — add an Odds API key in Settings for Bovada.';
@@ -10788,6 +10799,7 @@ function renderSettings(){
     S.deepData = f.get('deepData')==='1'; S.sMarkets = f.get('sMarkets'); S.sNoModelSports = f.get('sNoModelSports')==='1'; S.pmOn = f.get('pmOn')==='1';
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).concat(extra).join(',');
+    S.myBooksCustom = true;
     if ((ui.settingsBoard||'games')==='games'){ S.sNoSoccer = false; }
     S.alertNewPlays = !!f.get('alertNewPlays'); S.alertPulledPlays = !!f.get('alertPulledPlays');
     S.ntfyOn = !!f.get('ntfyOn');
@@ -10812,14 +10824,7 @@ function renderSettings(){
       if (typeof applyBoardPreset==='function' && chosen) applyBoardPreset(sb, chosen);
       else B.preset = chosen;
     }
-    saveJSON(LS.settings, S); if (typeof startRefreshWatch==='function') try{
-  const qp = new URLSearchParams(location.search||'');
-  const qb = qp.get('board'), qt = qp.get('tab');
-  if (qt==='pulled'){ ui.tab='pulled'; }
-  else if (qb==='games'||qb==='props'||qb==='parlay'){ ui.tab='good'; ui.board=qb; }
-  if (qb || qt){ history.replaceState(null, '', location.pathname + (location.hash||'')); }
-}catch(e){}
-startRefreshWatch();
+    saveJSON(LS.settings, S); if (typeof startRefreshWatch==='function') startRefreshWatch();
     toast('Saved. Refreshing…'); refresh(); renderSettings();
   };
   $('#btnDefaults').onclick = ()=>{ if(!confirm('Reset everything except your key, books, sports and bet size to the recommended settings?')) return;
@@ -11148,6 +11153,17 @@ registerAppSW();
 showInstallTip();
 if (typeof initPullToRefresh==="function") initPullToRefresh();
 if (typeof setTab==='function') setTab('picks');
+try{
+  const qp = new URLSearchParams(location.search||'');
+  const qb = qp.get('board'), qt = qp.get('tab');
+  if (qt==='pulled' && typeof setTab==='function'){ setTab('pulled'); }
+  else if (qb==='games'||qb==='props'||qb==='parlay'){
+    ui.board = qb;
+    if (typeof setBoard==='function') setBoard(qb);
+    else if (typeof setTab==='function') setTab('good');
+  }
+  if (qb || qt){ history.replaceState(null, '', location.pathname + (location.hash||'')); }
+}catch(e){}
 startRefreshWatch();
 learnInit().catch(e=>console.warn('learning', e)).then(()=>{ render(); refresh(); });
 /* ================= ACCOUNT + CLOUD SYNC (Firebase Auth + Firestore) =================
