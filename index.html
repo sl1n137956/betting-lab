@@ -966,7 +966,7 @@ const ALL_PROP_STATS = ['pts','reb','ast','threes','pra','pr','pa','ar','stl','b
 const ALL_GAME_MKTS = ['h2h','spreads','totals','ml','spread','total'];
 const TRAD_BOOKS = ['bovada','draftkings','fanduel','betmgm','williamhill_us','espnbet','fanatics','betrivers','betonlineag'];
 const BOOK_CAPABILITIES = Object.assign(
-  { polymarket: { games: ['h2h','spreads','totals','ml','spread','total'], props: [] } },
+  { polymarket: { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] } },
   Object.fromEntries(TRAD_BOOKS.map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
 );
 function selectedBooks(){
@@ -7912,12 +7912,10 @@ function filteredProps(list){
 function propsUnsupportedNote(){
   const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   if (!books.length) return '';
-  const any = books.some(b => typeof bookSupportsMarket==='function' ? bookSupportsMarket([b], 'props', {kind:'pts', isProp:true}) : true);
-  if (any) return '';
-  const names = books.map(b => typeof bookLabelOf==='function' ? bookLabelOf(b) : (b==='polymarket'?'Polymarket':b));
-  const who = names.length===1 ? names[0] : names.slice(0,-1).join(', ') + ' and ' + names[names.length-1];
-  const verb = names.length===1 ? "doesn't" : "don't";
-  return who + ' ' + verb + " offer player props (like rebounds, assists, or points). Select another book like Bovada or DraftKings in Settings → My books to see player props.";
+  if (books.length===1 && books[0]==='polymarket'){
+    return "Polymarket doesn't offer combo/niche props (PRA, P+R, P+A, R+A, turnovers) or NHL/MLB player props, so those are hidden. Select another book like Bovada or DraftKings in Settings → My books to see them.";
+  }
+  return '';
 }
 function propSourceLabel(p){
   let s = String((p && p.source) || 'line').replace('ESPN DraftKings prop feed','DraftKings');
