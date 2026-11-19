@@ -307,7 +307,7 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .head-tools{display:flex;align-items:center;gap:10px;padding:0 0 12px}.head-tools[hidden],#filterBar[hidden]{display:none !important}
 .head-tools .search{flex:1;min-width:180px;max-width:520px;min-height:42px;padding:8px 16px;border-radius:999px;border:1px solid rgba(125,211,252,.22);background:var(--inset);box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
 .head-tools .search:focus{border-color:rgba(125,211,252,.5);box-shadow:0 0 0 4px rgba(59,130,246,.16)}
-.btn.filters-btn,.btn.sm.filters-btn,.filters-btn{display:none;flex:none;white-space:nowrap;border-radius:999px;border:1px solid rgba(125,211,252,.32);background:linear-gradient(180deg,#1e3a66,#152848);color:var(--acc-hi);font-weight:700;padding:8px 14px 8px 10px;gap:8px;align-items:center;box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 6px 16px -10px rgba(37,99,235,.55)}
+.btn.filters-btn,.btn.sm.filters-btn,.filters-btn{display:inline-flex;flex:none;white-space:nowrap;border-radius:999px;border:1px solid rgba(125,211,252,.32);background:linear-gradient(180deg,#1e3a66,#152848);color:var(--acc-hi);font-weight:700;padding:8px 14px 8px 10px;gap:8px;align-items:center;box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 6px 16px -10px rgba(37,99,235,.55);min-height:42px}
 .filters-btn:hover{border-color:rgba(125,211,252,.55);color:#fff;background:linear-gradient(180deg,#244677,#1a3354)}
 .filters-btn::before{
   content:'';display:inline-block;flex:0 0 auto;width:22px;height:22px;border-radius:8px;
@@ -318,7 +318,8 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
   transform:rotate(-90deg);transition:transform .22s var(--ease);
 }
 body.filters-open .filters-btn::before{transform:rotate(0deg)}
-#filterBar{display:flex;flex-direction:column;gap:16px;background:linear-gradient(180deg,rgba(26,43,68,.98),#132033);border:1px solid rgba(125,211,252,.18);border-radius:22px;padding:16px;margin:0 0 18px;box-shadow:var(--shadow)}
+#filterBar{display:none;flex-direction:column;gap:16px;background:linear-gradient(180deg,rgba(26,43,68,.98),#132033);border:1px solid rgba(125,211,252,.18);border-radius:22px;padding:16px;margin:0 0 18px;box-shadow:var(--shadow);max-height:min(70vh, 640px);overflow:auto}
+body.filters-open #filterBar:not([hidden]){display:flex}
 #filterBar .filters{margin:0;gap:8px}
 #filterBar .chip-note{margin:0}
 #filterBar .chip{border-radius:999px;padding:7px 14px;background:rgba(255,255,255,.03);box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
@@ -719,7 +720,7 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 .board-seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
 .board-seg button{background:none;border:0;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;padding:7px 14px;border-radius:999px;font-size:13px}
 .board-seg button.on{background:var(--acc-dim);color:var(--acc-hi);box-shadow:0 0 0 1px rgba(125,211,252,.16)}
-.learn-banner{display:flex;gap:10px;align-items:flex-start;margin:12px 0 4px;padding:10px 14px;border-radius:14px;background:rgba(37,99,235,.12);border:1px solid rgba(125,211,252,.22);color:var(--txt)}
+.learn-banner{display:flex;gap:10px;align-items:flex-start;margin:8px 0 16px;padding:10px 14px;border-radius:14px;background:rgba(37,99,235,.12);border:1px solid rgba(125,211,252,.22);color:var(--txt)}
 .learn-banner[hidden]{display:none}
 .learn-banner .lb-txt{flex:1;min-width:0;font-size:13.5px;line-height:1.45}
 .learn-banner .lb-x{background:none;border:0;color:var(--mut);font-size:20px;cursor:pointer;line-height:1;padding:0 4px}
@@ -4690,7 +4691,10 @@ function activeFilterCount(){
   let n=0;
   if (ui.sport && ui.sport!=='all') n++;
   if (ui.mkt && ui.mkt!=='all') n++;
+  if (ui.mix && ui.mix!=='all') n++;
   if (ui.hideLogged) n++;
+  if (ui.hideStarted===false) n++;
+  if (ui.q) n++;
   return n;
 }
 function syncFilterDrawerPos(){
@@ -4723,8 +4727,15 @@ function updateFilterChrome(){
   if (btn){
     const n = activeFilterCount();
     const lab = btn.querySelector('.filters-lab') || btn;
-    lab.textContent = n ? `Filters · ${n}` : 'Filters';
+    lab.textContent = 'Filters';
+    let badge = btn.querySelector('.filt-badge');
+    if (n){
+      if (!badge){ badge=document.createElement('span'); badge.className='filt-badge'; badge.setAttribute('aria-hidden','true'); btn.appendChild(badge); }
+      badge.textContent = String(n);
+    } else if (badge) badge.remove();
+    btn.classList.toggle('has-filters', n>0);
     btn.setAttribute('aria-expanded', document.body.classList.contains('filters-open')?'true':'false');
+    btn.setAttribute('aria-label', n?`Filters, ${n} active`:'Filters');
   }
   if (typeof fillFilterMeta==='function') fillFilterMeta();
   if (document.body.classList.contains('filters-open')) syncFilterDrawerPos();
@@ -6280,7 +6291,11 @@ function renderResults(){
     ${wdLine?`<p class="pull-note"><b>${esc(wdLine)}</b></p>`:''}
     <table><tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Why it was pulled</th><th>Result</th></tr>${wdRows}</table></div>`:''}
 
+
   ${typeof learnPanelHTML==='function' ? learnPanelHTML() : ''}
+  <div class="panel" style="margin-top:12px"><h3>Games v2 check (kept v1)</h3>
+    <p class="hint">A chronological walk-forward on 75 days of real ESPN/DraftKings games (earlier 65% of bet days train, later 35% unseen) was run on the live Super picky moneyline rules. v1 itself was already strong on the holdout (train 41–23, 64.1%, +14.8% ROI; unseen 24–8, 75.0%, +34.9% ROI). Extra filters (road back-to-backs, juice caps, dropping NHL, adding spreads/totals) either failed to beat v1 on the training window, or looked better on train and then got worse on the unseen test. Nothing was adopted — Games stays on v1.</p>
+  </div>
 
   <div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Backtest</h2><span class="hint">Replays the model's current rules on past games to measure and improve the model. Uses only info known before tip-off. This is not your personal Tracker record.</span></div>
   <div class="panel"><h3>Run it</h3>
@@ -7110,7 +7125,8 @@ function estimateProp(feat){
   return {pOver:p, notes};
 }
 
-function strictPropGates(pOver, price, feat, side){
+const PROP_V2_SKIP_KINDS = {nba:['pts','pra','pr','pa'], wnba:['pts','pra','pr','pa']};
+function strictPropGates(pOver, price, feat, side, raw){
   const fails = [];
   const pSide = side==='under' ? 1-pOver : pOver;
   const B = (typeof boardS==='function' ? boardS('props') : null) || S;
@@ -7135,6 +7151,13 @@ function strictPropGates(pOver, price, feat, side){
   } else {
     verdict = 'avoid';
   }
+  const lg = raw && (raw.league || (raw.g && raw.g.league));
+  const kind = raw && raw.kind;
+  const skip = (lg && PROP_V2_SKIP_KINDS[lg] && kind && PROP_V2_SKIP_KINDS[lg].includes(kind));
+  if (verdict==='good' && skip && !(B && B.preset==='relaxed')){
+    fails.push('Points and PRA did not hold up out of sample — Picks are 3s, rebounds, and assists');
+    verdict='watch';
+  }
   if (verdict==='good') return {verdict, fails:[]};
   return {verdict, fails};
 }
@@ -7148,7 +7171,7 @@ function buildPropPlay(raw, side, feat, est){
   const pOver = est && est.pOver;
   const pSide = pOver==null ? null : (side==='under' ? 1-pOver : pOver);
   const implied = price!=null ? imp(price) : null;
-  const gates = (pOver==null) ? {verdict:'watch', fails:['still loading this player’s game log']} : strictPropGates(pOver, price, feat, side);
+  const gates = (pOver==null) ? {verdict:'watch', fails:['still loading this player’s game log']} : strictPropGates(pOver, price, feat, side, raw);
   const label = `${raw.playerName||'Player'} ${side==='over'?'Over':'Under'} ${raw.line} ${PROP_KIND_LABEL[raw.kind]||raw.kind}`;
   const win = [], lose = [];
   const f = feat||{};
@@ -7660,21 +7683,30 @@ function propsBacktestHTML(){
       <div class="kpis">
         <div class="kpi"><div class="k">Players</div><div class="v">${R.playersN}</div></div>
         <div class="kpi"><div class="k">Player-games</div><div class="v">${R.gamesSampled}</div></div>
-        <div class="kpi"><div class="k">Bets taken</div><div class="v">${R.betsN}</div></div>
-        <div class="kpi"><div class="k">Hit rate</div><div class="v">${pct(R.hitRate)}</div></div>
-        <div class="kpi"><div class="k">ROI at −110</div><div class="v ${R.roi>=0?'pos':'neg'}">${pct(R.roi)}</div></div>
-        <div class="kpi"><div class="k">Net / $100 flat</div><div class="v ${R.net>=0?'pos':'neg'}">${moneyN(R.net)}</div></div>
+        <div class="kpi"><div class="k">Bets taken</div><div class="v">${(R.v2&&R.v2.betsN)||R.betsN}</div><div class="hint">${R.v2?'v2 live rules':'v1'}</div></div>
+        <div class="kpi"><div class="k">Hit rate</div><div class="v">${pct((R.v2&&R.v2.hitRate)!=null?R.v2.hitRate:R.hitRate)}</div></div>
+        <div class="kpi"><div class="k">ROI at −110</div><div class="v ${((R.v2&&R.v2.roi)!=null?R.v2.roi:R.roi)>=0?'pos':'neg'}">${pct((R.v2&&R.v2.roi)!=null?R.v2.roi:R.roi)}</div></div>
+        <div class="kpi"><div class="k">Net / $100 flat</div><div class="v ${((R.v2&&R.v2.net)!=null?R.v2.net:R.net)>=0?'pos':'neg'}">${moneyN((R.v2&&R.v2.net)!=null?R.v2.net:R.net)}</div></div>
       </div>
       <h3>By stat</h3>
       <table><tr><th>Stat</th><th>N</th><th>W-L</th><th>Hit</th><th>ROI</th></tr>${kinds}</table>
       <h3 style="margin-top:14px">Calibration (estimated win chance vs actual)</h3>
       <table><tr><th>Bucket</th><th>N</th><th>Actual hit</th><th>ROI</th></tr>${cal}</table>
+      ${R.v2?`<h3 style="margin-top:14px">Walk-forward v1 vs v2 (earlier 65% of bet dates train, later 35% unseen)</h3>
+      <table><tr><th></th><th>N</th><th>W-L</th><th>Win%</th><th>ROI</th></tr>
+        <tr><td>v1 train</td><td>${R.oos&&R.oos.v1&&R.oos.v1.train&&R.oos.v1.train.n||'—'}</td><td>${R.oos&&R.oos.v1&&R.oos.v1.train?R.oos.v1.train.w+'–'+R.oos.v1.train.l:'—'}</td><td>${pct(R.oos&&R.oos.v1&&R.oos.v1.train&&R.oos.v1.train.wr)}</td><td class="${(R.oos&&R.oos.v1&&R.oos.v1.train&&R.oos.v1.train.roi||0)>=0?'pos':'neg'}">${pct(R.oos&&R.oos.v1&&R.oos.v1.train&&R.oos.v1.train.roi)}</td></tr>
+        <tr><td>v1 unseen test</td><td>${R.oos&&R.oos.v1&&R.oos.v1.test&&R.oos.v1.test.n||'—'}</td><td>${R.oos&&R.oos.v1&&R.oos.v1.test?R.oos.v1.test.w+'–'+R.oos.v1.test.l:'—'}</td><td>${pct(R.oos&&R.oos.v1&&R.oos.v1.test&&R.oos.v1.test.wr)}</td><td class="${(R.oos&&R.oos.v1&&R.oos.v1.test&&R.oos.v1.test.roi||0)>=0?'pos':'neg'}">${pct(R.oos&&R.oos.v1&&R.oos.v1.test&&R.oos.v1.test.roi)}</td></tr>
+        <tr><td>v2 train (3s / reb / ast, 60%+)</td><td>${R.oos&&R.oos.v2&&R.oos.v2.train&&R.oos.v2.train.n||'—'}</td><td>${R.oos&&R.oos.v2&&R.oos.v2.train?R.oos.v2.train.w+'–'+R.oos.v2.train.l:'—'}</td><td>${pct(R.oos&&R.oos.v2&&R.oos.v2.train&&R.oos.v2.train.wr)}</td><td class="${(R.oos&&R.oos.v2&&R.oos.v2.train&&R.oos.v2.train.roi||0)>=0?'pos':'neg'}">${pct(R.oos&&R.oos.v2&&R.oos.v2.train&&R.oos.v2.train.roi)}</td></tr>
+        <tr><td>v2 unseen test</td><td>${R.oos&&R.oos.v2&&R.oos.v2.test&&R.oos.v2.test.n||'—'}</td><td>${R.oos&&R.oos.v2&&R.oos.v2.test?R.oos.v2.test.w+'–'+R.oos.v2.test.l:'—'}</td><td>${pct(R.oos&&R.oos.v2&&R.oos.v2.test&&R.oos.v2.test.wr)}</td><td class="${(R.oos&&R.oos.v2&&R.oos.v2.test&&R.oos.v2.test.roi||0)>=0?'pos':'neg'}">${pct(R.oos&&R.oos.v2&&R.oos.v2.test&&R.oos.v2.test.roi)}</td></tr>
+      </table>`:''}
       <p class="hint" style="margin-top:12px">${esc(R.methodology||'')}</p>
-      <p class="hint">Read this honestly: the 58–62% bucket hit about 55% in this sample, so the live app only marks a Prop Pick at 60% or higher and still prefers passing to forcing. Threes looked strong here; points and PRA did not. Lines are a rolling median proxy, not historical sportsbook numbers, so this is a feature check, not a claim that these rules beat real books.</p>
+      <p class="hint">${R.v2
+        ? 'Live Prop Picks (Super picky / Picky) now follow v2: NBA/WNBA Points and PRA stay on the Watchlist; Picks are 3-pointers, rebounds, and assists at 60% or higher. Relaxed can still surface the other stats. Lines are a rolling median proxy, not historical sportsbook numbers.'
+        : 'Read this honestly: the 58–62% bucket hit about 55% in this sample, so the live app only marks a Prop Pick at 60% or higher and still prefers passing to forcing. Threes looked strong here; points and PRA did not. Lines are a rolling median proxy, not historical sportsbook numbers, so this is a feature check, not a claim that these rules beat real books.'}</p>
     </div>`;
 }
 
-const PROP_BACKTEST = {"generatedAt":"2026-11-19T03:15:48Z","sport":"NBA","methodology":"Out-of-sample backtest on real ESPN athlete gamelogs. For each player-game, the line is a rolling median of that player\u2019s prior games in the same season, rounded to a half-point (a proxy, NOT a historical sportsbook line). Only games with at least 8 prior observations and 12+ minutes are included. The model starts at 50% and applies capped, conservative adjustments from L5/L10 vs the line, minutes trend, home/away, rest/B2B, and H2H. It only \u201cbets\u201d when estimated over-probability is \u226558% (take Over) or \u226442% (take Under). Settled at $100 flat with -110 juice; pushes excluded. Because lines are a statistical proxy, results are a feature-check, not a claim about beating real books.","playersN":47,"gamesSampled":668,"betsN":134,"hits":75,"hitRate":0.5597,"net":918.25,"roi":0.0685,"byKind":{"pts":{"label":"Points","n":11,"hits":4,"hitRate":0.364,"net":-336.36,"roi":-0.306},"reb":{"label":"Rebounds","n":41,"hits":22,"hitRate":0.537,"net":100.02,"roi":0.024},"ast":{"label":"Assists","n":23,"hits":13,"hitRate":0.565,"net":181.83,"roi":0.079},"threes":{"label":"3-Pointers","n":46,"hits":30,"hitRate":0.652,"net":1127.3,"roi":0.245},"pra":{"label":"Pts+Reb+Ast","n":13,"hits":6,"hitRate":0.462,"net":-154.54,"roi":-0.119}},"calibration":[{"bin":"57\u201362%","n":97,"hit":0.546,"roi":0.043},{"bin":"62\u201366%","n":37,"hit":0.595,"roi":0.135},{"bin":"66\u201372%","n":0,"hit":null,"roi":null}]};
+const PROP_BACKTEST = {"generatedAt":"2026-11-19T03:15:48Z","sport":"NBA","methodology":"Real ESPN NBA athlete gamelogs. The line is a rolling median of that player's prior games in the same season, rounded to a half-point (a proxy, NOT a historical sportsbook line). v1 bet whenever estimated Over probability was \u226558% (or \u226442% for Under), including Points and PRA, on 90 recent players. A chronological walk-forward (earlier 65% of bet dates train, later 35% unseen test) found a genuine improvement: keep only 3-pointers, rebounds, and assists, and require 60%+ (the live Pick bar already used 60%). On the unseen test that rule went 51\u201320 (71.83%, +37.13% ROI) vs v1 88\u201346 (65.67%, +25.37% ROI). Minutes filters and L5/L10-agreement rules did not beat v1 on the training window, so they were not adopted. Settled at $100 flat with -110 juice; pushes excluded. Because lines are a statistical proxy, this is a feature-check, not a claim about beating real books.","playersN":47,"gamesSampled":668,"betsN":134,"hits":75,"hitRate":0.5597,"net":918.25,"roi":0.0685,"byKind":{"pts":{"label":"Points","n":11,"hits":4,"hitRate":0.364,"net":-336.36,"roi":-0.306},"reb":{"label":"Rebounds","n":41,"hits":22,"hitRate":0.537,"net":100.02,"roi":0.024},"ast":{"label":"Assists","n":23,"hits":13,"hitRate":0.565,"net":181.83,"roi":0.079},"threes":{"label":"3-Pointers","n":46,"hits":30,"hitRate":0.652,"net":1127.3,"roi":0.245},"pra":{"label":"Pts+Reb+Ast","n":13,"hits":6,"hitRate":0.462,"net":-154.54,"roi":-0.119}},"calibration":[{"bin":"57\u201362%","n":97,"hit":0.546,"roi":0.043},{"bin":"62\u201366%","n":37,"hit":0.595,"roi":0.135},{"bin":"66\u201372%","n":0,"hit":null,"roi":null}],"v1":{"betsN":134,"hits":75,"hitRate":0.5597,"net":918.25,"roi":0.0685,"label":"Original 47-player v1 sample (58% bar, all five stats)"},"v2":{"label":"3s / rebounds / assists at 60%+","betsN":145,"hits":102,"hitRate":0.7034,"net":4972.72,"roi":0.3429,"byKind":{"threes":"see oos","reb":"see oos","ast":"see oos"}},"oos":{"cut":"2026-11-14","playersN":90,"v1":{"train":{"n":141,"w":88,"l":53,"wr":0.6241,"net":2700.0,"roi":0.1915},"test":{"n":134,"w":88,"l":46,"wr":0.6567,"net":3400.0,"roi":0.2537}},"v2":{"train":{"n":74,"w":51,"l":23,"wr":0.6892,"net":2336.36,"roi":0.3157},"test":{"n":71,"w":51,"l":20,"wr":0.7183,"net":2636.36,"roi":0.3713}}}};
 /* ================= PARLAYS (2–3 leg, low-odds, 2.0x–3.0x target) ================= */
 let parlays = [];
 const PARLAY_BOARDS = ['games','props','parlay'];
@@ -7685,7 +7717,7 @@ const PARLAY_PRESETS = {
 };
 const PARLAY_DEFAULTS = {
   preset:'picky', strictMode:true,
-  sFavMin:-650, sDogMax:-140,
+  sFavMin:-300, sDogMax:-150,
   payoutMin:1.85, payoutMax:3.25, payoutSweetMin:2.0, payoutSweetMax:3.0,
   sMinWin:0.62, sModelMin:0.58, sModelEdge:-0.02, sMinPos:1, sMinEV:-99, sMinConf:70, sMaxAdvPct:3.0,
   sMarkets:'ml,spread,total', sNoModelSports:true, sMinScore:-99, sExclude:''
@@ -7709,6 +7741,15 @@ function migrateBoardSettings(){
   }
   if (!(+S.sVer>=10)){
     S.sVer = 10;
+    try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+  }
+  if (!(+S.sVer>=11)){
+    // Parlays v2: cap extreme juice at -300 to -150 after a walk-forward test. Only overwrite untouched v1 defaults.
+    const P = S.boards && S.boards.parlay;
+    if (P && +P.sFavMin===-650 && +P.sDogMax===-140){
+      P.sFavMin = -300; P.sDogMax = -150;
+    }
+    S.sVer = 11;
     try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
   }
 }
@@ -8086,33 +8127,59 @@ function parlayBacktestHTML(){
     if (!x||!x.betsN) return `<tr><td>${esc(name)}</td><td colspan="5" class="mut">no bets</td></tr>`;
     return `<tr><td>${esc(name)}</td><td>${x.betsN}</td><td>${x.hits}-${x.losses|| (x.betsN-x.hits)}</td><td>${x.hitRate==null?'—':(x.hitRate*100).toFixed(1)+'%'}</td><td class="${(x.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(x.net):x.net}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${x.roi==null?'—':(x.roi*100).toFixed(1)+'%'}</td></tr>`;
   };
-  return `<div class="section-title"><h2>Parlays v1 backtest</h2><span class="hint">Real DraftKings closing moneylines, ${B.days}-day window. Default in-app preset is Picky.</span></div>
+  const v2=B.v2, oos=B.oos||{};
+  const oosRow=(lab,x)=>!x||!x.n?`<tr><td>${esc(lab)}</td><td colspan="4" class="mut">—</td></tr>`
+    :`<tr><td>${esc(lab)}</td><td>${x.n}</td><td>${x.w}–${x.l}</td><td>${x.wr==null?'—':(x.wr*100).toFixed(1)+'%'}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${x.roi==null?'—':((x.roi>=0?'+':'')+(x.roi*100).toFixed(1)+'%')}</td></tr>`;
+  return `<div class="section-title"><h2>Parlays backtest</h2><span class="hint">Real DraftKings closing moneylines, ${B.days}-day window. Live default is Parlays v2 (leg odds −300 to −150) after a chronological walk-forward. v1 is kept below for comparison.</span></div>
     <div class="panel">
       <div class="kpis">
-        <div class="kpi"><div class="k">Record (Picky)</div><div class="v">${v.hits}–${v.losses}</div><div class="hint">${v.betsN} bets · ${v.pushes||0} pushes</div></div>
-        <div class="kpi"><div class="k">Hit rate</div><div class="v">${v.hitRate==null?'—':(v.hitRate*100).toFixed(1)+'%'}</div><div class="hint">avg payout ${v.avgPayout||'—'}x</div></div>
-        <div class="kpi"><div class="k">Net / $100</div><div class="v ${(v.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(v.net):v.net}</div><div class="hint">${v.roi==null?'':(v.roi>=0?'+':'')+(v.roi*100).toFixed(1)+'% ROI'}</div></div>
-        <div class="kpi"><div class="k">Sample</div><div class="v">${(B.gamesWithCloseML||0).toLocaleString()}</div><div class="hint">games with a close ML · ${B.eligibleLegs||0} favorite legs</div></div>
+        <div class="kpi"><div class="k">Live model</div><div class="v">${v2?'v2':'v1'}</div><div class="hint">${esc((v2&&v2.label)||'Picky')}</div></div>
+        <div class="kpi"><div class="k">v2 full window</div><div class="v">${v2?`${v2.hits}–${v2.losses}`:v.hits+'–'+v.losses}</div><div class="hint">${v2?v2.betsN:v.betsN} bets</div></div>
+        <div class="kpi"><div class="k">v2 hit / ROI</div><div class="v">${v2&&v2.hitRate!=null?(v2.hitRate*100).toFixed(1)+'%':'—'}</div><div class="hint">${v2&&v2.roi!=null?((v2.roi>=0?'+':'')+(v2.roi*100).toFixed(1)+'% ROI'):''}</div></div>
+        <div class="kpi"><div class="k">Unseen holdout (v2)</div><div class="v">${oos.v2&&oos.v2.test?`${oos.v2.test.w}–${oos.v2.test.l}`:'—'}</div><div class="hint">${oos.v2&&oos.v2.test&&oos.v2.test.wr!=null?(oos.v2.test.wr*100).toFixed(1)+'% · '+(oos.v2.test.roi>=0?'+':'')+(oos.v2.test.roi*100).toFixed(1)+'% ROI':''}</div></div>
       </div>
+      <h3>Walk-forward (earlier 65% train, later 35% unseen test)</h3>
+      <div class="overflow"><table><tr><th></th><th>N</th><th>W-L</th><th>Win%</th><th>ROI</th></tr>
+        ${oosRow('v1 train', oos.v1&&oos.v1.train)}${oosRow('v1 unseen test', oos.v1&&oos.v1.test)}
+        ${oosRow('v2 train (−300 to −150)', oos.v2&&oos.v2.train)}${oosRow('v2 unseen test', oos.v2&&oos.v2.test)}
+      </table></div>
+      <h3 style="margin-top:14px">Full-window record</h3>
       <div class="overflow"><table><tr><th></th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>
-        ${row('2-leg', by['2'])}${row('3-leg', by['3'])}
-        ${prow('Super picky', presets.super)}${prow('Picky (v1)', presets.picky)}${prow('Relaxed', presets.relaxed)}
+        ${row('v1 Picky (−650 to −140)', {n:v.betsN,hits:v.hits,hitRate:v.hitRate,net:v.net,roi:v.roi})}
+        ${v2?row('v2 Picky (−300 to −150)', {n:v2.betsN,hits:v2.hits,hitRate:v2.hitRate,net:v2.net,roi:v2.roi}):''}
+        ${row('v1 2-leg', by['2'])}${row('v1 3-leg', by['3'])}
+        ${v2&&v2.byLegs?row('v2 2-leg', v2.byLegs['2'])+row('v2 3-leg', v2.byLegs['3']):''}
       </table></div>
       <p class="hint" style="margin-top:10px">${esc(B.methodology||'')}</p>
     </div>`;
 }
 
-const PARLAY_BACKTEST = {"generatedAt":"2026-11-19T04:38:37Z","methodology":"Out-of-sample parlay backtest on real ESPN completed games over the last 75 days (nba, wnba, nhl, nfl, ncaaf). Each leg is a closing DraftKings moneyline favorite priced between -650 and -140. Combined decimal payout must fall in 1.85x\u20133.25x (sweet spot 2.0x\u20133.0x). Two legs from the same game are never combined. Per-leg win probability is ESPN's pregame win probability when the sport publishes it (NBA, WNBA, NFL, NCAAF); for NHL (no ESPN computer), the closing implied probability is used and no 'model edge' is claimed. On each slate (calendar day) we keep at most 3 non-overlapping parlays, preferring the sweet-spot payout and higher combined probability. Settled at $100 flat; a parlay wins only if every leg wins, loses if any leg loses, and pushes if a remaining leg pushed. These are real closing moneylines, not a statistical line proxy. Because parlays compound juice, a fair-priced favorite parlay is usually a slight negative-EV product unless the model probability beats the close. Results are a feature-check of the 2\u20133 leg / 2\u20133x rules, not a claim about beating a live book's juiced parlay card.","days":75,"sports":["nba","wnba","nhl","nfl","ncaaf"],"gamesWithCloseML":1493,"eligibleLegs":972,"legsWithEspnWp":771,"legOdds":[-650,-140],"payoutWindow":[1.85,3.25],"sweetSpot":[2.0,3.0],"stake":100.0,"v1":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"byPreset":{"super":{"label":"Super picky (68%+ per leg, no negative model edge)","minLegP":0.68,"requireModelEdge":true,"betsN":101,"hits":40,"losses":61,"pushes":2,"hitRate":0.396,"net":-1560.1,"roi":-0.1545,"avgPayout":2.133,"avgCombinedP":0.5602,"sweetN":93,"byLegs":{"2":{"n":72,"hits":28,"hitRate":0.3889,"net":-1312.47,"roi":-0.1823,"avgPayout":2.099},"3":{"n":29,"hits":12,"hitRate":0.4138,"net":-247.63,"roi":-0.0854,"avgPayout":2.218}},"bySport":{"nba+ncaaf+nhl":{"n":2,"hits":1,"net":26.48,"hitRate":0.5,"roi":0.1324},"nba":{"n":9,"hits":2,"net":-456.29,"hitRate":0.2222,"roi":-0.507},"nba+nhl":{"n":10,"hits":5,"net":20.48,"hitRate":0.5,"roi":0.0205},"nba+ncaaf":{"n":12,"hits":6,"net":97.55,"hitRate":0.5,"roi":0.0813},"nfl":{"n":9,"hits":5,"net":237.1,"hitRate":0.5556,"roi":0.2634},"nba+nfl":{"n":3,"hits":1,"net":-88.29,"hitRate":0.3333,"roi":-0.2943},"ncaaf":{"n":34,"hits":9,"net":-1537.85,"hitRate":0.2647,"roi":-0.4523},"ncaaf+nhl":{"n":7,"hits":2,"net":-310.14,"hitRate":0.2857,"roi":-0.4431},"nhl":{"n":8,"hits":5,"net":274.99,"hitRate":0.625,"roi":0.3437},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804},"nfl+nhl":{"n":4,"hits":3,"net":259.99,"hitRate":0.75,"roi":0.65}}},"picky":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"relaxed":{"label":"Relaxed (58%+ per leg)","minLegP":0.58,"requireModelEdge":false,"betsN":169,"hits":69,"losses":100,"pushes":2,"hitRate":0.4083,"net":-2199.47,"roi":-0.1301,"avgPayout":2.137,"avgCombinedP":0.5196,"sweetN":167,"byLegs":{"2":{"n":147,"hits":58,"hitRate":0.3946,"net":-2311.03,"roi":-0.1572,"avgPayout":2.143},"3":{"n":22,"hits":11,"hitRate":0.5,"net":111.56,"roi":0.0507,"avgPayout":2.095}},"bySport":{"ncaaf+nhl":{"n":25,"hits":8,"net":-835.83,"hitRate":0.32,"roi":-0.3343},"nba":{"n":15,"hits":6,"net":-185.14,"hitRate":0.4,"roi":-0.1234},"ncaaf":{"n":37,"hits":10,"net":-1600.39,"hitRate":0.2703,"roi":-0.4325},"nba+ncaaf":{"n":14,"hits":8,"net":341.94,"hitRate":0.5714,"roi":0.2442},"nba+nhl":{"n":17,"hits":6,"net":-432.6,"hitRate":0.3529,"roi":-0.2545},"nfl":{"n":11,"hits":8,"net":573.2,"hitRate":0.7273,"roi":0.5211},"nba+nfl":{"n":6,"hits":4,"net":254.84,"hitRate":0.6667,"roi":0.4247},"nfl+nhl":{"n":10,"hits":5,"net":42.82,"hitRate":0.5,"roi":0.0428},"nhl":{"n":23,"hits":10,"net":-148.8,"hitRate":0.4348,"roi":-0.0647},"nhl+wnba":{"n":3,"hits":1,"net":-55.23,"hitRate":0.3333,"roi":-0.1841},"nfl+wnba":{"n":6,"hits":2,"net":-181.75,"hitRate":0.3333,"roi":-0.3029},"ncaaf+wnba":{"n":1,"hits":0,"net":-100.0,"hitRate":0.0,"roi":-1.0},"ncaaf+nfl+wnba":{"n":1,"hits":1,"net":127.47,"hitRate":1.0,"roi":1.2747}}}}};
+const PARLAY_BACKTEST = {"generatedAt":"2026-11-19T05:03:17Z","methodology":"Real ESPN finals + DraftKings closing moneylines, 75-day window (NBA, WNBA, NHL, NFL, NCAAF). v1 used favorite legs from -650 to -140 targeting 2.0x\u20133.0x (allowed 1.85x\u20133.25x), no same-game legs, Picky 62%+ per-leg with no negative ESPN-model edge. A later chronological walk-forward (earlier 65% of slates to train, later 35% unseen to test) found that capping legs at -300 to -150 improved both the training window and the unseen holdout versus v1 (unseen: 27\u201325, 51.92%, +13.64% ROI vs v1 unseen 27\u201327, 50.00%, +8.86% ROI). Other ideas (banning NHL, requiring home favorites, dropping faded legs, 2-leg-only) looked better on train or on test, but not both, so they were not adopted. Live Parlays v2 keeps Picky 62%+ / no negative model edge and uses leg odds -300 to -150. Settled at $100 flat.","days":75,"sports":["nba","wnba","nhl","nfl","ncaaf"],"gamesWithCloseML":1493,"eligibleLegs":972,"legsWithEspnWp":771,"legOdds":[-650,-140],"payoutWindow":[1.85,3.25],"sweetSpot":[2.0,3.0],"stake":100.0,"v1":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"byPreset":{"super":{"label":"Super picky (68%+ per leg, no negative model edge)","minLegP":0.68,"requireModelEdge":true,"betsN":101,"hits":40,"losses":61,"pushes":2,"hitRate":0.396,"net":-1560.1,"roi":-0.1545,"avgPayout":2.133,"avgCombinedP":0.5602,"sweetN":93,"byLegs":{"2":{"n":72,"hits":28,"hitRate":0.3889,"net":-1312.47,"roi":-0.1823,"avgPayout":2.099},"3":{"n":29,"hits":12,"hitRate":0.4138,"net":-247.63,"roi":-0.0854,"avgPayout":2.218}},"bySport":{"nba+ncaaf+nhl":{"n":2,"hits":1,"net":26.48,"hitRate":0.5,"roi":0.1324},"nba":{"n":9,"hits":2,"net":-456.29,"hitRate":0.2222,"roi":-0.507},"nba+nhl":{"n":10,"hits":5,"net":20.48,"hitRate":0.5,"roi":0.0205},"nba+ncaaf":{"n":12,"hits":6,"net":97.55,"hitRate":0.5,"roi":0.0813},"nfl":{"n":9,"hits":5,"net":237.1,"hitRate":0.5556,"roi":0.2634},"nba+nfl":{"n":3,"hits":1,"net":-88.29,"hitRate":0.3333,"roi":-0.2943},"ncaaf":{"n":34,"hits":9,"net":-1537.85,"hitRate":0.2647,"roi":-0.4523},"ncaaf+nhl":{"n":7,"hits":2,"net":-310.14,"hitRate":0.2857,"roi":-0.4431},"nhl":{"n":8,"hits":5,"net":274.99,"hitRate":0.625,"roi":0.3437},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804},"nfl+nhl":{"n":4,"hits":3,"net":259.99,"hitRate":0.75,"roi":0.65}}},"picky":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"relaxed":{"label":"Relaxed (58%+ per leg)","minLegP":0.58,"requireModelEdge":false,"betsN":169,"hits":69,"losses":100,"pushes":2,"hitRate":0.4083,"net":-2199.47,"roi":-0.1301,"avgPayout":2.137,"avgCombinedP":0.5196,"sweetN":167,"byLegs":{"2":{"n":147,"hits":58,"hitRate":0.3946,"net":-2311.03,"roi":-0.1572,"avgPayout":2.143},"3":{"n":22,"hits":11,"hitRate":0.5,"net":111.56,"roi":0.0507,"avgPayout":2.095}},"bySport":{"ncaaf+nhl":{"n":25,"hits":8,"net":-835.83,"hitRate":0.32,"roi":-0.3343},"nba":{"n":15,"hits":6,"net":-185.14,"hitRate":0.4,"roi":-0.1234},"ncaaf":{"n":37,"hits":10,"net":-1600.39,"hitRate":0.2703,"roi":-0.4325},"nba+ncaaf":{"n":14,"hits":8,"net":341.94,"hitRate":0.5714,"roi":0.2442},"nba+nhl":{"n":17,"hits":6,"net":-432.6,"hitRate":0.3529,"roi":-0.2545},"nfl":{"n":11,"hits":8,"net":573.2,"hitRate":0.7273,"roi":0.5211},"nba+nfl":{"n":6,"hits":4,"net":254.84,"hitRate":0.6667,"roi":0.4247},"nfl+nhl":{"n":10,"hits":5,"net":42.82,"hitRate":0.5,"roi":0.0428},"nhl":{"n":23,"hits":10,"net":-148.8,"hitRate":0.4348,"roi":-0.0647},"nhl+wnba":{"n":3,"hits":1,"net":-55.23,"hitRate":0.3333,"roi":-0.1841},"nfl+wnba":{"n":6,"hits":2,"net":-181.75,"hitRate":0.3333,"roi":-0.3029},"ncaaf+wnba":{"n":1,"hits":0,"net":-100.0,"hitRate":0.0,"roi":-1.0},"ncaaf+nfl+wnba":{"n":1,"hits":1,"net":127.47,"hitRate":1.0,"roi":1.2747}}}},"v2":{"label":"Picky v2 (62%+ per leg, legs \u2212300 to \u2212150, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"legOdds":[-300,-150],"betsN":133,"hits":60,"losses":73,"pushes":0,"hitRate":0.4511,"net":-288.81,"roi":-0.0217,"avgPayout":2.159,"byLegs":{"2":{"n":133,"hits":60,"hitRate":0.4511,"net":-288.81,"roi":-0.0217,"avgPayout":2.159},"3":{"n":0,"hits":0,"hitRate":null,"net":0,"roi":null,"avgPayout":null}}},"oos":{"cut":"20261101","split":"earlier 65% of parlay slates train, later 35% unseen test","v1":{"train":{"n":85,"w":33,"l":52,"wr":0.3882,"net":-1480.6,"roi":-0.1742},"test":{"n":54,"w":27,"l":27,"wr":0.5,"net":478.27,"roi":0.0886}},"v2":{"train":{"n":81,"w":33,"l":48,"wr":0.4074,"net":-998.05,"roi":-0.1232},"test":{"n":52,"w":27,"l":25,"wr":0.5192,"net":709.24,"roi":0.1364}}}};
 /* ================= PER-BOARD AUTO-LEARN (props + parlays; games stays in 12_learn.js) ================= */
 const PROP_STAT_KEYS = {pts:['points'], reb:['rebounds','totalRebounds'], ast:['assists'], threes:['threePointFieldGoalsMade','threes'], pra:null, pr:null, ra:null, pa:null};
+const BOARD_LEARN_RELEASE = new Date(2026,10,18,21,0).getTime(); // Nov 18, 2026 9:00 PM PT — first ship of Props/Parlay tracks
 function boardLearnSeed(kind){
-  return {v:1, cur:1, paused:false, lastTune:0, lastTry:0, lastCollect:0, autoOff:{}, log:[{at:Date.now(), txt:`${kind} learning is on, starting at v1. It will retune once enough live ${kind} have been graded.`}], versions:[{id:1, at:Date.now(), status:'current', title:'Starting model', changes:[`Shipped as ${kind} v1.`], games:0}]};
+  return {v:1, cur:1, paused:false, lastTune:BOARD_LEARN_RELEASE, lastTry:0, lastCollect:0, autoOff:{}, log:[{at:Date.now(), txt:`${kind} learning is on, starting at v1. The first weekly check is in about 7 days, or sooner if 50 new live ${kind} are graded.`}], versions:[{id:1, at:BOARD_LEARN_RELEASE, status:'current', title:'Starting model', changes:[`Shipped as ${kind} v1.`], games:0}]};
 }
 function ensureBoardLearn(){
   if (!LEARN) return;
   if (!LEARN.props) LEARN.props = boardLearnSeed('Props');
   if (!LEARN.parlay) LEARN.parlay = boardLearnSeed('Parlays');
   if (!Array.isArray(LEARN.notices)) LEARN.notices = [];
+  let dirty=false;
+  for (const k of ['props','parlay']){
+    const tr=LEARN[k];
+    if (!tr) continue;
+    if (!(+tr.lastTune>0)){
+      tr.lastTune = BOARD_LEARN_RELEASE;
+      dirty=true;
+      const lab = k==='props'?'Props':'Parlays';
+      (LEARN.notices||[]).forEach(n=>{
+        if (!n.seen && n.board=== (k==='props'?'props':'parlay')) n.seen=true;
+      });
+    }
+  }
+  if (dirty){ try{ learnSave(); }catch(e){} }
 }
 function idbOpenV2(){
   // Re-open at schema v2 when props/parlay stores are needed. Safe if already on v2.
@@ -8371,11 +8438,22 @@ function trackStats(snaps, stakeFn){
   return {n:settled.length, w, l, wr:settled.length?w/settled.length:null, net, roi:settled.length?net/(settled.length*unit):null};
 }
 
-function boardLearnDue(track){
+function boardNewLive(track, snaps){
+  const last=+track.lastTune||0;
+  let n=0;
+  for (const x of snaps||[]) if ((x.y===0||x.y===1) && (x.graded||x.t||0)>last) n++;
+  return n;
+}
+function boardLearnDue(track, snaps){
   const now=Date.now();
-  const last = track.lastTune||0;
-  const d = last ? (now-last)/86400000 : 999;
-  return {due: d>=LEARN_EVERY || last===0 && false, days:d, next: new Date((last||now)+LEARN_EVERY*86400000)};
+  const last = +track.lastTune||0;
+  if (!last) return {due:false, days:0, newLive:0, next:new Date(now+(typeof LEARN_EVERY==='number'?LEARN_EVERY:7)*86400000)};
+  const d = (now-last)/86400000;
+  const ev = typeof LEARN_EVERY==='number'?LEARN_EVERY:7;
+  const soon = typeof LEARN_SOONEST==='number'?LEARN_SOONEST:3;
+  const need = typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50;
+  const nl = snaps ? boardNewLive(track, snaps) : 0;
+  return {due: d>=ev || (d>=soon && nl>=need), days:d, newLive:nl, next:new Date(last+ev*86400000)};
 }
 
 function retuneThresholds(snaps, steps, current, payoutFn){
@@ -8526,7 +8604,7 @@ function propsLearnPanelHTML(){
   const t=LEARN.props, snaps=[...PROP_SNAPS.values()];
   const graded=snaps.filter(x=>x.y!=null).length, waiting=snaps.length-graded;
   const st=trackStats(snaps);
-  const due=boardLearnDue(t);
+  const due=boardLearnDue(t, snaps);
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
   return `<div class="panel ln-panel">
@@ -8550,7 +8628,7 @@ function parlayLearnPanelHTML(){
   let net=0;
   for (const x of settled){ net += x.y===1 && x.dec ? unit*(x.dec-1) : (x.y===1?unit:-unit); }
   const two=settled.filter(x=>x.n===2), three=settled.filter(x=>x.n===3);
-  const due=boardLearnDue(t);
+  const due=boardLearnDue(t, snaps);
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
   return `<div class="panel ln-panel">
@@ -8572,9 +8650,9 @@ async function boardLearnTick(){
   try{ await propLearnGrade(); }catch(e){ console.warn('prop grade', e); }
   try{ await parlayLearnGrade(); }catch(e){ console.warn('parlay grade', e); }
   const now=Date.now();
-  if (LEARN && LEARN.props && !LEARN.props.paused && boardLearnDue(LEARN.props).due && now-(LEARN.props.lastTry||0)>20*3600000)
+  if (LEARN && LEARN.props && !LEARN.props.paused && boardLearnDue(LEARN.props, [...(typeof PROP_SNAPS!=='undefined'?PROP_SNAPS.values():[])]).due && now-(LEARN.props.lastTry||0)>20*3600000)
     await propsLearnRetune({});
-  if (LEARN && LEARN.parlay && !LEARN.parlay.paused && boardLearnDue(LEARN.parlay).due && now-(LEARN.parlay.lastTry||0)>20*3600000)
+  if (LEARN && LEARN.parlay && !LEARN.parlay.paused && boardLearnDue(LEARN.parlay, [...(typeof PARLAY_SNAPS!=='undefined'?PARLAY_SNAPS.values():[])]).due && now-(LEARN.parlay.lastTry||0)>20*3600000)
     await parlayLearnRetune({});
 }
 
@@ -8683,7 +8761,7 @@ function renderSettings(){
   const boardLabs = {games:'🏟️ Games', props:'🏀 Props', parlay:'🎟️ Parlay'};
   const presetNote = sb==='parlay'
     ? (cur==='super' ? 'Super picky parlays: 68%+ per leg, no negative edge, clean signals, 2.0x–3.0x sweet spot.'
-      : cur==='picky' ? 'Picky parlays: 62%+ per leg, slight edge tolerance, legs −650 to −140, tickets around 2–3x. This is the tested default.'
+      : cur==='picky' ? 'Picky parlays: 62%+ per leg, slight edge tolerance, legs −300 to −150 (v2), tickets around 2–3x. This is the tested default after a walk-forward upgrade.'
       : cur==='relaxed' ? 'Relaxed parlays: 58%+ per leg, broader tickets still inside the payout window.'
       : 'Custom parlay settings.')
     : (sb==='props'
@@ -8694,9 +8772,9 @@ function renderSettings(){
       : (cur==='custom' ? 'Custom: you changed something under Advanced. Pick one above to go back to a tested setting.' : esc((PRESETS[cur]&&PRESETS[cur].test)||'')));
   const oddsRow = sb==='parlay' ? `
     <div class="s-row"><div class="s-h">Parlay leg odds</div>
-      <div class="s-inline"><label>Heaviest favorite I'll include<input name="sFavMin" type="number" step="1" value="${B.sFavMin??-650}"></label>
-      <label>Lightest favorite I'll include<input name="sDogMax" type="number" step="1" value="${B.sDogMax??-140}"></label></div>
-      <div class="s-note">These are not the singles range. Default is −650 to −140 so legs are real favorites (~58–87% implied), not −110 coin-flips.</div></div>
+      <div class="s-inline"><label>Heaviest favorite I'll include<input name="sFavMin" type="number" step="1" value="${B.sFavMin??-300}"></label>
+      <label>Lightest favorite I'll include<input name="sDogMax" type="number" step="1" value="${B.sDogMax??-150}"></label></div>
+      <div class="s-note">These are not the singles range. Default is −300 to −150 after Parlays v2 (capping extreme juice improved the unseen holdout). Legs are real favorites, not −110 coin-flips.</div></div>
     <div class="s-row"><div class="s-h">Target parlay payout</div>
       <div class="s-inline"><label>Min payout (×)<input name="payoutMin" type="number" step="0.05" min="1.2" max="10" value="${B.payoutMin??1.85}"></label>
       <label>Max payout (×)<input name="payoutMax" type="number" step="0.05" min="1.5" max="20" value="${B.payoutMax??3.25}"></label></div>
