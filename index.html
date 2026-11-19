@@ -1002,6 +1002,17 @@ main.wrap{padding-top:16px}
 .eb-tag,.lk-tag{white-space:normal;max-width:100%;line-height:1.35;overflow-wrap:anywhere}
 @media (max-width:600px){.pulled-list{gap:14px}.pulled-list .card.pulled-item{padding:16px 15px 12px}}
 
+/* v40: parlay heads-up + pending-only bets */
+.parlay-warn{display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;padding:10px 12px 10px 14px;border-radius:14px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.42);color:#fde68a;font-size:13px;line-height:1.45}
+.parlay-warn .pw-txt{flex:1;min-width:0}
+.parlay-warn .pw-x{flex:none;width:32px;height:32px;margin:-4px -4px -4px 0;border:0;border-radius:10px;background:transparent;color:#fde68a;font-size:20px;line-height:1;cursor:pointer}
+@media(hover:hover){.parlay-warn .pw-x:hover{background:rgba(245,158,11,.18)}}
+.settled-wrap{margin-top:14px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.settled-wrap .settled-cards{width:100%;opacity:.85}
+.settled-hint{margin:0}
+.bet-row.bet-leaving{transition:opacity .5s ease .35s,transform .5s ease .35s;opacity:.25;transform:translateX(10px)}
+@media (prefers-reduced-motion: reduce){.bet-row.bet-leaving{transition:none}}
+
 /* v39: Untrack button, flash on the bet in All Bets, Pulled in the bottom bar */
 .pull-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .pull-actions .btn{min-width:108px;min-height:40px;justify-content:center;text-align:center}
@@ -4303,7 +4314,7 @@ function withPulledTailed(list, board){
   return extra.concat(rest);
 }
 function injectPulledCard(html, n){
-  const acts = `<div class="pull-actions pulled-btns"><button type="button" class="btn sm untrack" data-untrack="${esc(n.k)}" aria-label="Untrack: open this bet in All Bets to delete it">Untrack</button><button type="button" class="btn sm" data-dismiss-pull="${esc(n.k)}" data-pulled-at="${n.at||0}">Dismiss</button></div>`;
+  const acts = `<div class="pull-actions pulled-btns"><button type="button" class="btn sm untrack" data-untrack="${esc(n.k)}" aria-label="Untrack: open this bet in Pending bets to delete it">Untrack</button><button type="button" class="btn sm" data-dismiss-pull="${esc(n.k)}" data-pulled-at="${n.at||0}">Dismiss</button></div>`;
   return String(html).replace(/<span class="lock-badge"[^>]*>[\s\S]*?<\/span>/g, '').replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} tailed-pulled logged-pulled"><div class="pulled-tag"><span aria-hidden="true">⛔</span> ${esc(pullTagText(n))}</div>${acts}`);
 }
 /* ================= BACKTEST (past ESPN data, no future leakage) ================= */
@@ -6275,7 +6286,7 @@ function pulledCard(r){
     ${sub?`<div class="pull-sub">${esc(sub)}</div>`:''}
     <div class="pull-why"><b>Why:</b> ${esc(why)}</div>
     <div class="pull-meta">${[pulledWhenTxt(r.at), tailed, starts].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('')}</div>
-    <div class="cfoot pull-actions">${b?`<button type="button" class="btn sm untrack" data-untrack="${esc(r.k)}" aria-label="Untrack: open this bet in All Bets to delete it">Untrack</button>`:''}<button type="button" class="btn sm" data-dismiss-pull="${esc(r.k)}" data-pulled-at="${r.at||0}">Dismiss</button></div>
+    <div class="cfoot pull-actions">${b?`<button type="button" class="btn sm untrack" data-untrack="${esc(r.k)}" aria-label="Untrack: open this bet in Pending bets to delete it">Untrack</button>`:''}<button type="button" class="btn sm" data-dismiss-pull="${esc(r.k)}" data-pulled-at="${r.at||0}">Dismiss</button></div>
   </div>`;
 }
 function activeFilterCount(){
@@ -6749,13 +6760,13 @@ function untrackPulled(k){
   if (!b){ if (typeof toast==='function') toast('Could not find that bet in your Tracker.'); return; }
   try{ if (typeof setMoreOpen==='function') setMoreOpen(false); if (typeof setNavPop==='function') setNavPop(null); }catch(e){}
   setTab('tracker');
-  if (typeof trackerUI!=='undefined') trackerUI.allOpen = true;
+  if (typeof trackerUI!=='undefined'){ trackerUI.allOpen = true; if (b.result && b.result!=='pending') trackerUI.showSettled = true; }
   render();
   const go = (tries) => {
     const det = document.querySelector('#view .trk-allbets'); if (det && !det.open) det.open = true;
     const sel = '#view [data-bet="'+(window.CSS && CSS.escape ? CSS.escape(String(b.id)) : String(b.id))+'"]';
     const el = document.querySelector(sel);
-    if (!el){ if (tries>0) return setTimeout(()=>go(tries-1), 120); if (typeof toast==='function') toast('Open All Bets to find this bet.'); return; }
+    if (!el){ if (tries>0) return setTimeout(()=>go(tries-1), 120); if (typeof toast==='function') toast('Open Pending bets to find this bet.'); return; }
     el.scrollIntoView({block:'center', behavior: (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'auto' : 'smooth'});
     el.classList.remove('bet-flash'); void el.offsetWidth; el.classList.add('bet-flash');
     clearTimeout(el._flashT); el._flashT = setTimeout(()=>el.classList.remove('bet-flash'), 2400);
@@ -6882,7 +6893,7 @@ function shortBetName(b){
   return core.replace(/\s*\([^)]*\)/g,'').trim().slice(0,24);
 }
 const TRACKER_LS = 'bl_tracker';
-const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false, sportOpen:false, oddsOpen:false};
+const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false, sportOpen:false, oddsOpen:false, showSettled:false};
 (function loadTrackerUI(){
   const t = (typeof loadJSON==='function') ? loadJSON(TRACKER_LS, null) : null;
   if (t && typeof t==='object' && ['day','week','month','year','all'].includes(t.period)) trackerUI.period = t.period;
@@ -6890,6 +6901,7 @@ const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false, spor
 function saveTrackerPeriod(){ try{ saveJSON(TRACKER_LS, {period:trackerUI.period||'all'}); }catch(e){} }
 function resetTrackerOpen(){
   trackerUI.allOpen = false;
+  trackerUI.showSettled = false;
   trackerUI.sportOpen = false;
   trackerUI.oddsOpen = false;
   if (trackerUI.open && typeof trackerUI.open.clear==='function') trackerUI.open.clear();
@@ -6955,7 +6967,11 @@ function renderTracker(pf){
   const breakdown = obj => Object.entries(obj).sort((a,b)=>b[1].net-a[1].net).map(([k,x])=>`<tr><td>${esc(k)}</td><td>${x.w}-${x.l}${x.p?'-'+x.p:''}</td><td>${(x.w+x.l)?(x.w/(x.w+x.l)*100).toFixed(1)+'%':'—'}</td><td class="${x.net>=0?'pos':'neg'}">${money(x.net)}</td><td>${units(x.net)}</td><td>${x.st?(x.net/x.st*100).toFixed(1)+'%':'—'}</td></tr>`).join('') || `<tr><td colspan="6" class="mut">No settled bets yet.</td></tr>`;
   const unit = +S.unit||25;
   const prePick = pf.pick || '';
-  const betCards = bets.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.created||0)-(a.created||0)).map(b=>{
+  // v40: the list shows only pending bets; settled ones still count in the stats above and sit behind "Show settled"
+  const isPendingBet = b => !b.result || b.result==='pending';
+  const sortedBets = bets.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.created||0)-(a.created||0));
+  const pendingN = sortedBets.filter(isPendingBet).length, settledN = sortedBets.length - pendingN;
+  const betCardOf = b=>{
     const pr = betProfit(b);
     const pulled = betIsPulled(b);
     const res = b.result||'pending';
@@ -6979,7 +6995,9 @@ function renderTracker(pf){
         <button type="button" class="btn sm danger bet-del" data-del="${esc(b.id)}" aria-label="Delete this bet">Delete</button>
       </div>
     </article>`;
-  }).join('');
+  };
+  const betCards = sortedBets.filter(isPendingBet).map(betCardOf).join('');
+  const settledCards = trackerUI.showSettled ? sortedBets.filter(b=>!isPendingBet(b)).map(betCardOf).join('') : '';
   const clvBets=bets.filter(b=>b.clv!=null); const clvAvg=clvBets.length?clvBets.reduce((x,b)=>x+b.clv,0)/clvBets.length:null;
   $('#view').innerHTML = `
   <div class="section-title"><h2><span class="h-emo" aria-hidden="true">📊</span>Bet Tracker</h2><span class="hint">Saved on this device.</span></div>
@@ -7051,10 +7069,12 @@ function renderTracker(pf){
     </div>
   </details>
   ${typeof oddsHistoryTable==='function'?`<details class="dd trk-dd" data-trk="odds" ${trackerUI.oddsOpen?'open':''}><summary>Win rate by odds</summary><div class="trk-dd-body">${oddsHistoryTable()}</div></details>`:''}
-  <details class="dd trk-dd trk-allbets" ${trackerUI.allOpen?'open':''}>
-    <summary>🧾 All bets (${bets.length})</summary>
+  <details class="dd trk-dd trk-allbets" id="allBets" ${trackerUI.allOpen?'open':''}>
+    <summary>🕒 Pending bets (${pendingN})</summary>
     <div class="trk-allbets-body">
-      ${betCards ? `<div class="bet-cards">${betCards}</div>` : `<div class="bet-empty">No bets yet. Tail one above, or use <b>Tail</b> on a play card.</div>`}
+      ${betCards ? `<div class="bet-cards">${betCards}</div>` : `<div class="bet-empty">${bets.length ? 'No pending bets. Settled bets are counted in your record above.' : 'No bets yet. Tail one above, or use <b>Tail</b> on a play card.'}</div>`}
+      ${settledN ? `<div class="settled-wrap"><button type="button" class="btn sm settled-toggle" data-toggle-settled aria-expanded="${trackerUI.showSettled?'true':'false'}">${trackerUI.showSettled?'Hide settled':'Show settled'} (${settledN})</button>
+        ${trackerUI.showSettled ? `<div class="hint settled-hint">Already counted in your record. Change a result here if you marked one by mistake.</div><div class="bet-cards settled-cards">${settledCards}</div>` : ''}</div>` : ''}
     </div>
   </details>`;
   function currentOddsType(){
@@ -7132,7 +7152,22 @@ function renderTracker(pf){
     bets.push(nb);
     saveBets(); toast('Bet logged'); renderTracker();
   };
-  $('#view').querySelectorAll('[data-setres]').forEach(btn=>btn.onclick=()=>{ const b=bets.find(x=>x.id===btn.dataset.setres); const r = btn.dataset.r; if(b && r && b.result!==r){ b.result=r; if (typeof touchBet==='function') touchBet(b); saveBets(); const keep=readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; renderTracker(keep); } });
+  $('#view').querySelectorAll('[data-setres]').forEach(btn=>btn.onclick=()=>{
+    const b=bets.find(x=>x.id===btn.dataset.setres); const r = btn.dataset.r;
+    if(!(b && r && b.result!==r)) return;
+    const wasPending = !b.result || b.result==='pending';
+    b.result=r; if (typeof touchBet==='function') touchBet(b); saveBets();
+    const rerender = ()=>{ if (ui.tab!=='tracker') return; const keep=readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; renderTracker(keep); };
+    if (wasPending && r!=='pending'){
+      // v40: settle → show the choice, toast, then the bet slides out of the Pending list
+      const card = btn.closest('.bet-row');
+      if (card){ card.querySelectorAll('.res-seg-btn').forEach(x=>{ const on = x===btn; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on?'true':'false'); }); card.classList.add('bet-leaving'); }
+      toast(`Marked ${typeof resultLabel==='function'?resultLabel(r):r} — saved to your record`);
+      setTimeout(rerender, 900);
+    } else rerender();
+  });
+  const stg = $('#view').querySelector('[data-toggle-settled]');
+  if (stg) stg.onclick = ()=>{ trackerUI.showSettled = !trackerUI.showSettled; const keep=readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; renderTracker(keep); };
   $('#view').querySelectorAll('[data-del]').forEach(s=>s.onclick=()=>{ if(!confirm('Delete this bet?')) return; if (typeof tombstoneBet==='function') tombstoneBet(s.dataset.del); bets=bets.filter(x=>x.id!==s.dataset.del); saveBets(); renderTracker(); });
   const allDet = $('#view').querySelector('details.trk-allbets');
   if (allDet) allDet.addEventListener('toggle', ()=>{ trackerUI.allOpen = !!allDet.open; });
@@ -10603,7 +10638,10 @@ function renderParlayBoard(tab, errs){
   try{ const shown = new Set([...good, ...watch, ...avoid].map(x=>x.id)); good = good.concat(tailedParlaysToKeep(shown)); }catch(e){ console.warn('tailed keep', e); }
   if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'parlay');
   const counts={good:good.length, watch:watch.length, avoid:avoid.length};
-  const st = '';
+  // v40: amber heads-up at the top of the Parlay tab (hide for this session)
+  let warnHidden = false; try{ warnHidden = sessionStorage.getItem('bl_parlayWarnHidden')==='1'; }catch(e){}
+  const W = typeof fmtLockWindow==='function' && typeof boardLockMins==='function' ? fmtLockWindow(boardLockMins('parlay')) : '1h';
+  const st = warnHidden ? '' : `<div class="parlay-warn" role="note"><span class="pw-txt">⚠️ Parlays lock ${esc(W)} before the first game. Early Bird parlays can still change or get pulled. Tailing early raises the chance of a pull.</span><button type="button" class="pw-x" data-hide-parlay-warn aria-label="Hide this note for now">×</button></div>`;
   const section = (title, sub, list, empty) => `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length?`<div class="grid">${list.map(parlayCard).join('')}</div>`:`<div class="empty-state">${empty}</div>`);
   const empty = (typeof sportFilterEmpty==='function'?sportFilterEmpty('No parlays in this range right now. Zero tickets is fine.'):'No parlays right now.');
   if (tab==='good'){
@@ -12245,6 +12283,7 @@ $('#btnRefresh').onclick = ()=>refresh(false);
 $('#view').addEventListener('click', e=>{
   if (e.target.closest('[data-open-settings]')){ setTab('settings'); if (typeof updateFilterChrome==='function') updateFilterChrome(); render(); window.scrollTo({top:0}); return; }
   if (e.target.closest('[data-clear-unlogged]')){ if (typeof clearUnloggedPulled==='function') clearUnloggedPulled(); return; }
+  if (e.target.closest('[data-hide-parlay-warn]')){ try{ sessionStorage.setItem('bl_parlayWarnHidden','1'); }catch(e2){} const w = e.target.closest('.parlay-warn'); if (w) w.remove(); return; }
   const ut = e.target.closest('[data-untrack]');
   if (ut){ e.preventDefault(); e.stopPropagation(); if (typeof untrackPulled==='function') untrackPulled(ut.dataset.untrack); return; }
   const d = e.target.closest('[data-dismiss-pull]');
