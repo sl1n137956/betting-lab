@@ -7690,7 +7690,7 @@ const PARLAY_DEFAULTS = {
   sMinWin:0.62, sModelMin:0.58, sModelEdge:-0.02, sMinPos:1, sMinEV:-99, sMinConf:70, sMaxAdvPct:3.0,
   sMarkets:'ml,spread,total', sNoModelSports:true, sMinScore:-99, sExclude:''
 };
-function decToAm(d){ if (!d || d<=1) return null; const p=1-1/d; return p>=0.5 ? Math.round(-100*p/(1-p)) : Math.round(100*(1-p)/p); }
+function decToAm(d){ if (!d || d<=1) return null; return d>=2 ? Math.round((d-1)*100) : Math.round(-100/(d-1)); }
 function fmtDecX(d){ return d==null ? '—' : (Math.round(d*100)/100).toFixed(2).replace(/\.?0+$/,'')+'x'; }
 
 function snapshotBoardFromS(){
