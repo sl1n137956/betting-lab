@@ -33,13 +33,16 @@ a{color:var(--acc);text-decoration:none}a:hover{color:var(--acc-hi)}
 button,input,select,textarea{font:inherit;color:inherit}
 h1,h2,h3{letter-spacing:-.015em;font-weight:650}
 header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px);background:linear-gradient(180deg,rgba(15,32,64,.92),rgba(11,18,32,.82));backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);border-bottom:1px solid rgba(59,130,246,.22);box-shadow:0 10px 30px -20px rgba(0,0,0,.9)}
-.wrap{max-width:1280px;margin:0 auto;padding:0 20px}
-.topbar{display:flex;align-items:center;gap:16px;padding:14px 0 10px;flex-wrap:wrap}
+.wrap{max-width:1360px;margin:0 auto;padding:0 16px}
+.topbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:20px;row-gap:10px;padding:16px 0 12px}
+.topbar .logo{grid-column:1;grid-row:1}
+.topbar .status{grid-column:2;grid-row:1;margin-left:0;justify-content:flex-end;min-width:0}
+.topbar #btnRefresh{grid-column:3;grid-row:1}
 .logo{display:flex;align-items:center;gap:12px;font-weight:650;letter-spacing:.14em;font-size:15px}
 .logo .mark{width:36px;height:36px;border-radius:10px;padding:0;overflow:hidden;background:#010a27;display:grid;place-items:center;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 6px 18px -6px rgba(37,99,235,.5);flex:0 0 36px}
 .logo .mark img{width:100%;height:100%;display:block;object-fit:cover}
 .logo small{display:block;font-size:9.5px;letter-spacing:.22em;color:var(--mut);font-weight:500;margin-top:1px}
-.status{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--mut);font-size:12px}
+.status{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--mut);font-size:12px}
 .pill{background:rgba(255,255,255,.025);border:1px solid var(--line);padding:5px 11px;border-radius:999px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .pill b{color:var(--txt2);font-weight:550}
 .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--none);margin-right:7px;vertical-align:middle}
@@ -73,7 +76,7 @@ nav.tabs button[data-tab=avoid] .cnt{background:var(--avoid-bg);color:var(--avoi
 .search{background:var(--inset);border:1px solid var(--line2);border-radius:999px;padding:5px 14px;min-width:200px;outline:none;transition:border-color .2s}
 .search:focus{border-color:rgba(59,130,246,.55)}
 main{padding-top:24px;padding-bottom:72px}
-main.wrap{padding-top:24px;padding-bottom:72px;padding-left:20px;padding-right:20px}
+main.wrap{padding-top:24px;padding-bottom:72px;padding-left:16px;padding-right:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:16px}
 .card{background:linear-gradient(180deg,#1a2b44 0%,#132033 100%);border:1px solid var(--line);border-radius:var(--r);padding:18px 16px 16px;position:relative;overflow:visible;min-width:0;max-width:100%;box-shadow:var(--shadow);transition:border-color .25s var(--ease),transform .25s var(--ease),box-shadow .25s var(--ease)}
 .card:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 14px 34px -14px rgba(0,0,0,.85)}
@@ -264,7 +267,9 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .slate-layout{display:grid;grid-template-columns:minmax(0,1fr) 312px;gap:20px;align-items:start}
 .slate-main{min-width:0}
 .slate-main .section-title{margin-top:14px}
-.slate-side{position:sticky;top:156px;display:flex;flex-direction:column;gap:12px}
+.slate-side{position:sticky;top:156px;display:flex;flex-direction:column;gap:20px}
+.side-body{display:flex;flex-direction:column;gap:20px;min-width:0}
+.side-card.glance{margin-top:0}
 .side-card{background:linear-gradient(180deg,#1a2b44,#132033);border:1px solid rgba(59,130,246,.22);border-radius:24px;padding:18px 16px 16px;box-shadow:var(--shadow)}
 .side-card.pulled-card{border-color:rgba(249,115,22,.32);background:linear-gradient(180deg,#2c2418 0%,#132033 58%);box-shadow:0 1px 0 rgba(251,146,60,.10) inset,0 14px 28px -16px rgba(0,0,0,.7),var(--shadow)}
 .side-card h3{margin:0 0 4px;font-size:13.5px;font-weight:650;display:flex;align-items:center;gap:7px;flex-wrap:wrap;color:var(--txt)}
@@ -362,6 +367,10 @@ body.filters-open .filters-btn::before{transform:rotate(0deg)}
 .pk-ticket ol.why{padding-left:18px}
 
 .pk-leg{min-width:0;max-width:100%}
+@media (min-width:900px){
+  .pk-hero,.pk-grid,.pk-empty,.pk-ticket{max-width:840px;margin-left:auto;margin-right:auto;width:100%}
+  .pk-grid{grid-template-columns:1fr;gap:18px}
+}
 .pk-typed{margin:0 2px 10px;overflow-wrap:anywhere}
 .pk-match{margin:0 0 16px;padding:12px 14px 14px;background:linear-gradient(180deg,rgba(36,64,110,.95) 0%,#132033 100%);border:1px solid rgba(125,211,252,.22);border-radius:20px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset,var(--shadow)}
 .pk-match label{display:flex;flex-direction:column;gap:8px;margin:0;width:100%;color:inherit;font-size:inherit}
@@ -391,22 +400,22 @@ body.filters-open .filters-btn::before{transform:rotate(0deg)}
   .slate-layout{display:flex;flex-direction:column;gap:12px}
   .slate-side{order:0;position:static;margin:0;width:100%;align-items:stretch}
   .side-toggle{display:none}
-  .slate-side .side-body{display:block}
+  .slate-side .side-body{display:flex;flex-direction:column;gap:20px}
 }
 @media (max-width:767.98px){
   .slate-side{display:none}
   html,body{overflow-x:hidden;max-width:100%;-webkit-text-size-adjust:100%}
-  .wrap{padding:0 14px}
+  .wrap{padding:0 10px}
   .logo small{display:none}
-  .topbar{padding:10px 0 8px;gap:10px}
-  .status{margin-left:0;gap:6px}
+  .topbar{padding:12px 0 10px;gap:12px}
+  .status{margin-left:0;gap:8px}
   .pill{padding:6px 10px}
   nav.tabs{display:none}
   html{scroll-padding-bottom:calc(32px + 88px + env(safe-area-inset-bottom,0px))}
-  .topbar{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px 10px;padding:8px 0 8px}
-  .logo{grid-column:1;grid-row:1}
-  #btnRefresh{grid-column:2;grid-row:1}
-  .status{grid-column:1/-1;grid-row:2;margin-left:0;gap:6px}
+  .topbar{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px 14px;padding:12px 0 10px}
+  .topbar .logo,.logo{grid-column:1;grid-row:1}
+  .topbar #btnRefresh,#btnRefresh{grid-column:2;grid-row:1}
+  .topbar .status,.status{grid-column:1/-1;grid-row:2;margin-left:0;justify-content:flex-start;gap:8px;min-width:0}
   .status .pill:nth-child(2),.status .pill:nth-child(3){display:none}
   .banner{margin:10px 0 4px;padding:8px 12px;font-size:12px}
   .sep{display:none}
@@ -414,11 +423,10 @@ body.filters-open .filters-btn::before{transform:rotate(0deg)}
   .head-tools{grid-column:1/-1;grid-row:3;padding:0 0 10px;display:flex}
   .head-tools .search{max-width:none;min-height:44px}
   .btn.filters-btn,.btn.sm.filters-btn,.filters-btn{display:inline-flex;align-items:center;min-height:44px;min-width:48px;border-radius:999px}
-  .topbar{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px 10px;padding:8px 0 8px}
   #filterBar{display:none;position:fixed;left:10px;right:10px;z-index:21;background:linear-gradient(180deg,rgba(22,40,66,.98),#102033);backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);border:1px solid rgba(125,211,252,.28);border-radius:0 0 24px 24px;padding:16px 14px 18px;margin:0;max-height:min(70vh, calc(100vh - 140px));overflow:auto;box-shadow:0 18px 36px -12px rgba(0,0,0,.85),0 0 0 1px rgba(59,130,246,.12)}
   body.filters-open #filterBar:not([hidden]){display:flex;flex-direction:column;gap:16px}
   main{padding-top:16px;padding-bottom:calc(40px + 100px + env(safe-area-inset-bottom,0px))}
-  main.wrap{padding-top:16px;padding-bottom:calc(40px + 100px + env(safe-area-inset-bottom,0px));padding-left:14px;padding-right:14px}
+  main.wrap{padding-top:16px;padding-bottom:calc(40px + 100px + env(safe-area-inset-bottom,0px));padding-left:10px;padding-right:10px}
   footer{margin-top:12px;padding-top:28px;padding-bottom:calc(40px + 100px + env(safe-area-inset-bottom,0px))}
   .filter-details{border:0;border-top:1px solid rgba(125,211,252,.2);border-radius:0;background:transparent;box-shadow:none;margin:0;padding:16px 0 0}
   .filter-details > summary{display:none}
@@ -659,7 +667,7 @@ details[open] > summary::before{transform:rotate(0deg)}
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="picks" class="on">Verdict</button>
-      <button data-tab="good">Good Plays<span class="cnt" id="c-good" data-cnt="good">0</span><span class="tab-dot" id="d-good" data-pull-dot="good" hidden></span></button>
+      <button data-tab="good">Picks<span class="cnt" id="c-good" data-cnt="good">0</span><span class="tab-dot" id="d-good" data-pull-dot="good" hidden></span></button>
       <button data-tab="watch">Watchlist<span class="cnt" id="c-watch" data-cnt="watch">0</span><span class="tab-dot" id="d-watch" data-pull-dot="watch" hidden></span></button>
       <button data-tab="avoid">Avoid<span class="cnt" id="c-avoid" data-cnt="avoid">0</span><span class="tab-dot" id="d-avoid" data-pull-dot="avoid" hidden></span></button>
       <button data-tab="tracker">Tracker</button>
@@ -724,7 +732,7 @@ details[open] > summary::before{transform:rotate(0deg)}
 </footer>
 <nav class="bottom-nav" id="bottomNav" aria-label="Primary">
   <button type="button" data-tab="picks" class="on" aria-label="Verdict"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 9.4l6.2-6.2 2.8 2.8-6.2 6.2z"/><path d="M6.2 7.8l2.8 2.8"/><path d="M12.4 11.2L20 20"/><path d="M3.5 19.8h8"/></svg></span><span class="tab-lab">Verdict</span></button>
-  <button type="button" data-tab="good" aria-label="Good Plays"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2l2.47 5.18 5.7.8-4.15 3.98 1.02 5.65L12 16.3 6.96 18.81l1.02-5.65-4.15-3.98 5.7-.8z"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Good</span></button>
+  <button type="button" data-tab="good" aria-label="Picks"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2l2.47 5.18 5.7.8-4.15 3.98 1.02 5.65L12 16.3 6.96 18.81l1.02-5.65-4.15-3.98 5.7-.8z"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Picks</span></button>
   <button type="button" data-tab="watch" aria-label="Watchlist"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.6-7 9.5-7 9.5 7 9.5 7-3.6 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg><span class="cnt" data-cnt="watch">0</span><span class="tab-dot" data-pull-dot="watch" hidden></span></span><span class="tab-lab">Watch</span></button>
   <button type="button" data-tab="avoid" aria-label="Avoid"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3.2v5.5c0 5-3.3 8.5-8 9.8-4.7-1.3-8-4.8-8-9.8V6.2L12 3z"/><path d="M9 10.2l6 6M15 10.2l-6 6"/></svg><span class="cnt" data-cnt="avoid">0</span><span class="tab-dot" data-pull-dot="avoid" hidden></span></span><span class="tab-lab">Avoid</span></button>
   <button type="button" id="btnMore" aria-haspopup="true" aria-expanded="false" aria-label="More"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg><span class="tab-dot" data-more-pull hidden></span></span><span class="tab-lab">More</span></button>
@@ -1976,7 +1984,7 @@ function evaluateAll(){
   const goods = plays.filter(p=>p.verdict==='good').sort((a,b)=>(b.est||0)-(a.est||0) || (b.score + b.j.conf.v/50) - (a.score + a.j.conf.v/50));
   const seen = new Set(); let n=0;
   for (const p of goods){
-    if (seen.has(p.g.id)){ p.verdict='watch'; p.reasons.unshift('Moved to Watchlist: another Good play is already in this game (avoid correlated stacks)'); continue; }
+    if (seen.has(p.g.id)){ p.verdict='watch'; p.reasons.unshift('Moved to Watchlist: another Picks play is already in this game (avoid correlated stacks)'); continue; }
     seen.add(p.g.id); n++; p.rank = n;
   }
   try{ recordResults(); }catch(e){ console.warn('results', e); }
@@ -2110,8 +2118,8 @@ function newKeyOutSince(k, g){
   return currentKeyOuts(g).find(x=>!prev.has(x.id) && !prev.has(x.n)) || null;
 }
 const TAB_RANK = {good:3, watch:2, avoid:1};
-const TAB_NAME = {good:'Good Plays', watch:'Watchlist', avoid:'Avoid'};
-const TAB_SHORT = {good:'Good', watch:'Watchlist', avoid:'Avoid'};
+const TAB_NAME = {good:'Picks', watch:'Watchlist', avoid:'Avoid'};
+const TAB_SHORT = {good:'Picks', watch:'Watchlist', avoid:'Avoid'};
 const LEGACY_PULL = 'pulled (reason not recorded — older version)';
 let playTabs = loadJSON(LS.playTabs, {}) || {};
 let pullNotes = loadJSON(LS.pullNotes, []) || [];
@@ -2129,7 +2137,7 @@ function pullReasonFor(r){
   const p = plays.find(x=>x.g && x.g.eventId && playResultKey(x)===(r&&r.k));
   if (!p) return (r && r.pullReason) || 'no longer passes the filters';
   if (p.g.state && p.g.state!=='pre') return 'game already started';
-  if (/another Good play is already in this game/.test((p.reasons&&p.reasons[0])||'')) return 'another play in this game took the Good slot';
+  if (/another (Good|Picks) play is already in this game/.test((p.reasons&&p.reasons[0])||'')) return 'another play in this game took the Picks slot';
   const F = (p.strictFails||[]).slice();
   const outName = keyPlayerOutName(p);
   const map = fail => {
@@ -2248,7 +2256,7 @@ function notifyPulled(r){
   if (!canAlert('pulled')) return;
   try{
     const why = r.pullReason||r.reason||'no longer passes the filters';
-    const base = `${r.label} (${r.game}): pulled from Good Plays — ${why}`;
+    const base = `${r.label} (${r.game}): pulled from Picks — ${why}`;
     const logged = typeof isLoggedKey==='function' && isLoggedKey(r.k);
     const title = logged ? '⚠ Pulled — you logged this bet' : 'Play pulled';
     const body = logged ? `⚠ Pulled — you logged this bet: ${base}` : base;
@@ -2278,8 +2286,8 @@ function requestPullAlerts(){
         notifyNewPlayBatch(plays.filter(p=>p.verdict==='good' && p.g && p.g.state==='pre' && p.g.eventId));
       }
       const bits = [];
-      if (alertOn('new')) bits.push('new Good plays');
-      if (alertOn('pulled')) bits.push('plays pulled from Good Plays');
+      if (alertOn('new')) bits.push('new Picks');
+      if (alertOn('pulled')) bits.push('plays pulled from Picks');
       toast(bits.length ? 'Alerts are on. You will get a pop-up for '+bits.join(' and ')+'.' : 'Permission is on, but both alert types are turned off in Settings.');
     } else if (perm==='denied') toast('Alerts are blocked. You can allow them in the browser settings for this page.');
     if (typeof render==='function') render();
@@ -3226,7 +3234,7 @@ function softFail(f){
   if (/^key player ruled out:/i.test(s)) return s.replace(/^key player ruled out:\s*/i, 'a key player was just ruled out: ');
   if (/already started/i.test(s)) return 'the game already started';
   if (/only takes /i.test(s)) return 'this market is turned off in your strict settings';
-  if (/excluded from strict/i.test(s) || /not profitable/i.test(s)) return 'this sport is turned off for Good Plays';
+  if (/excluded from strict/i.test(s) || /not profitable/i.test(s)) return 'this sport is turned off for Picks';
   if (/est\. win/i.test(s) || /win chance/i.test(s)) return "our estimated win chance doesn't clear the bar";
   if (/supporting factors/i.test(s) || /supporting reasons/i.test(s)) return "there aren't enough supporting reasons yet";
   if (/ESPN model/i.test(s)) return "ESPN's computer pick doesn't clear the bar for this sport";
@@ -4224,7 +4232,7 @@ function checksHTML(g){
 function factorsHTML(p){
   const F = p.j.factors;
   return `<table class="ftab">${F.map(x=>`<tr><td>${esc(x.label)}</td><td class="${x.pts>0.05?'pos':x.pts<-0.05?'neg':'mut'}" style="text-align:right">${x.pts>0?'+':''}${x.pts.toFixed(2)}</td><td class="mut">${esc(x.txt)}</td></tr>`).join('')}
-    <tr><td><b>Composite</b></td><td style="text-align:right"><b class="${p.score>=0?'pos':'neg'}">${p.score>0?'+':''}${p.score.toFixed(2)}</b></td><td class="mut">Good ≥ ${S.goodScore} (dogs ≥ ${S.dogGoodScore}), Watch ≥ ${S.watchScore}</td></tr></table>`;
+    <tr><td><b>Composite</b></td><td style="text-align:right"><b class="${p.score>=0?'pos':'neg'}">${p.score>0?'+':''}${p.score.toFixed(2)}</b></td><td class="mut">Picks ≥ ${S.goodScore} (dogs ≥ ${S.dogGoodScore}), Watch ≥ ${S.watchScore}</td></tr></table>`;
 }
 function courtHTML(p){
   const j = p.j, verdict = p.verdict==='good' ? 'BET' : p.verdict==='watch' ? 'WATCHLIST' : 'PASS';
@@ -4404,8 +4412,8 @@ function filtered(list, isPlay){
   });
 }
 function hopTxt(n){
-  const short = (typeof TAB_SHORT!=='undefined' && TAB_SHORT) || {good:'Good', watch:'Watchlist', avoid:'Avoid'};
-  const a = short[n.from] || n.from || 'Good';
+  const short = (typeof TAB_SHORT!=='undefined' && TAB_SHORT) || {good:'Picks', watch:'Watchlist', avoid:'Avoid'};
+  const a = short[n.from] || n.from || 'Picks';
   return n.to ? `${a} → ${short[n.to]||n.to}` : `Pulled from ${a}`;
 }
 function pulledSidebarHTML(fromTab, counts){
@@ -4445,7 +4453,7 @@ function pulledSidebarHTML(fromTab, counts){
       </div>
       <div class="side-card glance">
         <h3>Today at a glance</h3>
-        <div class="g-row"><span>Good</span><b>${c.good}</b></div>
+        <div class="g-row"><span>Picks</span><b>${c.good}</b></div>
         <div class="g-row"><span>Watchlist</span><b>${c.watch}</b></div>
         <div class="g-row"><span>Avoid</span><b>${c.avoid}</b></div>
         <div class="g-row"><span>Next refresh</span><b id="sideCountdown">${esc(cd)}</b></div>
@@ -4619,7 +4627,7 @@ function goodPlaysExcludeLine(){
       if (learnOff('mk:'+mk)) bits.push(`strict ${names[mk]||mk} (the app turned them off after they lost money in testing)`);
     }
   }
-  return bits.length ? 'Not eligible for Good Plays: ' + bits.join('; ') : '';
+  return bits.length ? 'Not eligible for Picks: ' + bits.join('; ') : '';
 }
 function renderChips(){
   const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
@@ -4678,7 +4686,7 @@ function render(){
   if (!lastUpdated){ v.innerHTML = busy ? `<div class="empty-state">Loading the slate…</div>` : `<div class="empty-state">No data yet.</div>${errs}`; return; }
   if (ui.tab==='good'){
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
-    v.innerHTML = slateLayout('good', section('Good Plays', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
+    v.innerHTML = slateLayout('good', section('Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
@@ -4692,8 +4700,8 @@ function render(){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
     const unloggedN = list.filter(r => !(typeof isLoggedKey==='function' && isLoggedKey(r.k))).length;
     const clearBtn = unloggedN ? `<button type="button" class="clear-unlogged" data-clear-unlogged="1">Clear unlogged</button>` : '';
-    const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No pulled plays from Good Plays.</div>`;
-    v.innerHTML = `<div class="section-title pulled-head"><h2>Pulled</h2>${clearBtn}<span class="hint">Plays that dropped off Good Plays. Logged bets stay at the top in red so you don't miss them.</span></div>` + items + errs;
+    const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No pulled plays from Picks.</div>`;
+    v.innerHTML = `<div class="section-title pulled-head"><h2>Pulled</h2>${clearBtn}<span class="hint">Plays that dropped off Picks. Logged bets stay at the top in red so you don't miss them.</span></div>` + items + errs;
   }
   else if (ui.tab==='all') v.innerHTML = `<div class="section-title"><h2>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
@@ -5207,7 +5215,7 @@ function oddsHistoryTable(){
   }).join('');
   const recN = rows.length;
   return `<div class="panel overflow"><h3>Win rate by odds</h3>
-    <p class="hint">Your graded logged bets and the app's recommended Good plays, combined (duplicates counted once). Break-even is the typical win rate these odds require. Small samples are marked as not enough history yet.</p>
+    <p class="hint">Your graded logged bets and the app's recommended Picks, combined (duplicates counted once). Break-even is the typical win rate these odds require. Small samples are marked as not enough history yet.</p>
     <table><tr><th>Odds</th><th>Record</th><th>Win rate</th><th>Break-even</th></tr>${body}</table>
     <div class="mut" style="margin-top:6px">${recN} graded result${recN===1?'':'s'} in the book.</div>
   </div>`;
@@ -5843,7 +5851,7 @@ function renderPicks(){
   const ex = pickExampleChips();
   v.innerHTML = `<div class="pk-hero">
     <h2>Get a Verdict</h2>
-    <p class="lead">Type a moneyline, spread, total, or player prop — one per line. We’ll break it down the same way as Good Plays.</p>
+    <p class="lead">Type a moneyline, spread, total, or player prop — one per line. We’ll break it down the same way as Picks.</p>
     <textarea id="pkText" rows="5" placeholder="e.g. Rockets ML&#10;Celtics -4.5&#10;Over 225.5">${esc(PK.text)}</textarea>
     <div class="pk-ex"><span class="lab">Try</span>${ex.map(x=>`<span class="chip" data-ex="${esc(x)}">${esc(x)}</span>`).join('')}</div>
     <div class="pk-actions">
@@ -5853,7 +5861,7 @@ function renderPicks(){
     </div>
   </div>
   ${PK.busy && !PK.legs.length ? '<div class="pk-empty"><div class="big">Getting your verdict</div>Loading rosters, game pages and game logs…</div>' : ''}
-  ${PK.legs.length ? parlaySummary() + `<div class="grid">${PK.legs.map((l,i)=>legCard(l,i,l===weakest)).join('')}</div>` : (PK.busy?'':'<div class="pk-empty"><div class="big">Nothing checked yet</div>Type a pick, or tap an example, then hit <b>Get verdict</b>.</div>')}`;
+  ${PK.legs.length ? parlaySummary() + `<div class="grid pk-grid">${PK.legs.map((l,i)=>legCard(l,i,l===weakest)).join('')}</div>` : (PK.busy?'':'<div class="pk-empty"><div class="big">Nothing checked yet</div>Type a pick, or tap an example, then hit <b>Get verdict</b>.</div>')}`;
   $('#pkText').oninput = e=>{ PK.text = e.target.value;  };
   $('#btnCheck').onclick = runPicks;
   $('#btnPkClear').onclick = ()=>{ PK.text=''; PK.legs=[];  renderPicks(); };
@@ -5915,11 +5923,11 @@ function renderResults(){
   const rows = act.slice().sort((a,b)=>b.start-a.start).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(LMAP[r.lg]?LMAP[r.lg].label:r.lg)}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span></td><td>${fmtAm(r.lastPrice??r.price)}</td><td>${fmtPct(r.est,0)}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}</td><td class="${r.clv==null?'mut':r.clv>=0?'pos':'neg'}">${r.clv==null?'—':fmtEdge(r.clv)}</td></tr>`).join('');
   const wd = results.filter(r=>r.status==='withdrawn');
   const wdLine = pullSummaryLine(wd);
-  const wdRows = wd.slice().sort((a,b)=>(b.pulledAt||b.start)-(a.pulledAt||a.start)).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(LMAP[r.lg]?LMAP[r.lg].label:r.lg)}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span><div><span class="badge b-pulled">Pulled from ${esc((typeof TAB_NAME!=='undefined' && TAB_NAME[r.pulledFrom||'good'])||'Good Plays')}</span></div></td><td>${fmtAm(r.lastPrice??r.price)}</td><td style="white-space:normal">${esc(r.pullReason||(typeof LEGACY_PULL!=='undefined'?LEGACY_PULL:'pulled (reason not recorded — older version)'))}${r.pulledAt?`<div class="mut">${esc(fmtTime(new Date(r.pulledAt)))}</div>`:''}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}${pullRightWrong(r)}</td></tr>`).join('');
+  const wdRows = wd.slice().sort((a,b)=>(b.pulledAt||b.start)-(a.pulledAt||a.start)).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(LMAP[r.lg]?LMAP[r.lg].label:r.lg)}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span><div><span class="badge b-pulled">Pulled from ${esc((typeof TAB_NAME!=='undefined' && TAB_NAME[r.pulledFrom||'good'])||'Picks')}</span></div></td><td>${fmtAm(r.lastPrice??r.price)}</td><td style="white-space:normal">${esc(r.pullReason||(typeof LEGACY_PULL!=='undefined'?LEGACY_PULL:'pulled (reason not recorded — older version)'))}${r.pulledAt?`<div class="mut">${esc(fmtTime(new Date(r.pulledAt)))}</div>`:''}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}${pullRightWrong(r)}</td></tr>`).join('');
   const R = btState.res;
   const cached = Object.values(BT.games).length;
   $('#view').innerHTML = `
-  <div class="section-title"><h2>Results</h2><span class="hint">Every strict Good play the app showed is saved here and graded automatically from ESPN final scores.</span></div>
+  <div class="section-title"><h2>Results</h2><span class="hint">The model's track record — every strict Pick the app recommended is saved and graded automatically from ESPN final scores. This is separate from your personal bets and profit in Tracker.</span></div>
   <div class="kpis">
     <div class="kpi"><div class="k">Live record</div><div class="v">${st.w}-${st.l}${st.p?'-'+st.p:''}</div></div>
     <div class="kpi"><div class="k">Win rate</div><div class="v">${st.wr==null?'—':(st.wr*100).toFixed(1)+'%'}</div></div>
@@ -5929,7 +5937,7 @@ function renderResults(){
     <div class="kpi"><div class="k">Pending</div><div class="v">${pend}</div></div>
   </div>
   <div class="panel overflow"><h3>Recommended plays (${act.length})</h3>
-    <table><tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Our est.</th><th>Result</th><th>CLV</th></tr>${rows||'<tr><td colspan="7" class="mut">Nothing yet. Strict Good plays are recorded the first time they appear (the app has to be open).</td></tr>'}</table>
+    <table><tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Our est.</th><th>Result</th><th>CLV</th></tr>${rows||'<tr><td colspan="7" class="mut">Nothing yet. Strict Picks are recorded the first time they appear (the app has to be open).</td></tr>'}</table>
     <div style="margin-top:8px"><button class="btn sm" id="btnGrade">Grade now</button> <span class="hint">Grading also runs on every refresh.</span></div></div>
   ${wd.length?`<div class="panel overflow"><h3>Pulled plays (${wd.length})</h3>
     <p class="pull-note">These were recommended, then dropped before the game started. They do not count in the record above. After the game finishes they are graded anyway so you can see whether pulling was right.</p>
@@ -5938,7 +5946,7 @@ function renderResults(){
 
   ${typeof learnPanelHTML==='function' ? learnPanelHTML() : ''}
 
-  <div class="section-title"><h2>Backtest</h2><span class="hint">Replays today's rules on past games. Uses only info known before tip-off.</span></div>
+  <div class="section-title"><h2>Backtest</h2><span class="hint">Replays the model's current rules on past games to measure and improve the model. Uses only info known before tip-off. This is not your personal Tracker record.</span></div>
   <div class="panel"><h3>Run it</h3>
     <div class="form">
       <label>Days back<select id="btDays">${[30,45,60,90].map(d=>`<option ${btUI.days===d?'selected':''}>${d}</option>`).join('')}</select></label>
@@ -6496,11 +6504,11 @@ function renderSettings(){
 
     <div class="s-row"><div class="s-h">Sports I want picks for</div>
       <div class="filters">${LEAGUES.map(L=>`<label class="chip ${!exl.has(L.id)?'on':''}"><input type="checkbox" name="pick_${L.id}" ${!exl.has(L.id)?'checked':''} hidden>${L.label}${LOST_IN_TEST.has(L.id)?' <small class="mut">*</small>':''}</label>`).join('')}</div>
-      <div class="s-note">* College basketball and soccer lost money in testing, so they are off by default. Their games still show in All Games, but not in the Good Plays, Watchlist, or Avoid sport filters. Sports you turn off in Settings are hidden from those filters too.</div></div>
+      <div class="s-note">* College basketball and soccer lost money in testing, so they are off by default. Their games still show in All Games, but not in the Picks, Watchlist, or Avoid sport filters. Sports you turn off in Settings are hidden from those filters too.</div></div>
 
     <div class="s-row"><div class="s-h">Refresh every</div>
       <div class="seg">${[[15,'15s'],[30,'30s'],[60,'1 min'],[120,'2 min'],[300,'5 min'],[600,'10 min']].map(([v,l])=>`<label class="${+S.refreshSec===v?'on':''}"><input type="radio" name="refreshSec" value="${v}" ${+S.refreshSec===v?'checked':''} hidden>${l}${v===60?' <small>recommended</small>':''}</label>`).join('')}</div>
-      <div class="s-note">Free sources (ESPN and Polymarket) refresh this often, including when the window is minimized, so phone alerts can go out. 1 minute is the default. If the feed rate-limits us, the app slows to every 3 minutes for 10 minutes. The Odds API (Bovada) is fetched about every 2 hours and again about 60 and 15 minutes before a Good Play, and is throttled so it stays within your monthly credits.</div></div>
+      <div class="s-note">Free sources (ESPN and Polymarket) refresh this often, including when the window is minimized, so phone alerts can go out. 1 minute is the default. If the feed rate-limits us, the app slows to every 3 minutes for 10 minutes. The Odds API (Bovada) is fetched about every 2 hours and again about 60 and 15 minutes before a Pick, and is throttled so it stays within your monthly credits.</div></div>
 
     <div class="s-row"><div class="s-h">Odds key (optional)</div>
       <input name="oddsKey" type="password" autocomplete="off" value="${esc(S.oddsKey)}" placeholder="paste your free key here" style="max-width:420px">
@@ -6514,10 +6522,10 @@ function renderSettings(){
       ${(()=>{ const perm = typeof alertsPerm==='function' ? alertsPerm() : 'unsupported';
         const checks = `<label class="chk"><input type="checkbox" name="alertNewPlays" ${S.alertNewPlays!==false?'checked':''}> Alert me on new plays</label>
       <label class="chk"><input type="checkbox" name="alertPulledPlays" ${S.alertPulledPlays!==false?'checked':''}> Alert me on pulled plays</label>`;
-        if (perm==='granted') return checks + '<div class="s-note">Alerts are on. New Good plays and pulls from Good Plays can each send a pop-up, but only while the app is open. On iPhone, alerts only work after you add Verdict to your Home Screen. Watchlist and Avoid drops still only show in the Pulled list.</div>';
+        if (perm==='granted') return checks + '<div class="s-note">Alerts are on. New Picks and pulls from Picks can each send a pop-up, but only while the app is open. On iPhone, alerts only work after you add Verdict to your Home Screen. Watchlist and Avoid drops still only show in the Pulled list.</div>';
         if (perm==='denied') return checks + '<div class="s-note">Alerts are blocked in this browser. You can allow them in the browser settings for this page. Alerts only fire while the app is open.</div>';
         if (perm==='unsupported') return checks + '<div class="s-note">This browser does not support alerts here. On iPhone, add Verdict to your Home Screen (Share → Add to Home Screen), then turn on alerts from inside the installed app. Alerts only fire while the app is open. Pulled plays will still show in the Pulled list.</div>';
-        return `<button type="button" class="btn sm" id="btnPullAlerts">Turn on alerts</button>${checks}<div class="s-note">Turn on alerts to get a pop-up when a new play lands on Good Plays, or when one is pulled from it. Alerts only fire while the app is open. On iPhone, install it to your Home Screen first, then tap this button. On first load, several new plays are grouped into one pop-up so they do not spam you.</div>`;
+        return `<button type="button" class="btn sm" id="btnPullAlerts">Turn on alerts</button>${checks}<div class="s-note">Turn on alerts to get a pop-up when a new play lands on Picks, or when one is pulled from it. Alerts only fire while the app is open. On iPhone, install it to your Home Screen first, then tap this button. On first load, several new plays are grouped into one pop-up so they do not spam you.</div>`;
       })()}</div>
 
     <div class="s-row"><div class="s-h">Phone alerts (ntfy)</div>
@@ -6551,7 +6559,7 @@ function renderSettings(){
     <label>Fetch odds every (min, 0 = manual)<input name="oddsEveryMin" type="number" min="0" value="${S.oddsEveryMin}"></label>
     <label style="grid-column:span 2">Only these books (optional, comma-separated keys)<input name="oddsBooks" value="${esc(S.oddsBooks)}" placeholder="draftkings,fanduel,betmgm,williamhill_us,pinnacle"></label>
   </div>
-  <div class="hint" style="margin-top:8px">Free plan: 500 credits/month. Each sport fetch costs 3 credits per region (or per 10 listed books). Regular fetches are about every 2 hours, plus a pre-game fetch ~60 and ~15 minutes before a Good Play, and auto-throttled to last the month. With these settings: <b>${estimateCredits()}</b>. <b>${esc(oddsCreditsLine())}</b> Pinnacle is in the <b>eu</b> region (or list <code>pinnacle</code> as a book).</div>
+  <div class="hint" style="margin-top:8px">Free plan: 500 credits/month. Each sport fetch costs 3 credits per region (or per 10 listed books). Regular fetches are about every 2 hours, plus a pre-game fetch ~60 and ~15 minutes before a Pick, and auto-throttled to last the month. With these settings: <b>${estimateCredits()}</b>. <b>${esc(oddsCreditsLine())}</b> Pinnacle is in the <b>eu</b> region (or list <code>pinnacle</code> as a book).</div>
   <div style="margin-top:10px"><button type="button" class="btn sm" id="btnOddsNow">Fetch Odds API now</button></div></div>
 
   <div class="panel"><h3>Deep data (free ESPN game pages + Open-Meteo weather)</h3><div class="form">
@@ -6573,11 +6581,11 @@ function renderSettings(){
     <li><b>No-vig probability</b>: each side's implied probability divided by the sum of all sides (removes the book's cut). With several books, consensus = average across books (Pinnacle weighted ×${S.sharpWeight}).</li>
     <li><b>Edge</b> = consensus no-vig probability − implied probability of the best price. Needs 2+ books, so ESPN-only mode shows "n/a".</li>
     <li><b>Line movement</b>: the market's opening line (DraftKings from ESPN, or an Odds API open when the book sends one) vs now. The first price this phone or PC happened to see is stored on this device only and is not used to pull a play, so two devices with the same settings judge movement the same way.</li>
-    <li><b>Hard rules (applied first)</b>: Avoid favorites worse than ${fmtAm(S.avoidFavBelow)}, dogs above ${fmtAm(S.longshotAbove)} without a ${S.dogMinEdge}% model or price edge, juice worse than ${fmtAm(S.avoidJuice)}, and heavy adverse line moves. Moneyline Good needs a favorite between ${fmtAm(S.goodFavMin)} and ${fmtAm(S.goodFavMax)} (or a dog clearing the stricter underdog bar), no adverse move, and model/price edge ≥ −${S.neutralTol}%.</li>
-    <li><b>Spreads/totals</b>: Good needs price no worse than ${fmtAm(S.maxJuice)}, no adverse move, and the factor score below. Model edge on spreads uses ESPN win probability at 60% weight (it is a win %, not a cover %).</li>
-    <li><b>Factor model</b>: each market side gets points from price range, ESPN model vs market, best price vs books, line movement, injuries (team leaders and QBs count most; IR/long-term ignored), last-5 form, home/away split, rest/back-to-backs, head-to-head, season scoring margin or projections vs the line, starting goalies (GAA), and weather for outdoor totals. Composite ≥ ${S.goodScore} with 2+ supporting factors and confidence ≥ ${S.minConfGood} can be Good. Underdogs need ≥ ${S.dogGoodScore}, ${S.dogMinFactors}+ strong factors and a ${S.dogMinEdge}% model or price edge.</li>
+    <li><b>Hard rules (applied first)</b>: Avoid favorites worse than ${fmtAm(S.avoidFavBelow)}, dogs above ${fmtAm(S.longshotAbove)} without a ${S.dogMinEdge}% model or price edge, juice worse than ${fmtAm(S.avoidJuice)}, and heavy adverse line moves. A moneyline Pick needs a favorite between ${fmtAm(S.goodFavMin)} and ${fmtAm(S.goodFavMax)} (or a dog clearing the stricter underdog bar), no adverse move, and model/price edge ≥ −${S.neutralTol}%.</li>
+    <li><b>Spreads/totals</b>: a Pick needs price no worse than ${fmtAm(S.maxJuice)}, no adverse move, and the factor score below. Model edge on spreads uses ESPN win probability at 60% weight (it is a win %, not a cover %).</li>
+    <li><b>Factor model</b>: each market side gets points from price range, ESPN model vs market, best price vs books, line movement, injuries (team leaders and QBs count most; IR/long-term ignored), last-5 form, home/away split, rest/back-to-backs, head-to-head, season scoring margin or projections vs the line, starting goalies (GAA), and weather for outdoor totals. Composite ≥ ${S.goodScore} with 2+ supporting factors and confidence ≥ ${S.minConfGood} can land on Picks. Underdogs need ≥ ${S.dogGoodScore}, ${S.dogMinFactors}+ strong factors and a ${S.dogMinEdge}% model or price edge.</li>
     <li><b>Confidence</b> starts at 100 and drops for missing data: no game page, no model, no injury report, only one book, unconfirmed goalie/pitcher, key game-time decisions, unknown outdoor weather.</li>
-    <li><b>Strict mode</b> (${S.strictMode?'on':'off'}): no cap, built for win rate on singles. A play is Good only if it passes every check: ${S.sMarkets==='ml'?'moneyline only, ':''}price between ${fmtAm(S.sFavMin)} and ${fmtAm(S.sDogMax)} at your book, estimated win chance ≥ ${(S.sMinWin*100).toFixed(0)}%, ESPN's computer agrees (≥ ${(S.sModelMin*100).toFixed(0)}% and not less sure than the odds, where it exists), no line move against of more than ${S.sMaxAdvPct}%, ${S.sMinPos}+ supporting factors, nothing strongly against, ${S.sExclude?`not ${esc(S.sExclude.toUpperCase())}, `:''}full data (confidence ≥ ${S.sMinConf}, injury report, confirmed goalie/pitcher, no key game-time decisions) and not a thin Polymarket market. Value (price vs estimate) is shown but ${+S.sMinEV>-99?`must be at least ${S.sMinEV}%`:'is not required'}. Good plays are ranked by estimated win chance. Misses go to the Watchlist with the missed check named.</li>
+    <li><b>Strict mode</b> (${S.strictMode?'on':'off'}): no cap, built for win rate on singles. A play lands on Picks only if it passes every check: ${S.sMarkets==='ml'?'moneyline only, ':''}price between ${fmtAm(S.sFavMin)} and ${fmtAm(S.sDogMax)} at your book, estimated win chance ≥ ${(S.sMinWin*100).toFixed(0)}%, ESPN's computer agrees (≥ ${(S.sModelMin*100).toFixed(0)}% and not less sure than the odds, where it exists), no line move against of more than ${S.sMaxAdvPct}%, ${S.sMinPos}+ supporting factors, nothing strongly against, ${S.sExclude?`not ${esc(S.sExclude.toUpperCase())}, `:''}full data (confidence ≥ ${S.sMinConf}, injury report, confirmed goalie/pitcher, no key game-time decisions) and not a thin Polymarket market. Value (price vs estimate) is shown but ${+S.sMinEV>-99?`must be at least ${S.sMinEV}%`:'is not required'}. Picks are ranked by estimated win chance. Misses go to the Watchlist with the missed check named.</li>
   </ul></div>
   </div></details>
   </form>`;
