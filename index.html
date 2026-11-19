@@ -955,6 +955,7 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
         <button type="button" data-sub="good"><span class="tab-emo" aria-hidden="true">🎯</span>Picks<span class="cnt" data-sub-cnt="good">0</span><span class="tab-dot" data-sub-pull="good" hidden></span></button>
         <button type="button" data-sub="watch"><span class="tab-emo" aria-hidden="true">👀</span>Watch<span class="cnt" data-sub-cnt="watch">0</span><span class="tab-dot" data-sub-pull="watch" hidden></span></button>
         <button type="button" data-sub="avoid"><span class="tab-emo" aria-hidden="true">🚫</span>Avoid<span class="cnt" data-sub-cnt="avoid">0</span><span class="tab-dot" data-sub-pull="avoid" hidden></span></button>
+        <button type="button" data-sub="pulled" hidden><span class="tab-emo" aria-hidden="true">🟠</span>Pulled<span class="cnt" data-sub-cnt="pulled">0</span></button>
       </div>
     </div>
     <div class="head-tools" id="headTools">
@@ -2775,6 +2776,24 @@ const TAB_RANK = {good:3, watch:2, avoid:1};
 const TAB_NAME = {good:'Picks', watch:'Watchlist', avoid:'Avoid'};
 const TAB_SHORT = {good:'Picks', watch:'Watchlist', avoid:'Avoid'};
 const LEGACY_PULL = 'pulled (reason not recorded — older version)';
+/* A recommended Pick is pulled only if it flips all the way to Avoid — not Pick → Watchlist. */
+function shouldPullPick(prevTab, curTab, wasPick){
+  const originPick = !!(wasPick || prevTab==='good');
+  return originPick && curTab==='avoid';
+}
+function liveVerdictOfKey(k){
+  const p = (plays||[]).find(x=>x.g && x.g.eventId && playResultKey(x)===k);
+  return (p && TAB_RANK[p.verdict]) ? p.verdict : null;
+}
+function isAvoidPullNote(n){
+  if (!n) return false;
+  if (n.to==='avoid' || n.pulledTo==='avoid') return true;
+  const to = n.to || liveVerdictOfKey(n.k) || (typeof currentTabOf==='function' ? currentTabOf(n.k) : null);
+  return to==='avoid';
+}
+function pulledCount(){
+  return (typeof visiblePulled==='function' ? (visiblePulled('good')||[]) : []).length;
+}
 let playTabs = loadJSON(LS.playTabs, {}) || {};
 let pullNotes = loadJSON(LS.pullNotes, []) || [];
 function migrateLegacyWithdrawn(){
@@ -2978,6 +2997,7 @@ function visiblePulled(fromTab){
   for (const n of pullNotes){
     if (fromTab && n.from!==fromTab) continue;
     if (!noteVisible(n, now, dismissed)) continue;
+    if (!isAvoidPullNote(n)) continue;
     list.push(n); seen.add(n.k+'|'+n.from);
   }
   if (!fromTab || fromTab==='good'){
@@ -2986,8 +3006,9 @@ function visiblePulled(fromTab){
       if (seen.has(r.k+'|good')) continue;
       const to = currentTabOf(r.k) || null;
       if (to && TAB_RANK[to] >= (TAB_RANK['good']||0)) continue;
-      const note = {k:r.k, from:'good', to, at:r.pulledAt||0, reason:r.pullReason||LEGACY_PULL, label:r.label, game:r.game, start:r.start, legacyPull:!!(r.legacyPull || !r.pulledAt), pullNotified:r.pullNotified};
+      const note = {k:r.k, from:'good', to, at:r.pulledAt||0, reason:r.pullReason||LEGACY_PULL, label:r.label, game:r.game, start:r.start, legacyPull:!!(r.legacyPull || !r.pulledAt), pullNotified:r.pullNotified, pulledTo:r.pulledTo||to};
       if (!noteVisible(note, now, dismissed)) continue;
+      if (!isAvoidPullNote(note)) continue;
       list.push(note); seen.add(r.k+'|good');
     }
   }
@@ -3067,20 +3088,25 @@ function trackPlayTabs(){
     const prev = playTabs[k];
     const cur = p.verdict;
     const wasGood = !!(prev && prev.tab==='good');
-    const meta = {tab:cur, label:p.label, game:`${p.g.away.short} @ ${p.g.home.short}`, start:p.g.start.getTime(), ev:p.g.eventId, lg:p.g.league, mk:p.mk, side:p.side, seen:now};
+    const wasPick = cur==='good' || !!(prev && (prev.tab==='good' || prev.wasPick));
+    const meta = {tab:cur, label:p.label, game:`${p.g.away.short} @ ${p.g.home.short}`, start:p.g.start.getTime(), ev:p.g.eventId, lg:p.g.league, mk:p.mk, side:p.side, seen:now, wasPick};
     if (cur==='good' && !wasGood) newcomers.push(p);
     if (wasGood && cur!=='good') delete newPlayNotified[k];
     if (prev && prev.tab && prev.tab!==cur && TAB_RANK[prev.tab] && TAB_RANK[cur]){
       if (TAB_RANK[cur] < TAB_RANK[prev.tab]){
-        const reason = pullReasonFor({k});
-        meta.pulledFrom = prev.tab; meta.pulledAt = now; meta.pullReason = reason;
-        meta.upgradedFrom = null; meta.upgradedAt = null;
-        for (const n of pullNotes) if (n.k===k && !n.resolved) n.to = cur;
-        const note = {k, from:prev.tab, to:cur, at:now, reason, label:meta.label, game:meta.game, start:meta.start, ev:meta.ev, lg:meta.lg, pullNotified:false};
-        pullNotes.push(note);
-        notifyPulled(note);
-        const r = results.find(x=>x.k===k);
-        if (r && prev.tab==='good'){ r.pulledFrom = r.pulledFrom||'good'; if (!r.pullReason) r.pullReason = reason; }
+        if (shouldPullPick(prev.tab, cur, prev && (prev.wasPick || prev.tab==='good'))){
+          const reason = pullReasonFor({k});
+          meta.pulledFrom = 'good'; meta.pulledAt = now; meta.pullReason = reason; meta.pulledTo = 'avoid';
+          meta.upgradedFrom = null; meta.upgradedAt = null;
+          for (const n of pullNotes) if (n.k===k && !n.resolved) n.to = cur;
+          const note = {k, from:'good', to:cur, at:now, reason, label:meta.label, game:meta.game, start:meta.start, ev:meta.ev, lg:meta.lg, pullNotified:false, pulledTo:'avoid'};
+          pullNotes.push(note);
+          notifyPulled(note);
+          const r = results.find(x=>x.k===k);
+          if (r && wasPick){ r.pulledFrom = r.pulledFrom||'good'; r.pulledTo = 'avoid'; if (!r.pullReason) r.pullReason = reason; }
+        } else if (prev.pulledFrom){
+          meta.pulledFrom=prev.pulledFrom; meta.pulledAt=prev.pulledAt; meta.pullReason=prev.pullReason; meta.pulledTo=prev.pulledTo;
+        }
       } else if (TAB_RANK[cur] > TAB_RANK[prev.tab]){
         meta.upgradedFrom = prev.tab; meta.upgradedAt = now;
         const note = pullNotes.find(n=>n.k===k);
@@ -3131,10 +3157,13 @@ function recordResults(){
   }
   for (const r of results){
     if (r.status==='active' && r.start > now && !goodIds.has(r.k) && games.some(g=>String(g.eventId)===String(r.ev))){
+      const cur = liveVerdictOfKey(r.k);
+      if (cur!=='avoid') continue; // Pick → Watchlist stays active; only a full flip to Avoid is pulled
       r.status = 'withdrawn';
       r.pulledAt = now;
       r.pullReason = pullReasonFor(r);
       r.pulledFrom = 'good';
+      r.pulledTo = 'avoid';
       r.readded = false;
       r.legacyPull = false;
       notifyPulled(r);
@@ -3152,13 +3181,13 @@ function checkLoggedKeyOutPulls(){
     const p = (plays||[]).find(x=>x.g && x.g.eventId && playResultKey(x)===k);
     if (!p || !p.g) continue;
     rememberInjSnap(k, p.g);
-    if (p.verdict==='good') continue;
+    if (p.verdict!=='avoid') continue; // only pull a tailed Pick if it flips all the way to Avoid
     const neo = newKeyOutSince(k, p.g);
     if (!neo) continue;
     const reason = 'Key player ruled out: '+(neo.n||'a key player');
     if ((pullNotes||[]).some(n=>n.k===k && n.reason===reason && !n.resolved && !n.readded)) continue;
-    const from = (results||[]).some(r=>r.k===k) ? 'good' : (p.verdict==='watch'||p.verdict==='avoid'?p.verdict:'good');
-    const note = {k, from, to:p.verdict||null, at:now, reason, label:p.label, game:`${p.g.away.short} @ ${p.g.home.short}`, start:p.g.start.getTime()};
+    const from = 'good';
+    const note = {k, from, to:'avoid', at:now, reason, label:p.label, game:`${p.g.away.short} @ ${p.g.home.short}`, start:p.g.start.getTime(), pulledTo:'avoid'};
     pullNotes.unshift(note);
     saveJSON(LS.pullNotes, pullNotes);
     if (from==='good') notifyPulled(note);
@@ -5131,12 +5160,10 @@ function pulledSidebarHTML(fromTab, counts){
       ${b?`<div class="logged-line">${esc(loggedBadgeText(b))}</div>`:''}
       <div class="why">${esc(r.reason||r.pullReason||'no longer passes the filters')} · ${esc(r.start?fmtTime(new Date(r.start)):'')}</div>
     </div>`;
-    }).join('')}</div>` : `<div class="side-empty">No pulled plays. Anything that drops a tab shows up here.</div>`;
+    }).join('')}</div>` : '';
   const c = counts || {good:0, watch:0, avoid:0};
   const cd = busy ? 'now' : (nextAt ? `${Math.floor((nextAt-Date.now())/60000)}:${String(Math.floor(((nextAt-Date.now())%60000)/1000)).padStart(2,'0')}` : '—');
-  return `<button type="button" class="side-toggle" id="btnSideToggle" aria-expanded="${ui.sideOpen?'true':'false'}"><span>Pulled (${list.length})</span><span class="chev">${ui.sideOpen?'▾':'▸'}</span></button>
-    <div class="side-body">
-      <div class="side-card pulled-card" id="pulledSidebar">
+  const pulledCardHTML = list.length ? `<div class="side-card pulled-card" id="pulledSidebar">
         <h3><span>🟠 Pulled plays</span><span class="${ncls}">${list.length}</span>
           <span class="side-tools">
             <button type="button" class="side-chip${all?'':' on'}" data-pull-scope="tab">This tab</button>
@@ -5146,7 +5173,10 @@ function pulledSidebarHTML(fromTab, counts){
           </span>
         </h3>
         ${items}
-      </div>
+      </div>` : '';
+  return `<button type="button" class="side-toggle" id="btnSideToggle" aria-expanded="${ui.sideOpen?'true':'false'}"><span>${list.length?('Pulled ('+list.length+')'):'Today'}</span><span class="chev">${ui.sideOpen?'▾':'▸'}</span></button>
+    <div class="side-body">
+      ${pulledCardHTML}
       <div class="side-card glance">
         <h3>📌 Today at a glance</h3>
         <div class="g-row"><span>Picks</span><b>${c.good}</b></div>
@@ -5184,9 +5214,11 @@ function updatePullDots(){
     });
   }
   document.querySelectorAll('#moreSheet [data-tab="pulled"]').forEach(btn=>{
+    btn.hidden = gN===0;
     btn.classList.toggle('has-pull', gN>0 && loggedN===0);
     btn.classList.toggle('has-logged-pull', loggedN>0);
   });
+  if (typeof syncSubbar==='function') syncSubbar();
 }
 function pulledCard(r){
   const logged = typeof isLoggedKey==='function' && isLoggedKey(r.k);
@@ -5501,6 +5533,11 @@ function render(){
   if (typeof syncTabChrome==='function') syncTabChrome();
   const v = $('#view');
   const errs = (feedErrors.length||oddsErrors.length) ? `<div class="err-list">${feedErrors.slice(0,4).map(esc).join('<br>')}${feedErrors.length>4?`<br>…and ${feedErrors.length-4} more feed errors`:''}${oddsErrors.length?'<br>Odds API: '+oddsErrors.map(esc).join('<br>'):''}</div>` : '';
+  if (ui.tab==='pulled' && !(typeof pulledCount==='function' ? pulledCount() : (typeof visiblePulled==='function' && (visiblePulled('good')||[]).length))){
+    if (typeof setTab==='function') setTab('good', {board: ui.board||'games'});
+    else ui.tab = 'good';
+    if (typeof syncTabChrome==='function') syncTabChrome();
+  }
   if (ui.tab==='results' && !(typeof canOpenResults==='function' && canOpenResults())){ ui.tab = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks'; }
   if (ui.tab==='tracker') return renderTracker();
   if (ui.tab==='picks') return renderPicks();
@@ -5534,7 +5571,7 @@ function render(){
     const unloggedN = list.filter(r => !(typeof isLoggedKey==='function' && isLoggedKey(r.k))).length;
     const clearBtn = unloggedN ? `<button type="button" class="clear-unlogged" data-clear-unlogged="1">Clear untailed</button>` : '';
     const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No pulled plays from Picks.</div>`;
-    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">🟠</span>Pulled</h2>${clearBtn}<span class="hint">Plays that dropped off Picks. Tailed bets stay at the top in red so you don't miss them.</span></div>` + items + errs;
+    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">🟠</span>Pulled</h2>${clearBtn}<span class="hint">Picks that flipped all the way to Avoid. A drop to Watchlist is held — pulled only if a pick flips all the way to Avoid. Tailed bets stay at the top in red so you don't miss them.</span></div>` + items + errs;
   }
   else if (ui.tab==='all') v.innerHTML = pmHint + `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
@@ -6987,7 +7024,7 @@ function learnCardHead(board, opts){
   const o = opts||{};
   const paused = !!o.paused;
   const ver = o.version!=null ? o.version : (o.cur!=null ? o.cur : 1);
-  return `<div class="ln-head"><div class="ln-head-left"><h3><span class="h-emo" aria-hidden="true">🧠</span> Model learning · ${lab}</h3><div class="ln-head-meta"><span class="ln-status-pill ${paused?'off':'on'}">${paused?'⏸ Paused':'<i class="ln-dot" aria-hidden="true"></i> Auto-learning ON'}</span><span class="ln-ver">v${ver}</span></div></div>${resultsBoardSegHTML('learnBoardSeg')}</div>`;
+  return `<div class="ln-head"><div class="ln-head-left"><h3><span class="h-emo" aria-hidden="true">🧠</span> Model learning · ${lab}</h3><div class="ln-head-meta"><span class="ln-status-pill ${paused?'off':'on'}">${paused?'⏸ Paused':'<i class="ln-dot" aria-hidden="true"></i> Auto-learning ON'}</span><span class="ln-ver">v${ver}</span></div></div></div>`;
 }
 function learnProgHTML(have, need, readyLabel){
   const n = Math.max(0, +have||0), m = Math.max(1, +need||1);
@@ -7099,7 +7136,7 @@ function liveRecordHTML(board){
       const wdLine = pullSummaryLine(wd);
       const wdRows = wd.slice().sort((a,b)=>(b.pulledAt||b.start)-(a.pulledAt||a.start)).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(lgOf(r.lg))}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span><div><span class="badge b-pulled">Pulled from ${esc((typeof TAB_NAME!=='undefined' && TAB_NAME[r.pulledFrom||'good'])||'Picks')}</span></div></td><td>${fmtAm(r.lastPrice??r.price)}</td><td style="white-space:normal">${esc(r.pullReason||(typeof LEGACY_PULL!=='undefined'?LEGACY_PULL:'pulled (reason not recorded — older version)'))}${r.pulledAt?`<div class="mut">${esc(fmtTime(new Date(r.pulledAt)))}</div>`:''}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}${pullRightWrong(r)}</td></tr>`).join('');
       pulled = `<div class="panel overflow"><h3>🟠 Pulled plays (${wd.length})</h3>
-    <p class="pull-note">These were recommended, then dropped before the game started. They do not count in the record above. After the game finishes they are graded anyway so you can see whether pulling was right.</p>
+    <p class="pull-note">These were recommended Picks that flipped all the way to Avoid before the game started. A drop to Watchlist is held — pulled only if a pick flips all the way to Avoid. They do not count in the record above. After the game finishes they are graded anyway so you can see whether pulling was right.</p>
     ${wdLine?`<p class="pull-note"><b>${esc(wdLine)}</b></p>`:''}
     <table><tr><th>Date</th><th>Sport</th><th>Play</th><th>Price</th><th>Why it was pulled</th><th>Result</th></tr>${wdRows}</table></div>`;
     }
@@ -7659,7 +7696,7 @@ function learnPanelHTML(){
   const sooner = LEARN.paused ? '' : `or sooner (from ${dt(due.soonest.getTime())}) once 50 new live games are graded: ${due.newLive}/50 so far`;
   const needN = (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50);
   const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('games'):[];
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Games</h2><span class="hint">The app re-learns from new results by itself. No AI, no tokens: the same statistics, re-run on fresh games, with safety checks. Use the Games | Props | Parlay | Verdict switcher to see the other tracks.</span></div>
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Games</h2><span class="hint">The app re-learns from new results by itself. No AI, no tokens: the same statistics, re-run on fresh games, with safety checks. This panel follows the board chosen under Which board? at the top.</span></div>
   <div class="ln-card ln-panel">
     ${typeof learnCardHead==='function'?learnCardHead('games',{paused:!!LEARN.paused, version:cur.id, cur:cur.id}):''}
     ${typeof learnProgHTML==='function'?learnProgHTML(due.newLive||0, needN):''}
@@ -10115,7 +10152,7 @@ function renderSettings(){
       ${(()=>{ const perm = typeof alertsPerm==='function' ? alertsPerm() : 'unsupported';
         const checks = `<label class="chk"><input type="checkbox" name="alertNewPlays" ${S.alertNewPlays!==false?'checked':''}> Alert me on new plays</label>
       <label class="chk"><input type="checkbox" name="alertPulledPlays" ${S.alertPulledPlays!==false?'checked':''}> Alert me on pulled plays</label>`;
-        if (perm==='granted') return checks + '<div class="s-note">Alerts are on. New Picks and pulls from Picks can each send a pop-up, but only while the app is open. On iPhone, alerts only work after you add Verdict to your Home Screen. Watchlist and Avoid drops still only show in the Pulled list.</div>';
+        if (perm==='granted') return checks + '<div class="s-note">Alerts are on. New Picks and pulls from Picks can each send a pop-up, but only while the app is open. On iPhone, alerts only work after you add Verdict to your Home Screen. A Pick is pulled only if it flips all the way to Avoid. A drop to Watchlist is held.</div>';
         if (perm==='denied') return checks + '<div class="s-note">Alerts are blocked in this browser. You can allow them in the browser settings for this page. Alerts only fire while the app is open.</div>';
         if (perm==='unsupported') return checks + '<div class="s-note">This browser does not support alerts here. On iPhone, add Verdict to your Home Screen (Share → Add to Home Screen), then turn on alerts from inside the installed app. Alerts only fire while the app is open. Pulled plays will still show in the Pulled list.</div>';
         return `<button type="button" class="btn sm" id="btnPullAlerts">Turn on alerts</button>${checks}<div class="s-note">Turn on alerts to get a pop-up when a new play lands on Picks, or when one is pulled from it. Alerts only fire while the app is open. On iPhone, install it to your Home Screen first, then tap this button. On first load, several new plays are grouped into one pop-up so they do not spam you.</div>`;
@@ -10262,10 +10299,19 @@ function syncSubbar(){
   const bar = $('#tabSubbar');
   if (!bar) return;
   const tab = ui.tab, board = ui.board||'games';
-  const slate = !!SLATE_TABS[tab];
+  const nPull = typeof pulledCount==='function' ? pulledCount() : (typeof visiblePulled==='function' ? (visiblePulled('good')||[]).length : 0);
+  const slate = !!SLATE_TABS[tab] || (tab==='pulled' && nPull>0);
   bar.hidden = !slate;
   bar.querySelectorAll('[data-sub]').forEach(b=>{
     const sub = b.getAttribute('data-sub');
+    if (sub==='pulled'){
+      b.hidden = nPull===0;
+      b.classList.toggle('on', tab==='pulled' && nPull>0);
+      const cnt = b.querySelector('[data-sub-cnt]');
+      if (cnt) cnt.textContent = String(nPull);
+      return;
+    }
+    b.hidden = false;
     b.classList.toggle('on', slate && tab===sub);
     const key = (board==='games'||!board) ? sub : board+'-'+sub;
     const src = document.querySelector('#tabCountStore [data-cnt="'+key+'"]') || document.querySelector('[data-cnt="'+key+'"]');
@@ -10284,7 +10330,8 @@ function syncSubbar(){
 }
 function syncTabChrome(){
   const tab = ui.tab, board = ui.board||'games';
-  const slate = !!SLATE_TABS[tab];
+  const nPull = typeof pulledCount==='function' ? pulledCount() : (typeof visiblePulled==='function' ? (visiblePulled('good')||[]).length : 0);
+  const slate = !!SLATE_TABS[tab] || (tab==='pulled' && nPull>0);
   document.querySelectorAll('#tabs button[data-tab], #moreSheet button[data-tab]').forEach(x=>{
     const sameTab = x.dataset.tab===tab;
     const xb = x.dataset.board;
@@ -10332,15 +10379,18 @@ function setNavPop(board){
     if (reduce) scrim.classList.add('open');
     else { scrim.classList.remove('open'); requestAnimationFrame(()=>requestAnimationFrame(()=>scrim.classList.add('open'))); }
   }
+  const nPull = typeof pulledCount==='function' ? pulledCount() : (typeof visiblePulled==='function' ? (visiblePulled('good')||[]).length : 0);
   const items = [
     {tab:'good', lab:'Picks', cnt: board==='games'||!board?'good':board+'-good', ic:'target'},
     {tab:'watch', lab:'Watch', cnt: board==='games'||!board?'watch':board+'-watch', ic:'eye'},
     {tab:'avoid', lab:'Avoid', cnt: board==='games'||!board?'avoid':board+'-avoid', ic:'shield'}
   ];
+  if (nPull>0) items.push({tab:'pulled', lab:'Pulled', cnt:'pulled', ic:'pull'});
   const svg = {
     target:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.4"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
     eye:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12s3.6-7 9.5-7 9.5 7 9.5 7-3.6 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>',
-    shield:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3.2v5.5c0 5-3.3 8.5-8 9.8-4.7-1.3-8-4.8-8-9.8V6.2L12 3z"/><path d="M9 10.2l6 6M15 10.2l-6 6"/></svg>'
+    shield:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3.2v5.5c0 5-3.3 8.5-8 9.8-4.7-1.3-8-4.8-8-9.8V6.2L12 3z"/><path d="M9 10.2l6 6M15 10.2l-6 6"/></svg>',
+    pull:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v7M8.5 11.5L12 15l3.5-3.5"/></svg>'
   };
   pop.innerHTML = items.map((it,i)=>`<button type="button" class="nav-bubble${(ui.board===board && ui.tab===it.tab)?' on':''}" data-pop-board="${board}" data-pop-tab="${it.tab}" style="--stagger:${i}"><span class="bub">${svg[it.ic]}<span class="cnt" data-cnt="${it.cnt}">0</span></span><span class="lab">${it.lab}</span></button>`).join('');
   pop.hidden = false;
