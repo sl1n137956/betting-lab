@@ -825,6 +825,46 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 .unit-pill.u-qtr{background:rgba(245,158,11,.16);border-color:rgba(251,191,36,.42);color:#fef3c7}
 .unit-pill.u-skip{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.25);color:var(--mut)}
 .cfoot-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cfoot{overflow:visible}
+.cfoot-acts{display:flex;flex-direction:row;gap:8px;align-items:center;flex-wrap:wrap}
+.btn-tail, .cfoot [data-log], .cfoot [data-logleg], #btnLogParlay, .pk-log [data-logleg]{
+  border-radius:999px;padding:7px 14px;font-weight:700;
+  background:linear-gradient(180deg, rgba(59,130,246,.28), rgba(37,99,235,.18));
+  border:1px solid rgba(96,165,250,.55);color:#eff6ff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 4px 14px rgba(37,99,235,.22);
+  transition:transform .14s ease, box-shadow .14s ease;
+}
+.btn-tail:hover, .cfoot [data-log]:hover, .cfoot [data-logleg]:hover, #btnLogParlay:hover, .pk-log [data-logleg]:hover{
+  transform:translateY(-1px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.28), 0 6px 16px rgba(37,99,235,.32);
+}
+.btn-tail.is-tailed, .cfoot [data-log].is-tailed, .cfoot [data-logleg].is-tailed, #btnLogParlay.is-tailed{
+  background:linear-gradient(180deg, rgba(34,197,94,.30), rgba(37,99,235,.18));
+  border-color:rgba(74,222,128,.55);color:#ecfdf5;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 4px 14px rgba(16,185,129,.28);
+}
+.open-book-wrap{position:relative;display:inline-flex;overflow:visible}
+.btn-book{
+  border-radius:999px;padding:7px 13px;background:rgba(255,255,255,.07);
+  border:1px solid rgba(148,163,184,.32);color:var(--txt);
+  font-weight:600;font-size:12.5px;text-decoration:none;display:inline-flex;align-items:center;gap:5px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
+  transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+}
+.btn-book:hover{transform:translateY(-1px);border-color:rgba(96,165,250,.45);color:var(--txt);box-shadow:0 4px 12px rgba(15,23,42,.35)}
+.open-book-menu{
+  position:absolute;right:0;bottom:calc(100% + 6px);min-width:175px;padding:6px;border-radius:14px;
+  background:rgba(11,18,36,.97);border:1px solid rgba(96,165,250,.35);
+  box-shadow:0 14px 34px rgba(0,0,0,.55);z-index:90;
+  display:flex;flex-direction:column;gap:3px;
+}
+.open-book-item{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  border-radius:999px;padding:8px 11px;color:var(--txt);text-decoration:none;font-weight:600;font-size:12.5px;
+  background:rgba(255,255,255,.04);border:1px solid transparent;
+}
+.open-book-item:hover{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.35);color:#eff6ff}
+.card, .pk-ticket, .pk-leg, .pk-log{overflow:visible}
 .unit-judge{margin-top:6px;font-size:12.5px;color:var(--txt);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
 .pl-court-legs{display:flex;flex-direction:column;gap:10px;margin-top:12px}
@@ -1118,6 +1158,102 @@ function gameHasPolymarketLine(g){
     (g.pm.total && Object.keys(g.pm.total).length)
   ));
 }
+
+const PM_SPORT_SLUG = {nba:'nba',nhl:'nhl',nfl:'nfl',mlb:'mlb',ncaab:'cbb',ncaaf:'cfb',wnba:'wnba',mls:'soccer',epl:'soccer',ucl:'soccer',laliga:'soccer',seriea:'soccer',bund:'soccer',ufc:'ufc',atp:'tennis',wta:'tennis'};
+const BOOK_HOME_URL = {
+  bovada:'https://www.bovada.lv/sports',
+  polymarket:'https://polymarket.com/sports',
+  draftkings:'https://sportsbook.draftkings.com/',
+  fanduel:'https://sportsbook.fanduel.com/',
+  betmgm:'https://sports.betmgm.com/en/sports',
+  williamhill_us:'https://www.caesars.com/sportsbook-and-casino',
+  espnbet:'https://espnbet.com/',
+  fanatics:'https://sportsbook.fanatics.com/',
+  betrivers:'https://www.betrivers.com/?page=sportsbook',
+  betonlineag:'https://www.betonline.ag/sportsbook'
+};
+const BOOK_LEAGUE_URL = {
+  bovada:{nba:'https://www.bovada.lv/sports/basketball/nba',nhl:'https://www.bovada.lv/sports/hockey/nhl',nfl:'https://www.bovada.lv/sports/football/nfl',mlb:'https://www.bovada.lv/sports/baseball/mlb',ncaab:'https://www.bovada.lv/sports/basketball/college-basketball',ncaaf:'https://www.bovada.lv/sports/football/college-football',wnba:'https://www.bovada.lv/sports/basketball/wnba',mls:'https://www.bovada.lv/sports/soccer/north-america/usa/major-league-soccer',epl:'https://www.bovada.lv/sports/soccer/europe/england/premier-league',ucl:'https://www.bovada.lv/sports/soccer/uefa-club-competitions/uefa-champions-league',laliga:'https://www.bovada.lv/sports/soccer/europe/spain/la-liga',seriea:'https://www.bovada.lv/sports/soccer/europe/italy/serie-a',bund:'https://www.bovada.lv/sports/soccer/europe/germany/bundesliga',ufc:'https://www.bovada.lv/sports/ufc-mma',atp:'https://www.bovada.lv/sports/tennis',wta:'https://www.bovada.lv/sports/tennis'},
+  draftkings:{nba:'https://sportsbook.draftkings.com/leagues/basketball/nba',nhl:'https://sportsbook.draftkings.com/leagues/hockey/nhl',nfl:'https://sportsbook.draftkings.com/leagues/football/nfl',mlb:'https://sportsbook.draftkings.com/leagues/baseball/mlb',ncaab:'https://sportsbook.draftkings.com/leagues/basketball/ncaab',ncaaf:'https://sportsbook.draftkings.com/leagues/football/ncaaf',wnba:'https://sportsbook.draftkings.com/leagues/basketball/wnba',mls:'https://sportsbook.draftkings.com/leagues/soccer/mls',epl:'https://sportsbook.draftkings.com/leagues/soccer/england/premier-league',ucl:'https://sportsbook.draftkings.com/leagues/soccer/champions-league',laliga:'https://sportsbook.draftkings.com/leagues/soccer/spain/la-liga',seriea:'https://sportsbook.draftkings.com/leagues/soccer/italy/serie-a',bund:'https://sportsbook.draftkings.com/leagues/soccer/germany/bundesliga',ufc:'https://sportsbook.draftkings.com/leagues/mma/ufc',atp:'https://sportsbook.draftkings.com/leagues/tennis/atp',wta:'https://sportsbook.draftkings.com/leagues/tennis/wta'},
+  fanduel:{nba:'https://sportsbook.fanduel.com/navigation/nba',nhl:'https://sportsbook.fanduel.com/navigation/nhl',nfl:'https://sportsbook.fanduel.com/navigation/nfl',mlb:'https://sportsbook.fanduel.com/navigation/mlb',ncaab:'https://sportsbook.fanduel.com/navigation/ncaab',ncaaf:'https://sportsbook.fanduel.com/navigation/ncaaf',wnba:'https://sportsbook.fanduel.com/navigation/wnba',mls:'https://sportsbook.fanduel.com/navigation/mls',epl:'https://sportsbook.fanduel.com/navigation/epl',ucl:'https://sportsbook.fanduel.com/navigation/ucl',laliga:'https://sportsbook.fanduel.com/navigation/laliga',seriea:'https://sportsbook.fanduel.com/navigation/serie-a',bund:'https://sportsbook.fanduel.com/navigation/bundesliga',ufc:'https://sportsbook.fanduel.com/navigation/ufc',atp:'https://sportsbook.fanduel.com/navigation/atp',wta:'https://sportsbook.fanduel.com/navigation/wta'},
+  betmgm:{nba:'https://sports.betmgm.com/en/sports/basketball-7',nhl:'https://sports.betmgm.com/en/sports/hockey-12',nfl:'https://sports.betmgm.com/en/sports/football-11',mlb:'https://sports.betmgm.com/en/sports/baseball-23',ncaab:'https://sports.betmgm.com/en/sports/basketball-7',ncaaf:'https://sports.betmgm.com/en/sports/football-11',wnba:'https://sports.betmgm.com/en/sports/basketball-7',mls:'https://sports.betmgm.com/en/sports/soccer-4',epl:'https://sports.betmgm.com/en/sports/soccer-4',ucl:'https://sports.betmgm.com/en/sports/soccer-4',laliga:'https://sports.betmgm.com/en/sports/soccer-4',seriea:'https://sports.betmgm.com/en/sports/soccer-4',bund:'https://sports.betmgm.com/en/sports/soccer-4',ufc:'https://sports.betmgm.com/en/sports/mma-117',atp:'https://sports.betmgm.com/en/sports/tennis-5',wta:'https://sports.betmgm.com/en/sports/tennis-5'},
+  williamhill_us:{nba:'https://www.caesars.com/sportsbook-and-casino/betting/basketball/nba',nhl:'https://www.caesars.com/sportsbook-and-casino/betting/hockey/nhl',nfl:'https://www.caesars.com/sportsbook-and-casino/betting/football/nfl',mlb:'https://www.caesars.com/sportsbook-and-casino/betting/baseball/mlb',ncaab:'https://www.caesars.com/sportsbook-and-casino/betting/basketball/college-basketball',ncaaf:'https://www.caesars.com/sportsbook-and-casino/betting/football/college-football',wnba:'https://www.caesars.com/sportsbook-and-casino/betting/basketball/wnba',mls:'https://www.caesars.com/sportsbook-and-casino/betting/soccer',epl:'https://www.caesars.com/sportsbook-and-casino/betting/soccer',ucl:'https://www.caesars.com/sportsbook-and-casino/betting/soccer',laliga:'https://www.caesars.com/sportsbook-and-casino/betting/soccer',seriea:'https://www.caesars.com/sportsbook-and-casino/betting/soccer',bund:'https://www.caesars.com/sportsbook-and-casino/betting/soccer',ufc:'https://www.caesars.com/sportsbook-and-casino/betting/mma',atp:'https://www.caesars.com/sportsbook-and-casino/betting/tennis',wta:'https://www.caesars.com/sportsbook-and-casino/betting/tennis'},
+  espnbet:{nba:'https://espnbet.com/sport/basketball/organization/united-states/competition/nba',nhl:'https://espnbet.com/sport/hockey/organization/united-states/competition/nhl',nfl:'https://espnbet.com/sport/football/organization/united-states/competition/nfl',mlb:'https://espnbet.com/sport/baseball/organization/united-states/competition/mlb',ncaab:'https://espnbet.com/sport/basketball/organization/united-states/competition/ncaa',ncaaf:'https://espnbet.com/sport/football/organization/united-states/competition/ncaa',wnba:'https://espnbet.com/sport/basketball/organization/united-states/competition/wnba',mls:'https://espnbet.com/sport/soccer/organization/united-states/competition/mls',epl:'https://espnbet.com/sport/soccer',ucl:'https://espnbet.com/sport/soccer',laliga:'https://espnbet.com/sport/soccer',seriea:'https://espnbet.com/sport/soccer',bund:'https://espnbet.com/sport/soccer',ufc:'https://espnbet.com/sport/mma',atp:'https://espnbet.com/sport/tennis',wta:'https://espnbet.com/sport/tennis'},
+  fanatics:{nba:'https://sportsbook.fanatics.com/sports/basketball/nba',nhl:'https://sportsbook.fanatics.com/sports/hockey/nhl',nfl:'https://sportsbook.fanatics.com/sports/football/nfl',mlb:'https://sportsbook.fanatics.com/sports/baseball/mlb',ncaab:'https://sportsbook.fanatics.com/sports/basketball/ncaab',ncaaf:'https://sportsbook.fanatics.com/sports/football/ncaaf',wnba:'https://sportsbook.fanatics.com/sports/basketball/wnba',mls:'https://sportsbook.fanatics.com/sports/soccer/mls',epl:'https://sportsbook.fanatics.com/sports/soccer',ucl:'https://sportsbook.fanatics.com/sports/soccer',laliga:'https://sportsbook.fanatics.com/sports/soccer',seriea:'https://sportsbook.fanatics.com/sports/soccer',bund:'https://sportsbook.fanatics.com/sports/soccer',ufc:'https://sportsbook.fanatics.com/sports/mma',atp:'https://sportsbook.fanatics.com/sports/tennis',wta:'https://sportsbook.fanatics.com/sports/tennis'},
+  betrivers:{nba:'https://www.betrivers.com/?page=sportsbook#sports/basketball/nba',nhl:'https://www.betrivers.com/?page=sportsbook#sports/hockey/nhl',nfl:'https://www.betrivers.com/?page=sportsbook#sports/football/nfl',mlb:'https://www.betrivers.com/?page=sportsbook#sports/baseball/mlb',ncaab:'https://www.betrivers.com/?page=sportsbook#sports/basketball/ncaab',ncaaf:'https://www.betrivers.com/?page=sportsbook#sports/football/ncaaf',wnba:'https://www.betrivers.com/?page=sportsbook#sports/basketball/wnba',mls:'https://www.betrivers.com/?page=sportsbook#sports/soccer',epl:'https://www.betrivers.com/?page=sportsbook#sports/soccer',ucl:'https://www.betrivers.com/?page=sportsbook#sports/soccer',laliga:'https://www.betrivers.com/?page=sportsbook#sports/soccer',seriea:'https://www.betrivers.com/?page=sportsbook#sports/soccer',bund:'https://www.betrivers.com/?page=sportsbook#sports/soccer',ufc:'https://www.betrivers.com/?page=sportsbook#sports/mma',atp:'https://www.betrivers.com/?page=sportsbook#sports/tennis',wta:'https://www.betrivers.com/?page=sportsbook#sports/tennis'},
+  betonlineag:{nba:'https://www.betonline.ag/sportsbook/basketball/nba',nhl:'https://www.betonline.ag/sportsbook/hockey/nhl',nfl:'https://www.betonline.ag/sportsbook/football/nfl',mlb:'https://www.betonline.ag/sportsbook/baseball/mlb',ncaab:'https://www.betonline.ag/sportsbook/basketball/ncaa',ncaaf:'https://www.betonline.ag/sportsbook/football/ncaa',wnba:'https://www.betonline.ag/sportsbook/basketball/wnba',mls:'https://www.betonline.ag/sportsbook/soccer',epl:'https://www.betonline.ag/sportsbook/soccer',ucl:'https://www.betonline.ag/sportsbook/soccer',laliga:'https://www.betonline.ag/sportsbook/soccer',seriea:'https://www.betonline.ag/sportsbook/soccer',bund:'https://www.betonline.ag/sportsbook/soccer',ufc:'https://www.betonline.ag/sportsbook/martial-arts',atp:'https://www.betonline.ag/sportsbook/tennis',wta:'https://www.betonline.ag/sportsbook/tennis'}
+};
+function bookItemGame(item){
+  if (!item) return null;
+  if (item.g) return item.g;
+  if (Array.isArray(item.legs)){
+    for (const l of item.legs){ if (l && l.g) return l.g; }
+  }
+  return null;
+}
+function bookOpenUrl(bookKey, item, kind){
+  const book = String(bookKey||'').toLowerCase();
+  const g = bookItemGame(item);
+  const lg = String((g && g.league) || (item && item.league) || '').toLowerCase();
+  if (book==='polymarket'){
+    const slug = g && g.pm && g.pm.slug;
+    if (slug) return 'https://polymarket.com/event/'+slug;
+    return 'https://polymarket.com/sports/'+(PM_SPORT_SLUG[lg] || 'nba');
+  }
+  const mapped = BOOK_LEAGUE_URL[book] && lg && BOOK_LEAGUE_URL[book][lg];
+  return mapped || BOOK_HOME_URL[book] || BOOK_HOME_URL.bovada;
+}
+function openInBookHTML(item, kind){
+  let books = [];
+  try{ books = typeof selectedBooks==='function' ? selectedBooks() : []; }catch(e){ books = []; }
+  if (!Array.isArray(books) || !books.length) books = ['bovada','polymarket'];
+  books = books.map(b=>String(b).toLowerCase()).filter(Boolean);
+  if (!books.length) books = ['bovada','polymarket'];
+  const label = (k)=> (typeof bookLabelOf==='function'?bookLabelOf(k):k);
+  if (books.length===1){
+    const url = bookOpenUrl(books[0], item, kind);
+    return `<a class="btn sm btn-book" href="${esc(url)}" target="_blank" rel="noopener">↗ ${esc(label(books[0]))}</a>`;
+  }
+  const items = books.map(b=>`<a class="open-book-item" href="${esc(bookOpenUrl(b,item,kind))}" target="_blank" rel="noopener"><span>${esc(label(b))}</span><span class="mut">↗</span></a>`).join('');
+  return `<div class="open-book-wrap"><button type="button" class="btn sm btn-book" data-open-book-toggle="1" aria-expanded="false">↗ Open in book ▾</button><div class="open-book-menu" hidden>${items}</div></div>`;
+}
+(function bindOpenBookMenus(){
+  if (typeof document==='undefined' || window.__openBookBound) return;
+  window.__openBookBound = true;
+  const closeAll = (except)=>{
+    document.querySelectorAll('.open-book-menu:not([hidden])').forEach(m=>{
+      if (except && m===except) return;
+      m.hidden = true;
+      const t = m.parentElement && m.parentElement.querySelector('[data-open-book-toggle]');
+      if (t) t.setAttribute('aria-expanded','false');
+    });
+  };
+  document.addEventListener('click', ev=>{
+    const btn = ev.target.closest && ev.target.closest('[data-open-book-toggle]');
+    if (btn){
+      ev.preventDefault();
+      ev.stopPropagation();
+      const wrap = btn.closest('.open-book-wrap');
+      const menu = wrap && wrap.querySelector('.open-book-menu');
+      const willOpen = !!(menu && menu.hidden);
+      closeAll(willOpen?menu:null);
+      if (menu){
+        menu.hidden = !willOpen;
+        btn.setAttribute('aria-expanded', willOpen?'true':'false');
+      }
+      return;
+    }
+    if (ev.target.closest && ev.target.closest('.open-book-item')){
+      closeAll();
+      return;
+    }
+    closeAll();
+  });
+  document.addEventListener('keydown', ev=>{
+    if (ev.key==='Escape') closeAll();
+  });
+})();
+
 
 const DEFAULTS = {
   refreshMin:1, refreshSec:60, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
@@ -4772,7 +4908,7 @@ function playCard(p){
     ${lazy(cid, '⚖️ Courtroom', 'court', courtBody, ' court-dd')}
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(p):''}
     ${lazy(mid, '📐 Numbers', 'nums', numsBody)}
-    <div class="cfoot"><span class="cfoot-meta">${confBadge(p.j.conf)}${unitPillHTML(p,"game")}</span><button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></div>
+    <div class="cfoot"><span class="cfoot-meta">${confBadge(p.j.conf)}${unitPillHTML(p,"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'game'):''}</span></div>
   </div>`;
 }
 
@@ -6265,19 +6401,34 @@ function judgeLeg(leg){
   if (leg.err){ leg.verdict='PASS'; leg.why = leg.err; return; }
   if (leg.final){ leg.verdict = 'FINAL'; leg.why = leg.result ? `Game over: this leg ${leg.result==='HIT'?'hit':leg.result==='PUSH'?'pushed':'missed'}${leg.actual!=null?` (${leg.actual})`:''}` : 'Game over: result not available yet'; return; }
   if (leg.out){ leg.verdict='PASS'; leg.why = `${leg.player?leg.player.name:'Player'} is ${leg.playerStatus}`; return; }
-  const p = leg.p, imp_ = leg.implied;
+  let p = leg.p, imp_ = leg.implied;
   if (p==null && leg.g && leg.g.state==='in'){ leg.verdict='PASS'; leg.why=`Game already started (${leg.g.away.short} ${leg.g.away.score??'?'} – ${leg.g.home.short} ${leg.g.home.score??'?'}): pregame odds are gone and live betting isn't modeled`; return; }
   if (p==null){ leg.verdict='PASS'; leg.why='Not enough data to estimate'; return; }
+  const vp = Object.assign({probShrink:0, edgeFloor:0.015, betMinProb:0.56, watchMinProb:0.51, dogAdj:0}, (typeof LEARN!=='undefined' && LEARN && LEARN.verdict && LEARN.verdict.params) || {});
+  const dog0 = leg.price!=null && leg.price>0;
+  // v1 defaults (shrink 0, dogAdj 0) leave p unchanged; later Verdict-model retunes calibrate lightly.
+  if (vp.probShrink || vp.dogAdj){
+    if (leg.pRaw==null) leg.pRaw = p;
+    p = p*(1-(+vp.probShrink||0)) + 0.5*(+vp.probShrink||0);
+    if (dog0) p += (+vp.dogAdj||0);
+    p = clamp(p, 0.02, 0.98);
+    leg.p = p;
+  }
+  const betMin = 0.58 + ((+vp.betMinProb||0.56)-0.56);
+  const watchMin = 0.50 + ((+vp.watchMinProb||0.51)-0.51);
+  const edgeBet = -0.01 + ((+vp.edgeFloor||0.015)-0.015);
+  const betMinNoPx = 0.65 + ((+vp.betMinProb||0.56)-0.56);
+  const watchMinNoPx = 0.52 + ((+vp.watchMinProb||0.51)-0.51);
   const edge = imp_!=null ? p - imp_ : null; leg.edge = edge;
-  const dog = leg.price!=null && leg.price>0;
+  const dog = dog0;
   if (edge!=null){
-    if (p>=0.58 && edge>=-0.01 && !leg.gtd){ leg.verdict='BET'; leg.why=`Est. ${fmtPct(p)} vs implied ${fmtPct(imp_)} (${fmtEdge(edge)})`; }
+    if (p>=betMin && edge>=edgeBet && !leg.gtd){ leg.verdict='BET'; leg.why=`Est. ${fmtPct(p)} vs implied ${fmtPct(imp_)} (${fmtEdge(edge)})`; }
     else if (dog && edge>=0.06 && !leg.gtd){ leg.verdict='BET'; leg.why=`Underdog with a big estimated edge ${fmtEdge(edge)}: needs research`; }
-    else if (p>=0.5 && edge>=-0.04 || dog && edge>=0.02){ leg.verdict='WATCHLIST'; leg.why=`Est. ${fmtPct(p)} vs implied ${fmtPct(imp_)}${leg.gtd?' and a game-time decision':''}: thin`; }
+    else if (p>=watchMin && edge>=-0.04 || dog && edge>=0.02){ leg.verdict='WATCHLIST'; leg.why=`Est. ${fmtPct(p)} vs implied ${fmtPct(imp_)}${leg.gtd?' and a game-time decision':''}: thin`; }
     else { leg.verdict='PASS'; leg.why= edge < -0.04 ? `Price too short: implied ${fmtPct(imp_)} vs est. ${fmtPct(p)}` : `Est. only ${fmtPct(p)}`; }
   } else {
-    if (p>=0.65 && !leg.gtd){ leg.verdict='BET'; leg.why=`Est. ${fmtPct(p)}; no price to compare, so make sure your odds are better than ${fmtAm(probToAm(p))}`; }
-    else if (p>=0.52){ leg.verdict='WATCHLIST'; leg.why=`Est. ${fmtPct(p)}: fair price ${fmtAm(probToAm(p))}, no book price found`; }
+    if (p>=betMinNoPx && !leg.gtd){ leg.verdict='BET'; leg.why=`Est. ${fmtPct(p)}; no price to compare, so make sure your odds are better than ${fmtAm(probToAm(p))}`; }
+    else if (p>=watchMinNoPx){ leg.verdict='WATCHLIST'; leg.why=`Est. ${fmtPct(p)}: fair price ${fmtAm(probToAm(p))}, no book price found`; }
     else { leg.verdict='PASS'; leg.why=`Est. only ${fmtPct(p)}`; }
   }
   if (leg.live && leg.verdict==='BET'){ leg.verdict='WATCHLIST'; leg.why += ' (game already live)'; }
@@ -6579,7 +6730,7 @@ function legCard(leg, i, weakest){
       ${typed}${sel}
 ${resultBan}
       ${scopeVerdictCard(propCard(propPl), i, propPl)}
-      <div class="pk-log"><button class="btn sm" data-logleg="${i}">Tail as single</button></div>
+      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button>${typeof openInBookHTML==='function'?openInBookHTML(propPl,'prop'):''}</div>
     </div>`;
   }
   if (pl && typeof playCard==='function'){
@@ -6587,7 +6738,7 @@ ${resultBan}
       ${typed}${sel}
 ${resultBan}
       ${scopeVerdictCard(playCard(pl), i, pl)}
-      <div class="pk-log"><button class="btn sm" data-logleg="${i}">Tail as single</button></div>
+      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button>${typeof openInBookHTML==='function'?openInBookHTML(pl,'game'):''}</div>
     </div>`;
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
@@ -6619,7 +6770,7 @@ ${resultBan}
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
       <div class="hint">${esc(leg.formula||'—')}</div>
       ${leg.info.length?`<ul class="why">${leg.info.map(x=>`<li class="mut">${esc(x)}</li>`).join('')}</ul>`:''}</div></details>`:''}
-    <div class="cfoot pk-log" style="margin-top:14px"><span class="cfoot-meta">${verdictBadge(leg.verdict)}${unitPillHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}</span><button class="btn sm" data-logleg="${i}">Tail as single</button></div>`}
+    <div class="cfoot pk-log" style="margin-top:14px"><span class="cfoot-meta">${verdictBadge(leg.verdict)}${unitPillHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button>${typeof openInBookHTML==='function'?openInBookHTML(leg, (leg.L&&leg.L.kind==='prop')?'prop':'game'):''}</span></div>`}
   </div>`;
 }
 function parlaySummary(){
@@ -6658,7 +6809,7 @@ function parlaySummary(){
     <ol class="why">${ranked.map(x=>`<li><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)} · ${verdictBadge(x.l.verdict)} ${esc(x.l.why||'')}</li>`).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(l.desc)).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(l.desc||l.raw)).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
-    <div class="cfoot" style="margin-top:10px">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}<button class="btn primary sm" id="btnLogParlay">Tail whole ticket as parlay</button></div>
+    <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML==='function'?openInBookHTML({legs, g:legs[0]&&legs[0].g}, legs.length>1?'parlay':'game'):''}</span></div>
   </div>`;
 }
 /* TRY chips: 4 always-valid bets. Built from today's real slate (1 ML, 1 spread, 1 matchup total with BOTH teams,
@@ -6769,7 +6920,7 @@ function pullRightWrong(r){
 }
 function resultsBoardSegHTML(id){
   const rb = ui.resultsBoard || 'games';
-  return `<div class="board-seg results-learn-seg" id="${id}">${[['games','🏟️ Games'],['props','🏀 Props'],['parlay','🎟️ Parlay']].map(([b,l])=>`<button type="button" data-res-board="${b}" class="${rb===b?'on':''}">${l}</button>`).join('')}</div>`;
+  return `<div class="board-seg results-learn-seg" id="${id}">${[['games','🏟️ Games'],['props','🏀 Props'],['parlay','🎟️ Parlay'],['verdict','⚖️ Verdict']].map(([b,l])=>`<button type="button" data-res-board="${b}" class="${rb===b?'on':''}">${l}</button>`).join('')}</div>`;
 }
 function bindResultsBoardSeg(){
   document.querySelectorAll('[data-res-board]').forEach(b=>{
@@ -6777,7 +6928,7 @@ function bindResultsBoardSeg(){
   });
 }
 function learnCardHead(board){
-  const lab = board==='props'?'Props':board==='parlay'?'Parlays':'Games';
+  const lab = board==='props'?'Props':board==='parlay'?'Parlays':board==='verdict'?'Verdict':'Games';
   return `<div class="ln-head"><h3><span class="h-emo" aria-hidden="true">🧠</span> Model learning · ${lab}</h3>${resultsBoardSegHTML('learnBoardSeg')}</div>`;
 }
 function renderResults(){
@@ -6790,12 +6941,12 @@ function renderResults(){
   const R = btState.res;
   const cached = Object.values(BT.games).length;
   const rb = ui.resultsBoard || 'games';
-  const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, or Parlay.</div></div>`;
+  const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, Parlay, or Verdict.</div></div>`;
   const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
   const finish = ()=>{
     bindResultsBoardSeg();
     if (rb==='games' && typeof learnBind==='function') learnBind();
-    if ((rb==='props'||rb==='parlay') && typeof boardLearnBind==='function') boardLearnBind(rb);
+    if ((rb==='props'||rb==='parlay'||rb==='verdict') && typeof boardLearnBind==='function') boardLearnBind(rb);
   };
   if (rb==='props'){
     $('#view').innerHTML = title+switcher+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
@@ -6804,6 +6955,11 @@ function renderResults(){
   }
   if (rb==='parlay'){
     $('#view').innerHTML = title+switcher+(typeof parlayLearnPanelHTML==='function'?parlayLearnPanelHTML():'<div class="hint">Parlay learning starts after a refresh.</div>')+(typeof parlayBacktestHTML==='function'?parlayBacktestHTML():'');
+    finish();
+    return;
+  }
+  if (rb==='verdict'){
+    $('#view').innerHTML = title+switcher+(typeof verdictLearnPanelHTML==='function'?verdictLearnPanelHTML():'<div class="hint">Verdict learning starts after a refresh.</div>');
     finish();
     return;
   }
@@ -8138,7 +8294,7 @@ function propCard(p){
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
     ${lazy(nid, '🩺 Injuries, lineups &amp; news', 'inj', propInjBody(p))}
     ${lazy(mid, '📐 Numbers', 'nums', propNumbersHTML(p))}
-    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></div>
+    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}</span></div>
   </div>`;
 }
 
@@ -8669,7 +8825,7 @@ function parlayNumbersHTML(pl){
       <div class="stat"><div class="k">Break-even</div><div class="v">${fmtPct(pl.implied)}</div></div>
       <div class="stat"><div class="k">Edge</div><div class="v ${pl.edge==null?'mut':pl.edge>=0?'pos':'neg'}">${pl.edge==null?'n/a':fmtPct(pl.edge)}</div></div>
       <div class="stat"><div class="k">EV / $1</div><div class="v ${pl.ev==null?'mut':pl.ev>=0?'pos':'neg'}">${pl.ev==null?'n/a':(pl.ev>=0?'+':'')+pl.ev.toFixed(3)}</div></div>
-      <div class="stat"><div class="k">Payout</div><div class="v">${fmtDecX(pl.dec)} · ${fmtAm(pl.am)}</div></div>
+      <div class="stat"><div class="k">Payout</div><div class="v">${fmtDecX(pl.dec)} / ${fmtAm(pl.am)}</div></div>
     </div>
     <table class="ftab" style="margin-top:10px"><tr><th>Leg</th><th>No-vig / implied</th><th>Model</th><th>Odds</th></tr>${rows}</table>
     <div class="hint" style="margin-top:8px">Combined probability is the product of independent legs (different games). Same-game combinations are blocked so this math holds. Parlay juice compounds, so a "fair" favorite ticket can still be slightly negative EV.</div>`;
@@ -8692,7 +8848,7 @@ function parlayCard(pl){
   return `<div class="${cardCls}">
     ${logMarks}
     <div class="chead"><span><span class="lg">${esc(sports||'PARLAY')}</span> <span class="pill pl-n">${pl.n}-LEG PARLAY</span></span><span>${esc(when)}</span></div>
-    <div class="pick"><div><div class="mk">Combined payout</div><div class="what">${fmtDecX(pl.dec)} · ${fmtAm(pl.am)}</div></div>
+    <div class="pick"><div><div class="mk">Combined payout</div><div class="what">${fmtDecX(pl.dec)} / ${fmtAm(pl.am)}</div></div>
       <div class="price">${fmtPct(pl.p,0)}<small>est. hit</small></div>
       ${pl.verdict?`<div class="verdict-slot">${typeof verdictPill==='function'?verdictPill(pl.verdict):''}</div>`:''}
     </div>
@@ -8701,7 +8857,7 @@ function parlayCard(pl){
     ${lazy(cid,'⚖️ Courtroom','court',parlayCourtroomHTML(pl))}
     ${lazy(nid,'🩺 Injuries, lineups &amp; news','inj',parlayInjBody(pl))}
     ${lazy(mid,'📐 Numbers','nums',parlayNumbersHTML(pl))}
-    <div class="cfoot"><span class="cfoot-meta"><span class="mut">${pl.mix==='mixed'?'Games + props':pl.mix==='props'?'Props only':'Games only'}</span>${unitPillHTML(pl,"parlay")}</span><button class="btn sm" data-log="${esc(pl.id)}">${logBtn}</button></div>
+    <div class="cfoot"><span class="cfoot-meta"><span class="mut">${pl.mix==='mixed'?'Games + props':pl.mix==='props'?'Props only':'Games only'}</span>${unitPillHTML(pl,"parlay")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(pl.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(pl,'parlay'):''}</span></div>
   </div>`;
 }
 
@@ -8798,21 +8954,36 @@ const BOARD_LEARN_RELEASE = new Date(2026,10,18,21,0).getTime(); // Nov 18, 2026
 function boardLearnSeed(kind){
   return {v:1, cur:1, paused:false, lastTune:BOARD_LEARN_RELEASE, lastTry:0, lastCollect:0, autoOff:{}, log:[{at:Date.now(), txt:`${kind} learning is on, starting at v1. The first weekly check is in about 7 days, or sooner if 50 new live ${kind} are graded.`}], versions:[{id:1, at:BOARD_LEARN_RELEASE, status:'current', title:'Starting model', changes:[`Shipped as ${kind} v1.`], games:0}]};
 }
+const VERDICT_LEARN_DEFAULTS = {probShrink:0, edgeFloor:0.015, betMinProb:0.56, watchMinProb:0.51, dogAdj:0};
+function ensureVerdictTrack(tr){
+  if (!tr) return tr;
+  if (!tr.params) tr.params = Object.assign({}, VERDICT_LEARN_DEFAULTS);
+  else tr.params = Object.assign({}, VERDICT_LEARN_DEFAULTS, tr.params);
+  if (tr.version==null) tr.version = tr.cur || tr.v || 1;
+  if (tr.cur==null) tr.cur = tr.version;
+  if (tr.v==null) tr.v = tr.cur;
+  if (!Array.isArray(tr.history)) tr.history = (tr.versions||[]).slice();
+  if (tr.banner==null) tr.banner = '';
+  if (tr.paused==null) tr.paused = false;
+  if (!(+tr.lastTune>0)) tr.lastTune = BOARD_LEARN_RELEASE;
+  return tr;
+}
 function ensureBoardLearn(){
   if (!LEARN) return;
   if (!LEARN.props) LEARN.props = boardLearnSeed('Props');
   if (!LEARN.parlay) LEARN.parlay = boardLearnSeed('Parlays');
+  if (!LEARN.verdict) LEARN.verdict = boardLearnSeed('Verdict');
+  ensureVerdictTrack(LEARN.verdict);
   if (!Array.isArray(LEARN.notices)) LEARN.notices = [];
   let dirty=false;
-  for (const k of ['props','parlay']){
+  for (const k of ['props','parlay','verdict']){
     const tr=LEARN[k];
     if (!tr) continue;
     if (!(+tr.lastTune>0)){
       tr.lastTune = BOARD_LEARN_RELEASE;
       dirty=true;
-      const lab = k==='props'?'Props':'Parlays';
       (LEARN.notices||[]).forEach(n=>{
-        if (!n.seen && n.board=== (k==='props'?'props':'parlay')) n.seen=true;
+        if (!n.seen && n.board===k) n.seen=true;
       });
     }
   }
@@ -9295,13 +9466,144 @@ function parlayLearnPanelHTML(){
     <details class="dd" data-dd="parlay-learn-log" ${ui.open.has('parlay-learn-log')?'open':''}><summary>Learning log (${(t.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
   </div>`;
 }
+function verdictCalibP(raw, params, isDog){
+  const shrink = Math.max(0, Math.min(0.4, +((params&&params.probShrink)||0)));
+  let p = (+raw||0)*(1-shrink) + 0.5*shrink;
+  if (isDog) p += +((params&&params.dogAdj)||0);
+  return Math.max(0.02, Math.min(0.98, p));
+}
+function verdictLearnScore(params, rows){
+  let brier=0, bets=0, bw=0;
+  for (const x of rows){
+    const dog = x.odds!=null && +x.odds>0;
+    const p = verdictCalibP(x.winProb, params, dog);
+    const y = x.res==='win' ? 1 : 0;
+    brier += (p-y)*(p-y);
+    if (p >= (+params.betMinProb||0.56)){ bets++; if (y) bw++; }
+  }
+  const n=rows.length;
+  return {n, brier: n?brier/n:1, acc: bets?bw/bets:0, nBet:bets, w:bw, l:Math.max(0,bets-bw)};
+}
+async function verdictLearnRetune(opts){
+  opts=opts||{};
+  ensureBoardLearn();
+  const track=LEARN && LEARN.verdict;
+  if (!track) return null;
+  if (track.paused && !opts.force) return null;
+  if (learnState.busy) return null;
+  learnState.busy=true;
+  try{
+    if (typeof verdictGradeChecks==='function') await verdictGradeChecks();
+    else if (typeof verdictChecksGrade==='function') await verdictChecksGrade();
+    const rows = ((typeof VCHECKS!=='undefined' && VCHECKS) || []).filter(x=>x && x.winProb!=null && (x.res==='win'||x.res==='loss'))
+      .slice().sort((a,b)=>(+a.startMs||+a.createdAt||0)-(+b.startMs||+b.createdAt||0));
+    track.lastTune=Date.now(); track.lastTry=Date.now();
+    const ver=track.cur||track.version||1;
+    const keep = (why, extra)=>{
+      (track.log||(track.log=[])).unshift({at:Date.now(), txt:`Kept Verdict v${ver}. ${why}`});
+      (track.history||(track.history=[])).push(Object.assign({at:Date.now(), kept:true, version:ver, why, n:rows.length}, extra||{}));
+      if (typeof learnNotify==='function') learnNotify('verdict', false, ver, why);
+      track.log=(track.log||[]).slice(0,40);
+      if (typeof learnSave==='function') learnSave();
+      return {adopted:false, why, n:rows.length};
+    };
+    if (rows.length < 30){
+      return keep(`Need 30 graded Verdict checks with a win probability first (${rows.length} so far).`);
+    }
+    const cut = Math.floor(rows.length*0.65);
+    const hold = rows.slice(cut);
+    if (hold.length < 8){
+      return keep(`Hold-out set is still small (${hold.length} of ${rows.length}).`);
+    }
+    const curP = Object.assign({}, VERDICT_LEARN_DEFAULTS, track.params||{});
+    const curHold = verdictLearnScore(curP, hold);
+    let best = {params:curP, hold:curHold};
+    for (const probShrink of [0, 0.05, 0.10, 0.15]){
+      for (const betMinProb of [0.55, 0.57, 0.59, 0.61]){
+        for (const dogAdj of [0, -0.02, -0.04]){
+          const params = Object.assign({}, curP, {probShrink, betMinProb, dogAdj});
+          const h = verdictLearnScore(params, hold);
+          const sizeOk = curHold.nBet===0 ? h.nBet>=3 : h.nBet >= Math.max(3, Math.floor(curHold.nBet*0.6));
+          const brierBetter = h.brier < curHold.brier - 0.0005;
+          const accBetter = h.nBet>=3 && h.acc > (curHold.acc||0) + 0.01 && h.brier <= curHold.brier + 0.002;
+          if (!sizeOk || !(brierBetter || accBetter)) continue;
+          const lead = h.brier < best.hold.brier - 1e-6 || (Math.abs(h.brier-best.hold.brier)<1e-6 && h.acc>best.hold.acc);
+          if (lead) best = {params, hold:h};
+        }
+      }
+    }
+    const changed = best.params.probShrink!==curP.probShrink || best.params.betMinProb!==curP.betMinProb || best.params.dogAdj!==curP.dogAdj;
+    const improved = best.hold.brier < curHold.brier - 1e-6 || best.hold.acc > curHold.acc + 1e-6;
+    if (changed && improved){
+      const next=ver+1;
+      track.params = Object.assign({}, curP, best.params);
+      track.cur=next; track.v=next; track.version=next;
+      const changes=[`Calibrated shrink ${curP.probShrink} → ${best.params.probShrink}, BET bar ${fmtPct(curP.betMinProb,0)} → ${fmtPct(best.params.betMinProb,0)}, dog adj ${curP.dogAdj} → ${best.params.dogAdj} on the unseen 35% (Brier ${curHold.brier.toFixed(3)} → ${best.hold.brier.toFixed(3)}, BET ${best.hold.w}–${best.hold.l}).`];
+      (track.versions||(track.versions=[])).push({id:next, at:Date.now(), status:'current', title:'Auto-learned', changes, hold:best.hold, games:rows.length});
+      (track.history||(track.history=[])).push({at:Date.now(), version:next, adopted:true, params:Object.assign({}, track.params), hold:best.hold, n:rows.length, changes});
+      (track.log||(track.log=[])).unshift({at:Date.now(), txt:`Adopted Verdict v${next}: ${changes[0]}`});
+      if (typeof learnNotify==='function') learnNotify('verdict', true, next, changes[0]);
+      track.log=(track.log||[]).slice(0,40);
+      if (typeof learnSave==='function') learnSave();
+      return {adopted:true, params:track.params, hold:best.hold, n:rows.length};
+    }
+    return keep(changed ? 'No hold-out improvement that keeps a healthy BET sample.' : 'Current calibration already looked best on the unseen checks.', {hold:curHold});
+  }catch(e){ console.warn('verdict learn', e); return null; }
+  finally{ learnState.busy=false; if (ui.tab==='results') try{renderResults();}catch(e){} }
+}
+function verdictLearnPanelHTML(){
+  ensureBoardLearn();
+  const t=LEARN.verdict || ensureVerdictTrack(boardLearnSeed('Verdict'));
+  const checks=(typeof VCHECKS!=='undefined' && VCHECKS) || [];
+  const graded=checks.filter(x=>x.res==='win'||x.res==='loss');
+  const callOf = v => v==='BET'?'BET':(v==='WATCHLIST'||v==='WATCH'||v==='watch')?'MAYBE LATER':'SKIP';
+  const rec = (list)=>{
+    const st=list.filter(x=>x.res==='win'||x.res==='loss');
+    const w=st.filter(x=>x.res==='win').length, l=st.length-w;
+    return {n:st.length,w,l, wr:st.length?w/st.length:null};
+  };
+  const bet=rec(graded.filter(x=>callOf(x.verdict)==='BET'));
+  const maybe=rec(graded.filter(x=>callOf(x.verdict)==='MAYBE LATER'));
+  const skip=rec(graded.filter(x=>callOf(x.verdict)==='SKIP'));
+  const wr = r => r.n?`${r.w}–${r.l} (${fmtPct(r.wr,0)})`:'—';
+  const due=boardLearnDue(t, checks.map(x=>({y:x.res==='win'?1:x.res==='loss'?0:null, graded:x.graded||x.startMs||x.createdAt, t:x.startMs||x.createdAt})));
+  const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
+  const dtt = ms => ms?new Date(ms).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}):'—';
+  const vp=Object.assign({}, VERDICT_LEARN_DEFAULTS, t.params||{});
+  const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${dtt(l.at)}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
+  const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
+  const recent=checks.slice().sort((a,b)=>(b.lastChecked||b.graded||b.createdAt||0)-(a.lastChecked||a.graded||a.createdAt||0)).slice(0,12).map(x=>`<tr><td>${dtt(x.lastChecked||x.graded||x.createdAt)}</td><td>${esc(x.pickText||x.label||'—')}</td><td>${esc(callOf(x.verdict))}</td><td>${x.winProb!=null?fmtPct(x.winProb,0):'—'}</td><td class="${x.res==='win'?'pos':x.res==='loss'?'neg':'mut'}">${esc(x.res||'pending')}</td></tr>`).join('') || '<tr><td colspan="5" class="mut">No Verdict checks logged yet.</td></tr>';
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Verdict</h2><span class="hint">Independent from Games, Props, and Parlay. Daily grading and weekly 65/35 walk-forward retunes calibrate Verdict's own probabilities and BET bar.</span></div>
+  <div class="panel ln-panel">
+    ${typeof learnCardHead==='function'?learnCardHead('verdict'):''}
+    <div class="kpis">
+      <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||t.version||1}</div></div>
+      <div class="kpi"><div class="k">Checks logged</div><div class="v">${checks.length}</div><div class="hint">${graded.length} graded · ${checks.length-graded.length} waiting</div></div>
+      <div class="kpi"><div class="k">BET hit rate</div><div class="v" style="font-size:18px">${wr(bet)}</div></div>
+      <div class="kpi"><div class="k">MAYBE LATER</div><div class="v" style="font-size:18px">${wr(maybe)}</div></div>
+      <div class="kpi"><div class="k">SKIP hit rate</div><div class="v" style="font-size:18px">${wr(skip)}</div></div>
+      <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
+    </div>
+    <div class="hint" style="margin:0 0 10px">Active calibration: shrink ${Math.round((+vp.probShrink||0)*100)}% · BET bar ${fmtPct(vp.betMinProb,0)} · Watch ${fmtPct(vp.watchMinProb,0)} · Edge floor ${fmtEdge?fmtEdge(vp.edgeFloor):((vp.edgeFloor*100).toFixed(1)+'%')} · Dog adj ${vp.dogAdj||0}</div>
+    <div class="ln-actions">
+      <button class="btn primary sm" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
+      <button class="btn sm" id="lnPauseBoard">${t.paused?'▶ Resume auto-learning':'❚❚ Pause auto-learning'}</button>
+    </div>
+    <p class="hint">Every pick checked in Verdict is saved and graded from ESPN finals. Once 30 graded checks are in, a weekly chronological 65/35 walk-forward test can nudge shrink, the BET bar, and the underdog adjustment — only if the unseen 35% improves Brier score or BET accuracy without shrinking the sample. Games, Props, and Parlay keep their own independent models.</p>
+    ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
+    <h3 style="margin-top:16px">Recent Verdict checks</h3>
+    <div class="overflow"><table class="ln-tab"><tr><th>When</th><th>Pick</th><th>Call</th><th>Est.</th><th>Result</th></tr>${recent}</table></div>
+    <details class="dd" data-dd="verdict-learn-log" ${ui.open.has('verdict-learn-log')?'open':''}><summary>Learning log (${(t.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
+  </div>`;
+}
 function boardLearnBind(kind){
   const run=$('#lnRunBoard'), pause=$('#lnPauseBoard');
   if (!run && !pause) return;
-  const track = LEARN && LEARN[kind==='parlay'?'parlay':'props'];
+  const key = kind==='parlay'?'parlay':kind==='verdict'?'verdict':'props';
+  const track = LEARN && LEARN[key];
   if (run) run.onclick=()=>{
     if (learnState.busy) return;
-    const fn = kind==='parlay' ? parlayLearnRetune : propsLearnRetune;
+    const fn = key==='parlay' ? parlayLearnRetune : key==='verdict' ? verdictLearnRetune : propsLearnRetune;
     Promise.resolve(fn({force:true})).then(res=>{
       if (res && !res.adopted) toast('Checked: kept the current model (see the log)');
     }).catch(e=>console.warn('board retune', e)).finally(()=>{ try{renderResults();}catch(err){} });
@@ -9325,6 +9627,12 @@ async function boardLearnTick(){
     await propsLearnRetune({});
   if (LEARN && LEARN.parlay && !LEARN.parlay.paused && boardLearnDue(LEARN.parlay, [...(typeof PARLAY_SNAPS!=='undefined'?PARLAY_SNAPS.values():[])]).due && now-(LEARN.parlay.lastTry||0)>20*3600000)
     await parlayLearnRetune({});
+  try{ if (typeof verdictGradeChecks==='function') await verdictGradeChecks(); else if (typeof verdictChecksGrade==='function') await verdictChecksGrade(); }catch(e){ console.warn('verdict grade', e); }
+  if (LEARN && LEARN.verdict && !LEARN.verdict.paused){
+    const vSnaps = ((typeof VCHECKS!=='undefined' && VCHECKS) || []).map(x=>({y:x.res==='win'?1:x.res==='loss'?0:null, graded:x.graded||x.startMs||x.createdAt, t:x.startMs||x.createdAt}));
+    if (boardLearnDue(LEARN.verdict, vSnaps).due && now-(LEARN.verdict.lastTry||0)>20*3600000)
+      await verdictLearnRetune({});
+  }
 }
 
 // Hook the existing daily tick without rewriting it.
@@ -10555,6 +10863,7 @@ async function vcGradeOne(r){
   const res = btResult({l:r.sport, h:{s:fin.hs}, a:{s:fin.as}}, r.market, side, r.market==='ml'?null:+r.line);
   return res ? {res, actual:`${fin.as}-${fin.hs}`} : null;
 }
+async function verdictGradeChecks(opts){ return verdictChecksGrade(opts); }
 async function verdictChecksGrade(opts){
   if (vcState.busy) return 0;
   vcState.busy = true; let n = 0, tried = 0;
