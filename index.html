@@ -368,6 +368,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 #filterBar .chk{border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.03);padding:7px 14px;min-height:40px;box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
 #filterBar .seg{border-radius:999px;overflow:hidden;border-color:rgba(125,211,252,.22);background:rgba(255,255,255,.03)}
 #filterBar .seg label{padding:8px 16px}
+#filterBar .horizon-filter .seg label{padding:7px 14px;font-size:12.5px;font-weight:600}
 #loggedFilterWrap{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 #loggedFilterWrap[hidden]{display:none}
 .logged-badge{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:5px 11px;border-radius:999px;background:var(--logged-dim);color:var(--logged-hi);border:1px solid rgba(103,232,249,.65);font-size:11.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;box-shadow:0 0 12px -4px rgba(34,211,238,.55)}
@@ -712,6 +713,16 @@ nav.tabs button{padding:11px 8px 10px}
 nav.tabs .tab-parent{padding:11px 8px 10px}
 nav.tabs .tab-parent{background:none;border:none;border-bottom:2px solid transparent;padding:11px 8px 10px;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
 nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-bottom-color:var(--acc)}
+
+.horizon-filter{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.horizon-filter .horizon-lab{font-size:12px;font-weight:650;color:var(--txt2)}
+.horizon-filter .seg{border-radius:999px;overflow:hidden}
+.lock-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:650;color:#fde68a;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.28);white-space:nowrap;letter-spacing:.01em}
+.lock-badge-row{margin:2px 0 8px}
+.early-note{margin:0 0 14px;padding:11px 14px;border-radius:14px;background:rgba(125,211,252,.08);border:1px solid rgba(125,211,252,.18);color:var(--txt2);font-size:13.5px;line-height:1.45}
+.early-preview-sec{margin-top:18px;padding-top:4px}
+.early-preview-sec .section-title h2{font-size:16.5px;color:var(--txt2)}
+.card.early-card{border-style:dashed;border-color:rgba(148,163,184,.32)}
 .tab-subbar{display:none;padding:0 0 10px}
 .tab-subbar:not([hidden]){display:flex;align-items:center}
 .tab-subs{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
@@ -953,8 +964,6 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
     <div class="tab-subbar" id="tabSubbar" hidden>
       <div class="tab-subs" id="tabSubs">
         <button type="button" data-sub="good"><span class="tab-emo" aria-hidden="true">🎯</span>Picks<span class="cnt" data-sub-cnt="good">0</span><span class="tab-dot" data-sub-pull="good" hidden></span></button>
-        <button type="button" data-sub="watch"><span class="tab-emo" aria-hidden="true">👀</span>Watch<span class="cnt" data-sub-cnt="watch">0</span><span class="tab-dot" data-sub-pull="watch" hidden></span></button>
-        <button type="button" data-sub="avoid"><span class="tab-emo" aria-hidden="true">🚫</span>Avoid<span class="cnt" data-sub-cnt="avoid">0</span><span class="tab-dot" data-sub-pull="avoid" hidden></span></button>
         <button type="button" data-sub="pulled" hidden><span class="tab-emo" aria-hidden="true">🟠</span>Pulled<span class="cnt" data-sub-cnt="pulled">0</span></button>
       </div>
     </div>
@@ -980,6 +989,14 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
   <div id="filterBar">
     <div class="filters" id="sportChips"></div>
     <div class="chip-note" id="chipNote" hidden></div>
+    <div class="filters horizon-filter" id="horizonRow">
+      <span class="mut horizon-lab">When</span>
+      <div class="seg" id="horizonSeg" role="group" aria-label="Kickoff window">
+        <label class="on"><input type="radio" name="horizon" value="24h" checked hidden>Next 24h</label>
+        <label><input type="radio" name="horizon" value="48h" hidden>Next 48h</label>
+        <label><input type="radio" name="horizon" value="all" hidden>All</label>
+      </div>
+    </div>
     <div class="filters" id="mixChips" hidden></div>
     <div class="filters" id="mktChips">
       <span class="chip on" data-mkt="all">All markets</span>
@@ -1025,9 +1042,9 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 </footer>
 <nav class="bottom-nav" id="bottomNav" aria-label="Primary">
   <button type="button" data-tab="picks" class="on" aria-label="Verdict"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 9.4l6.2-6.2 2.8 2.8-6.2 6.2z"/><path d="M6.2 7.8l2.8 2.8"/><path d="M12.4 11.2L20 20"/><path d="M3.5 19.8h8"/></svg></span><span class="tab-lab">Verdict</span></button>
-  <button type="button" data-board-parent="games" aria-label="Games" aria-haspopup="true"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7l6-3 6 3 4-2v12l-4 2-6-3-6 3z"/><path d="M10 4v12"/><path d="M16 7v12"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Games</span></button>
-  <button type="button" data-board-parent="props" aria-label="Props" aria-haspopup="true"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/><circle cx="12" cy="10" r="7" opacity=".0"/></svg><span class="cnt" data-cnt="props-good">0</span></span><span class="tab-lab">Props</span></button>
-  <button type="button" data-board-parent="parlay" aria-label="Parlay" aria-haspopup="true"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14.2a3.8 3.8 0 0 1 0-5.4l1.7-1.7a3.8 3.8 0 0 1 5.4 5.4l-.8.8"/><path d="M14 9.8a3.8 3.8 0 0 1 0 5.4l-1.7 1.7a3.8 3.8 0 1 1-5.4-5.4l.8-.8"/></svg><span class="cnt" data-cnt="parlay-good">0</span></span><span class="tab-lab">Parlay</span></button>
+  <button type="button" data-board-parent="games" aria-label="Games"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7l6-3 6 3 4-2v12l-4 2-6-3-6 3z"/><path d="M10 4v12"/><path d="M16 7v12"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Games</span></button>
+  <button type="button" data-board-parent="props" aria-label="Props"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/><circle cx="12" cy="10" r="7" opacity=".0"/></svg><span class="cnt" data-cnt="props-good">0</span></span><span class="tab-lab">Props</span></button>
+  <button type="button" data-board-parent="parlay" aria-label="Parlay"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14.2a3.8 3.8 0 0 1 0-5.4l1.7-1.7a3.8 3.8 0 0 1 5.4 5.4l-.8.8"/><path d="M14 9.8a3.8 3.8 0 0 1 0 5.4l-1.7 1.7a3.8 3.8 0 1 1-5.4-5.4l.8-.8"/></svg><span class="cnt" data-cnt="parlay-good">0</span></span><span class="tab-lab">Parlay</span></button>
   <button type="button" id="btnMore" aria-haspopup="true" aria-expanded="false" aria-label="More"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg><span class="tab-dot" data-more-pull hidden></span></span><span class="tab-lab">More</span></button>
 </nav>
 <div class="nav-pop-back" id="navPopBack" hidden></div>
@@ -1036,7 +1053,7 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 <div class="more-sheet" id="moreSheet" hidden role="menu" aria-label="More">
   <div class="more-handle" aria-hidden="true"></div>
   <button type="button" data-tab="tracker" role="menuitem" aria-label="Tracker"><span class="tab-ic tab-emo" aria-hidden="true">📊</span><span class="tab-lab">Tracker</span></button>
-  <button type="button" data-tab="pulled" role="menuitem" aria-label="Pulled plays"><span class="tab-ic tab-emo" aria-hidden="true">🟠</span><span class="tab-lab">Pulled</span><span class="cnt" data-cnt="pulled">0</span></button>
+  <button type="button" data-tab="pulled" role="menuitem" aria-label="Tailed picks that flipped to Avoid"><span class="tab-ic tab-emo" aria-hidden="true">🟠</span><span class="tab-lab">Pulled</span><span class="cnt" data-cnt="pulled">0</span></button>
   <button type="button" data-tab="all" role="menuitem" aria-label="All Games"><span class="tab-ic tab-emo" aria-hidden="true">🏟️</span><span class="tab-lab">All Games</span><span class="cnt" data-cnt="all">0</span></button>
   <button type="button" data-tab="settings" role="menuitem" aria-label="Settings"><span class="tab-ic tab-emo" aria-hidden="true">⚙️</span><span class="tab-lab">Settings</span></button>
 </div>
@@ -1369,7 +1386,7 @@ let firstSeen = loadJSON(LS.firstSeen, {});
 let bets = loadJSON(LS.bets, []);
 let oddsCache = loadJSON(LS.oddsCache, null);
 let games = [], plays = [];
-let ui = {tab:'picks', board:'games', sport:'all', sports:null, mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false, filtersOpen:false, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false, navPop:null, settingsBoard:'games', resultsBoard:'games'};
+let ui = {tab:'picks', board:'games', sport:'all', sports:null, mkt:'all', mix:'all', q:'', horizon:'24h', hideStarted:true, hideLogged:false, filtersOpen:false, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false, navPop:null, settingsBoard:'games', resultsBoard:'games'};
 let filterViews = loadJSON(LS.filterViews, {}) || {};
 function filterViewKey(board, tab){
   if (tab==='good'||tab==='watch'||tab==='avoid') return (board||'games')+':'+tab;
@@ -1417,9 +1434,151 @@ function sportOnFilter(lg){
   if (!Array.isArray(ui.sports)) return true;
   return ui.sports.includes(lg);
 }
+
+function normalizeHorizon(h){ return (h==='48h'||h==='all'||h==='24h') ? h : '24h'; }
+function itemStartMs(x){
+  if (!x) return 0;
+  if (x.legs && x.start!=null && isFinite(+x.start)) return +x.start;
+  const raw = (x.g && x.g.start) || x.start;
+  if (!raw) return 0;
+  if (typeof raw.getTime==='function') return raw.getTime();
+  const n = +raw; return isFinite(n) ? n : 0;
+}
+function itemState(x){
+  if (!x) return 'pre';
+  if (x.g && x.g.state) return x.g.state;
+  if (x.state) return x.state;
+  if (x.legs && (x.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')) return 'in';
+  return 'pre';
+}
+function inHorizon(startMs, state){
+  const h = (typeof ui!=='undefined' && ui.horizon) ? normalizeHorizon(ui.horizon) : '24h';
+  const now = Date.now();
+  const start = +startMs || 0;
+  if (state && state!=='pre') return true;
+  if (start && start <= now) return true;
+  if (h==='all') return true;
+  if (!start) return true;
+  return start <= now + (h==='48h' ? 48 : 24)*3600e3;
+}
+function defaultLockMins(board){
+  if (board==='props') return 120;
+  if (board==='parlay') return null;
+  return 60;
+}
+function boardLockMins(board){
+  const b = board || (typeof ui!=='undefined' && ui.board) || 'games';
+  try{
+    if (typeof LEARN!=='undefined' && LEARN){
+      if (b==='games'){ if (LEARN.lockMins!==undefined) return LEARN.lockMins; }
+      else if (LEARN[b] && LEARN[b].lockMins!==undefined) return LEARN[b].lockMins;
+    }
+  }catch(e){}
+  return defaultLockMins(b);
+}
+function setBoardLockMins(board, mins){
+  if (typeof LEARN==='undefined' || !LEARN) return;
+  if (board==='games') LEARN.lockMins = mins;
+  else if (LEARN[board]) LEARN[board].lockMins = mins;
+}
+function ensureLockMins(){
+  if (typeof LEARN==='undefined' || !LEARN) return false;
+  let dirty=false;
+  if (LEARN.lockMins===undefined){ LEARN.lockMins = 60; dirty=true; }
+  if (LEARN.props && LEARN.props.lockMins===undefined){ LEARN.props.lockMins = 120; dirty=true; }
+  if (LEARN.parlay && LEARN.parlay.lockMins===undefined){ LEARN.parlay.lockMins = null; dirty=true; }
+  return dirty;
+}
+function isOfficialLock(startMs, lockMins){
+  if (lockMins==null || +lockMins<=0) return true;
+  const start = +startMs || 0;
+  if (!start) return true;
+  const now = Date.now();
+  if (start <= now) return true;
+  return (start - now) <= lockMins * 60000;
+}
+function minsToTipOf(startMs, now){
+  const start = +startMs || 0;
+  if (!start) return null;
+  return Math.round((start - (now||Date.now())) / 60000);
+}
+function fmtLockWindow(mins){
+  if (mins==null || mins<=0) return 'Early / Open';
+  if (mins===60) return '1h';
+  if (mins===120) return '2h';
+  if (mins===360) return '6h';
+  if (mins===1440) return '24h';
+  if (mins%60===0) return (mins/60)+'h';
+  if (mins<60) return mins+'m';
+  return Math.floor(mins/60)+'h '+(mins%60)+'m';
+}
+function lockMinsKnob(board){
+  const m = boardLockMins(board);
+  if (m==null || m<=0) return 'Lock: Early / Open';
+  return 'Lock: ≤'+fmtLockWindow(m)+' to tip';
+}
+function fmtLocksIn(startMs, lockMins){
+  const lockAt = (+startMs||0) - (lockMins||0)*60000;
+  const ms = lockAt - Date.now();
+  if (ms<=0) return 'Locks now';
+  const totm = Math.max(1, Math.round(ms/60000));
+  const d = Math.floor(totm/1440), h = Math.floor((totm%1440)/60), m = totm%60;
+  if (d) return 'Locks in '+d+'d'+(h?(' '+h+'h'):'');
+  if (h) return 'Locks in '+h+'h'+(m?(' '+m+'m'):'');
+  return 'Locks in '+m+'m';
+}
+function earlyLockBadgeHTML(startMs, board){
+  const lock = boardLockMins(board);
+  if (lock==null || lock<=0) return '';
+  if (isOfficialLock(startMs, lock)) return '';
+  return `<span class="lock-badge" title="Preview only — locks into official Picks ${fmtLockWindow(lock)} before tip">⏳ ${esc(fmtLocksIn(startMs, lock))}</span>`;
+}
+function isEarlyPreview(x, board){
+  const lock = boardLockMins(board);
+  if (lock==null || lock<=0) return false;
+  return !isOfficialLock(itemStartMs(x), lock);
+}
+function earlyPreviewTitle(lockMins){ return 'Early preview · locks '+fmtLockWindow(lockMins)+' before tip'; }
+function earlyEmptyNote(n, lockMins){
+  const w = fmtLockWindow(lockMins);
+  return `No picks inside the ${w} lock window yet — showing ${n} early preview${n===1?'':'s'} below that lock automatically ${w} before tip.`;
+}
+function splitLockedEarly(list, board){
+  const lock = boardLockMins(board);
+  const locked=[], early=[];
+  for (const x of (list||[])){
+    if (isOfficialLock(itemStartMs(x), lock)) locked.push(x);
+    else early.push(x);
+  }
+  return {locked, early, lockMins: lock};
+}
+function picksBoardHTML(title, lockedSub, emptyMsg, list, board, cardFn){
+  const {locked, early, lockMins:lock} = splitLockedEarly(list, board);
+  const grid = arr => arr.length ? `<div class="grid">${arr.map(cardFn).join('')}</div>` : '';
+  let html = '';
+  if (!locked.length && early.length && lock>0){
+    html += `<div class="early-note">${esc(earlyEmptyNote(early.length, lock))}</div>`;
+  }
+  html += `<div class="section-title"><h2>${title}</h2>${lockedSub?`<span class="hint">${lockedSub}</span>`:''}</div>`;
+  if (locked.length) html += grid(locked);
+  else if (!early.length) html += `<div class="empty-state">${emptyMsg}</div>`;
+  if (early.length && lock>0){
+    html += `<div class="early-preview-sec"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">⏳</span>${esc(earlyPreviewTitle(lock))}</h2><span class="hint">Still playable if you want to look ahead, but not locked into live results yet — so they will not trigger a false pull.</span></div>${grid(early)}</div>`;
+  }
+  return html;
+}
+function isTailedPullKey(k){
+  if (!k) return false;
+  if (typeof betsForKey==='function'){
+    const list = betsForKey(k);
+    if (list.some(b => !b.result || b.result==='pending')) return true;
+  }
+  return false;
+}
+
 function defaultFilterView(board){
   const sports = defaultSportsList(board||'games');
-  return {sport: sports.length===1?sports[0]:'all', sports, mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false};
+  return {sport: sports.length===1?sports[0]:'all', sports, mkt:'all', mix:'all', q:'', horizon:'24h', hideStarted:true, hideLogged:false};
 }
 function ensureFilterView(key){
   if (!key) return defaultFilterView('games');
@@ -1439,6 +1598,7 @@ function applyFilterView(key){
   ui.mkt = v.mkt || 'all';
   ui.mix = v.mix || 'all';
   ui.q = '';
+  ui.horizon = normalizeHorizon(v.horizon);
   if (typeof v.hideLogged==='boolean') ui.hideLogged = v.hideLogged;
   if (typeof v.hideStarted==='boolean') ui.hideStarted = v.hideStarted;
 }
@@ -1449,6 +1609,7 @@ function applyFilterView(key){
     if (f.mkt) ui.mkt = f.mkt;
     if (typeof f.hideLogged==='boolean') ui.hideLogged = f.hideLogged;
     if (typeof f.hideStarted==='boolean') ui.hideStarted = f.hideStarted;
+    if (f.horizon) ui.horizon = normalizeHorizon(f.horizon);
     ui.q = '';
     if (f.board==='games'||f.board==='props'||f.board==='parlay') ui.board = f.board;
   }
@@ -1461,19 +1622,21 @@ function applyFilterView(key){
       if (board!=='games' && ['ml','spread','total'].includes(filterViews[k].mkt)) filterViews[k].mkt = 'all';
       filterViews[k].hideStarted = !!ui.hideStarted;
       filterViews[k].hideLogged = !!ui.hideLogged;
+      filterViews[k].horizon = normalizeHorizon(filterViews[k].horizon || ui.horizon || '24h');
     } else {
       migrateViewSports(filterViews[k], board);
+      if (!filterViews[k].horizon) filterViews[k].horizon = '24h';
     }
   }
   ui.sports = defaultSportsList(ui.board||'games');
   syncSportAlias();
 })();
 function saveFilters(){
-  try{ saveJSON(LS.filters, {sport:ui.sport||'all', mkt:ui.mkt||'all', hideLogged:!!ui.hideLogged, hideStarted:!!ui.hideStarted, q:'', board:ui.board||'games', tab:ui.tab}); }catch(e){}
+  try{ saveJSON(LS.filters, {sport:ui.sport||'all', mkt:ui.mkt||'all', hideLogged:!!ui.hideLogged, hideStarted:!!ui.hideStarted, horizon:normalizeHorizon(ui.horizon), q:'', board:ui.board||'games', tab:ui.tab}); }catch(e){}
   const key = filterViewKey(ui.board||'games', ui.tab);
   if (key){
     syncSportAlias();
-    filterViews[key] = {sport:ui.sport||'all', sports:(ui.sports||defaultSportsList(ui.board||'games')).slice(), mkt:ui.mkt||'all', mix:ui.mix||'all', q:'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+    filterViews[key] = {sport:ui.sport||'all', sports:(ui.sports||defaultSportsList(ui.board||'games')).slice(), mkt:ui.mkt||'all', mix:ui.mix||'all', q:'', horizon:normalizeHorizon(ui.horizon), hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
     try{ saveJSON(LS.filterViews, filterViews); }catch(e){}
   }
 }
@@ -2926,6 +3089,8 @@ function notifyNewPlayBatch(list){
 function notifyPulled(r){
   if (!r || r.pullNotified || r.legacyPull) return;
   if ((r.from||r.pulledFrom||'good')!=='good') return;
+  const tailed = typeof isTailedPullKey==='function' ? isTailedPullKey(r.k) : (typeof isLoggedKey==='function' && isLoggedKey(r.k));
+  if (!tailed) return;
   if (!canAlert('pulled')) return;
   try{
     const why = r.pullReason||r.reason||'no longer passes the filters';
@@ -2998,6 +3163,7 @@ function visiblePulled(fromTab){
     if (fromTab && n.from!==fromTab) continue;
     if (!noteVisible(n, now, dismissed)) continue;
     if (!isAvoidPullNote(n)) continue;
+    if (!(typeof isTailedPullKey==='function' ? isTailedPullKey(n.k) : (typeof isLoggedKey==='function' && isLoggedKey(n.k)))) continue;
     list.push(n); seen.add(n.k+'|'+n.from);
   }
   if (!fromTab || fromTab==='good'){
@@ -3009,6 +3175,7 @@ function visiblePulled(fromTab){
       const note = {k:r.k, from:'good', to, at:r.pulledAt||0, reason:r.pullReason||LEGACY_PULL, label:r.label, game:r.game, start:r.start, legacyPull:!!(r.legacyPull || !r.pulledAt), pullNotified:r.pullNotified, pulledTo:r.pulledTo||to};
       if (!noteVisible(note, now, dismissed)) continue;
       if (!isAvoidPullNote(note)) continue;
+      if (!(typeof isTailedPullKey==='function' ? isTailedPullKey(r.k) : (typeof isLoggedKey==='function' && isLoggedKey(r.k)))) continue;
       list.push(note); seen.add(r.k+'|good');
     }
   }
@@ -3146,6 +3313,8 @@ function recordResults(){
   const now = Date.now(); const goodIds = new Set();
   for (const p of plays){
     if (p.verdict!=='good' || p.g.state!=='pre' || !p.g.eventId) continue;
+    const startMs = p.g.start && (p.g.start.getTime ? p.g.start.getTime() : +p.g.start);
+    if (typeof isOfficialLock==='function' && !isOfficialLock(startMs, typeof boardLockMins==='function'?boardLockMins('games'):60)) continue;
     const k = `${p.g.eventId}|${p.mk}|${p.side}`; goodIds.add(k);
     let r = results.find(x=>x.k===k);
     const bo = betOnText(p);
@@ -4964,7 +5133,9 @@ function playCard(p){
   const move = typeof playMoveTag==='function' ? playMoveTag(p) : null;
   const loggedBet = typeof primaryLoggedBet==='function' ? primaryLoggedBet(p) : null;
   const pulledLogged = !!(loggedBet && typeof pulledNoteForKey==='function' && p.g && p.g.eventId && pulledNoteForKey(`${p.g.eventId}|${p.mk}|${p.side}`));
-  const cardCls = `card v-${p.verdict}${loggedBet?(pulledLogged?' logged-pulled':' logged'):''}`;
+  const early = p.verdict==='good' && typeof isEarlyPreview==='function' && isEarlyPreview(p, 'games');
+  const cardCls = `card v-${p.verdict}${early?' early-card':''}${loggedBet?(pulledLogged?' logged-pulled':' logged'):''}`;
+  const lockBadge = (p.verdict==='good' && typeof earlyLockBadgeHTML==='function') ? earlyLockBadgeHTML(typeof itemStartMs==='function'?itemStartMs(p):0, 'games') : '';
   const logBtn = loggedBet ? 'Tailed' : 'Tail';
   const logMarks = loggedBet ? (
     (pulledLogged ? '<div class="you-bet-lab">YOU TAILED THIS</div>' : '') +
@@ -4983,6 +5154,7 @@ function playCard(p){
   return `<div class="${cardCls}">
     ${logMarks}
     ${gameHead(g, p.verdict)}
+    ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
     ${move?`<div class="${move.kind==='up'?'moved-up':'moved-down'}">${esc(move.text)}</div>`:''}
     <div class="pick"><div><div class="mk">${MKN[p.mk]}${p.rank?` · #${p.rank}`:''}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${fmtAm(sd.best.price)}<small>${esc(sd.best.book)}</small></div></div>
@@ -5128,7 +5300,8 @@ function filtered(list, isPlay){
     if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)) return false;
     if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt) return false;
     if (ui.hideStarted && g.state!=='pre') return false;
-    if (isPlay && ui.hideLogged && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && typeof isPlayLogged==='function' && isPlayLogged(x)){
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(x):((g&&g.start&&g.start.getTime)?g.start.getTime():0), g&&g.state)) return false;
+    if (isPlay && ui.hideLogged && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid'||ui.tab==='pulled') && typeof isPlayLogged==='function' && isPlayLogged(x)){
       const k = x.g && x.g.eventId ? `${x.g.eventId}|${x.mk}|${x.side}` : '';
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(k))) return false;
     }
@@ -5179,9 +5352,8 @@ function pulledSidebarHTML(fromTab, counts){
       ${pulledCardHTML}
       <div class="side-card glance">
         <h3>📌 Today at a glance</h3>
-        <div class="g-row"><span>Picks</span><b>${c.good}</b></div>
-        <div class="g-row"><span>Watchlist</span><b>${c.watch}</b></div>
-        <div class="g-row"><span>Avoid</span><b>${c.avoid}</b></div>
+        <div class="g-row"><span>Picks</span><b>${c.good||0}</b></div>
+        ${list.length?`<div class="g-row"><span>Tailed &amp; pulled</span><b>${list.length}</b></div>`:''}
         <div class="g-row"><span>Next refresh</span><b id="sideCountdown">${esc(cd)}</b></div>
       </div>
     </div>`;
@@ -5240,6 +5412,7 @@ function activeFilterCount(){
   if (ui.mix && ui.mix!=='all') n++;
   if (ui.hideLogged) n++;
   if (ui.hideStarted===false) n++;
+  if (normalizeHorizon(ui.horizon)!=='24h') n++;
   if (ui.q) n++;
   return n;
 }
@@ -5253,6 +5426,14 @@ function syncSavedFilterControls(){
   document.querySelectorAll('[data-mkt]').forEach(x=>x.classList.toggle('on', x.dataset.mkt===(ui.mkt||'all')));
   document.querySelectorAll('[data-logged]').forEach(x=>x.classList.toggle('on', ui.hideLogged ? x.dataset.logged==='hide' : x.dataset.logged==='show'));
   const hs = $('#hideStarted'); if (hs) hs.checked = !!ui.hideStarted;
+  const hz = (typeof normalizeHorizon==='function'?normalizeHorizon(ui.horizon): (ui.horizon||'24h'));
+  const hseg = $('#horizonSeg');
+  if (hseg) hseg.querySelectorAll('label').forEach(lab=>{
+    const inp = lab.querySelector('input');
+    const on = inp && inp.value===hz;
+    if (inp) inp.checked = !!on;
+    lab.classList.toggle('on', !!on);
+  });
   const s = $('#search'); if (s && s.value!==(ui.q||'')) s.value = ui.q||'';
 }
 function updateFilterChrome(){
@@ -5450,6 +5631,7 @@ function renderChips(){
       if (!(ui.hideStarted && p.g && p.g.state!=='pre') && lg) propSports[lg]=1;
       if (p.verdict!==want) continue;
       if (ui.hideStarted && p.g && p.g.state!=='pre') continue;
+      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state)) continue;
       if (loggedSkip(p)) continue;
       countOne(p, lg);
     }
@@ -5459,6 +5641,7 @@ function renderChips(){
       if (pl.verdict!==want) continue;
       const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
       if (ui.hideStarted && started) continue;
+      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre')) continue;
       if (loggedSkip(pl)) continue;
       const sports = pl.sports && pl.sports.length ? pl.sports : [pl.league];
       sports.filter(Boolean).forEach(lg=>{ countOne(pl, lg); propSports[lg]=1; });
@@ -5471,11 +5654,12 @@ function renderChips(){
     for (const p of plays){
       if (p.verdict!==want) continue;
       if (ui.hideStarted && p.g && p.g.state!=='pre') continue;
+      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state)) continue;
       if (loggedSkip(p)) continue;
       const lg = p.g && p.g.league; countOne(p, lg);
     }
   } else {
-    games.forEach(g=>{ if(!ui.hideStarted || g.state==='pre') counts[g.league]=(counts[g.league]||0)+1; });
+    games.forEach(g=>{ if((!ui.hideStarted || g.state==='pre') && !(typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(g):0, g.state))) counts[g.league]=(counts[g.league]||0)+1; });
   }
   const skip = (typeof modelSkippedSports==='function') ? modelSkippedSports(ui.board||'games') : new Set();
   const onSet = new Set(ui.sports||[]);
@@ -5556,7 +5740,10 @@ function render(){
     ? `<div class="banner">Filtered to Polymarket-available lines · add another book in Settings to see all sportsbook lines</div>` : '';
   if (ui.tab==='good'){
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
-    v.innerHTML = slateLayout('good', pmHint + section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
+    const body = (typeof picksBoardHTML==='function')
+      ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), good, 'games', playCard)
+      : section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'));
+    v.innerHTML = slateLayout('good', pmHint + body + errs, counts);
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
@@ -5568,10 +5755,8 @@ function render(){
   else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', pmHint + section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
   else if (ui.tab==='pulled'){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
-    const unloggedN = list.filter(r => !(typeof isLoggedKey==='function' && isLoggedKey(r.k))).length;
-    const clearBtn = unloggedN ? `<button type="button" class="clear-unlogged" data-clear-unlogged="1">Clear untailed</button>` : '';
-    const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No pulled plays from Picks.</div>`;
-    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">🟠</span>Pulled</h2>${clearBtn}<span class="hint">Picks that flipped all the way to Avoid. A drop to Watchlist is held — pulled only if a pick flips all the way to Avoid. Tailed bets stay at the top in red so you don't miss them.</span></div>` + items + errs;
+    const items = list.length ? `<div class="grid">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">No tailed picks have flipped to Avoid.</div>`;
+    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">🟠</span>Pulled</h2><span class="hint">Picks you tailed that flipped to Avoid. Untailed picks that drop off are removed quietly and still tracked for the model.</span></div>` + items + errs;
   }
   else if (ui.tab==='all') v.innerHTML = pmHint + `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
 }
@@ -7059,6 +7244,9 @@ function boardLearnKnobs(board){
     if (cfg.sFavMin!=null && typeof fmtAm==='function') pills.push(`Legs: ${fmtAm(cfg.sFavMin)}–${fmtAm(cfg.sDogMax)}`);
     if (cfg.payoutSweetMin!=null) pills.push(`Payout: ${(+cfg.payoutSweetMin).toFixed(1)}x–${(+cfg.payoutSweetMax||3).toFixed(1)}x`);
   }
+  if (board==='games' || board==='props' || board==='parlay'){
+    pills.push(typeof lockMinsKnob==='function' ? lockMinsKnob(board) : (board==='parlay'?'Lock: Early / Open': board==='props'?'Lock: ≤2h to tip':'Lock: ≤1h to tip'));
+  }
   return pills;
 }
 function isRecommendedSnap(x){
@@ -7391,6 +7579,7 @@ async function learnInit(){
   LEARN = loadJSON(LEARN_KEY, null);
   if (!LEARN || !Array.isArray(LEARN.versions) || !LEARN.versions.length){ LEARN = learnSeed(); learnSave(); }
   const v = LEARN.versions.find(x=>x.id===LEARN.cur) || LEARN.versions[0]; LEARN.cur = v.id; learnApply(v, false);
+  if (typeof ensureLockMins==='function') ensureLockMins();
   try{ if (localStorage.getItem('bl_bt_idb')==='1'){ const b = await withTimeout(idbGet('bt'), 4000); if (b && b.games) BT = b; } }catch(e){ console.warn('backtest cache (IndexedDB)', e); }
   try{ const all = await withTimeout(snapsLoad(), 4000); for (const x of all||[]) SNAPS.set(String(x.i), x); learnState.idb = true; }
   catch(e){ learnState.idb = false; for (const x of loadJSON('bl_snaps', [])) SNAPS.set(String(x.i), x); console.warn('IndexedDB unavailable, using localStorage for snapshots', e); }
@@ -7407,7 +7596,8 @@ function learnSnapGame(g, now, src){
   if (old && old.src==='verdict_check') src = 'verdict_check';
   const p = g.verdicts && g.verdicts.ml, mb = p && p.my && p.my.best;
   const conf = x => !!(x && /confirm/i.test(x.status||''));
-  return {i:id, l:g.league, t:g.start.getTime(), first: old ? old.first : now, cap:now, mv:LEARN.cur,
+  const minsToTip = (old && old.minsToTip!=null) ? old.minsToTip : Math.round((g.start.getTime()-now)/60000);
+  return {i:id, l:g.league, t:g.start.getTime(), first: old ? old.first : now, cap:now, mv:LEARN.cur, minsToTip,
     game:`${g.away.short} @ ${g.home.short}`, nvH:A.sides.home.nv, dkH:A.sides.home.best.price, dkA:A.sides.away.best.price,
     X:featVals(g, 'home'), inj:injNet(g, 'home'), pred: g.fx.pred && g.fx.pred.home!=null ? g.fx.pred.home : null,
     starters: (sportOf(g).goalie || sportOf(g).pitcher) ? (conf(g.home.probable) && conf(g.away.probable)) : null,
@@ -7659,7 +7849,10 @@ async function learnRetune(opts){
     if (!opts.quiet) toast(`The model learned something new: v${v.id}. See Results & Backtest.`);
     return out;
   }catch(e){ learnState.err = 'Learning check failed: '+(e.message||e); learnLog(learnState.err); console.warn(e); return null; }
-  finally{ learnState.busy = false; learnProg(''); learnSave(); if (ui.tab==='results') renderResults(); else softRender(); }
+  finally{
+    try{ if (typeof retuneLockMins==='function') retuneLockMins('games'); }catch(e){ console.warn('games lockMins', e); }
+    learnState.busy = false; learnProg(''); learnSave(); if (ui.tab==='results') renderResults(); else softRender();
+  }
 }
 function learnRollback(){
   const cur = LEARN.versions.find(v=>v.id===LEARN.cur);
@@ -8410,6 +8603,7 @@ function filteredProps(list){
     if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
     if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
     if (ui.hideStarted && g && g.state!=='pre') return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, g&&g.state)) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(p)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(p.id))) return false;
     }
@@ -8531,7 +8725,9 @@ function propHead(p){
 
 function propCard(p){
   const loggedBet = typeof primaryLoggedBet==='function' ? primaryLoggedBet(p) : null;
-  const cardCls = `card prop-card v-${p.verdict||'none'}${loggedBet?' logged':''}`;
+  const early = p.verdict==='good' && typeof isEarlyPreview==='function' && isEarlyPreview(p, 'props');
+  const cardCls = `card prop-card v-${p.verdict||'none'}${early?' early-card':''}${loggedBet?' logged':''}`;
+  const lockBadge = (p.verdict==='good' && typeof earlyLockBadgeHTML==='function') ? earlyLockBadgeHTML(typeof itemStartMs==='function'?itemStartMs(p):0, 'props') : '';
   const logBtn = loggedBet ? 'Tailed' : 'Tail';
   const logMarks = loggedBet ? `<div class="logged-badge">${esc(typeof loggedBadgeText==='function'?loggedBadgeText(loggedBet):'✓ Tailed')}</div>` : '';
   const cid = p.id+'|court', nid = p.id+'|news', mid = p.id+'|math';
@@ -8546,6 +8742,7 @@ function propCard(p){
   return `<div class="${cardCls}">
     ${logMarks}
     ${propHead(p)}
+    ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
     <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(propSourceLabel(p)==='line'?'Research':propSourceLabel(p))}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${price}</div></div>
     ${bo}
@@ -8624,7 +8821,13 @@ function renderPropsBoard(tab, errs){
   const st = propStatusHTML();
   const bookNote = propsUnsupportedNote();
   const bookEmpty = bookNote ? (esc(bookNote) + ` <div style="margin-top:12px"><button type="button" class="btn primary" data-open-settings="1">Open Settings</button></div>`) : '';
-  if (tab==='good') return slateLayout('good', st + sectionProps('<span class="h-emo" aria-hidden="true">🎯</span>Prop Picks', 'Player props that clear the same singles discipline as games (−150 to +150, 60%+ estimate). Zero picks is fine.', good, bookEmpty || sportFilterEmpty('No player props passed today. <b>Zero picks is fine.</b> Never force a bet. You can still type a prop in Verdict.')) + errs, counts);
+  if (tab==='good'){
+    const empty = bookEmpty || sportFilterEmpty('No player props passed today. <b>Zero picks is fine.</b> Never force a bet. You can still type a prop in Verdict.');
+    const body = (typeof picksBoardHTML==='function')
+      ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Prop Picks', 'Player props that clear the same singles discipline as games (−150 to +150, 60%+ estimate). Zero picks is fine.', empty, good, 'props', propCard)
+      : sectionProps('<span class="h-emo" aria-hidden="true">🎯</span>Prop Picks', 'Player props that clear the same singles discipline as games (−150 to +150, 60%+ estimate). Zero picks is fine.', good, empty);
+    return slateLayout('good', st + body + errs, counts);
+  }
   if (tab==='watch') return slateLayout('watch', st + sectionProps('<span class="h-emo" aria-hidden="true">👀</span>Prop Watchlist', 'Leans that are close, thin-sample, or just outside the singles gates.', watch, bookEmpty || sportFilterEmpty('Nothing on the prop watchlist.')) + errs, counts);
   return slateLayout('avoid', st + sectionProps('<span class="h-emo" aria-hidden="true">🚫</span>Prop Avoid', 'No edge, heavy juice, or not enough of a sample to trust the lean.', avoid, bookEmpty || sportFilterEmpty('Nothing flagged to avoid.')) + errs, counts);
 }
@@ -9091,7 +9294,9 @@ function parlayNumbersHTML(pl){
 }
 function parlayCard(pl){
   const loggedBet = typeof primaryLoggedBet==='function' ? primaryLoggedBet(pl) : null;
-  const cardCls = `card parlay-card v-${pl.verdict||'none'}${loggedBet?' logged':''}`;
+  const early = pl.verdict==='good' && typeof isEarlyPreview==='function' && isEarlyPreview(pl, 'parlay');
+  const cardCls = `card parlay-card v-${pl.verdict||'none'}${early?' early-card':''}${loggedBet?' logged':''}`;
+  const lockBadge = (pl.verdict==='good' && typeof earlyLockBadgeHTML==='function') ? earlyLockBadgeHTML(typeof itemStartMs==='function'?itemStartMs(pl):0, 'parlay') : '';
   const logBtn = loggedBet ? 'Tailed' : 'Tail';
   const logMarks = loggedBet ? `<div class="logged-badge">${esc(typeof loggedBadgeText==='function'?loggedBadgeText(loggedBet):'✓ Tailed')}</div>` : '';
   const cid=pl.id+'|court', nid=pl.id+'|news', mid=pl.id+'|math';
@@ -9107,6 +9312,7 @@ function parlayCard(pl){
   return `<div class="${cardCls}">
     ${logMarks}
     <div class="chead"><span><span class="lg">${esc(sports||'PARLAY')}</span> <span class="pill pl-n">${pl.n}-LEG PARLAY</span></span><span>${esc(when)}</span></div>
+    ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
     <div class="pick"><div><div class="mk">Combined payout</div><div class="what">${fmtDecX(pl.dec)} / ${fmtAm(pl.am)}</div></div>
       <div class="price">${fmtPct(pl.p,0)}<small>est. hit</small></div>
       ${pl.verdict?`<div class="verdict-slot">${typeof verdictPill==='function'?verdictPill(pl.verdict):''}</div>`:''}
@@ -9132,10 +9338,9 @@ function filteredParlays(list){
       if (ui.mkt==='3' && pl.n!==3) return false;
     }
     if (ui.mix && ui.mix!=='all' && pl.mix!==ui.mix) return false;
-    if (ui.hideStarted){
-      const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
-      if (started) return false;
-    }
+    const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
+    if (ui.hideStarted && started) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre')) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(pl)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(pl.id))) return false;
     }
@@ -9163,7 +9368,12 @@ function renderParlayBoard(tab, errs){
   const st = `<div class="banner">2–3 leg parlays from high-probability favorites (legs ${fmtAm(boardS('parlay').sFavMin)} to ${fmtAm(boardS('parlay').sDogMax)}), targeting a ${(+boardS('parlay').payoutSweetMin||2).toFixed(1)}x–${(+boardS('parlay').payoutSweetMax||3).toFixed(1)}x payout. Same-game legs are never combined. This is a separate model from singles — a -200 favorite that is too juicy for Games can still be a parlay leg.</div>`;
   const section = (title, sub, list, empty) => `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length?`<div class="grid">${list.map(parlayCard).join('')}</div>`:`<div class="empty-state">${empty}</div>`);
   const empty = (typeof sportFilterEmpty==='function'?sportFilterEmpty('No parlays in this range right now. Zero tickets is fine.'):'No parlays right now.');
-  if (tab==='good') return (typeof slateLayout==='function'?slateLayout('good', st+section('<span class="h-emo" aria-hidden="true">🎟️</span>Parlay Picks','Two- and three-leg tickets that clear the parlay courtroom and land near 2–3x.', good, empty)+(errs||''), counts):st);
+  if (tab==='good'){
+    const body = (typeof picksBoardHTML==='function')
+      ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎟️</span>Parlay Picks','Two- and three-leg tickets that clear the parlay courtroom and land near 2–3x.', empty, good, 'parlay', parlayCard)
+      : section('<span class="h-emo" aria-hidden="true">🎟️</span>Parlay Picks','Two- and three-leg tickets that clear the parlay courtroom and land near 2–3x.', good, empty);
+    return (typeof slateLayout==='function'?slateLayout('good', st+body+(errs||''), counts):st+body);
+  }
   if (tab==='watch') return slateLayout('watch', st+section('<span class="h-emo" aria-hidden="true">👀</span>Parlay Watchlist','Close, a little short on edge, or with a weaker link.', watch, empty)+(errs||''), counts);
   return slateLayout('avoid', st+section('<span class="h-emo" aria-hidden="true">🚫</span>Parlay Avoid','Combined juice is too heavy, a leg is shaky, or the payout is not a clean 2–3x.', avoid, empty)+(errs||''), counts);
 }
@@ -9239,6 +9449,7 @@ function ensureBoardLearn(){
   if (!LEARN.parlay) LEARN.parlay = boardLearnSeed('Parlays');
   if (!LEARN.verdict) LEARN.verdict = boardLearnSeed('Verdict');
   ensureVerdictTrack(LEARN.verdict);
+  if (typeof ensureLockMins==='function') ensureLockMins();
   if (!Array.isArray(LEARN.notices)) LEARN.notices = [];
   let dirty=false;
   for (const k of ['props','parlay','verdict']){
@@ -9330,7 +9541,8 @@ function propLearnCapture(){
     PROP_SNAPS.set(p.id, {
       i:p.id, t, eventId:p.g.eventId||p.g.id, league:p.league||p.g.league,
       playerId:p.playerId, playerName:p.playerName, kind:p.kind||p.mk, side:p.side, line:p.line,
-      price:p.price, p:p.p, implied:p.implied, verdict:p.verdict, y:null
+      price:p.price, p:p.p, implied:p.implied, verdict:p.verdict, y:null,
+      minsToTip: Math.round((t - Date.now())/60000)
     });
     n++;
   }
@@ -9347,6 +9559,7 @@ function parlayLearnCapture(){
     if (PARLAY_SNAPS.has(pl.id)) continue;
     PARLAY_SNAPS.set(pl.id, {
       i:pl.id, t, n:pl.n, dec:pl.dec, am:pl.am, p:pl.p, implied:pl.implied, edge:pl.edge, verdict:pl.verdict, mix:pl.mix,
+      minsToTip: Math.round((t - Date.now())/60000),
       legs: pl.legs.map(l=>({
         type: (l.isProp||l.playerName)?'prop':'game',
         id:l.id, eventId:parlayEventId(l), league:l.league||(l.g&&l.g.league),
@@ -9603,6 +9816,71 @@ function renderLearnBanner(){
   if (btn) btn.onclick=()=>{ notice.seen=true; learnSave(); renderLearnBanner(); };
 }
 
+
+const LOCK_TUNE_OPTS = [
+  {mins:60, max:60, lab:'≤60m'},
+  {mins:120, max:120, lab:'≤120m'},
+  {mins:360, max:360, lab:'≤360m'},
+  {mins:1440, max:1440, lab:'≤1440m'},
+  {mins:null, max:Infinity, lab:'all/early'}
+];
+function lockTuneRows(board){
+  if (board==='props') return [...(typeof PROP_SNAPS!=='undefined'?PROP_SNAPS.values():[])].map(x=>({t:x.t,y:x.y,price:x.price,minsToTip:x.minsToTip,verdict:x.verdict,dec:x.dec}));
+  if (board==='parlay') return [...(typeof PARLAY_SNAPS!=='undefined'?PARLAY_SNAPS.values():[])].map(x=>({t:x.t,y:x.y,price:x.price,minsToTip:x.minsToTip,verdict:x.verdict,dec:x.dec,am:x.am}));
+  const out=[];
+  if (typeof SNAPS==='undefined') return out;
+  for (const x of SNAPS.values()){
+    if (x.y!==0 && x.y!==1) continue;
+    if (x.minsToTip==null) continue;
+    const pick = x.pick;
+    if (!pick || pick.verdict!=='good') continue;
+    if (pick.side!=='home' && pick.side!=='away') continue;
+    out.push({t:x.t, y: pick.side==='home'?x.y:1-x.y, price: pick.my!=null?pick.my:pick.price, minsToTip:x.minsToTip, verdict:'good'});
+  }
+  return out;
+}
+function evalLockPolicy(rows, maxMins, payoutFn){
+  const pick = rows.filter(x=>x.minsToTip!=null && x.minsToTip<=maxMins);
+  if (!pick.length) return {n:0,w:0,l:0,wr:null,roi:null,net:0};
+  let net=0, unit=(typeof S!=='undefined' && +S.unit)||25;
+  for (const x of pick){
+    if (typeof payoutFn==='function') net += x.y===1 ? payoutFn(x) : -unit;
+    else net += x.y===1 ? (typeof profitOn==='function'&&x.price!=null?profitOn(x.price,unit):unit) : -unit;
+  }
+  const w=pick.filter(x=>x.y===1).length, n=pick.length;
+  return {n,w,l:n-w,wr:w/n,net,roi:net/(n*unit)};
+}
+function sameLock(a,b){ return (a==null||a<=0) ? (b==null||b<=0) : a===b; }
+function retuneLockMins(board){
+  const rec=v=>v==='good'||v==='pick'||v==='bet';
+  const rows = lockTuneRows(board).filter(x=>(x.y===0||x.y===1) && x.minsToTip!=null && rec(x.verdict));
+  if (rows.length < 40) return {adopted:false, why:'Need 40 graded timed snapshots first ('+rows.length+' so far).'};
+  const sorted = rows.slice().sort((a,b)=>a.t-b.t);
+  const cut = sorted[Math.max(0, sorted.length-Math.max(20, Math.round(sorted.length*0.3)))].t;
+  const hold = sorted.filter(x=>x.t>=cut);
+  if (hold.length<15) return {adopted:false, why:'Hold-out set is still small ('+hold.length+').'};
+  const cur = (typeof boardLockMins==='function'?boardLockMins(board): (board==='parlay'?null:board==='props'?120:60));
+  const curMax = (cur==null||cur<=0) ? Infinity : cur;
+  const curHold = evalLockPolicy(hold, curMax, board==='parlay' ? (x=>{ const dec=x.dec|| (x.am!=null&&typeof amToDec==='function'?amToDec(x.am):null); const unit=(+S.unit||25); return dec?unit*(dec-1):unit; }) : null);
+  let best={mins:cur, hold:curHold, lab:null};
+  for (const opt of LOCK_TUNE_OPTS){
+    const nAll = rows.filter(x=>x.minsToTip<=opt.max).length;
+    if (nAll < 25) continue;
+    const h = evalLockPolicy(hold, opt.max, board==='parlay' ? (x=>{ const dec=x.dec|| (x.am!=null&&typeof amToDec==='function'?amToDec(x.am):null); const unit=(+S.unit||25); return dec?unit*(dec-1):unit; }) : null);
+    if (h.n<12 || h.roi==null) continue;
+    const better = curHold.roi==null ? (h.n>=12) : (h.roi > curHold.roi + 1e-6);
+    if (better && (best.lab==null || sameLock(best.mins,cur) || h.roi>best.hold.roi)) best={mins:opt.mins, hold:h, lab:opt.lab};
+  }
+  if (best.lab==null || sameLock(best.mins, cur)) return {adopted:false, why:'No better lock window on unseen days.', current:cur};
+  if (typeof setBoardLockMins==='function') setBoardLockMins(board, best.mins);
+  const lab = board==='games'?'Games':board==='props'?'Props':'Parlays';
+  const txt = `Lock window for ${lab} moved to ${best.lab==='all/early'?'Early / Open':best.lab} after a better hold-out ROI (${curHold.roi==null?'—':((curHold.roi*100).toFixed(1)+'%')} → ${(best.hold.roi*100).toFixed(1)}%).`;
+  const track = board==='games' ? LEARN : (LEARN && LEARN[board]);
+  if (track){ (track.log||(track.log=[])).unshift({at:Date.now(), txt}); track.log=track.log.slice(0,40); }
+  try{ if (typeof learnLog==='function' && board==='games') learnLog(txt); }catch(e){}
+  return {adopted:true, mins:best.mins, lab:best.lab, hold:best.hold, current:cur};
+}
+
 async function propsLearnRetune(opts){
   opts=opts||{};
   ensureBoardLearn();
@@ -9630,6 +9908,7 @@ async function propsLearnRetune(opts){
       learnNotify('props', false, ver, r.why||'');
     }
     track.log=(track.log||[]).slice(0,40);
+    try{ retuneLockMins('props'); }catch(e){ console.warn('props lockMins', e); }
     learnSave();
     return r;
   }catch(e){ console.warn('props learn', e); return null; }
@@ -9666,6 +9945,7 @@ async function parlayLearnRetune(opts){
       learnNotify('parlay', false, ver, r.why||'');
     }
     track.log=(track.log||[]).slice(0,40);
+    try{ retuneLockMins('parlay'); }catch(e){ console.warn('parlay lockMins', e); }
     learnSave();
     return r;
   }catch(e){ console.warn('parlay learn', e); return null; }
@@ -10287,7 +10567,7 @@ function renderSettings(){
 
 /* ================= EVENTS ================= */
 const MORE_TABS = {tracker:1, pulled:1, all:1, results:1, settings:1};
-const SLATE_TABS = {good:1, watch:1, avoid:1};
+const SLATE_TABS = {good:1};
 function setMoreOpen(open){
   const sheet = $('#moreSheet'), back = $('#moreBackdrop'), btn = $('#btnMore');
   if (sheet) sheet.hidden = !open;
@@ -10300,10 +10580,12 @@ function syncSubbar(){
   if (!bar) return;
   const tab = ui.tab, board = ui.board||'games';
   const nPull = typeof pulledCount==='function' ? pulledCount() : (typeof visiblePulled==='function' ? (visiblePulled('good')||[]).length : 0);
-  const slate = !!SLATE_TABS[tab] || (tab==='pulled' && nPull>0);
-  bar.hidden = !slate;
+  const onBoard = board==='games'||board==='props'||board==='parlay';
+  const slate = onBoard && (!!SLATE_TABS[tab] || (tab==='pulled' && nPull>0));
+  bar.hidden = !(slate && nPull>0);
   bar.querySelectorAll('[data-sub]').forEach(b=>{
     const sub = b.getAttribute('data-sub');
+    if (sub==='watch' || sub==='avoid'){ b.hidden = true; return; }
     if (sub==='pulled'){
       b.hidden = nPull===0;
       b.classList.toggle('on', tab==='pulled' && nPull>0);
@@ -10312,7 +10594,7 @@ function syncSubbar(){
       return;
     }
     b.hidden = false;
-    b.classList.toggle('on', slate && tab===sub);
+    b.classList.toggle('on', tab==='good' || (slate && tab===sub));
     const key = (board==='games'||!board) ? sub : board+'-'+sub;
     const src = document.querySelector('#tabCountStore [data-cnt="'+key+'"]') || document.querySelector('[data-cnt="'+key+'"]');
     const cnt = b.querySelector('[data-sub-cnt]');
@@ -10404,6 +10686,7 @@ function setNavPop(board){
 function isMobileViewport(){ return !!(window.matchMedia && window.matchMedia('(max-width:899.98px)').matches); }
 window.addEventListener('resize', function resizeResultsGuard(){ if (ui.tab==='results' && !(typeof canOpenResults==='function' && canOpenResults())){ setTab((typeof isMobileViewport==='function' && isMobileViewport())?'tracker':'picks'); if (typeof render==='function') render(); } });
 function setTab(t, opts){
+  if (t==='watch' || t==='avoid') t = 'good';
   if (t==='results' && !(typeof canOpenResults==='function' && canOpenResults())) t = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks';
   const prev = ui.tab;
   const prevBoard = ui.board||'games';
@@ -10446,8 +10729,8 @@ if ($('#bottomNav')) $('#bottomNav').addEventListener('click', e=>{
   if (par){
     const board = par.getAttribute('data-board-parent');
     setMoreOpen(false);
-    if (ui.navPop===board) setNavPop(null);
-    else setNavPop(board);
+    setNavPop(null);
+    setTab('good', {board}); render(); window.scrollTo({top:0});
     return;
   }
   onTabClick(e);
@@ -10476,7 +10759,7 @@ $('#sportChips').addEventListener('click', e=>{
   if (restrict){
     if (!Array.isArray(ui.sports)) ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id));
     if (id==='all') ui.sports = LEAGUES.map(L=>L.id);
-    else if (id==='reset') ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id));
+    else if (id==='reset'){ ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id)); ui.horizon = '24h'; }
     else {
       const i = ui.sports.indexOf(id);
       if (i>=0) ui.sports.splice(i,1);
@@ -10503,6 +10786,14 @@ $('#search').oninput = e=>{
   _qTimer=setTimeout(()=>{ if (typeof saveFilters==='function') saveFilters(); render(); }, 150);
 };
 $('#hideStarted').onchange = e=>{ ui.hideStarted=e.target.checked; if (typeof saveFilters==='function') saveFilters(); render(); };
+const horizonSeg = $('#horizonSeg');
+if (horizonSeg) horizonSeg.querySelectorAll('input').forEach(i=>i.onchange=()=>{
+  ui.horizon = (typeof normalizeHorizon==='function'?normalizeHorizon(i.value):i.value)||'24h';
+  horizonSeg.querySelectorAll('label').forEach(lab=>lab.classList.toggle('on', lab.contains(i) || (lab.querySelector('input')&&lab.querySelector('input').value===ui.horizon)));
+  if (typeof saveFilters==='function') saveFilters();
+  render();
+});
+
 if ($('#btnFilters')) $('#btnFilters').onclick = e=>{ e.stopPropagation(); setFiltersOpen(!document.body.classList.contains('filters-open')); };
 document.addEventListener('click', e=>{
   if (!document.body.classList.contains('filters-open')) return;
