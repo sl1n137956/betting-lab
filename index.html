@@ -41,7 +41,7 @@ header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px)
 .topbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:20px;row-gap:10px;padding:16px 0 12px}
 .topbar .logo{grid-column:1;grid-row:1}
 .topbar .status{grid-column:2;grid-row:1;margin-left:0;justify-content:flex-end;min-width:0}
-.topbar #btnRefresh{grid-column:3;grid-row:1}
+.topbar .top-actions{grid-column:3;grid-row:1;display:flex;align-items:center;gap:8px}
 .logo{display:flex;align-items:center;gap:12px;font-weight:650;letter-spacing:.14em;font-size:15px}
 .logo .mark{width:36px;height:36px;border-radius:10px;padding:0;overflow:hidden;background:#010a27;display:grid;place-items:center;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 6px 18px -6px rgba(37,99,235,.5);flex:0 0 36px}
 .logo .mark img{width:100%;height:100%;display:block;object-fit:cover}
@@ -83,7 +83,8 @@ nav.tabs button[data-tab=avoid] .cnt{background:var(--avoid-bg);color:var(--avoi
 .ln-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 14px}
 .ln-head h3{margin:0;font-size:16px;display:flex;align-items:center;gap:6px;letter-spacing:-.02em}
 .results-board-row{margin:0 0 16px}
-@media (max-width:899.98px){ #tabs [data-tab="results"]{display:none !important} }
+#tabs [data-tab="results"]{display:none !important}
+@media (min-width:900px){ body.is-admin #tabs [data-tab="results"]{display:inline-flex !important} }
 .sep{width:1px;height:20px;background:var(--line2);margin:0 6px}
 .search{background:var(--inset);border:1px solid var(--line2);border-radius:999px;padding:5px 14px;min-width:200px;outline:none;transition:border-color .2s}
 .search:focus{border-color:rgba(59,130,246,.55)}
@@ -431,7 +432,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
   html{scroll-padding-bottom:calc(32px + 88px + env(safe-area-inset-bottom,0px))}
   .topbar{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px 14px;padding:12px 0 10px}
   .topbar .logo,.logo{grid-column:1;grid-row:1}
-  .topbar #btnRefresh,#btnRefresh{grid-column:2;grid-row:1}
+  .topbar .top-actions,.top-actions{grid-column:2;grid-row:1;display:flex;align-items:center;gap:8px}
   .topbar .status,.status{grid-column:1/-1;grid-row:2;margin-left:0;justify-content:flex-start;gap:8px;min-width:0}
   .status .pill:nth-child(2),.status .pill:nth-child(3){display:none}
   .banner{margin:10px 0 4px;padding:8px 12px;font-size:12px}
@@ -745,6 +746,63 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 .pl-inj{margin:8px 0;padding:8px 0;border-top:1px solid var(--line)}
 .pl-inj-h{font-weight:650;margin-bottom:4px}
 #mixChips{margin-bottom:2px}
+
+/* ===== Account & sync ===== */
+.topbar .top-actions{grid-column:3;grid-row:1;display:flex;align-items:center;gap:8px;justify-self:end}
+.top-actions #btnRefresh{grid-column:auto;grid-row:auto}
+.acct-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px 0 10px;border-radius:999px;border:1px solid rgba(125,211,252,.32);background:linear-gradient(180deg,#1e3a66,#152848);color:var(--acc-hi);font-weight:700;font-size:12.5px;cursor:pointer;white-space:nowrap;box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 6px 16px -10px rgba(37,99,235,.55);transition:border-color .2s var(--ease),transform .2s var(--ease),background .2s var(--ease)}
+.acct-btn:hover{border-color:rgba(125,211,252,.6);background:linear-gradient(180deg,#24467a,#1a3058)}
+.acct-btn:active{transform:scale(.97)}
+.acct-btn.signed{padding:0 12px 0 3px;color:var(--txt)}
+.acct-btn .acct-name{max-width:96px;overflow:hidden;text-overflow:ellipsis}
+.acct-av{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#4f8cff,#1d4ed8);color:#fff;font-size:10.5px;font-weight:800;object-fit:cover;flex:none;box-shadow:0 0 0 1px rgba(255,255,255,.18) inset}
+.acct-av.lg{width:44px;height:44px;font-size:16px}
+#tabs [data-tab="results"][hidden]{display:none !important}
+body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
+.acct-card .s-h{margin-bottom:8px}
+.acct-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.acct-txt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.acct-txt b{font-size:15px;color:var(--txt)}
+.acct-txt .hint{overflow-wrap:anywhere}
+.acct-sync{font-size:12px;font-weight:650;color:#86efac}
+.acct-sync.bad{color:#fca5a5}
+.acct-badge{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fde68a;background:rgba(250,204,21,.14);border:1px solid rgba(250,204,21,.35);vertical-align:2px}
+.acct-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn.acct-pill{border-radius:999px;padding:9px 16px}
+.acct-note{margin-top:8px;font-size:12.5px;line-height:1.5;color:var(--txt2);background:rgba(59,130,246,.08);border:1px solid rgba(125,211,252,.2);border-radius:12px;padding:10px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.btn.acct-link{border-radius:999px;color:var(--acc-hi)}
+.auth-modal{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(3,8,18,.62);opacity:0;transition:opacity .22s var(--ease)}
+.auth-modal.open{opacity:1}
+.auth-modal[hidden]{display:none}
+.auth-card{position:relative;width:100%;max-width:400px;max-height:calc(100vh - 32px);overflow:auto;background:linear-gradient(180deg,#16284a,#0f1b30);border:1px solid rgba(125,211,252,.22);border-radius:22px;padding:22px 20px 20px;box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 30px 80px -20px rgba(0,0,0,.9),0 0 0 1px rgba(59,130,246,.08);transform:translateY(10px) scale(.98);transition:transform .25s var(--ease)}
+.auth-modal.open .auth-card{transform:none}
+.auth-x{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line2);background:var(--card2);color:var(--txt2);font-size:18px;line-height:1;cursor:pointer}
+.auth-title{font-size:19px;font-weight:750;color:var(--txt);padding-right:36px;letter-spacing:-.015em}
+.auth-sub{font-size:12.5px;color:var(--mut);margin:4px 0 14px;line-height:1.5}
+.auth-seg{display:flex;margin-bottom:14px}
+.auth-seg button{flex:1}
+.btn.auth-google{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;border-radius:999px;padding:11px 16px;background:#fff;color:#1f2937;border-color:#fff;font-weight:700}
+.btn.auth-google:hover{background:#eef2ff;color:#111827}
+.auth-or{display:flex;align-items:center;gap:10px;margin:14px 0 10px;color:var(--mut);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em}
+.auth-or:before,.auth-or:after{content:"";flex:1;height:1px;background:var(--line2)}
+.auth-form{display:flex;flex-direction:column;gap:10px}
+.auth-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:650;color:var(--txt2)}
+.auth-form input{background:var(--inset);border:1px solid var(--line2);border-radius:12px;padding:11px 12px;font-size:15px;color:var(--txt);outline:none;transition:border-color .2s var(--ease),box-shadow .2s var(--ease)}
+.auth-form input:focus{border-color:rgba(125,211,252,.6);box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+.btn.auth-submit{border-radius:999px;padding:12px 18px;font-size:15px;margin-top:4px}
+.auth-link{background:none;border:0;color:var(--acc-hi);font-weight:650;font-size:13px;cursor:pointer;padding:4px;align-self:center}
+.auth-err{font-size:12.5px;color:#fecaca;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:8px 10px}
+.auth-ok{font-size:12.5px;color:#bbf7d0;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:8px 10px}
+@media (max-width:899.98px){
+  .topbar .top-actions{grid-column:2;grid-row:1;gap:6px}
+  .acct-btn{height:44px;min-width:44px;padding:0 12px}
+  .acct-btn.signed{padding:0 10px 0 4px}
+  .acct-btn .acct-name{max-width:70px}
+  .acct-av{width:30px;height:30px;font-size:11.5px}
+  .auth-modal{align-items:flex-end;padding:0}
+  .auth-card{max-width:none;border-radius:22px 22px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));max-height:92vh}
+}
+@media (max-width:380px){ .acct-btn:not(.signed) svg{display:none} }
 </style>
 </head>
 <body>
@@ -759,7 +817,7 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
         <span class="pill">Updated <b id="lastUpd">never</b></span>
         <span class="pill">Next refresh <b id="countdown">—</b></span>
       </div>
-      <button class="btn primary sm" id="btnRefresh">Refresh</button>
+      <div class="top-actions" id="topActions"><button type="button" class="acct-btn" id="btnAccount" aria-label="Sign in"><span class="acct-name">Sign in</span></button><button class="btn primary sm" id="btnRefresh">Refresh</button></div>
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="picks" class="on"><span class="tab-emo" aria-hidden="true">⚖️</span>Verdict</button>
@@ -768,7 +826,7 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
       <button type="button" class="tab-parent" data-board-parent="parlay"><span class="tab-emo" aria-hidden="true">🎟️</span>Parlay<span class="cnt" data-cnt="parlay-good">0</span></button>
       <button data-tab="tracker"><span class="tab-emo" aria-hidden="true">📊</span>Tracker</button>
       <button data-tab="all"><span class="tab-emo" aria-hidden="true">📋</span>All Games<span class="cnt" id="c-all" data-cnt="all">0</span></button>
-      <button data-tab="results" aria-label="Results and Backtest"><span class="tab-emo" aria-hidden="true">🧪</span>Results</button>
+      <button data-tab="results" aria-label="Results and Backtest" hidden><span class="tab-emo" aria-hidden="true">🧪</span>Results</button>
       <button data-tab="settings"><span class="tab-emo" aria-hidden="true">⚙️</span>Settings</button>
     </nav>
     <div class="tab-subbar" id="tabSubbar" hidden>
@@ -5049,7 +5107,7 @@ function render(){
   if (typeof syncTabChrome==='function') syncTabChrome();
   const v = $('#view');
   const errs = (feedErrors.length||oddsErrors.length) ? `<div class="err-list">${feedErrors.slice(0,4).map(esc).join('<br>')}${feedErrors.length>4?`<br>…and ${feedErrors.length-4} more feed errors`:''}${oddsErrors.length?'<br>Odds API: '+oddsErrors.map(esc).join('<br>'):''}</div>` : '';
-  if (ui.tab==='results' && typeof isMobileViewport==='function' && isMobileViewport()){ ui.tab='tracker'; }
+  if (ui.tab==='results' && !(typeof canOpenResults==='function' && canOpenResults())){ ui.tab = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks'; }
   if (ui.tab==='tracker') return renderTracker();
   if (ui.tab==='picks') return renderPicks();
   if (ui.tab==='settings') return renderSettings();
@@ -5186,6 +5244,16 @@ function initPullToRefresh(){
 }
 /* ================= TRACKER ================= */
 function saveBets(){ saveJSON(LS.bets, bets); }
+function touchBet(b){ if (b && typeof b==='object') b.updatedAt = Date.now(); }
+function tombstoneBet(id){
+  if (!id) return;
+  try{
+    const k='bl_bet_tombstones';
+    const m = (typeof loadJSON==='function' && loadJSON(k, {})) || {};
+    m[id] = Date.now();
+    if (typeof saveJSON==='function') saveJSON(k, m);
+  }catch(e){}
+}
 function betProfit(b){ const o=+b.odds, s=+b.stake||0; if (b.result==='win') return profitOn(o, s); if (b.result==='loss') return -s; return 0; }
 function trackerStats(){
   const settled = bets.filter(b=>['win','loss','push','void'].includes(b.result)).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.created||0)-(b.created||0));
@@ -5519,14 +5587,14 @@ function renderTracker(pf){
     const sport = f.get('sport') || 'Other';
     const market = f.get('market') || 'Other';
     const result = f.get('result') || 'pending';
-    const nb = {id:'b'+Date.now()+Math.random().toString(36).slice(2,6), created:Date.now(), date, sport, market, pick:String(f.get('pick')||'').trim(), odds:o, stake:+f.get('stake'), result, oddsType:typ, oddsEntered:entered};
+    const nb = {id:'b'+Date.now()+Math.random().toString(36).slice(2,6), created:Date.now(), updatedAt:Date.now(), date, sport, market, pick:String(f.get('pick')||'').trim(), odds:o, stake:+f.get('stake'), result, oddsType:typ, oddsEntered:entered};
     if (cents!=null){ nb.oddsCents=cents; nb.oddsFee=fee; }
     if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; pendingLink = null; }
     bets.push(nb);
     saveBets(); toast('Bet logged'); renderTracker();
   };
-  $('#view').querySelectorAll('[data-res]').forEach(s=>s.onchange=()=>{ const b=bets.find(x=>x.id===s.dataset.res); if(b){ b.result=s.value; saveBets(); renderTracker(); } });
-  $('#view').querySelectorAll('[data-del]').forEach(s=>s.onclick=()=>{ if(!confirm('Delete this bet?')) return; bets=bets.filter(x=>x.id!==s.dataset.del); saveBets(); renderTracker(); });
+  $('#view').querySelectorAll('[data-res]').forEach(s=>s.onchange=()=>{ const b=bets.find(x=>x.id===s.dataset.res); if(b){ b.result=s.value; if (typeof touchBet==='function') touchBet(b); saveBets(); renderTracker(); } });
+  $('#view').querySelectorAll('[data-del]').forEach(s=>s.onclick=()=>{ if(!confirm('Delete this bet?')) return; if (typeof tombstoneBet==='function') tombstoneBet(s.dataset.del); bets=bets.filter(x=>x.id!==s.dataset.del); saveBets(); renderTracker(); });
   $('#view').querySelectorAll('[data-bet]').forEach(card=>card.addEventListener('click', e=>{
     if (e.target.closest('button,select,input,label,a')) return;
     const id=card.dataset.bet;
@@ -5567,7 +5635,7 @@ function importCSV(text){
     const o = parseAm(get('odds')); if (o==null) continue;
     const res = (get('result')||'pending').toLowerCase(); const st = parseFloat(get('stake').replace(/[$,]/g,'')) || +S.unit;
     const map = {w:'win',l:'loss',p:'push',won:'win',lost:'loss'};
-    const b = {id:'b'+Date.now()+Math.random().toString(36).slice(2,8), created:Date.now()+n, date:get('date'), sport:get('sport')||'Other', market:get('market')||'Other', pick:get('pick'), odds:o, stake:st,
+    const b = {id:'b'+Date.now()+Math.random().toString(36).slice(2,8), created:Date.now()+n, updatedAt:Date.now()+n, date:get('date'), sport:get('sport')||'Other', market:get('market')||'Other', pick:get('pick'), odds:o, stake:st,
       result:['win','loss','push','void','pending'].includes(res)?res:(map[res]||'pending')};
     const key=[b.date,b.pick,b.odds,b.stake].join('|'); if (seen.has(key)) continue; seen.add(key);
     bets.push(b); n++;
@@ -9176,9 +9244,9 @@ function setNavPop(board){
   if (typeof syncTabChrome==='function') syncTabChrome();
 }
 function isMobileViewport(){ return !!(window.matchMedia && window.matchMedia('(max-width:899.98px)').matches); }
-window.addEventListener('resize', function resizeResultsGuard(){ if (ui.tab==='results' && isMobileViewport()){ setTab('tracker'); if (typeof render==='function') render(); } });
+window.addEventListener('resize', function resizeResultsGuard(){ if (ui.tab==='results' && !(typeof canOpenResults==='function' && canOpenResults())){ setTab((typeof isMobileViewport==='function' && isMobileViewport())?'tracker':'picks'); if (typeof render==='function') render(); } });
 function setTab(t, opts){
-  if (t==='results' && typeof isMobileViewport==='function' && isMobileViewport()) t = 'tracker';
+  if (t==='results' && !(typeof canOpenResults==='function' && canOpenResults())) t = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks';
   const prev = ui.tab;
   const prevBoard = ui.board||'games';
   if (prev==='tracker' && t!=='tracker' && typeof resetTrackerOpen==='function') resetTrackerOpen();
@@ -9362,6 +9430,463 @@ if (typeof initPullToRefresh==="function") initPullToRefresh();
 if (typeof setTab==='function') setTab('picks');
 startRefreshWatch();
 learnInit().catch(e=>console.warn('learning', e)).then(()=>{ render(); refresh(); });
+/* ================= ACCOUNT + CLOUD SYNC (Firebase Auth + Firestore) =================
+   Loads the Firebase compat SDK only on http(s), so file:// and offline stay error-free.
+   Synced per account at users/{uid}: settings, filters, bets, profitPeriod, profile, updatedAt. */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAWla-MkoPfB9pZ0I43DgQ__XYqb5yLRFc",
+  authDomain: "verdict-sl1n1.firebaseapp.com",
+  projectId: "verdict-sl1n1",
+  storageBucket: "verdict-sl1n1.firebasestorage.app",
+  messagingSenderId: "373139235584",
+  appId: "1:373139235584:web:4cf961da56cf9735ac49e5"
+};
+const ADMIN_EMAILS = ['sl1n137956@gmail.com'];
+const FB_VER = '10.14.1';
+const SYNC_META_LS = 'bl_sync_meta';
+const ONLINE_URL = 'https://sl1n137956.github.io/betting-lab/';
+const AUTH = {ready:false, loading:false, failed:false, user:null, unsub:null, pushT:0, applying:false, lastSync:0, status:'idle', err:'', deviceId:'', lastPushAt:0};
+let syncMeta = (function(){ const m = loadJSON(SYNC_META_LS, null); return (m && typeof m==='object') ? m : {}; })();
+syncMeta.settingsAt = +syncMeta.settingsAt||0; syncMeta.filtersAt = +syncMeta.filtersAt||0; syncMeta.periodAt = +syncMeta.periodAt||0;
+syncMeta.betStamps = syncMeta.betStamps||{}; syncMeta.deleted = syncMeta.deleted||{};
+if (!syncMeta.deviceId) syncMeta.deviceId = 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+AUTH.deviceId = syncMeta.deviceId;
+function saveSyncMeta(){ try{ _origSetItem.call(localStorage, SYNC_META_LS, JSON.stringify(syncMeta)); }catch(e){} }
+function authHttp(){ return location.protocol==='http:' || location.protocol==='https:'; }
+function isAdminUser(u){
+  u = u===undefined ? AUTH.user : u;
+  return !!(u && u.email && ADMIN_EMAILS.includes(String(u.email).toLowerCase()));
+}
+function canOpenResults(){ return !!(typeof isMobileViewport==='function' ? !isMobileViewport() : (window.innerWidth>=900)) && isAdminUser(); }
+function betHash(b){ try{ return JSON.stringify(b); }catch(e){ return ''; } }
+let _betHashes = {};
+(function seedBetHashes(){ (Array.isArray(bets)?bets:[]).forEach(b=>{ if (b && b.id){ _betHashes[b.id] = betHash(b); if (!syncMeta.betStamps[b.id]) syncMeta.betStamps[b.id] = +b.created||1; } }); })();
+function filtersSig(){
+  const f = loadJSON(LS.filters, {}) || {};
+  const g = Object.assign({}, f); delete g.tab; delete g.board;
+  return JSON.stringify({f:g, v:loadJSON(LS.filterViews, {})});
+}
+let _lastSettingsStr = localStorage.getItem(LS.settings)||'';
+let _lastFiltersSig = filtersSig();
+let _lastPeriodStr = localStorage.getItem(TRACKER_LS)||'';
+
+/* ---- watch every local save (settings / filters / bets / tracker period) without touching existing call sites ---- */
+const _origSetItem = Storage.prototype.setItem;
+Storage.prototype.setItem = function(k, v){
+  _origSetItem.call(this, k, v);
+  if (this!==window.localStorage || AUTH.applying) return;
+  try{ onLocalWrite(k, v); }catch(e){}
+};
+function onLocalWrite(k, v){
+  const now = Date.now();
+  let changed = false;
+  if (k===LS.settings){ if (v!==_lastSettingsStr){ _lastSettingsStr = v; syncMeta.settingsAt = now; changed = true; } }
+  else if (k===LS.filters || k===LS.filterViews){ const sig = filtersSig(); if (sig!==_lastFiltersSig){ _lastFiltersSig = sig; syncMeta.filtersAt = now; changed = true; } }
+  else if (k===TRACKER_LS){ if (v!==_lastPeriodStr){ _lastPeriodStr = v; syncMeta.periodAt = now; changed = true; } }
+  else if (k===LS.bets){
+    let arr = []; try{ arr = JSON.parse(v)||[]; }catch(e){}
+    const seen = {};
+    arr.forEach(b=>{ if (!b || !b.id) return; seen[b.id] = 1; const h = betHash(b); if (_betHashes[b.id]!==h){ _betHashes[b.id] = h; syncMeta.betStamps[b.id] = now; delete syncMeta.deleted[b.id]; changed = true; } });
+    Object.keys(_betHashes).forEach(id=>{ if (!seen[id]){ delete _betHashes[id]; delete syncMeta.betStamps[id]; syncMeta.deleted[id] = now; changed = true; } });
+  }
+  if (!changed) return;
+  saveSyncMeta();
+  scheduleCloudPush();
+}
+
+/* ---- SDK loading ---- */
+function loadScriptOnce(src){
+  return new Promise((res, rej)=>{
+    const s = document.createElement('script'); s.src = src; s.async = true;
+    s.onload = ()=>res(); s.onerror = ()=>rej(new Error('load '+src));
+    document.head.appendChild(s);
+  });
+}
+async function authBoot(){
+  if (!authHttp() || AUTH.loading || AUTH.ready) { renderAuthChrome(); return; }
+  AUTH.loading = true; renderAuthChrome();
+  try{
+    const base = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
+    await loadScriptOnce(base+'firebase-app-compat.js');
+    await Promise.all([loadScriptOnce(base+'firebase-auth-compat.js'), loadScriptOnce(base+'firebase-firestore-compat.js')]);
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    try{ await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
+    AUTH.ready = true; AUTH.loading = false;
+    firebase.auth().getRedirectResult().then(r=>{ if (r && r.user) toast('Signed in as '+(r.user.displayName||r.user.email)); }).catch(err=>{ authToastErr(err); });
+    firebase.auth().onAuthStateChanged(u=>onAuthUser(u));
+  }catch(e){
+    AUTH.loading = false; AUTH.failed = true;
+  }
+  renderAuthChrome();
+}
+function fs(){ return firebase.firestore(); }
+function userDoc(){ return AUTH.user ? fs().collection('users').doc(AUTH.user.uid) : null; }
+
+/* ---- sign in / out ---- */
+async function onAuthUser(u){
+  const was = AUTH.user && AUTH.user.uid;
+  AUTH.user = u || null;
+  if (AUTH.unsub){ try{ AUTH.unsub(); }catch(e){} AUTH.unsub = null; }
+  if (!u){ AUTH.status = 'idle'; AUTH.lastSync = 0; applyAdminGate(); renderAuthChrome(); return; }
+  applyAdminGate();
+  renderAuthChrome();
+  if (was!==u.uid) await initialSync();
+  startLiveSync();
+}
+function authErrMsg(err){
+  const c = (err && err.code) || '';
+  const M = {
+    'auth/invalid-credential':'That email and password don\'t match. Try again or reset your password.',
+    'auth/invalid-login-credentials':'That email and password don\'t match. Try again or reset your password.',
+    'auth/wrong-password':'Wrong password. Try again or tap Forgot password.',
+    'auth/user-not-found':'No account with that email. Switch to Create account.',
+    'auth/email-already-in-use':'That email already has an account. Sign in instead (or use Continue with Google).',
+    'auth/weak-password':'Password needs at least 6 characters.',
+    'auth/invalid-email':'That email address doesn\'t look right.',
+    'auth/missing-email':'Enter your email first.',
+    'auth/missing-password':'Enter your password.',
+    'auth/popup-closed-by-user':'Google sign-in was closed before it finished.',
+    'auth/cancelled-popup-request':'Google sign-in was closed before it finished.',
+    'auth/popup-blocked':'Your browser blocked the Google pop-up. Trying a full-page sign-in instead…',
+    'auth/unauthorized-domain':'Sign-in isn\'t allowed from this address. Open Verdict at sl1n137956.github.io/betting-lab/.',
+    'auth/network-request-failed':'No connection. Check your internet and try again.',
+    'auth/too-many-requests':'Too many tries. Wait a minute and try again.',
+    'auth/user-disabled':'This account has been disabled.',
+    'auth/operation-not-allowed':'This sign-in method isn\'t turned on yet.',
+    'auth/account-exists-with-different-credential':'That email already uses a different sign-in method. Try email/password or Google.',
+    'auth/requires-recent-login':'Please sign in again to do that.',
+    'auth/operation-not-supported-in-this-environment':'Pop-ups aren\'t supported here. Trying a full-page sign-in…'
+  };
+  return M[c] || ('Sign-in failed' + (c?(' ('+c.replace('auth/','')+')'):'') + '. Try again.');
+}
+function authToastErr(err){ const m = authErrMsg(err); setAuthErr(m); toast(m); }
+function setAuthErr(m){ const el = $('#authErr'); if (el){ el.textContent = m||''; el.hidden = !m; } }
+function setAuthBusy(on){ document.querySelectorAll('#authModal button, #authModal input').forEach(x=>{ if (!x.matches('[data-auth-close]')) x.disabled = !!on; }); }
+async function signInGoogle(){
+  if (!AUTH.ready){ toast('Sign-in is still loading. Try again in a moment.'); return; }
+  const prov = new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt:'select_account'});
+  const standalone = (typeof isStandaloneApp==='function' && isStandaloneApp()) || window.navigator.standalone===true;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent||'');
+  setAuthErr(''); setAuthBusy(true);
+  try{
+    if (standalone && ios){ await firebase.auth().signInWithRedirect(prov); return; }
+    await firebase.auth().signInWithPopup(prov);
+    closeAuthModal(); toast('Signed in with Google');
+  }catch(err){
+    if (err && (err.code==='auth/popup-blocked' || err.code==='auth/operation-not-supported-in-this-environment')){
+      try{ await firebase.auth().signInWithRedirect(prov); return; }catch(e2){ authToastErr(e2); }
+    } else authToastErr(err);
+  }finally{ setAuthBusy(false); }
+}
+async function signInEmail(email, pw){
+  setAuthErr(''); setAuthBusy(true);
+  try{ await firebase.auth().signInWithEmailAndPassword(email, pw); closeAuthModal(); toast('Signed in'); }
+  catch(err){ authToastErr(err); } finally{ setAuthBusy(false); }
+}
+async function createAccount(name, email, pw, pw2){
+  setAuthErr('');
+  if (!name){ setAuthErr('Add your name.'); return; }
+  if (pw!==pw2){ setAuthErr('Passwords don\'t match.'); return; }
+  setAuthBusy(true);
+  try{
+    const cred = await firebase.auth().createUserWithEmailAndPassword(email, pw);
+    if (cred && cred.user){ await cred.user.updateProfile({displayName:name}); AUTH.user = firebase.auth().currentUser; try{ await cred.user.sendEmailVerification(); }catch(e){} }
+    closeAuthModal(); renderAuthChrome(); scheduleCloudPush(); toast('Account created. Welcome, '+name.split(' ')[0]+'!');
+  }catch(err){ authToastErr(err); } finally{ setAuthBusy(false); }
+}
+async function forgotPassword(email){
+  setAuthErr('');
+  if (!email){ setAuthErr('Type your email above, then tap Forgot password.'); return; }
+  try{ await firebase.auth().sendPasswordResetEmail(email); toast('Reset link sent to '+email+'. Check your inbox (and spam).'); const ok=$('#authOk'); if (ok){ ok.textContent='Password reset email sent to '+email+'.'; ok.hidden=false; } }
+  catch(err){ authToastErr(err); }
+}
+async function signOutUser(){
+  if (AUTH.pushT){ clearTimeout(AUTH.pushT); AUTH.pushT = 0; try{ await cloudPush(); }catch(e){} }
+  if (AUTH.unsub){ try{ AUTH.unsub(); }catch(e){} AUTH.unsub = null; }
+  try{ await firebase.auth().signOut(); }catch(e){}
+  closeAuthModal(); toast('Signed out. Your data stays on this device.');
+}
+
+/* ---- cloud payload ---- */
+function localPayload(){
+  const u = AUTH.user;
+  const betsOut = (Array.isArray(bets)?bets:[]).map(b=>Object.assign({}, b, {_u: syncMeta.betStamps[b.id]||+b.created||1}));
+  return {
+    settings: JSON.stringify(S),
+    settingsAt: syncMeta.settingsAt||0,
+    filters: JSON.stringify({last: loadJSON(LS.filters, {}), views: filterViews}),
+    filtersAt: syncMeta.filtersAt||0,
+    bets: JSON.stringify(betsOut),
+    betsDeleted: JSON.stringify(syncMeta.deleted||{}),
+    profitPeriod: (typeof trackerUI!=='undefined' && trackerUI.period) || 'all',
+    profitPeriodAt: syncMeta.periodAt||0,
+    profile: {displayName: (u && u.displayName)||'', email: (u && u.email)||''},
+    deviceId: AUTH.deviceId,
+    updatedAt: Date.now()
+  };
+}
+function parseJ(s, d){ try{ return typeof s==='string' ? JSON.parse(s) : (s==null?d:s); }catch(e){ return d; } }
+function mergeBets(remoteArr, remoteDel){
+  const out = {}; const del = Object.assign({}, remoteDel||{});
+  Object.keys(syncMeta.deleted||{}).forEach(id=>{ del[id] = Math.max(+del[id]||0, +syncMeta.deleted[id]||0); });
+  (Array.isArray(bets)?bets:[]).forEach(b=>{ if (b && b.id) out[b.id] = {b, t: syncMeta.betStamps[b.id]||+b.created||1}; });
+  (Array.isArray(remoteArr)?remoteArr:[]).forEach(rb=>{
+    if (!rb || !rb.id) return; const t = +rb._u||+rb.created||1; const b = Object.assign({}, rb); delete b._u;
+    if (!out[rb.id] || t > out[rb.id].t) out[rb.id] = {b, t};
+  });
+  const ids = Object.keys(out).filter(id=>!(del[id] && del[id] >= out[id].t));
+  const list = ids.map(id=>out[id]).sort((a,b)=>(+a.b.created||0)-(+b.b.created||0));
+  return {list: list.map(x=>x.b), stamps: Object.fromEntries(ids.map(id=>[id,out[id].t])), del};
+}
+/* Apply a cloud document. Returns true if the cloud holds something this device doesn't (so local is not newer everywhere). */
+function applyRemote(d){
+  if (!d) return;
+  AUTH.applying = true;
+  let touched = false, needRender = false;
+  try{
+    if (d.settings && (+d.settingsAt||0) > (syncMeta.settingsAt||0)){
+      const rs = parseJ(d.settings, null);
+      if (rs && typeof rs==='object'){
+        Object.keys(S).forEach(k=>delete S[k]); Object.assign(S, DEFAULTS, rs);
+        localStorage.setItem(LS.settings, JSON.stringify(S)); _lastSettingsStr = localStorage.getItem(LS.settings);
+        syncMeta.settingsAt = +d.settingsAt; touched = needRender = true;
+      }
+    }
+    if (d.filters && (+d.filtersAt||0) > (syncMeta.filtersAt||0)){
+      const rf = parseJ(d.filters, null);
+      if (rf && typeof rf==='object'){
+        if (rf.views && typeof rf.views==='object'){ Object.keys(filterViews).forEach(k=>delete filterViews[k]); Object.assign(filterViews, rf.views); localStorage.setItem(LS.filterViews, JSON.stringify(filterViews)); }
+        if (rf.last && typeof rf.last==='object'){ const cur = loadJSON(LS.filters, {})||{}; const nl = Object.assign({}, rf.last, {tab:cur.tab||ui.tab, board:cur.board||ui.board}); localStorage.setItem(LS.filters, JSON.stringify(nl)); if (typeof nl.hideStarted==='boolean') ui.hideStarted = nl.hideStarted; if (typeof nl.hideLogged==='boolean') ui.hideLogged = nl.hideLogged; }
+        const key = typeof filterViewKey==='function' ? filterViewKey(ui.board||'games', ui.tab) : null;
+        if (key && typeof applyFilterView==='function') applyFilterView(key);
+        const hs = $('#hideStarted'); if (hs) hs.checked = !!ui.hideStarted;
+        const sq = $('#search'); if (sq && document.activeElement!==sq) sq.value = ui.q||'';
+        _lastFiltersSig = filtersSig(); syncMeta.filtersAt = +d.filtersAt; touched = needRender = true;
+      }
+    }
+    if (d.profitPeriod && (+d.profitPeriodAt||0) > (syncMeta.periodAt||0) && typeof trackerUI!=='undefined'){
+      trackerUI.period = d.profitPeriod; localStorage.setItem(TRACKER_LS, JSON.stringify({period:d.profitPeriod})); _lastPeriodStr = localStorage.getItem(TRACKER_LS);
+      syncMeta.periodAt = +d.profitPeriodAt; touched = true; if (ui.tab==='tracker') needRender = true;
+    }
+    if (d.bets != null){
+      const m = mergeBets(parseJ(d.bets, []), parseJ(d.betsDeleted, {}));
+      const before = JSON.stringify(bets);
+      bets = m.list; syncMeta.betStamps = m.stamps; syncMeta.deleted = m.del;
+      if (JSON.stringify(bets)!==before){
+        localStorage.setItem(LS.bets, JSON.stringify(bets));
+        _betHashes = {}; bets.forEach(b=>{ _betHashes[b.id] = betHash(b); });
+        touched = true; needRender = true;
+      }
+    }
+    saveSyncMeta();
+  }finally{ AUTH.applying = false; }
+  if (needRender){ try{ if (typeof updateFilterChrome==='function') updateFilterChrome(); if (typeof render==='function') render(); }catch(e){} }
+  return touched;
+}
+function localDiffersFrom(d){
+  if (!d) return true;
+  if ((syncMeta.settingsAt||0) > (+d.settingsAt||0)) return true;
+  if ((syncMeta.filtersAt||0) > (+d.filtersAt||0)) return true;
+  if ((syncMeta.periodAt||0) > (+d.profitPeriodAt||0)) return true;
+  const rb = parseJ(d.bets, []); const rIds = new Set((rb||[]).map(b=>b && b.id));
+  const rs = {}; (rb||[]).forEach(b=>{ if (b && b.id) rs[b.id] = +b._u||0; });
+  if ((bets||[]).some(b=>!rIds.has(b.id) || (syncMeta.betStamps[b.id]||0) > (rs[b.id]||0))) return true;
+  const rd = parseJ(d.betsDeleted, {}) || {};
+  if (Object.keys(syncMeta.deleted||{}).some(id=>!(id in rd))) return true;
+  return false;
+}
+async function initialSync(){
+  const ref = userDoc(); if (!ref) return;
+  AUTH.status = 'syncing'; renderAuthChrome();
+  try{
+    const snap = await ref.get();
+    if (!snap.exists){ await cloudPush(); toast('This device\'s settings, filters, and bets are now saved to your account.'); }
+    else {
+      const d = snap.data();
+      applyRemote(d);
+      if (localDiffersFrom(d)) await cloudPush();
+      else { AUTH.status = 'synced'; AUTH.lastSync = Date.now(); }
+    }
+  }catch(e){ AUTH.status = 'error'; AUTH.err = (e && e.code) || 'sync failed'; console.warn('sync', e && e.code); }
+  renderAuthChrome();
+}
+function startLiveSync(){
+  const ref = userDoc(); if (!ref) return;
+  if (AUTH.unsub){ try{ AUTH.unsub(); }catch(e){} }
+  AUTH.unsub = ref.onSnapshot(snap=>{
+    if (!snap.exists || snap.metadata.hasPendingWrites) return;
+    const d = snap.data();
+    if (d.deviceId===AUTH.deviceId && +d.updatedAt===AUTH.lastPushAt){ AUTH.status='synced'; AUTH.lastSync = Date.now(); renderAuthChrome(); return; }
+    applyRemote(d);
+    if (localDiffersFrom(d)) scheduleCloudPush();
+    AUTH.status = 'synced'; AUTH.lastSync = Date.now(); renderAuthChrome();
+  }, err=>{ AUTH.status = 'error'; AUTH.err = (err && err.code)||'listen failed'; renderAuthChrome(); });
+}
+function scheduleCloudPush(){
+  if (!AUTH.user || !AUTH.ready) return;
+  clearTimeout(AUTH.pushT);
+  AUTH.status = 'pending'; renderAuthStatusOnly();
+  AUTH.pushT = setTimeout(()=>{ AUTH.pushT = 0; cloudPush().catch(()=>{}); }, 600);
+}
+async function cloudPush(){
+  const ref = userDoc(); if (!ref) return;
+  AUTH.status = 'syncing'; renderAuthStatusOnly();
+  try{
+    const p = localPayload(); AUTH.lastPushAt = p.updatedAt;
+    await ref.set(p);
+    AUTH.status = 'synced'; AUTH.lastSync = Date.now();
+  }catch(e){ AUTH.status = 'error'; AUTH.err = (e && e.code)||'save failed'; console.warn('sync push', e && e.code); }
+  renderAuthStatusOnly();
+}
+async function syncNow(){
+  if (!AUTH.user){ openAuthModal('signin'); return; }
+  const ref = userDoc();
+  AUTH.status = 'syncing'; renderAuthStatusOnly();
+  try{ const snap = await ref.get(); if (snap.exists) applyRemote(snap.data()); await cloudPush(); toast('Synced'); }
+  catch(e){ AUTH.status='error'; AUTH.err=(e&&e.code)||'sync failed'; renderAuthStatusOnly(); toast('Sync failed. Check your connection.'); }
+}
+window.addEventListener('online', ()=>{ if (AUTH.user) scheduleCloudPush(); else if (!AUTH.ready && AUTH.failed){ AUTH.failed=false; authBoot(); } });
+setInterval(()=>renderAuthStatusOnly(), 30000);
+
+/* ---- admin-only Results & Backtest (desktop) ---- */
+function applyAdminGate(){
+  const show = canOpenResults();
+  document.body.classList.toggle('is-admin', show);
+  document.querySelectorAll('#tabs [data-tab="results"], #moreSheet [data-tab="results"]').forEach(b=>{ b.hidden = !show; });
+  if (!show && ui.tab==='results'){
+    const t = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks';
+    setTab(t); try{ render(); }catch(e){}
+  }
+}
+const _setTabNoAuth = setTab;
+setTab = function(t, opts){ if (t==='results' && !canOpenResults()) t = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks'; return _setTabNoAuth(t, opts); };
+const _renderResultsNoAuth = renderResults;
+renderResults = function(){
+  if (!canOpenResults()){ ui.tab = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks'; if (typeof syncTabChrome==='function') syncTabChrome(); return render(); }
+  return _renderResultsNoAuth.apply(this, arguments);
+};
+
+/* ---- UI ---- */
+const GOOGLE_G = '<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+function userInitials(u){ const n = (u && (u.displayName||u.email))||'?'; const p = n.replace(/@.*/,'').split(/[\s._-]+/).filter(Boolean); return ((p[0]||'?')[0] + (p[1]?p[1][0]:'')).toUpperCase(); }
+function shortName(u){ if (!u) return ''; const n = u.displayName || String(u.email||'').replace(/@.*/,''); return n.split(' ')[0].slice(0,12); }
+function avatarHtml(u, cls){ cls = cls||'acct-av'; if (u && u.photoURL) return `<img class="${cls}" src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">`; return `<span class="${cls}">${esc(userInitials(u))}</span>`; }
+function syncStatusText(){
+  if (!AUTH.user) return '';
+  if (AUTH.status==='error') return 'Sync issue · '+(AUTH.err||'retrying');
+  if (AUTH.status==='syncing' || AUTH.status==='pending') return 'Syncing…';
+  if (!AUTH.lastSync) return 'Connecting…';
+  const s = Math.round((Date.now()-AUTH.lastSync)/1000);
+  return 'Synced · ' + (s<45 ? 'just now' : s<3600 ? Math.round(s/60)+' min ago' : Math.round(s/3600)+' hr ago');
+}
+function renderAuthStatusOnly(){ document.querySelectorAll('[data-sync-status]').forEach(el=>{ el.textContent = syncStatusText(); el.classList.toggle('bad', AUTH.status==='error'); }); }
+function renderAuthChrome(){
+  const btn = $('#btnAccount');
+  if (btn){
+    const u = AUTH.user;
+    btn.classList.toggle('signed', !!u);
+    btn.innerHTML = u ? `${avatarHtml(u)}<span class="acct-name">${esc(shortName(u))}</span>` : `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span class="acct-name">Sign in</span>`;
+    btn.setAttribute('aria-label', u ? ('Account: '+(u.displayName||u.email)) : 'Sign in');
+  }
+  const card = $('#acctCard'); if (card) card.outerHTML = accountCardHtml();
+  bindAccountCard();
+  if ($('#authModal') && !$('#authModal').hidden && AUTH.user && $('#authModal').dataset.mode!=='account') openAuthModal('account');
+  renderAuthStatusOnly();
+}
+function offlineNoteHtml(){ return `<div class="acct-note">Open Verdict online at sl1n137956.github.io/betting-lab/ to sign in and sync between PC and phone. <a class="btn sm acct-link" href="${ONLINE_URL}" target="_blank" rel="noopener">Open online ↗</a></div>`; }
+function accountCardHtml(){
+  const u = AUTH.user;
+  if (!authHttp()) return `<div class="panel simple acct-card" id="acctCard"><div class="s-row"><div class="s-h">☁️ Account &amp; sync</div>${offlineNoteHtml()}</div></div>`;
+  if (!u) return `<div class="panel simple acct-card" id="acctCard"><div class="s-row"><div class="s-h">☁️ Account &amp; sync</div>
+    <div class="acct-row"><div class="acct-txt"><b>Sign in to sync across PC &amp; phone</b><span class="hint">Your settings, filters, and tailed bets follow your account. Nothing on this device is lost.</span></div>
+    <button type="button" class="btn primary acct-pill" data-acct-open>${AUTH.loading?'Loading…':'Sign in'}</button></div>${AUTH.failed?'<div class="acct-note">Can\'t reach the sign-in service right now. It will retry when you\'re back online.</div>':''}</div></div>`;
+  return `<div class="panel simple acct-card" id="acctCard"><div class="s-row"><div class="s-h">☁️ Account &amp; sync</div>
+    <div class="acct-row">${avatarHtml(u,'acct-av lg')}<div class="acct-txt"><b>${esc(u.displayName||shortName(u))}${isAdminUser()?' <span class="acct-badge">Admin</span>':''}</b><span class="hint">${esc(u.email||'')}</span><span class="acct-sync" data-sync-status>${esc(syncStatusText())}</span></div></div>
+    ${isAdminUser()?'<div class="acct-note">Admin access enabled — Results &amp; Backtest unlocked</div>':''}
+    <div class="acct-actions"><button type="button" class="btn acct-pill" data-sync-now>↻ Sync now</button><button type="button" class="btn acct-pill" data-sign-out>Sign out</button></div></div></div>`;
+}
+function bindAccountCard(){
+  const c = $('#acctCard'); if (!c) return;
+  c.querySelectorAll('[data-acct-open]').forEach(b=>b.onclick=()=>openAuthModal('signin'));
+  c.querySelectorAll('[data-sync-now]').forEach(b=>b.onclick=()=>syncNow());
+  c.querySelectorAll('[data-sign-out]').forEach(b=>b.onclick=()=>signOutUser());
+}
+function ensureAuthModal(){
+  let m = $('#authModal'); if (m) return m;
+  m = document.createElement('div'); m.id = 'authModal'; m.className = 'auth-modal'; m.hidden = true;
+  m.setAttribute('role','dialog'); m.setAttribute('aria-modal','true'); m.setAttribute('aria-label','Account');
+  document.body.appendChild(m);
+  m.addEventListener('click', e=>{ if (e.target===m || e.target.closest('[data-auth-close]')) closeAuthModal(); });
+  document.addEventListener('keydown', e=>{ if (e.key==='Escape' && !m.hidden) closeAuthModal(); });
+  return m;
+}
+function openAuthModal(mode){
+  const m = ensureAuthModal();
+  mode = AUTH.user ? 'account' : (mode||'signin');
+  m.dataset.mode = mode;
+  const head = `<button type="button" class="auth-x" data-auth-close aria-label="Close">×</button>`;
+  let body = '';
+  if (!authHttp()){
+    body = `<div class="auth-title"><span class="h-emo" aria-hidden="true">⚖️</span>Verdict account</div>${offlineNoteHtml()}`;
+  } else if (mode==='account'){
+    const u = AUTH.user;
+    body = `<div class="auth-title">Your account</div>
+      <div class="acct-row">${avatarHtml(u,'acct-av lg')}<div class="acct-txt"><b>${esc(u.displayName||shortName(u))}${isAdminUser()?' <span class="acct-badge">Admin</span>':''}</b><span class="hint">${esc(u.email||'')}</span><span class="acct-sync" data-sync-status>${esc(syncStatusText())}</span></div></div>
+      <div class="auth-sub">Settings, filters, and tailed bets sync live between your PC and phone.</div>
+      ${isAdminUser()?'<div class="acct-note">Admin access enabled — Results &amp; Backtest unlocked</div>':''}
+      <div class="acct-actions"><button type="button" class="btn acct-pill" data-sync-now>↻ Sync now</button><button type="button" class="btn acct-pill" data-sign-out>Sign out</button></div>`;
+  } else {
+    const up = mode==='create';
+    body = `<div class="auth-title"><span class="h-emo" aria-hidden="true">⚖️</span>${up?'Create your Verdict account':'Sign in to Verdict'}</div>
+      <div class="auth-sub">Sync your settings, filters, and tailed bets between PC and phone.</div>
+      <div class="board-seg auth-seg"><button type="button" data-auth-mode="signin" class="${up?'':'on'}">Sign in</button><button type="button" data-auth-mode="create" class="${up?'on':''}">Create account</button></div>
+      <button type="button" class="btn auth-google" id="btnGoogle">${GOOGLE_G}<span>Continue with Google</span></button>
+      <div class="auth-or"><span>or use email</span></div>
+      <form id="authForm" class="auth-form" novalidate>
+        ${up?'<label>Name<input name="name" autocomplete="name" placeholder="Your name"></label>':''}
+        <label>Email<input name="email" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com"></label>
+        <label>Password<input name="pw" type="password" autocomplete="${up?'new-password':'current-password'}" placeholder="${up?'At least 6 characters':'Password'}"></label>
+        ${up?'<label>Confirm password<input name="pw2" type="password" autocomplete="new-password" placeholder="Type it again"></label>':''}
+        <div class="auth-err" id="authErr" hidden></div><div class="auth-ok" id="authOk" hidden></div>
+        <button type="submit" class="btn primary auth-submit">${up?'Create account':'Sign in'}</button>
+        ${up?'':'<button type="button" class="auth-link" id="btnForgot">Forgot password?</button>'}
+      </form>
+      ${AUTH.ready?'':`<div class="acct-note">${AUTH.failed?'Can\'t reach the sign-in service. Check your connection.':'Loading sign-in…'}</div>`}`;
+  }
+  m.innerHTML = `<div class="auth-card">${head}${body}</div>`;
+  m.hidden = false;
+  requestAnimationFrame(()=>m.classList.add('open'));
+  m.querySelectorAll('[data-auth-mode]').forEach(b=>b.onclick=()=>openAuthModal(b.dataset.authMode));
+  const g = $('#btnGoogle'); if (g) g.onclick = ()=>signInGoogle();
+  const f = $('#authForm');
+  if (f) f.onsubmit = e=>{
+    e.preventDefault();
+    if (!AUTH.ready){ setAuthErr('Sign-in is still loading. Try again in a moment.'); return; }
+    const fd = new FormData(f); const email = String(fd.get('email')||'').trim(); const pw = String(fd.get('pw')||'');
+    if (mode==='create') createAccount(String(fd.get('name')||'').trim(), email, pw, String(fd.get('pw2')||''));
+    else signInEmail(email, pw);
+  };
+  const fp = $('#btnForgot'); if (fp) fp.onclick = ()=>{ if (!AUTH.ready){ setAuthErr('Sign-in is still loading.'); return; } forgotPassword(String((f && new FormData(f).get('email'))||'').trim()); };
+  m.querySelectorAll('[data-sync-now]').forEach(b=>b.onclick=()=>syncNow());
+  m.querySelectorAll('[data-sign-out]').forEach(b=>b.onclick=()=>signOutUser());
+}
+function closeAuthModal(){ const m = $('#authModal'); if (!m) return; m.classList.remove('open'); m.hidden = true; }
+
+/* Settings: Account & sync card on top */
+const _renderSettingsNoAuth = renderSettings;
+renderSettings = function(){
+  const r = _renderSettingsNoAuth.apply(this, arguments);
+  try{
+    const view = $('#view'); const t = view && view.querySelector('.section-title');
+    if (t && !$('#acctCard')){ t.insertAdjacentHTML('afterend', accountCardHtml()); bindAccountCard(); }
+    if (t){ const h = t.querySelector('.hint'); if (h) h.textContent = AUTH.user ? 'Synced to your account. Press Save when you\'re done.' : 'Saved on this device. Press Save when you\'re done.'; }
+  }catch(e){}
+  return r;
+};
+if ($('#btnAccount')) $('#btnAccount').onclick = ()=>openAuthModal(AUTH.user?'account':'signin');
+applyAdminGate();
+renderAuthChrome();
+authBoot();
 </script>
 </body>
 </html>
