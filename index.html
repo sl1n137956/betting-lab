@@ -666,8 +666,9 @@ details[open] > summary::before{transform:rotate(0deg)}
 .seg-pills label:hover{border-color:rgba(59,130,246,.45);color:var(--txt)}
 .seg-pills label.on{background:var(--acc-dim);color:var(--acc-hi);border-color:rgba(59,130,246,.55);box-shadow:0 0 0 1px rgba(125,211,252,.18),0 6px 14px -8px rgba(37,99,235,.55)}
 nav.tabs{gap:0}
-nav.tabs button{padding:11px 10px 10px}
-nav.tabs .tab-parent{background:none;border:none;border-bottom:2px solid transparent;padding:11px 10px 10px;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+nav.tabs button{padding:11px 8px 10px}
+nav.tabs .tab-parent{padding:11px 8px 10px}
+nav.tabs .tab-parent{background:none;border:none;border-bottom:2px solid transparent;padding:11px 8px 10px;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
 nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-bottom-color:var(--acc)}
 .tab-subbar{display:none;padding:0 0 10px}
 .tab-subbar:not([hidden]){display:flex;align-items:center}
@@ -714,6 +715,29 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
   }
 }
 
+
+.board-seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+.board-seg button{background:none;border:0;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;padding:7px 14px;border-radius:999px;font-size:13px}
+.board-seg button.on{background:var(--acc-dim);color:var(--acc-hi);box-shadow:0 0 0 1px rgba(125,211,252,.16)}
+.learn-banner{display:flex;gap:10px;align-items:flex-start;margin:12px 0 4px;padding:10px 14px;border-radius:14px;background:rgba(37,99,235,.12);border:1px solid rgba(125,211,252,.22);color:var(--txt)}
+.learn-banner[hidden]{display:none}
+.learn-banner .lb-txt{flex:1;min-width:0;font-size:13.5px;line-height:1.45}
+.learn-banner .lb-x{background:none;border:0;color:var(--mut);font-size:20px;cursor:pointer;line-height:1;padding:0 4px}
+.pl-n{font-size:10.5px;letter-spacing:.06em;font-weight:750}
+.parlay-card .ftab th,.parlay-card .ftab td{white-space:nowrap}
+.parlay-card .ftab{font-size:12px}
+
+.pl-legs{display:flex;flex-direction:column;gap:8px;margin:10px 0 8px}
+.pl-leg{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+.pl-leg .pl-pic{flex:none;width:32px;height:32px;display:grid;place-items:center}
+.pl-leg .pl-pic img,.pl-leg .pl-pic .tm-logo,.pl-leg .pl-pic .pfp{width:28px;height:28px;border-radius:50%;object-fit:cover}
+.pl-leg .who{flex:1;min-width:0}
+.pl-leg .what{font-weight:650;overflow-wrap:anywhere}
+.pl-leg .pr,.pl-leg .pp{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.pl-leg .pp{color:var(--acc-hi);min-width:42px;text-align:right}
+.pl-inj{margin:8px 0;padding:8px 0;border-top:1px solid var(--line)}
+.pl-inj-h{font-weight:650;margin-bottom:4px}
+#mixChips{margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -734,9 +758,10 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
       <button data-tab="picks" class="on"><span class="tab-emo" aria-hidden="true">⚖️</span>Verdict</button>
       <button type="button" class="tab-parent" data-board-parent="games"><span class="tab-emo" aria-hidden="true">🏟️</span>Games<span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></button>
       <button type="button" class="tab-parent" data-board-parent="props"><span class="tab-emo" aria-hidden="true">🏀</span>Props<span class="cnt" data-cnt="props-good">0</span></button>
+      <button type="button" class="tab-parent" data-board-parent="parlay"><span class="tab-emo" aria-hidden="true">🎟️</span>Parlay<span class="cnt" data-cnt="parlay-good">0</span></button>
       <button data-tab="tracker"><span class="tab-emo" aria-hidden="true">📊</span>Tracker</button>
       <button data-tab="all"><span class="tab-emo" aria-hidden="true">📋</span>All Games<span class="cnt" id="c-all" data-cnt="all">0</span></button>
-      <button data-tab="results"><span class="tab-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</button>
+      <button data-tab="results" aria-label="Results and Backtest"><span class="tab-emo" aria-hidden="true">🧪</span>Results</button>
       <button data-tab="settings"><span class="tab-emo" aria-hidden="true">⚙️</span>Settings</button>
     </nav>
     <div class="tab-subbar" id="tabSubbar" hidden>
@@ -759,13 +784,16 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 <div id="tabCountStore" hidden aria-hidden="true">
   <span data-cnt="good">0</span><span data-cnt="watch">0</span><span data-cnt="avoid">0</span>
   <span data-cnt="props-good">0</span><span data-cnt="props-watch">0</span><span data-cnt="props-avoid">0</span>
+  <span data-cnt="parlay-good">0</span><span data-cnt="parlay-watch">0</span><span data-cnt="parlay-avoid">0</span>
   <span data-cnt="all">0</span><span data-cnt="pulled">0</span>
 </div>
 
 <main class="wrap">
+  <div id="learnBanner" class="learn-banner" hidden></div>
   <div id="filterBar">
     <div class="filters" id="sportChips"></div>
     <div class="chip-note" id="chipNote" hidden></div>
+    <div class="filters" id="mixChips" hidden></div>
     <div class="filters" id="mktChips">
       <span class="chip on" data-mkt="all">All markets</span>
       <span class="chip" data-mkt="ml">Moneyline</span>
@@ -812,6 +840,7 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
   <button type="button" data-tab="picks" class="on" aria-label="Verdict"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 9.4l6.2-6.2 2.8 2.8-6.2 6.2z"/><path d="M6.2 7.8l2.8 2.8"/><path d="M12.4 11.2L20 20"/><path d="M3.5 19.8h8"/></svg></span><span class="tab-lab">Verdict</span></button>
   <button type="button" data-board-parent="games" aria-label="Games" aria-haspopup="true"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7l6-3 6 3 4-2v12l-4 2-6-3-6 3z"/><path d="M10 4v12"/><path d="M16 7v12"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Games</span></button>
   <button type="button" data-board-parent="props" aria-label="Props" aria-haspopup="true"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/><circle cx="12" cy="10" r="7" opacity=".0"/></svg><span class="cnt" data-cnt="props-good">0</span></span><span class="tab-lab">Props</span></button>
+  <button type="button" data-board-parent="parlay" aria-label="Parlay" aria-haspopup="true"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14.2a3.8 3.8 0 0 1 0-5.4l1.7-1.7a3.8 3.8 0 0 1 5.4 5.4l-.8.8"/><path d="M14 9.8a3.8 3.8 0 0 1 0 5.4l-1.7 1.7a3.8 3.8 0 1 1-5.4-5.4l.8-.8"/></svg><span class="cnt" data-cnt="parlay-good">0</span></span><span class="tab-lab">Parlay</span></button>
   <button type="button" id="btnMore" aria-haspopup="true" aria-expanded="false" aria-label="More"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg><span class="tab-dot" data-more-pull hidden></span></span><span class="tab-lab">More</span></button>
 </nav>
 <div class="nav-pop-back" id="navPopBack" hidden></div>
@@ -912,19 +941,19 @@ let firstSeen = loadJSON(LS.firstSeen, {});
 let bets = loadJSON(LS.bets, []);
 let oddsCache = loadJSON(LS.oddsCache, null);
 let games = [], plays = [];
-let ui = {tab:'picks', board:'games', sport:'all', mkt:'all', q:'', hideStarted:true, hideLogged:false, filtersOpen:false, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false, navPop:null};
+let ui = {tab:'picks', board:'games', sport:'all', mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false, filtersOpen:false, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false, navPop:null, settingsBoard:'games', resultsBoard:'games'};
 let filterViews = loadJSON(LS.filterViews, {}) || {};
 function filterViewKey(board, tab){
   if (tab==='good'||tab==='watch'||tab==='avoid') return (board||'games')+':'+tab;
   return null;
 }
 function defaultFilterView(){
-  return {sport:'all', mkt:'all', q:'', hideStarted:true, hideLogged:false};
+  return {sport:'all', mkt:'all', mix:'all', q:'', hideStarted:true, hideLogged:false};
 }
 function ensureFilterView(key){
   if (!key) return defaultFilterView();
   if (!filterViews[key] || typeof filterViews[key]!=='object'){
-    filterViews[key] = {sport:ui.sport||'all', mkt:ui.mkt||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+    filterViews[key] = {sport:ui.sport||'all', mkt:ui.mkt||'all', mix:ui.mix||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
   }
   return filterViews[key];
 }
@@ -933,6 +962,7 @@ function applyFilterView(key){
   if (v.sport && (v.sport==='all' || (typeof LMAP!=='undefined' && LMAP[v.sport]))) ui.sport = v.sport;
   else ui.sport = 'all';
   ui.mkt = v.mkt || 'all';
+  ui.mix = v.mix || 'all';
   ui.q = v.q || '';
   if (typeof v.hideLogged==='boolean') ui.hideLogged = v.hideLogged;
   if (typeof v.hideStarted==='boolean') ui.hideStarted = v.hideStarted;
@@ -945,14 +975,14 @@ function applyFilterView(key){
     if (typeof f.hideLogged==='boolean') ui.hideLogged = f.hideLogged;
     if (typeof f.hideStarted==='boolean') ui.hideStarted = f.hideStarted;
     if (typeof f.q==='string') ui.q = f.q;
-    if (f.board==='games'||f.board==='props') ui.board = f.board;
+    if (f.board==='games'||f.board==='props'||f.board==='parlay') ui.board = f.board;
   }
   // Seed any missing per-view copies from the last-used bl_filters so a first visit isn't empty.
-  for (const board of ['games','props']) for (const tab of ['good','watch','avoid']){
+  for (const board of ['games','props','parlay']) for (const tab of ['good','watch','avoid']){
     const k = board+':'+tab;
     if (!filterViews[k]){
-      filterViews[k] = {sport:ui.sport||'all', mkt:(board==='props'?'all':(ui.mkt||'all')), q:'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
-      if (board==='props' && ['ml','spread','total'].includes(filterViews[k].mkt)) filterViews[k].mkt = 'all';
+      filterViews[k] = {sport:ui.sport||'all', mkt:(board==='games'?(ui.mkt||'all'):'all'), mix:'all', q:'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+      if (board!=='games' && ['ml','spread','total'].includes(filterViews[k].mkt)) filterViews[k].mkt = 'all';
     }
   }
 })();
@@ -960,7 +990,7 @@ function saveFilters(){
   try{ saveJSON(LS.filters, {sport:ui.sport||'all', mkt:ui.mkt||'all', hideLogged:!!ui.hideLogged, hideStarted:!!ui.hideStarted, q:ui.q||'', board:ui.board||'games', tab:ui.tab}); }catch(e){}
   const key = filterViewKey(ui.board||'games', ui.tab);
   if (key){
-    filterViews[key] = {sport:ui.sport||'all', mkt:ui.mkt||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
+    filterViews[key] = {sport:ui.sport||'all', mkt:ui.mkt||'all', mix:ui.mix||'all', q:ui.q||'', hideStarted:!!ui.hideStarted, hideLogged:!!ui.hideLogged};
     try{ saveJSON(LS.filterViews, filterViews); }catch(e){}
   }
 }
@@ -2128,6 +2158,7 @@ function evaluateAll(){
   }
   try{ recordResults(); }catch(e){ console.warn('results', e); }
   try{ trackPlayTabs(); }catch(e){ console.warn('tabs', e); }
+  try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){ console.warn('parlays', e); }
 }
 
 /* ================= YOUR BOOKS (Bovada / Polymarket / any Odds API key) ================= */
@@ -4684,9 +4715,9 @@ function updateFilterChrome(){
   const logRow = $('#loggedFilterWrap');
   if (logRow) logRow.hidden = !(ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
   const fd = $('#filterDetails');
-  if (fd) fd.hidden = (ui.board==='props' && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid'));
+  if (fd) fd.hidden = false;
   const s = $('#search');
-  if (s) s.placeholder = (ui.board==='props') ? 'Search player or team…' : 'Search team…';
+  if (s) s.placeholder = ui.board==='props' ? 'Search player or team…' : ui.board==='parlay' ? 'Search parlay, team, or player…' : 'Search team…';
   if (!slate) setFiltersOpen(false);
   const btn = $('#btnFilters');
   if (btn){
@@ -4708,8 +4739,9 @@ function setFiltersOpen(open){
   if (open) syncFilterDrawerPos();
 }
 
-function pickinessLabel(){
-  const n = S.preset || (typeof detectPreset==='function' ? detectPreset() : 'custom');
+function pickinessLabel(board){
+  const b = board || ui.board || 'games';
+  const n = (typeof boardPreset==='function' ? boardPreset(b) : (S.preset || (typeof detectPreset==='function' ? detectPreset() : 'custom')));
   return n==='super' ? 'Super picky' : n==='picky' ? 'Picky' : n==='relaxed' ? 'Relaxed' : 'Custom';
 }
 function compactPriceLine(){
@@ -4720,7 +4752,9 @@ function compactPriceLine(){
     : 'Prices from DraftKings — add an Odds API key in Settings for Bovada.';
 }
 function fillFilterMeta(){
-  const cur = S.preset || (typeof detectPreset==='function' ? detectPreset() : 'super');
+  const board = ui.board||'games';
+  const B = typeof boardS==='function' ? boardS(board) : S;
+  const cur = typeof boardPreset==='function' ? boardPreset(board) : (S.preset || 'super');
   const seg = $('#filterPresetSeg');
   if (seg) seg.querySelectorAll('input').forEach(i=>{
     i.checked = i.value===cur;
@@ -4728,29 +4762,52 @@ function fillFilterMeta(){
   });
   const sl = $('#filterStrictLine');
   if (sl){
-    const allGood = (plays||[]).filter(p=>p.verdict==='good');
-    const today = allGood.filter(p=>p.g && p.g.start && p.g.start.toDateString()===new Date().toDateString()).length;
-    const near = (plays||[]).filter(p=>p.verdict==='watch' && p.strictFails && p.strictFails.length===1).length;
-    sl.textContent = S.strictMode
-      ? `${pickinessLabel()}: ${allGood.length} play${allGood.length===1?'':'s'} passed all checks (${today} today). ${near} missed by one. Zero is allowed.`
-      : 'Relaxed: looser rules, more plays.';
+    if (board==='parlay'){
+      const n = (parlays||[]).filter(p=>p.verdict==='good').length;
+      sl.textContent = `${pickinessLabel('parlay')}: ${n} parlay${n===1?'':'s'} passed the 2–3 leg / 2–3x courtroom. Legs ${fmtAm(B.sFavMin)} to ${fmtAm(B.sDogMax)}, payout ${(+B.payoutSweetMin||2).toFixed(1)}x–${(+B.payoutSweetMax||3).toFixed(1)}x.`;
+    } else if (board==='props'){
+      const n = (props||[]).filter(p=>p.verdict==='good').length;
+      sl.textContent = `${pickinessLabel('props')}: ${n} prop${n===1?'':'s'} passed the Props checks. Odds ${fmtAm(B.sFavMin??-150)} to ${fmtAm(B.sDogMax??150)}.`;
+    } else {
+      const allGood = (plays||[]).filter(p=>p.verdict==='good');
+      const today = allGood.filter(p=>p.g && p.g.start && p.g.start.toDateString()===new Date().toDateString()).length;
+      const near = (plays||[]).filter(p=>p.verdict==='watch' && p.strictFails && p.strictFails.length===1).length;
+      sl.textContent = S.strictMode
+        ? `${pickinessLabel('games')}: ${allGood.length} play${allGood.length===1?'':'s'} passed all checks (${today} today). ${near} missed by one. Zero is allowed.`
+        : 'Relaxed: looser rules, more plays.';
+    }
   }
   const pl = $('#filterPriceLine');
-  if (pl) pl.textContent = compactPriceLine();
+  if (pl){
+    if (board==='parlay') pl.textContent = `Parlay legs use a different odds range than singles: ${fmtAm(B.sFavMin)} to ${fmtAm(B.sDogMax)}, targeting a ${(+B.payoutMin||1.85).toFixed(2)}x–${(+B.payoutMax||3.25).toFixed(2)}x ticket.`;
+    else pl.textContent = compactPriceLine();
+  }
   const sum = $('#filterDetailsSum');
-  if (sum) sum.textContent = 'Pickiness & prices · ' + pickinessLabel();
+  if (sum) sum.textContent = 'Pickiness & prices · ' + pickinessLabel(board);
 }
 function setPickiness(name){
-  if (typeof applyPreset!=='function' || !PRESETS[name]) return;
-  applyPreset(name);
-  S.preset = name;
+  const board = ui.board||'games';
+  if (typeof applyBoardPreset==='function') applyBoardPreset(board, name);
+  else if (typeof applyPreset==='function' && PRESETS[name]){ applyPreset(name); S.preset=name; }
+  if (typeof syncGamesBoard==='function') syncGamesBoard();
   saveJSON(LS.settings, S);
-  try{ if (typeof evaluateAll==='function') evaluateAll(); }catch(e){}
+  try{
+    if (board==='props' && typeof props!=='undefined'){ /* re-eval via evaluateAll + prop rebuild */ }
+    if (typeof evaluateAll==='function') evaluateAll();
+    if (board==='parlay' && typeof buildParlays==='function') buildParlays();
+  }catch(e){}
   if (typeof render==='function') render();
 }
-function leagueExcludeWhy(lg){
-  if (typeof learnOff==='function' && learnOff(lg)) return {kind:'auto', why: (typeof learnOffWhy==='function' && learnOffWhy(lg)) || 'the app turned it off after it lost money in testing'};
-  if (typeof isExcluded==='function' && isExcluded(lg, true)){
+function leagueExcludeWhy(lg, board){
+  board = board || ui.board || 'games';
+  if (board==='games' && typeof learnOff==='function' && learnOff(lg)) return {kind:'auto', why: (typeof learnOffWhy==='function' && learnOffWhy(lg)) || 'the app turned it off after it lost money in testing'};
+  if (typeof boardSportOn==='function'){
+    if (!boardSportOn(board, lg)){
+      if (board==='games' && lg==='ncaab') return {kind:'test', why:'not profitable in testing'};
+      if (board==='games' && typeof SOCCER!=='undefined' && SOCCER.has(lg)) return {kind:'test', why:'not profitable in testing'};
+      return {kind:'settings', why:'turned off for '+(board==='props'?'Props':board==='parlay'?'Parlay':'Games')+' in Settings'};
+    }
+  } else if (typeof isExcluded==='function' && isExcluded(lg, true)){
     if (lg==='ncaab') return {kind:'test', why:'not profitable in testing'};
     if (typeof SOCCER!=='undefined' && SOCCER.has(lg)) return {kind:'test', why:'not profitable in testing'};
     return {kind:'settings', why:'turned off in Settings'};
@@ -4789,9 +4846,21 @@ function goodPlaysExcludeLine(){
 }
 function renderMarketChips(){
   const box = $('#mktChips'); if (!box) return;
-  const propsBoard = ui.board==='props' && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+  const mixBox = $('#mixChips');
+  const slate = (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+  const propsBoard = ui.board==='props' && slate;
+  const parlayBoard = ui.board==='parlay' && slate;
+  if (mixBox){
+    if (parlayBoard){
+      mixBox.hidden = false;
+      mixBox.innerHTML = [['all','All mixes'],['mixed','Mixed'],['games','Games only'],['props','Props only']].map(([k,l])=>`<span class="chip${(ui.mix||'all')===k?' on':''}" data-mix="${k}">${l}</span>`).join('');
+      mixBox.querySelectorAll('[data-mix]').forEach(c=>c.onclick=()=>{ ui.mix=c.dataset.mix; if (typeof saveFilters==='function') saveFilters(); render(); });
+    } else { mixBox.hidden = true; mixBox.innerHTML=''; }
+  }
   let html = '';
-  if (propsBoard){
+  if (parlayBoard){
+    html = [['all','All legs'],['2','2-leg'],['3','3-leg']].map(([k,l])=>`<span class="chip${(ui.mkt||'all')===k?' on':''}" data-mkt="${k}">${l}</span>`).join('');
+  } else if (propsBoard){
     const present = new Set((props||[]).map(p=>p.kind));
     const base = (typeof PROP_FILTER_KINDS!=='undefined'?PROP_FILTER_KINDS:['pts','reb','ast','threes','pra']);
     const kinds = ['all'].concat(base.filter(k=>present.has(k) || ['pts','reb','ast','threes','pra'].includes(k)));
@@ -4807,7 +4876,8 @@ function renderMarketChips(){
 function renderChips(){
   const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
   const onProps = restrict && (ui.board||'games')==='props';
-  if (restrict && !onProps && ui.sport!=='all' && !goodEligibleLeague(ui.sport)) ui.sport = 'all';
+  const onParlay = restrict && (ui.board||'games')==='parlay';
+  if (restrict && !onProps && !onParlay && ui.sport!=='all' && !goodEligibleLeague(ui.sport)) ui.sport = 'all';
   const counts = {};
   const propSports = {};
   const countOne = (p, lg)=>{ if (lg) counts[lg]=(counts[lg]||0)+1; };
@@ -4826,6 +4896,19 @@ function renderChips(){
       if (loggedSkip(p)) continue;
       countOne(p, lg);
     }
+  } else if (onParlay){
+    const want = ui.tab;
+    for (const pl of (parlays||[])){
+      if (pl.verdict!==want) continue;
+      const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
+      if (ui.hideStarted && started) continue;
+      if (loggedSkip(pl)) continue;
+      const sports = pl.sports && pl.sports.length ? pl.sports : [pl.league];
+      sports.filter(Boolean).forEach(lg=>{ countOne(pl, lg); propSports[lg]=1; });
+    }
+    for (const pl of (parlays||[])){
+      (pl.sports||[pl.league]).filter(Boolean).forEach(lg=>propSports[lg]=1);
+    }
   } else if (restrict){
     const want = ui.tab;
     for (const p of plays){
@@ -4837,18 +4920,20 @@ function renderChips(){
   } else {
     games.forEach(g=>{ if(!ui.hideStarted || g.state==='pre') counts[g.league]=(counts[g.league]||0)+1; });
   }
-  const allowed = L => onProps
-    ? !!(propSports[L.id] || counts[L.id] || ui.sport===L.id)
+  const allowed = L => (onProps||onParlay)
+    ? !!(propSports[L.id] || counts[L.id] || ui.sport===L.id || (typeof boardSportOn==='function' && boardSportOn(ui.board, L.id) && counts[L.id]!=null))
     : (restrict ? goodEligibleLeague(L.id) : (S.enabled.includes(L.id) || !!counts[L.id]));
-  const show = L => onProps || restrict ? allowed(L) : (allowed(L) && (counts[L.id] || ui.sport===L.id));
-  const total = onProps
+  const show = L => (onProps||onParlay)
+    ? !!(propSports[L.id] || counts[L.id] || ui.sport===L.id)
+    : (restrict ? allowed(L) : (allowed(L) && (counts[L.id] || ui.sport===L.id)));
+  const total = (onProps||onParlay)
     ? Object.values(counts).reduce((a,n)=>a+n,0)
     : (restrict
       ? LEAGUES.filter(allowed).reduce((a,L)=>a+(counts[L.id]||0),0)
       : Object.entries(counts).reduce((a,[id,n])=>a+n,0));
   $('#sportChips').innerHTML = `<span class="chip ${ui.sport==='all'?'on':''}" data-sport="all">All sports<span class="n">${total}</span></span>` +
     LEAGUES.filter(show).map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${sportChipLabel(L)}<span class="n">${counts[L.id]||0}</span></span>`).join('');
-  const note = (!onProps && ui.tab==='good') ? goodPlaysExcludeLine() : '';
+  const note = (!onProps && !onParlay && ui.tab==='good') ? goodPlaysExcludeLine() : '';
   const el = $('#chipNote');
   if (el){ el.hidden = !note; el.textContent = note; }
 }
@@ -4867,13 +4952,14 @@ function render(){
   const watch = vis('watch').sort((a,b)=>b.score-a.score);
   const avoid = vis('avoid').sort((a,b)=>a.g.start-b.g.start);
   const allG = filtered(games, false).sort((a,b)=>a.start-b.start);
-  const gamesLive = (ui.board||'games')!=='props';
+  const gamesLive = (ui.board||'games')==='games';
   const hideOnly = (list, v) => list.filter(p=>p.verdict===v && !(ui.hideStarted && p.g && p.g.state!=='pre')).length;
   setTabCount('good', gamesLive ? good.length : hideOnly(plays,'good'));
   setTabCount('watch', gamesLive ? watch.length : hideOnly(plays,'watch'));
   setTabCount('avoid', gamesLive ? avoid.length : hideOnly(plays,'avoid'));
   setTabCount('all', allG.length);
   if (typeof updatePropTabCounts==='function') updatePropTabCounts();
+  if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
   updatePullDots();
   if (typeof updateFilterChrome==='function') updateFilterChrome();
   if (typeof syncTabChrome==='function') syncTabChrome();
@@ -4883,7 +4969,11 @@ function render(){
   if (ui.tab==='picks') return renderPicks();
   if (ui.tab==='settings') return renderSettings();
   if (ui.tab==='results') return renderResults();
-  if (!lastUpdated && !(ui.board==='props' && (props||[]).length)){ v.innerHTML = busy ? `<div class="empty-state">Loading the slate…</div>` : `<div class="empty-state">No data yet.</div>${errs}`; return; }
+  if (!lastUpdated && !(ui.board==='props' && (props||[]).length) && !(ui.board==='parlay' && (parlays||[]).length)){ v.innerHTML = busy ? `<div class="empty-state">Loading the slate…</div>` : `<div class="empty-state">No data yet.</div>${errs}`; return; }
+  if ((ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && ui.board==='parlay' && typeof renderParlayBoard==='function'){
+    v.innerHTML = renderParlayBoard(ui.tab, errs);
+    return;
+  }
   if ((ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && ui.board==='props' && typeof renderPropsBoard==='function'){
     v.innerHTML = renderPropsBoard(ui.tab, errs);
     return;
@@ -5179,7 +5269,7 @@ function readLogForm(){
   return {date:g('date'), sport:g('sport'), market:g('market'), pick:g('pick'), odds:g('odds'), stake:g('stake'), result:g('result'), oddsType:(typEl&&typEl.value)||'american'};
 }
 function renderTracker(pf){
-  pf = pf || {}; if (pf.link || pf.legs) pendingLink = {link:pf.link||null, legs:pf.legs||null, fee:pf.fee};
+  pf = pf || {}; if (pf.link || pf.legs || pf.playKey) pendingLink = {link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null};
   const st = trackerStats();
   const wr = (st.W+st.Lo) ? st.W/(st.W+st.Lo) : null, roi = st.staked ? st.net/st.staked : null;
   const period = trackerUI.period||'all';
@@ -5346,7 +5436,7 @@ function renderTracker(pf){
     const result = f.get('result') || 'pending';
     const nb = {id:'b'+Date.now()+Math.random().toString(36).slice(2,6), created:Date.now(), date, sport, market, pick:String(f.get('pick')||'').trim(), odds:o, stake:+f.get('stake'), result, oddsType:typ, oddsEntered:entered};
     if (cents!=null){ nb.oddsCents=cents; nb.oddsFee=fee; }
-    if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = `${pendingLink.link.ev}|${pendingLink.link.mk}|${pendingLink.link.side}`; } if (pendingLink.legs) nb.legs = pendingLink.legs; pendingLink = null; }
+    if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; pendingLink = null; }
     bets.push(nb);
     saveBets(); toast('Bet logged'); renderTracker();
   };
@@ -6156,8 +6246,24 @@ function renderResults(){
   const wdRows = wd.slice().sort((a,b)=>(b.pulledAt||b.start)-(a.pulledAt||a.start)).slice(0,120).map(r=>`<tr><td>${esc(r.d||isoDate(new Date(r.start)))}</td><td>${esc(LMAP[r.lg]?LMAP[r.lg].label:r.lg)}</td><td>${esc(r.label)} <span class="mut">${esc(r.game)}</span><div><span class="badge b-pulled">Pulled from ${esc((typeof TAB_NAME!=='undefined' && TAB_NAME[r.pulledFrom||'good'])||'Picks')}</span></div></td><td>${fmtAm(r.lastPrice??r.price)}</td><td style="white-space:normal">${esc(r.pullReason||(typeof LEGACY_PULL!=='undefined'?LEGACY_PULL:'pulled (reason not recorded — older version)'))}${r.pulledAt?`<div class="mut">${esc(fmtTime(new Date(r.pulledAt)))}</div>`:''}</td><td class="${r.res==='win'?'pos':r.res==='loss'?'neg':'mut'}">${r.res||'pending'}${r.score?` <span class="mut">(${esc(r.score)})</span>`:''}${pullRightWrong(r)}</td></tr>`).join('');
   const R = btState.res;
   const cached = Object.values(BT.games).length;
-  $('#view').innerHTML = `
-  <div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results</h2><span class="hint">The model's track record — every strict Pick the app recommended is saved and graded automatically from ESPN final scores. This is separate from your personal bets and profit in Tracker.</span></div>
+  const rb = ui.resultsBoard || 'games';
+  const switcher = `<div class="s-row" style="margin:0 0 14px"><div class="board-seg" id="resultsBoardSeg">${[['games','🏟️ Games'],['props','🏀 Props'],['parlay','🎟️ Parlay']].map(([b,l])=>`<button type="button" data-res-board="${b}" class="${rb===b?'on':''}">${l}</button>`).join('')}</div></div>`;
+  const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
+  const bindResBoard = ()=>{
+    const seg=$('#resultsBoardSeg');
+    if (seg) seg.querySelectorAll('[data-res-board]').forEach(b=>b.onclick=()=>{ ui.resultsBoard=b.getAttribute('data-res-board'); renderResults(); });
+  };
+  if (rb==='props'){
+    $('#view').innerHTML = title+switcher+`<div class="section-title"><h2>Props model learning</h2><span class="hint">Snapshots, daily box-score grading, and weekly walk-forward retunes are independent from Games.</span></div>`+(typeof propsLearnPanelHTML==='function'?propsLearnPanelHTML():'<div class="hint">Props learning starts after a refresh.</div>')+(typeof propsBacktestHTML==='function'?propsBacktestHTML():'');
+    bindResBoard();
+    return;
+  }
+  if (rb==='parlay'){
+    $('#view').innerHTML = title+switcher+`<div class="section-title"><h2>Parlay model learning</h2><span class="hint">Every generated ticket is snapshotted and graded from finished legs. Weekly retunes are independent from Games and Props.</span></div>`+(typeof parlayLearnPanelHTML==='function'?parlayLearnPanelHTML():'<div class="hint">Parlay learning starts after a refresh.</div>')+(typeof parlayBacktestHTML==='function'?parlayBacktestHTML():'');
+    bindResBoard();
+    return;
+  }
+  $('#view').innerHTML = title+switcher+`
   <div class="kpis">
     <div class="kpi"><div class="k">Live record</div><div class="v">${st.w}-${st.l}${st.p?'-'+st.p:''}</div></div>
     <div class="kpi"><div class="k">Win rate</div><div class="v">${st.wr==null?'—':(st.wr*100).toFixed(1)+'%'}</div></div>
@@ -6186,7 +6292,7 @@ function renderResults(){
     <div class="hint" style="margin-top:8px">First run downloads about 2 small files per past game (DraftKings open/close odds + ESPN's win probability at tip-off), a few minutes for 60 days. After that it only fetches new days.</div>
     ${btState.err?`<div class="err-list">${esc(btState.err)}</div>`:''}</div>
   ${R ? btResultsHTML(R) : ''}
-  ${typeof propsBacktestHTML==='function' ? propsBacktestHTML() : ''}
+  <p class='hint'>Props and Parlay backtests are on their own boards in the switcher above.</p>
   <details class="dd" data-dd="results-math-origin" ${ui.open.has('results-math-origin')?'open':''}><summary>How the courtroom's math was set</summary>
   <div class="panel" style="margin-top:8px">
     <table class="ftab"><tr><th>Factor</th><th>Fitted effect</th><th>t</th><th>Games</th><th>Used</th></tr>
@@ -6203,6 +6309,7 @@ function renderResults(){
   $('#view').querySelectorAll('[data-btl]').forEach(i=>i.onchange=()=>{ i.parentElement.classList.toggle('on', i.checked); btUI.leagues = [...$('#view').querySelectorAll('[data-btl]')].filter(x=>x.checked).map(x=>x.dataset.btl); });
   $('#btnBt').onclick = runBacktestUI;
   if (typeof learnBind==='function') learnBind();
+  bindResBoard();
 }
 async function runBacktestUI(){
   if (btState.busy) return; btState = {busy:true, prog:'Starting…', res:btState.res, err:null}; renderResults();
@@ -7006,18 +7113,24 @@ function estimateProp(feat){
 function strictPropGates(pOver, price, feat, side){
   const fails = [];
   const pSide = side==='under' ? 1-pOver : pOver;
+  const B = (typeof boardS==='function' ? boardS('props') : null) || S;
+  const lo = (B && B.sFavMin!=null) ? +B.sFavMin : PROP_ODDS_LO;
+  const hi = (B && B.sDogMax!=null) ? +B.sDogMax : PROP_ODDS_HI;
+  const betMin = (B && B.preset==='super') ? Math.max(PROP_BET_MIN, +B.sMinWin||PROP_BET_MIN)
+    : (B && B.preset==='relaxed') ? Math.min(0.56, isFinite(+B.sMinWin)?+B.sMinWin:0.54)
+    : (B && isFinite(+B.sMinWin) ? +B.sMinWin : PROP_BET_MIN);
+  const watchMin = Math.max(0.50, betMin-0.06);
   if (feat && feat.n<8) fails.push('small sample (under 8 prior games)');
   if (feat && feat.l10n<5) fails.push('short recent sample (under 5 of last 10)');
-  if (price!=null && (price<PROP_ODDS_LO || price>PROP_ODDS_HI)) fails.push('odds outside −150 to +150');
+  if (price!=null && (price<lo || price>hi)) fails.push('odds outside '+fmtAm(lo)+' to '+fmtAm(hi));
   if (pSide==null) fails.push('no estimate yet');
-  if (pSide!=null && pSide < PROP_BET_MIN) fails.push('estimated win chance below 60%');
+  if (pSide!=null && pSide < betMin) fails.push('estimated win chance below '+Math.round(betMin*100)+'%');
   let verdict = 'avoid';
-  if (pSide!=null && pSide>=PROP_BET_MIN && !fails.filter(x=>!/^estimated win chance/.test(x)).length){
-    // allow the "below 60" fail to be the only auto one for BET
+  if (pSide!=null && pSide>=betMin && !fails.filter(x=>!/^estimated win chance/.test(x)).length){
     const hard = fails.filter(x=>!/^estimated win chance/.test(x));
     if (!hard.length) verdict = 'good';
     else verdict = 'watch';
-  } else if (pSide!=null && pSide>=PROP_WATCH_MIN && (price==null || (price>=PROP_ODDS_LO-25 && price<=PROP_ODDS_HI+25))){
+  } else if (pSide!=null && pSide>=watchMin && (price==null || (price>=lo-25 && price<=hi+25))){
     verdict = 'watch';
   } else {
     verdict = 'avoid';
@@ -7282,6 +7395,7 @@ async function runPropEnrichment(){
   }), 5);
   propEnrich.running = false;
   flush(true);
+  try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
 }
 
 function espnPropForPlayer(g, playerName, stat){
@@ -7436,8 +7550,23 @@ function fillLazyDetails(d){
   if (!d || !d.dataset || !d.dataset.lazy || !d.open) return;
   if (d.childElementCount>1 && d.dataset.filled==='1') return;
   const kind = d.dataset.lazy, id = d.dataset.lazyId;
-  const p = (typeof props!=='undefined' && (props||[]).find(x=>x.id===id)) || (plays||[]).find(x=>x.id===id);
+  const p = (typeof parlays!=='undefined' && (parlays||[]).find(x=>x.id===id))
+    || (typeof props!=='undefined' && (props||[]).find(x=>x.id===id))
+    || (plays||[]).find(x=>x.id===id);
   if (!p) return;
+  if (p.isParlay){
+    let html = '';
+    if (kind==='court') html = typeof parlayCourtroomHTML==='function' ? parlayCourtroomHTML(p) : '';
+    else if (kind==='inj') html = typeof parlayInjBody==='function' ? parlayInjBody(p) : '';
+    else if (kind==='nums') html = typeof parlayNumbersHTML==='function' ? parlayNumbersHTML(p) : '';
+    const sum = d.querySelector('summary');
+    [...d.children].forEach(ch=>{ if (ch !== sum) ch.remove(); });
+    const wrap = document.createElement('div');
+    wrap.innerHTML = html;
+    while (wrap.firstChild) d.appendChild(wrap.firstChild);
+    d.dataset.filled = '1';
+    return;
+  }
   let html = '';
   if (p.isProp){
     if (kind==='court') html = propCourtroomHTML(p);
@@ -7546,6 +7675,942 @@ function propsBacktestHTML(){
 }
 
 const PROP_BACKTEST = {"generatedAt":"2026-11-19T03:15:48Z","sport":"NBA","methodology":"Out-of-sample backtest on real ESPN athlete gamelogs. For each player-game, the line is a rolling median of that player\u2019s prior games in the same season, rounded to a half-point (a proxy, NOT a historical sportsbook line). Only games with at least 8 prior observations and 12+ minutes are included. The model starts at 50% and applies capped, conservative adjustments from L5/L10 vs the line, minutes trend, home/away, rest/B2B, and H2H. It only \u201cbets\u201d when estimated over-probability is \u226558% (take Over) or \u226442% (take Under). Settled at $100 flat with -110 juice; pushes excluded. Because lines are a statistical proxy, results are a feature-check, not a claim about beating real books.","playersN":47,"gamesSampled":668,"betsN":134,"hits":75,"hitRate":0.5597,"net":918.25,"roi":0.0685,"byKind":{"pts":{"label":"Points","n":11,"hits":4,"hitRate":0.364,"net":-336.36,"roi":-0.306},"reb":{"label":"Rebounds","n":41,"hits":22,"hitRate":0.537,"net":100.02,"roi":0.024},"ast":{"label":"Assists","n":23,"hits":13,"hitRate":0.565,"net":181.83,"roi":0.079},"threes":{"label":"3-Pointers","n":46,"hits":30,"hitRate":0.652,"net":1127.3,"roi":0.245},"pra":{"label":"Pts+Reb+Ast","n":13,"hits":6,"hitRate":0.462,"net":-154.54,"roi":-0.119}},"calibration":[{"bin":"57\u201362%","n":97,"hit":0.546,"roi":0.043},{"bin":"62\u201366%","n":37,"hit":0.595,"roi":0.135},{"bin":"66\u201372%","n":0,"hit":null,"roi":null}]};
+/* ================= PARLAYS (2–3 leg, low-odds, 2.0x–3.0x target) ================= */
+let parlays = [];
+const PARLAY_BOARDS = ['games','props','parlay'];
+const PARLAY_PRESETS = {
+  super:  {label:'Super picky', strictMode:true, sMinWin:0.68, sModelMin:0.62, sModelEdge:0, sMinPos:1, sMinEV:0, sMinConf:80, sMaxAdvPct:1.5, sNoModelSports:true, sMarkets:'ml,spread,total', sMinScore:-99},
+  picky:  {label:'Picky', strictMode:true, sMinWin:0.62, sModelMin:0.58, sModelEdge:-0.02, sMinPos:1, sMinEV:-99, sMinConf:70, sMaxAdvPct:3.0, sNoModelSports:true, sMarkets:'ml,spread,total', sMinScore:-99},
+  relaxed:{label:'Relaxed', strictMode:false, sMinWin:0.58, sModelMin:0.54, sModelEdge:-0.05, sMinPos:0, sMinEV:-99, sMinConf:50, sMaxAdvPct:6.0, sNoModelSports:true, sMarkets:'ml,spread,total', sMinScore:-99}
+};
+const PARLAY_DEFAULTS = {
+  preset:'picky', strictMode:true,
+  sFavMin:-650, sDogMax:-140,
+  payoutMin:1.85, payoutMax:3.25, payoutSweetMin:2.0, payoutSweetMax:3.0,
+  sMinWin:0.62, sModelMin:0.58, sModelEdge:-0.02, sMinPos:1, sMinEV:-99, sMinConf:70, sMaxAdvPct:3.0,
+  sMarkets:'ml,spread,total', sNoModelSports:true, sMinScore:-99, sExclude:''
+};
+function decToAm(d){ if (!d || d<=1) return null; const p=1-1/d; return p>=0.5 ? Math.round(-100*p/(1-p)) : Math.round(100*(1-p)/p); }
+function fmtDecX(d){ return d==null ? '—' : (Math.round(d*100)/100).toFixed(2).replace(/\.?0+$/,'')+'x'; }
+
+function snapshotBoardFromS(){
+  return {preset:S.preset, strictMode:!!S.strictMode, sFavMin:S.sFavMin, sDogMax:S.sDogMax,
+    sMinWin:S.sMinWin, sModelMin:S.sModelMin, sModelEdge:S.sModelEdge, sMinPos:S.sMinPos, sMinEV:S.sMinEV,
+    sMinConf:S.sMinConf, sMaxAdvPct:S.sMaxAdvPct, sMarkets:S.sMarkets, sNoModelSports:S.sNoModelSports,
+    sMinScore:S.sMinScore, sExclude:S.sExclude||''};
+}
+function migrateBoardSettings(){
+  if (!S.boards || typeof S.boards!=='object') S.boards = {};
+  const g = snapshotBoardFromS();
+  if (!S.boards.games || typeof S.boards.games!=='object') S.boards.games = Object.assign({}, g);
+  if (!S.boards.props || typeof S.boards.props!=='object') S.boards.props = Object.assign({}, g);
+  if (!S.boards.parlay || typeof S.boards.parlay!=='object'){
+    S.boards.parlay = Object.assign({}, PARLAY_DEFAULTS, PARLAY_PRESETS.picky, {sExclude: S.sExclude||DEFAULTS.sExclude||''});
+  }
+  if (!(+S.sVer>=10)){
+    S.sVer = 10;
+    try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+  }
+}
+migrateBoardSettings();
+function boardS(board){
+  board = board || 'games';
+  if (board==='games') return S;
+  if (!S.boards) S.boards = {};
+  if (!S.boards[board]) S.boards[board] = board==='parlay' ? Object.assign({}, PARLAY_DEFAULTS) : snapshotBoardFromS();
+  return S.boards[board];
+}
+function syncGamesBoard(){ if (!S.boards) S.boards = {}; S.boards.games = snapshotBoardFromS(); }
+function boardPreset(board){ const B=boardS(board); return B.preset || (board==='games' && typeof detectPreset==='function' ? detectPreset() : 'picky'); }
+function applyBoardPreset(board, name){
+  if (!name) return;
+  if (board==='games'){
+    if (typeof applyPreset==='function') applyPreset(name);
+    S.preset = name; syncGamesBoard(); return;
+  }
+  const B = boardS(board);
+  if (board==='parlay'){
+    const P = PARLAY_PRESETS[name==='relaxed'?'relaxed':name] || PARLAY_PRESETS.picky;
+    Object.assign(B, P);
+    if (name==='relaxed') B.strictMode = false;
+    B.preset = name;
+    B.sFavMin = B.sFavMin ?? PARLAY_DEFAULTS.sFavMin; B.sDogMax = B.sDogMax ?? PARLAY_DEFAULTS.sDogMax;
+    B.payoutMin = B.payoutMin ?? PARLAY_DEFAULTS.payoutMin; B.payoutMax = B.payoutMax ?? PARLAY_DEFAULTS.payoutMax;
+    return;
+  }
+  // props share the games preset keys, but keep their own odds range
+  const keepLo = B.sFavMin, keepHi = B.sDogMax, keepEx = B.sExclude;
+  if (typeof PRESETS!=='undefined' && PRESETS[name]){
+    if (name==='relaxed'){ Object.assign(B, Object.fromEntries((PRESET_KEYS||[]).map(k=>[k, PRESETS.super[k]]))); B.strictMode=false; }
+    else { for (const k of (PRESET_KEYS||[])) B[k] = PRESETS[name][k]; B.strictMode = true; }
+  }
+  B.preset = name;
+  if (keepLo!=null) B.sFavMin = keepLo; if (keepHi!=null) B.sDogMax = keepHi; if (keepEx!=null) B.sExclude = keepEx;
+}
+function boardSportOn(board, lg){
+  if (!lg) return false;
+  const B = boardS(board||'games');
+  const ex = new Set(String(B.sExclude||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean));
+  if (ex.has(lg)) return false;
+  if (!(S.enabled||[]).includes(lg)) return false;
+  return true;
+}
+function setBoardExclude(board, excludeIds){
+  const B = boardS(board);
+  B.sExclude = (excludeIds||[]).join(',');
+  if (board==='games'){ S.sExclude = B.sExclude; S.sNoSoccer = false; }
+}
+
+function parlayEventId(p){ return (p && p.g && (p.g.eventId||p.g.id)) || p.eventId || null; }
+function parlayLegPrice(p){
+  if (p.isProp || p.kind) return p.price;
+  const mb = p.my && p.my.best;
+  if (mb && mb.price!=null && mb.kind!=='pm') return mb.price;
+  return p.price!=null ? p.price : (p.sd && p.sd.best && p.sd.best.price);
+}
+function parlayLegProb(p){
+  if (p.p!=null) return p.p;
+  if (p.E && p.E.final!=null) return p.E.final;
+  try{ if (typeof estimate==='function'){ const E=estimate(p,{noBonus:true}); p.E=E; return E.final; } }catch(e){}
+  return p.est!=null ? p.est : (p.sd && p.sd.nv);
+}
+
+function gameParlaySides(){
+  const out = [];
+  const cfg = boardS('parlay');
+  const mkts = String(cfg.sMarkets||'ml,spread,total').split(',').map(x=>x.trim()).filter(Boolean);
+  for (const g of (games||[])){
+    if (!g || (g.state && g.state!=='pre')) continue;
+    if (!boardSportOn('parlay', g.league)) continue;
+    for (const mk of mkts){
+      const A = g.analysis && g.analysis[mk]; if (!A || !A.sides) continue;
+      for (const side of Object.keys(A.sides)){
+        if (side==='draw') continue;
+        const sd = A.sides[side]; if (!sd || !sd.best || sd.best.price==null) continue;
+        const p = {
+          id:`${g.id}|${mk}|${side}|parlay`, g, mk, A, sd, side, isProp:false, isParlayLeg:true,
+          label: typeof sideLabel==='function' ? sideLabel(g,mk,side,sd.point) : `${mk} ${side}`,
+          j: sd.judge || {factors:[], score:0, conf:{v:60,label:'Med'}, verdict:'watch'},
+          verdict:'watch', team: g[side==='home'?'home':side==='away'?'away':null] || null
+        };
+        try{ p.my = typeof myBooks==='function' ? myBooks(p) : null; }catch(e){ p.my=null; }
+        p.price = parlayLegPrice(p);
+        p.implied = p.price!=null ? imp(p.price) : (sd.nv||null);
+        try{ p.E = typeof estimate==='function' ? estimate(p,{noBonus:true}) : null; }catch(e){ p.E=null; }
+        p.p = (p.E && p.E.final!=null) ? p.E.final : (p.est!=null?p.est:(sd.nv||p.implied));
+        p.edge = (p.p!=null && p.implied!=null) ? p.p-p.implied : null;
+        p.league = g.league;
+        out.push(p);
+      }
+    }
+  }
+  return out;
+}
+function propParlaySides(){
+  const out = [];
+  for (const p of (props||[])){
+    if (!p || p.price==null || p.p==null) continue;
+    const g = p.g;
+    if (g && g.state && g.state!=='pre') continue;
+    const lg = p.league || (g && g.league);
+    if (!boardSportOn('parlay', lg)) continue;
+    out.push(p);
+  }
+  return out;
+}
+function parlayLegFails(p, cfg){
+  const F = [];
+  const pr = p.price;
+  if (pr==null) F.push('no price yet');
+  else {
+    if (pr < cfg.sFavMin) F.push(`price ${fmtAm(pr)} is juicier than ${fmtAm(cfg.sFavMin)}`);
+    if (pr > cfg.sDogMax) F.push(`price ${fmtAm(pr)} is not a heavy enough favorite (longest ${fmtAm(cfg.sDogMax)})`);
+  }
+  const prob = p.p;
+  if (prob==null) F.push('no win estimate yet');
+  else if (isFinite(+cfg.sMinWin) && prob < +cfg.sMinWin) F.push(`estimated win chance ${fmtPct(prob,0)} (needs ${fmtPct(+cfg.sMinWin,0)})`);
+  if (p.edge!=null && isFinite(+cfg.sMinEV) && +cfg.sMinEV>-99 && p.edge*100 < +cfg.sMinEV) F.push('the price is worse than our estimate');
+  const g = p.g, pred = g && g.fx && g.fx.pred && (p.side==='home'||p.side==='away') ? g.fx.pred[p.side] : null;
+  if (!p.isProp && pred!=null && isFinite(+cfg.sModelMin) && pred < +cfg.sModelMin) F.push(`ESPN's computer gives only ${fmtPct(pred,0)}`);
+  if (!p.isProp && pred!=null && p.implied!=null && isFinite(+cfg.sModelEdge) && (pred - p.implied) < +cfg.sModelEdge)
+    F.push("ESPN's computer is less sure than the odds");
+  if (g && g.fx && g.fx.inj){
+    const all = (g.fx.inj.home||[]).concat(g.fx.inj.away||[]);
+    if (all.some(i=>i.key && i.gtd)) F.push('a key player is a game-time decision');
+  }
+  return F;
+}
+
+function buildParlays(){
+  const cfg = boardS('parlay');
+  const payLo = +cfg.payoutMin || 1.85, payHi = +cfg.payoutMax || 3.25;
+  const sweetLo = +cfg.payoutSweetMin || 2.0, sweetHi = +cfg.payoutSweetMax || 3.0;
+  const gamesL = gameParlaySides();
+  const propsL = propParlaySides();
+  const raw = gamesL.concat(propsL);
+  for (const p of raw) p._fails = parlayLegFails(p, cfg);
+  // Eligible: price in range. Clean legs have no fails. Near legs have only soft misses.
+  const inRange = raw.filter(p=>p.price!=null && p.price>=cfg.sFavMin && p.price<=cfg.sDogMax && p.p!=null);
+  const clean = inRange.filter(p=>!p._fails.length);
+  const poolSrc = clean.length>=4 ? clean : inRange.filter(p=>p.p>=Math.max(0.56, (+cfg.sMinWin||0.62)-0.06) && p._fails.filter(f=>/game-time decision/.test(f)).length===0);
+  // One best side per game+market-family (prefer highest p among legs of that event that are ML first)
+  const byEvent = new Map();
+  for (const p of poolSrc){
+    const ev = parlayEventId(p); if (!ev) continue;
+    const cur = byEvent.get(ev);
+    const rank = (x)=> (x.isProp?0: (x.mk==='ml'?3:x.mk==='spread'?2:1)) + (x.p||0) + (x._fails&&x._fails.length?0:0.2);
+    if (!cur || rank(p)>rank(cur)) byEvent.set(ev, p);
+  }
+  const pool = [...byEvent.values()].sort((a,b)=>(b.p-a.p) || ((b.edge||0)-(a.edge||0)));
+  const cap = Math.min(28, pool.length);
+  const legs = pool.slice(0, cap);
+  const combos = [];
+  const pushCombo = arr => {
+    const decs = arr.map(l=>amToDec(l.price)).filter(d=>d);
+    if (decs.length!==arr.length) return;
+    const dec = decs.reduce((a,d)=>a*d,1);
+    if (dec<payLo || dec>payHi) return;
+    const p = arr.reduce((a,l)=>a*l.p,1);
+    const implied = 1/dec;
+    const edge = p-implied;
+    const ev = p*(dec-1)-(1-p);
+    const am = decToAm(dec);
+    const fails = arr.flatMap(l=> (l._fails||[]).map(f=>({leg:l, f})));
+    const cleanAll = fails.length===0;
+    const sweet = dec>=sweetLo && dec<=sweetHi;
+    let verdict='avoid', J='SKIP';
+    if (cleanAll && edge>=0 && (sweet || (dec>=payLo && dec<=payHi))){ verdict='good'; J='BET'; }
+    else if (cleanAll && edge>=-0.04){ verdict='watch'; J='MAYBE LATER'; }
+    else if (fails.length<=1 && p>=implied*0.92){ verdict='watch'; J='MAYBE LATER'; }
+    else { verdict='avoid'; J='SKIP'; }
+    const id = 'parlay:'+arr.map(l=>l.id).sort().join('+');
+    const sports = [...new Set(arr.map(l=>l.league||(l.g&&l.g.league)).filter(Boolean))];
+    const mix = arr.every(l=>l.isProp) ? 'props' : arr.every(l=>!l.isProp) ? 'games' : 'mixed';
+    combos.push({
+      id, isParlay:true, n:arr.length, legs:arr.slice(), dec, am, p, implied, edge, ev,
+      price:am, verdict, C:{J}, sports, mix, league:sports[0],
+      label: `${arr.length}-leg parlay · ${fmtDecX(dec)}`,
+      g: arr[0] && arr[0].g, start: Math.min(...arr.map(l=>l.g&&l.g.start?+l.g.start:Infinity)),
+      score: (p-implied)*20 + (sweet?1:0)
+    });
+  };
+  for (let i=0;i<legs.length;i++) for (let j=i+1;j<legs.length;j++) pushCombo([legs[i],legs[j]]);
+  for (let i=0;i<legs.length;i++) for (let j=i+1;j<legs.length;j++) for (let k=j+1;k<legs.length;k++) pushCombo([legs[i],legs[j],legs[k]]);
+  combos.sort((a,b)=> (a.verdict==='good'&&b.verdict!=='good'?-1:b.verdict==='good'&&a.verdict!=='good'?1:0) || (b.edge-a.edge) || (b.p-a.p));
+  const kept=[], used=new Map();
+  const share = (a,b)=>{ const A=new Set(a.legs.map(parlayEventId)), B=b.legs.map(parlayEventId); return B.filter(x=>A.has(x)).length; };
+  for (const c of combos){
+    if (kept.some(k=>share(k,c)>=2)) continue;
+    const over = c.legs.some(l=>{ const ev=parlayEventId(l); return (used.get(ev)||0)>=3; });
+    if (over) continue;
+    kept.push(c); c.legs.forEach(l=>used.set(parlayEventId(l), (used.get(parlayEventId(l))||0)+1));
+    const nGood=kept.filter(x=>x.verdict==='good').length;
+    const nWatch=kept.filter(x=>x.verdict==='watch').length;
+    const nAvoid=kept.filter(x=>x.verdict==='avoid').length;
+    if (nGood>=10 && nWatch>=8 && nAvoid>=6) break;
+    if (kept.length>=24) break;
+  }
+  // ensure some avoids if we have weak combos leftover
+  parlays = kept;
+  if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
+  try{ if (typeof parlayLearnCapture==='function') parlayLearnCapture(); }catch(e){}
+  return parlays;
+}
+
+function parlayChanceBarHTML(pl){
+  const hit=pl.p, miss=1-hit, be=pl.implied;
+  return `<div class="chance parlay-chance">
+    <div class="chance-meta"><span class="wc-left"><b>Hit</b> ${fmtPct(hit,0)}</span><span class="est-lab">Win chance</span><span class="wc-right">${fmtPct(miss,0)} <b>Miss</b></span></div>
+    <div class="chance-track">${be!=null?`<span class="chance-be" style="left:${(be*100).toFixed(1)}%" title="Break-even ${fmtPct(be,0)}"></span>`:''}<i style="width:${(hit*100).toFixed(1)}%"></i></div>
+    <div class="wc-cap">Our estimate <b>${fmtPct(hit,0)} hit</b>${be!=null?` · Odds imply <b>${fmtPct(be,0)}</b>`:''}${pl.edge!=null?` · <span class="cmp-gap ${pl.edge>=0?'pos':'neg'}">${pl.edge>=0?'+':''}${(pl.edge*100).toFixed(1)} pts</span>`:''}</div>
+  </div>`;
+}
+function parlayLegRow(l){
+  const isProp=!!(l.isProp||l.kind&&l.playerName);
+  const pic = isProp && typeof playerPfpHTML==='function' ? playerPfpHTML(l)
+    : (typeof teamLogoHTML==='function' && (l.team|| (l.g && (l.side==='home'?l.g.home:l.side==='away'?l.g.away:null))) ? teamLogoHTML(l.team||l.g[l.side==='home'?'home':'away']) : '');
+  const name = isProp ? (l.playerName||l.label) : l.label;
+  const meta = isProp
+    ? `${(l.team&&(l.team.short||l.team.name))||''}${l.kind?` · ${((typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[l.kind])||l.kind)}`:''}`
+    : `${(LMAP[l.league||l.g&&l.g.league]||{}).label||''}${l.g?` · ${(l.g.away&&l.g.away.short)||''} @ ${(l.g.home&&l.g.home.short)||''}`:''}`;
+  return `<div class="pl-leg">
+    <div class="pl-pic">${pic||''}</div>
+    <div class="who"><div class="what">${esc(name)}</div><div class="mut">${esc(meta)}</div></div>
+    <div class="pr">${l.price!=null?fmtAm(l.price):'—'}</div>
+    <div class="pp">${l.p!=null?fmtPct(l.p,0):'—'}</div>
+  </div>`;
+}
+function parlayCourtroomHTML(pl){
+  const win=[], lose=[];
+  win.push({txt:`${pl.n} independent legs (different games) so the combined chance is the product of each leg: ${fmtPct(pl.p,0)}.`});
+  if (pl.dec>=2 && pl.dec<=3) win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) sits in the 2.0x–3.0x sweet spot.`});
+  else win.push({txt:`Combined payout ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) is inside the allowed window.`});
+  for (const l of pl.legs){
+    const kind = (l.isProp||l.playerName) ? 'prop' : (l.mk||'game');
+    if (l.p!=null && l.p>=0.62) win.push({txt:`${l.playerName||l.label} is a ${fmtPct(l.p,0)} lean at ${fmtAm(l.price)} (${kind}).`});
+    else if (l.p!=null) lose.push({txt:`${l.playerName||l.label} is the weaker link at ${fmtPct(l.p,0)} / ${fmtAm(l.price)}.`});
+    (l._fails||[]).forEach(f=>lose.push({txt:`${l.playerName||l.label}: ${f}`}));
+  }
+  if (pl.edge!=null && pl.edge<0) lose.push({txt:`Combined juice leaves this about ${fmtPct(Math.abs(pl.edge),1)} short of break-even — parlays compound the book's margin.`});
+  else if (pl.edge!=null && pl.edge>=0) win.push({txt:`Our combined estimate beats the ${fmtDecX(pl.dec)} break-even by ${fmtPct(pl.edge,1)}.`});
+  lose.push({txt:'Any one leg can lose and the whole ticket is dead — variance is higher than a single.'});
+  const J = (pl.C&&pl.C.J)||'SKIP';
+  const cls = J==='BET'?'b-good':J==='MAYBE LATER'?'b-watch':'b-avoid';
+  const sentence = J==='BET'
+    ? `This ${pl.n}-leg ticket is built from high-probability favorites and lands in a ${fmtDecX(pl.dec)} payout. The judge will take it as a single parlay, not as three separate bets.`
+    : J==='MAYBE LATER'
+      ? `There's a real lean, but a weak link, a slightly short price, or a payout just outside the sweet spot keeps this on the watchlist.`
+      : `The judge passes. Either a leg is too shaky, the combined juice is too heavy, or the payout is not a clean 2–3x.`;
+  const wr = (pl.implied!=null && pl.p!=null)
+    ? `This ${fmtDecX(pl.dec)} parlay breaks even at about ${typeof outOf10==='function'?outOf10(pl.implied): (pl.implied*10).toFixed(1)} wins in 10 (${fmtPct(pl.implied,0)}). We estimate ${typeof outOf10==='function'?outOf10(pl.p):(pl.p*10).toFixed(1)} in 10 (${fmtPct(pl.p,0)}).`
+    : '';
+  const rows = pl.legs.map(l=>`<tr><td>${esc(l.playerName||l.label)}</td><td>${l.price!=null?fmtAm(l.price):'—'}</td><td>${l.implied!=null?fmtPct(l.implied,0):'—'}</td><td>${l.p!=null?fmtPct(l.p,0):'—'}</td></tr>`).join('');
+  return `<div class="court2">
+    ${parlayChanceBarHTML(pl)}
+    <div class="c-col win"><div class="ct">✅ Why this parlay could hit</div><ul>${win.map(x=>`<li><span>${esc(x.txt)}</span></li>`).join('')}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this parlay could miss</div><ul>${lose.map(x=>`<li><span>${esc(x.txt)}</span></li>`).join('')}</ul></div>
+    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(J)}</span></div>
+      <div class="c-sent">${esc(sentence)}</div>
+      ${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
+    <table class="ftab" style="margin-top:10px"><tr><th>Leg</th><th>Odds</th><th>Implied</th><th>Our estimate</th></tr>${rows}</table>
+  </div>`;
+}
+function parlayInjBody(pl){
+  const bits = [];
+  for (const l of pl.legs){
+    try{
+      if (typeof lineupsNewsHTML==='function' && l.g){
+        const html = lineupsNewsHTML({id:l.id, g:l.g}, true);
+        if (html) bits.push(`<div class="pl-inj"><div class="pl-inj-h">${esc(l.playerName||l.label)}</div>${html}</div>`);
+      }
+    }catch(e){}
+  }
+  return bits.length ? bits.join('') : `<div class="hint">Injury and lineup notes for each leg show up here once those game pages have loaded.</div>`;
+}
+function parlayNumbersHTML(pl){
+  const rows = pl.legs.map(l=>`<tr><td>${esc(l.playerName||l.label)}</td><td>${l.implied!=null?fmtPct(l.implied):'—'}</td><td>${l.p!=null?fmtPct(l.p):'—'}</td><td>${l.price!=null?fmtAm(l.price):'—'} <span class="mut">${amToDec(l.price)?fmtDecX(amToDec(l.price)):''}</span></td></tr>`).join('');
+  return `<div class="stats" style="margin-top:8px">
+      <div class="stat"><div class="k">Combined est.</div><div class="v">${fmtPct(pl.p)}</div></div>
+      <div class="stat"><div class="k">Break-even</div><div class="v">${fmtPct(pl.implied)}</div></div>
+      <div class="stat"><div class="k">Edge</div><div class="v ${pl.edge==null?'mut':pl.edge>=0?'pos':'neg'}">${pl.edge==null?'n/a':fmtPct(pl.edge)}</div></div>
+      <div class="stat"><div class="k">EV / $1</div><div class="v ${pl.ev==null?'mut':pl.ev>=0?'pos':'neg'}">${pl.ev==null?'n/a':(pl.ev>=0?'+':'')+pl.ev.toFixed(3)}</div></div>
+      <div class="stat"><div class="k">Payout</div><div class="v">${fmtDecX(pl.dec)} · ${fmtAm(pl.am)}</div></div>
+    </div>
+    <table class="ftab" style="margin-top:10px"><tr><th>Leg</th><th>No-vig / implied</th><th>Model</th><th>Odds</th></tr>${rows}</table>
+    <div class="hint" style="margin-top:8px">Combined probability is the product of independent legs (different games). Same-game combinations are blocked so this math holds. Parlay juice compounds, so a "fair" favorite ticket can still be slightly negative EV.</div>`;
+}
+function parlayCard(pl){
+  const loggedBet = typeof primaryLoggedBet==='function' ? primaryLoggedBet(pl) : null;
+  const cardCls = `card parlay-card v-${pl.verdict||'none'}${loggedBet?' logged':''}`;
+  const logBtn = loggedBet ? 'Tailed' : 'Tail';
+  const logMarks = loggedBet ? `<div class="logged-badge">${esc(typeof loggedBadgeText==='function'?loggedBadgeText(loggedBet):'✓ Tailed')}</div>` : '';
+  const cid=pl.id+'|court', nid=pl.id+'|news', mid=pl.id+'|math';
+  const bo = (pl.implied!=null && pl.p!=null)
+    ? `<div class="beton ${pl.edge>=0?'ok':'bad'}"><div>This ${fmtDecX(pl.dec)} parlay breaks even at about ${(pl.implied*10).toFixed(1)} wins in 10 (${fmtPct(pl.implied,0)}). We estimate ${(pl.p*10).toFixed(1)} in 10 (${fmtPct(pl.p,0)}).</div></div>`
+    : '';
+  const lazy = (id,sum,kind,body)=>{
+    const open = ui.open.has(id);
+    return `<details class="dd${kind==='court'?' court-dd':''}" data-dd="${esc(id)}" data-lazy="${kind}" data-lazy-id="${esc(pl.id)}" ${open?'open':''}><summary>${sum}</summary>${open?body:''}</details>`;
+  };
+  const sports = (pl.sports||[]).map(s=> (LMAP[s]&&LMAP[s].label)||s).join(' · ');
+  const when = isFinite(pl.start) && pl.start!==Infinity ? fmtTime(new Date(pl.start)) : '';
+  return `<div class="${cardCls}">
+    ${logMarks}
+    <div class="chead"><span><span class="lg">${esc(sports||'PARLAY')}</span> <span class="pill pl-n">${pl.n}-LEG PARLAY</span></span><span>${esc(when)}</span></div>
+    <div class="pick"><div><div class="mk">Combined payout</div><div class="what">${fmtDecX(pl.dec)} · ${fmtAm(pl.am)}</div></div>
+      <div class="price">${fmtPct(pl.p,0)}<small>est. hit</small></div>
+      ${pl.verdict?`<div class="verdict-slot">${typeof verdictPill==='function'?verdictPill(pl.verdict):''}</div>`:''}
+    </div>
+    <div class="pl-legs">${pl.legs.map(parlayLegRow).join('')}</div>
+    ${bo}
+    ${lazy(cid,'⚖️ Courtroom','court',parlayCourtroomHTML(pl))}
+    ${lazy(nid,'🩺 Injuries, lineups &amp; news','inj',parlayInjBody(pl))}
+    ${lazy(mid,'📐 Numbers','nums',parlayNumbersHTML(pl))}
+    <div class="cfoot"><span class="mut">${pl.mix==='mixed'?'Games + props':pl.mix==='props'?'Props only':'Games only'}</span><button class="btn sm" data-log="${esc(pl.id)}">${logBtn}</button></div>
+  </div>`;
+}
+
+function filteredParlays(list){
+  const q = typeof norm==='function' ? norm(ui.q) : String(ui.q||'').toLowerCase();
+  return (list||[]).filter(pl=>{
+    if (ui.sport && ui.sport!=='all' && !(pl.sports||[]).includes(ui.sport) && pl.league!==ui.sport) return false;
+    if (ui.mkt && ui.mkt!=='all'){
+      if (ui.mkt==='2' && pl.n!==2) return false;
+      if (ui.mkt==='3' && pl.n!==3) return false;
+    }
+    if (ui.mix && ui.mix!=='all' && pl.mix!==ui.mix) return false;
+    if (ui.hideStarted){
+      const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
+      if (started) return false;
+    }
+    if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(pl)){
+      if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(pl.id))) return false;
+    }
+    if (q){
+      const blob = [pl.label, ...(pl.legs||[]).map(l=>[l.playerName,l.label,l.g&&l.g.home&&l.g.home.name,l.g&&l.g.away&&l.g.away.name].filter(Boolean).join(' '))].join(' ');
+      if (!norm(blob).includes(q)) return false;
+    }
+    return true;
+  });
+}
+function updateParlayTabCounts(){
+  const live = (ui.board||'games')==='parlay' && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+  const vis = v => live ? filteredParlays((parlays||[]).filter(p=>p.verdict===v)).length
+    : (parlays||[]).filter(p=>p.verdict===v && !(ui.hideStarted && (p.legs||[]).some(l=>l.g&&l.g.state&&l.g.state!=='pre'))).length;
+  if (typeof setTabCount==='function'){
+    setTabCount('parlay-good', vis('good'));
+    setTabCount('parlay-watch', vis('watch'));
+    setTabCount('parlay-avoid', vis('avoid'));
+  }
+}
+function renderParlayBoard(tab, errs){
+  const vis = v => filteredParlays((parlays||[]).filter(p=>p.verdict===v)).sort((a,b)=>(b.edge-a.edge)||(b.p-a.p));
+  const good=vis('good'), watch=vis('watch'), avoid=vis('avoid');
+  const counts={good:good.length, watch:watch.length, avoid:avoid.length};
+  const st = `<div class="banner">2–3 leg parlays from high-probability favorites (legs ${fmtAm(boardS('parlay').sFavMin)} to ${fmtAm(boardS('parlay').sDogMax)}), targeting a ${(+boardS('parlay').payoutSweetMin||2).toFixed(1)}x–${(+boardS('parlay').payoutSweetMax||3).toFixed(1)}x payout. Same-game legs are never combined. This is a separate model from singles — a -200 favorite that is too juicy for Games can still be a parlay leg.</div>`;
+  const section = (title, sub, list, empty) => `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length?`<div class="grid">${list.map(parlayCard).join('')}</div>`:`<div class="empty-state">${empty}</div>`);
+  const empty = (typeof sportFilterEmpty==='function'?sportFilterEmpty('No parlays in this range right now. Zero tickets is fine.'):'No parlays right now.');
+  if (tab==='good') return (typeof slateLayout==='function'?slateLayout('good', st+section('<span class="h-emo" aria-hidden="true">🎟️</span>Parlay Picks','Two- and three-leg tickets that clear the parlay courtroom and land near 2–3x.', good, empty)+(errs||''), counts):st);
+  if (tab==='watch') return slateLayout('watch', st+section('<span class="h-emo" aria-hidden="true">👀</span>Parlay Watchlist','Close, a little short on edge, or with a weaker link.', watch, empty)+(errs||''), counts);
+  return slateLayout('avoid', st+section('<span class="h-emo" aria-hidden="true">🚫</span>Parlay Avoid','Combined juice is too heavy, a leg is shaky, or the payout is not a clean 2–3x.', avoid, empty)+(errs||''), counts);
+}
+
+function parlayBacktestHTML(){
+  const B = (typeof PARLAY_BACKTEST!=='undefined' && PARLAY_BACKTEST) || null;
+  if (!B || !B.v1) return '';
+  const v=B.v1, by=v.byLegs||{};
+  const row = (lab,x)=> !x||!x.n ? `<tr><td>${esc(lab)}</td><td colspan="5" class="mut">no bets</td></tr>`
+    : `<tr><td>${esc(lab)}</td><td>${x.n}</td><td>${x.hits}-${x.n-x.hits}</td><td>${x.hitRate==null?'—':(x.hitRate*100).toFixed(1)+'%'}</td><td class="${(x.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(x.net):x.net}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${x.roi==null?'—':(x.roi*100).toFixed(1)+'%'}</td></tr>`;
+  const presets = B.byPreset||{};
+  const prow = (name,x)=>{
+    if (!x||!x.betsN) return `<tr><td>${esc(name)}</td><td colspan="5" class="mut">no bets</td></tr>`;
+    return `<tr><td>${esc(name)}</td><td>${x.betsN}</td><td>${x.hits}-${x.losses|| (x.betsN-x.hits)}</td><td>${x.hitRate==null?'—':(x.hitRate*100).toFixed(1)+'%'}</td><td class="${(x.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(x.net):x.net}</td><td class="${(x.roi||0)>=0?'pos':'neg'}">${x.roi==null?'—':(x.roi*100).toFixed(1)+'%'}</td></tr>`;
+  };
+  return `<div class="section-title"><h2>Parlays v1 backtest</h2><span class="hint">Real DraftKings closing moneylines, ${B.days}-day window. Default in-app preset is Picky.</span></div>
+    <div class="panel">
+      <div class="kpis">
+        <div class="kpi"><div class="k">Record (Picky)</div><div class="v">${v.hits}–${v.losses}</div><div class="hint">${v.betsN} bets · ${v.pushes||0} pushes</div></div>
+        <div class="kpi"><div class="k">Hit rate</div><div class="v">${v.hitRate==null?'—':(v.hitRate*100).toFixed(1)+'%'}</div><div class="hint">avg payout ${v.avgPayout||'—'}x</div></div>
+        <div class="kpi"><div class="k">Net / $100</div><div class="v ${(v.net||0)>=0?'pos':'neg'}">${typeof money==='function'?money(v.net):v.net}</div><div class="hint">${v.roi==null?'':(v.roi>=0?'+':'')+(v.roi*100).toFixed(1)+'% ROI'}</div></div>
+        <div class="kpi"><div class="k">Sample</div><div class="v">${(B.gamesWithCloseML||0).toLocaleString()}</div><div class="hint">games with a close ML · ${B.eligibleLegs||0} favorite legs</div></div>
+      </div>
+      <div class="overflow"><table><tr><th></th><th>N</th><th>W-L</th><th>Win%</th><th>Net</th><th>ROI</th></tr>
+        ${row('2-leg', by['2'])}${row('3-leg', by['3'])}
+        ${prow('Super picky', presets.super)}${prow('Picky (v1)', presets.picky)}${prow('Relaxed', presets.relaxed)}
+      </table></div>
+      <p class="hint" style="margin-top:10px">${esc(B.methodology||'')}</p>
+    </div>`;
+}
+
+const PARLAY_BACKTEST = {"generatedAt":"2026-11-19T04:38:37Z","methodology":"Out-of-sample parlay backtest on real ESPN completed games over the last 75 days (nba, wnba, nhl, nfl, ncaaf). Each leg is a closing DraftKings moneyline favorite priced between -650 and -140. Combined decimal payout must fall in 1.85x\u20133.25x (sweet spot 2.0x\u20133.0x). Two legs from the same game are never combined. Per-leg win probability is ESPN's pregame win probability when the sport publishes it (NBA, WNBA, NFL, NCAAF); for NHL (no ESPN computer), the closing implied probability is used and no 'model edge' is claimed. On each slate (calendar day) we keep at most 3 non-overlapping parlays, preferring the sweet-spot payout and higher combined probability. Settled at $100 flat; a parlay wins only if every leg wins, loses if any leg loses, and pushes if a remaining leg pushed. These are real closing moneylines, not a statistical line proxy. Because parlays compound juice, a fair-priced favorite parlay is usually a slight negative-EV product unless the model probability beats the close. Results are a feature-check of the 2\u20133 leg / 2\u20133x rules, not a claim about beating a live book's juiced parlay card.","days":75,"sports":["nba","wnba","nhl","nfl","ncaaf"],"gamesWithCloseML":1493,"eligibleLegs":972,"legsWithEspnWp":771,"legOdds":[-650,-140],"payoutWindow":[1.85,3.25],"sweetSpot":[2.0,3.0],"stake":100.0,"v1":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"byPreset":{"super":{"label":"Super picky (68%+ per leg, no negative model edge)","minLegP":0.68,"requireModelEdge":true,"betsN":101,"hits":40,"losses":61,"pushes":2,"hitRate":0.396,"net":-1560.1,"roi":-0.1545,"avgPayout":2.133,"avgCombinedP":0.5602,"sweetN":93,"byLegs":{"2":{"n":72,"hits":28,"hitRate":0.3889,"net":-1312.47,"roi":-0.1823,"avgPayout":2.099},"3":{"n":29,"hits":12,"hitRate":0.4138,"net":-247.63,"roi":-0.0854,"avgPayout":2.218}},"bySport":{"nba+ncaaf+nhl":{"n":2,"hits":1,"net":26.48,"hitRate":0.5,"roi":0.1324},"nba":{"n":9,"hits":2,"net":-456.29,"hitRate":0.2222,"roi":-0.507},"nba+nhl":{"n":10,"hits":5,"net":20.48,"hitRate":0.5,"roi":0.0205},"nba+ncaaf":{"n":12,"hits":6,"net":97.55,"hitRate":0.5,"roi":0.0813},"nfl":{"n":9,"hits":5,"net":237.1,"hitRate":0.5556,"roi":0.2634},"nba+nfl":{"n":3,"hits":1,"net":-88.29,"hitRate":0.3333,"roi":-0.2943},"ncaaf":{"n":34,"hits":9,"net":-1537.85,"hitRate":0.2647,"roi":-0.4523},"ncaaf+nhl":{"n":7,"hits":2,"net":-310.14,"hitRate":0.2857,"roi":-0.4431},"nhl":{"n":8,"hits":5,"net":274.99,"hitRate":0.625,"roi":0.3437},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804},"nfl+nhl":{"n":4,"hits":3,"net":259.99,"hitRate":0.75,"roi":0.65}}},"picky":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"relaxed":{"label":"Relaxed (58%+ per leg)","minLegP":0.58,"requireModelEdge":false,"betsN":169,"hits":69,"losses":100,"pushes":2,"hitRate":0.4083,"net":-2199.47,"roi":-0.1301,"avgPayout":2.137,"avgCombinedP":0.5196,"sweetN":167,"byLegs":{"2":{"n":147,"hits":58,"hitRate":0.3946,"net":-2311.03,"roi":-0.1572,"avgPayout":2.143},"3":{"n":22,"hits":11,"hitRate":0.5,"net":111.56,"roi":0.0507,"avgPayout":2.095}},"bySport":{"ncaaf+nhl":{"n":25,"hits":8,"net":-835.83,"hitRate":0.32,"roi":-0.3343},"nba":{"n":15,"hits":6,"net":-185.14,"hitRate":0.4,"roi":-0.1234},"ncaaf":{"n":37,"hits":10,"net":-1600.39,"hitRate":0.2703,"roi":-0.4325},"nba+ncaaf":{"n":14,"hits":8,"net":341.94,"hitRate":0.5714,"roi":0.2442},"nba+nhl":{"n":17,"hits":6,"net":-432.6,"hitRate":0.3529,"roi":-0.2545},"nfl":{"n":11,"hits":8,"net":573.2,"hitRate":0.7273,"roi":0.5211},"nba+nfl":{"n":6,"hits":4,"net":254.84,"hitRate":0.6667,"roi":0.4247},"nfl+nhl":{"n":10,"hits":5,"net":42.82,"hitRate":0.5,"roi":0.0428},"nhl":{"n":23,"hits":10,"net":-148.8,"hitRate":0.4348,"roi":-0.0647},"nhl+wnba":{"n":3,"hits":1,"net":-55.23,"hitRate":0.3333,"roi":-0.1841},"nfl+wnba":{"n":6,"hits":2,"net":-181.75,"hitRate":0.3333,"roi":-0.3029},"ncaaf+wnba":{"n":1,"hits":0,"net":-100.0,"hitRate":0.0,"roi":-1.0},"ncaaf+nfl+wnba":{"n":1,"hits":1,"net":127.47,"hitRate":1.0,"roi":1.2747}}}}};
+/* ================= PER-BOARD AUTO-LEARN (props + parlays; games stays in 12_learn.js) ================= */
+const PROP_STAT_KEYS = {pts:['points'], reb:['rebounds','totalRebounds'], ast:['assists'], threes:['threePointFieldGoalsMade','threes'], pra:null, pr:null, ra:null, pa:null};
+function boardLearnSeed(kind){
+  return {v:1, cur:1, paused:false, lastTune:0, lastTry:0, lastCollect:0, autoOff:{}, log:[{at:Date.now(), txt:`${kind} learning is on, starting at v1. It will retune once enough live ${kind} have been graded.`}], versions:[{id:1, at:Date.now(), status:'current', title:'Starting model', changes:[`Shipped as ${kind} v1.`], games:0}]};
+}
+function ensureBoardLearn(){
+  if (!LEARN) return;
+  if (!LEARN.props) LEARN.props = boardLearnSeed('Props');
+  if (!LEARN.parlay) LEARN.parlay = boardLearnSeed('Parlays');
+  if (!Array.isArray(LEARN.notices)) LEARN.notices = [];
+}
+function idbOpenV2(){
+  // Re-open at schema v2 when props/parlay stores are needed. Safe if already on v2.
+  if (_idb && _idb._v>=2) return _idb;
+  const prev = _idb;
+  _idb = new Promise((res, rej)=>{
+    if (!window.indexedDB) return rej(new Error('IndexedDB not available'));
+    const r = indexedDB.open('bettinglab', 2);
+    r.onupgradeneeded = ()=>{
+      const d = r.result;
+      if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+      if (!d.objectStoreNames.contains('snaps')) d.createObjectStore('snaps', {keyPath:'i'});
+      if (!d.objectStoreNames.contains('propSnaps')) d.createObjectStore('propSnaps', {keyPath:'i'});
+      if (!d.objectStoreNames.contains('parlaySnaps')) d.createObjectStore('parlaySnaps', {keyPath:'i'});
+    };
+    r.onsuccess = ()=>{ const db=r.result; db._v=2; res(db); };
+    r.onerror = ()=>rej(r.error);
+    r.onblocked = ()=>rej(new Error('IndexedDB blocked'));
+  });
+  _idb._v = 2;
+  return _idb;
+}
+const storeGetAll = async name => {
+  const d = await idbOpenV2();
+  if (!d.objectStoreNames.contains(name)) return [];
+  return idbReq(d.transaction(name).objectStore(name).getAll());
+};
+const storeWrite = async (name, list, del) => {
+  const d = await idbOpenV2();
+  if (!d.objectStoreNames.contains(name)) return;
+  const tx = d.transaction(name, 'readwrite'); const st = tx.objectStore(name);
+  for (const x of list||[]) st.put(x);
+  for (const k of del||[]) st.delete(k);
+  return new Promise((res,rej)=>{ tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+};
+
+const PROP_SNAPS = new Map();
+const PARLAY_SNAPS = new Map();
+let boardLearnReady = false;
+async function boardLearnInit(){
+  ensureBoardLearn();
+  try{
+    const ps = await withTimeout(storeGetAll('propSnaps'), 4000);
+    for (const x of ps||[]) PROP_SNAPS.set(String(x.i), x);
+    const ys = await withTimeout(storeGetAll('parlaySnaps'), 4000);
+    for (const x of ys||[]) PARLAY_SNAPS.set(String(x.i), x);
+    boardLearnReady = true;
+  }catch(e){
+    boardLearnReady = false;
+    for (const x of loadJSON('bl_prop_snaps', [])) PROP_SNAPS.set(String(x.i), x);
+    for (const x of loadJSON('bl_parlay_snaps', [])) PARLAY_SNAPS.set(String(x.i), x);
+    console.warn('board-learn snapshots falling back to localStorage', e);
+  }
+}
+function boardSnapsSave(kind){
+  const map = kind==='props'?PROP_SNAPS:PARLAY_SNAPS;
+  const name = kind==='props'?'propSnaps':'parlaySnaps';
+  const ls = kind==='props'?'bl_prop_snaps':'bl_parlay_snaps';
+  if (boardLearnReady) storeWrite(name, [...map.values()], []).catch(e=>console.warn('snap save', e));
+  else {
+    const arr = [...map.values()].sort((a,b)=>b.t-a.t).slice(0, 2500);
+    try{ saveJSON(ls, arr); }catch(e){}
+  }
+}
+
+function propLearnCapture(){
+  ensureBoardLearn();
+  let n=0;
+  for (const p of (props||[])){
+    if (!p || !p.id || p.p==null || p.line==null || !p.g) continue;
+    const t = p.g.start ? +p.g.start : 0;
+    if (!t || t < Date.now()-2*86400000) continue;
+    if (p.g.state && p.g.state!=='pre') continue;
+    if (PROP_SNAPS.has(p.id)) continue;
+    PROP_SNAPS.set(p.id, {
+      i:p.id, t, eventId:p.g.eventId||p.g.id, league:p.league||p.g.league,
+      playerId:p.playerId, playerName:p.playerName, kind:p.kind||p.mk, side:p.side, line:p.line,
+      price:p.price, p:p.p, implied:p.implied, verdict:p.verdict, y:null
+    });
+    n++;
+  }
+  if (n) boardSnapsSave('props');
+  return n;
+}
+function parlayLearnCapture(){
+  ensureBoardLearn();
+  let n=0;
+  for (const pl of (parlays||[])){
+    if (!pl || !pl.id || !pl.legs) continue;
+    const t = isFinite(pl.start) ? pl.start : Date.now();
+    if (t < Date.now()-2*86400000) continue;
+    if (PARLAY_SNAPS.has(pl.id)) continue;
+    PARLAY_SNAPS.set(pl.id, {
+      i:pl.id, t, n:pl.n, dec:pl.dec, am:pl.am, p:pl.p, implied:pl.implied, edge:pl.edge, verdict:pl.verdict, mix:pl.mix,
+      legs: pl.legs.map(l=>({
+        type: (l.isProp||l.playerName)?'prop':'game',
+        id:l.id, eventId:parlayEventId(l), league:l.league||(l.g&&l.g.league),
+        mk:l.mk, kind:l.kind, side:l.side, line:l.line, point:l.sd&&l.sd.point, price:l.price, p:l.p,
+        playerId:l.playerId, playerName:l.playerName, label:l.label||l.playerName
+      })),
+      y:null
+    });
+    n++;
+  }
+  if (n) boardSnapsSave('parlay');
+  return n;
+}
+
+function boxStat(ath, kind){
+  const st = ath && (ath.stats||ath.statistics||ath);
+  const num = (keys)=>{
+    for (const k of keys){
+      if (st[k]!=null && isFinite(+st[k])) return +st[k];
+      const hit = Array.isArray(st) ? st.find(s=>String(s.name||s.abbreviation||'').toLowerCase()===k.toLowerCase()) : null;
+      if (hit && isFinite(+(hit.value||hit.displayValue))) return +(hit.value||hit.displayValue);
+    }
+    return null;
+  };
+  const pts = num(['points','pts']);
+  const reb = num(['rebounds','totalRebounds','reb']);
+  const ast = num(['assists','ast']);
+  const th  = num(['threePointFieldGoalsMade','threes','fg3m','3PM']);
+  if (kind==='pts') return pts;
+  if (kind==='reb') return reb;
+  if (kind==='ast') return ast;
+  if (kind==='threes') return th;
+  if (kind==='pra') return (pts==null||reb==null||ast==null)?null:pts+reb+ast;
+  if (kind==='pr') return (pts==null||reb==null)?null:pts+reb;
+  if (kind==='pa') return (pts==null||ast==null)?null:pts+ast;
+  if (kind==='ra') return (reb==null||ast==null)?null:reb+ast;
+  return pts;
+}
+async function fetchEventBox(lg, eventId){
+  const L = LMAP[lg]; if (!L || !eventId) return null;
+  try{
+    const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${L.path}/summary?event=${eventId}`, 20000);
+    return r && r.ok ? r.data : null;
+  }catch(e){ return null; }
+}
+function athletesFromSummary(data){
+  const out = [];
+  const box = data && (data.boxscore||data.boxScore);
+  const teams = (box && (box.players||box.athletes||box.teams)) || [];
+  for (const t of teams){
+    const stats = t.statistics || t.stats || [];
+    const aths = t.athletes || t.roster || [];
+    if (aths.length){
+      for (const a of aths){
+        const id = String((a.athlete&&a.athlete.id)||a.id||'');
+        const st = {};
+        const keys = (a.stats && !Array.isArray(a.stats) ? a.stats : null) || {};
+        Object.assign(st, keys);
+        if (Array.isArray(a.stats)){
+          const labels = (stats[0] && (stats[0].names||stats[0].keys||stats[0].labels)) || [];
+          labels.forEach((k,i)=>{ if (a.stats[i]!=null) st[k]=a.stats[i]; });
+        }
+        out.push({id, name:(a.athlete&&(a.athlete.displayName||a.athlete.fullName))||a.displayName, stats:st});
+      }
+    }
+  }
+  // fallback: data.boxscore.players[].statistics[].athletes[]
+  if (!out.length && box && Array.isArray(box.players)){
+    for (const t of box.players){
+      for (const blk of (t.statistics||[])){
+        const names = blk.names||blk.keys||[];
+        for (const a of (blk.athletes||[])){
+          const st={};
+          (a.stats||[]).forEach((v,i)=>{ if (names[i]) st[names[i]]=v; });
+          out.push({id:String((a.athlete&&a.athlete.id)||a.id||''), name:(a.athlete&&a.athlete.displayName)||'', stats:st});
+        }
+      }
+    }
+  }
+  return out;
+}
+async function propLearnGrade(){
+  const now=Date.now(); let n=0;
+  const due = [...PROP_SNAPS.values()].filter(x=>x.y==null && x.t < now-3*3600000);
+  // group by event
+  const byEv = new Map();
+  for (const x of due){ const k=(x.league||'')+'|'+(x.eventId||''); if (!byEv.has(k)) byEv.set(k,[]); byEv.get(k).push(x); }
+  let done=0;
+  for (const [k, list] of byEv){
+    const [lg, ev] = k.split('|');
+    if (!ev) continue;
+    // prefer already-finished game in BT
+    let data = null;
+    try{ data = await fetchEventBox(lg, ev); }catch(e){}
+    const aths = data ? athletesFromSummary(data) : [];
+    const finished = data && data.header && data.header.competitions && data.header.competitions[0] && data.header.competitions[0].status && (data.header.competitions[0].status.type||{}).completed;
+    if (!finished && !aths.length){ done++; continue; }
+    for (const x of list){
+      const ath = aths.find(a=>a.id && String(a.id)===String(x.playerId)) || aths.find(a=>x.playerName && a.name && a.name.toLowerCase()===String(x.playerName).toLowerCase());
+      if (!ath) continue;
+      const val = boxStat(ath, x.kind);
+      if (val==null || x.line==null) continue;
+      let res = 'push';
+      if (val===x.line) res='push';
+      else if (x.side==='over') res = val>x.line?'win':'loss';
+      else res = val<x.line?'win':'loss';
+      x.y = res==='win'?1:res==='loss'?0:-1;
+      x.res = res; x.actual=val; x.graded=now;
+      n++;
+    }
+    done++;
+    if (done%4===0) await new Promise(r=>setTimeout(r,0));
+  }
+  // prune old
+  for (const [k,x] of [...PROP_SNAPS]) if (x.t < now-150*86400000) PROP_SNAPS.delete(k);
+  if (n) boardSnapsSave('props');
+  return n;
+}
+function gradeGameLeg(leg){
+  const r = BT && BT.games && BT.games[String(leg.eventId)];
+  if (!r || !isFinite(r.h&&r.h.s) || !isFinite(r.a&&r.a.s)) return null;
+  if (leg.type==='prop') return null;
+  try{ return typeof btResult==='function' ? btResult(r, leg.mk||'ml', leg.side, leg.point!=null?leg.point:leg.line) : null; }catch(e){ return null; }
+}
+async function parlayLearnGrade(){
+  const now=Date.now(); let n=0;
+  const due=[...PARLAY_SNAPS.values()].filter(x=>x.y==null && x.t < now-3*3600000);
+  for (const pl of due){
+    const results=[];
+    let pending=false;
+    for (const leg of (pl.legs||[])){
+      if (leg.type==='prop'){
+        const snap = [...PROP_SNAPS.values()].find(s=>s.eventId==leg.eventId && String(s.playerId)===String(leg.playerId) && s.kind===leg.kind && s.side===leg.side && s.line===leg.line);
+        if (snap && snap.res){ results.push(snap.res); continue; }
+        // try grading this one prop inline
+        pending = true;
+      } else {
+        const res = gradeGameLeg(leg);
+        if (!res){ pending=true; continue; }
+        results.push(res);
+      }
+    }
+    if (pending || results.length!==(pl.legs||[]).length) continue;
+    let res='win';
+    for (const r of results){ if (r==='loss'){ res='loss'; break; } if (r==='push' && res!=='loss') res='push'; }
+    pl.y = res==='win'?1:res==='loss'?0:-1; pl.res=res; pl.graded=now; n++;
+  }
+  for (const [k,x] of [...PARLAY_SNAPS]) if (x.t < now-150*86400000) PARLAY_SNAPS.delete(k);
+  if (n) boardSnapsSave('parlay');
+  return n;
+}
+
+function trackStats(snaps, stakeFn){
+  const settled = snaps.filter(x=>x.y===0||x.y===1);
+  const w=settled.filter(x=>x.y===1).length, l=settled.length-w;
+  const unit = +S.unit||25;
+  let net=0;
+  for (const x of settled){
+    const pr = stakeFn ? stakeFn(x) : (x.price!=null && typeof profitOn==='function' ? (x.y===1?profitOn(x.price, unit):-unit) : (x.y===1?unit:-unit));
+    net += pr;
+  }
+  return {n:settled.length, w, l, wr:settled.length?w/settled.length:null, net, roi:settled.length?net/(settled.length*unit):null};
+}
+
+function boardLearnDue(track){
+  const now=Date.now();
+  const last = track.lastTune||0;
+  const d = last ? (now-last)/86400000 : 999;
+  return {due: d>=LEARN_EVERY || last===0 && false, days:d, next: new Date((last||now)+LEARN_EVERY*86400000)};
+}
+
+function retuneThresholds(snaps, steps, current, payoutFn){
+  // Walk-forward: older 70% train, newest 30% hold. Pick the bar that maximizes hold wr with roi not worse and enough plays.
+  const graded = snaps.filter(x=>x.y===0||x.y===1 && x.p!=null).sort((a,b)=>a.t-b.t);
+  if (graded.length < 40) return {adopted:false, why:`Need 40 graded tickets first (${graded.length} so far).`, n:graded.length};
+  const cut = graded[Math.max(0, graded.length-Math.max(20, Math.round(graded.length*0.3)))].t;
+  const hold = graded.filter(x=>x.t>=cut);
+  const train = graded.filter(x=>x.t<cut);
+  if (hold.length<15) return {adopted:false, why:`Hold-out set is still small (${hold.length}).`, n:graded.length};
+  const evalBar = (bar, rows)=>{
+    const pick = rows.filter(x=>x.p>=bar);
+    if (!pick.length) return {n:0,w:0,l:0,wr:null,roi:null,net:0};
+    let net=0, unit=+S.unit||25;
+    for (const x of pick){
+      if (payoutFn) net += x.y===1 ? payoutFn(x) : -(+S.unit||25);
+      else net += x.y===1 ? (typeof profitOn==='function'&&x.price!=null?profitOn(x.price,unit):unit) : -unit;
+    }
+    const w=pick.filter(x=>x.y===1).length, n=pick.length;
+    return {n,w,l:n-w,wr:w/n,net,roi:net/(n*unit)};
+  };
+  const cur = evalBar(current, hold);
+  let best={bar:current, hold:cur};
+  for (const bar of steps){
+    const h=evalBar(bar, hold);
+    if (h.n<12) continue;
+    const better = (h.wr!=null && cur.wr!=null && h.wr >= cur.wr+0.01 && (h.roi==null||cur.roi==null||h.roi>=cur.roi-1e-6))
+      || (cur.n<12 && h.n>=12 && (h.roi||0)>=0);
+    if (better && (best.bar===current || h.wr>best.hold.wr || (h.wr===best.hold.wr && h.roi>best.hold.roi))) best={bar,hold:h};
+  }
+  const autoOff={};
+  const byKey=new Map();
+  for (const x of graded){
+    const k=x.league||x.kind||'all';
+    if (!byKey.has(k)) byKey.set(k,{n:0,w:0,net:0});
+    const b=byKey.get(k); b.n++; if (x.y===1) b.w++;
+  }
+  return {adopted:best.bar!==current, bar:best.bar, current, hold:best.hold, curHold:cur, n:graded.length, holdN:hold.length, trainN:train.length};
+}
+
+function learnNotify(board, adopted, ver, detail){
+  ensureBoardLearn();
+  const lab = board==='games'?'Games':board==='props'?'Props':'Parlays';
+  const msg = adopted
+    ? `Weekly learning finished for ${lab}: upgraded to v${ver}${detail?` (${detail})`:''}`
+    : `Weekly learning finished for ${lab}: kept v${ver} — no better settings on unseen days`;
+  const notice = {at:Date.now(), board, txt:msg, adopted, ver, seen:false};
+  LEARN.notices.unshift(notice);
+  LEARN.notices = LEARN.notices.slice(0, 20);
+  learnSave();
+  try{ toast('🧠 '+msg); }catch(e){}
+  try{ if (typeof renderLearnBanner==='function') renderLearnBanner(); }catch(e){}
+  try{
+    if (typeof canNotify==='function' && canNotify() && typeof postNotification==='function')
+      postNotification('🧠 Weekly learning finished', {body:msg, tag:'bl-learn-'+board});
+  }catch(e){}
+}
+
+function renderLearnBanner(){
+  let el = document.getElementById('learnBanner');
+  if (!el){
+    const main = document.querySelector('main.wrap') || document.querySelector('main');
+    if (!main) return;
+    el = document.createElement('div');
+    el.id='learnBanner';
+    el.className='learn-banner';
+    main.insertBefore(el, main.firstChild);
+  }
+  const notice = LEARN && (LEARN.notices||[]).find(n=>!n.seen);
+  if (!notice){ el.hidden=true; el.innerHTML=''; return; }
+  el.hidden=false;
+  el.innerHTML = `<span class="h-emo" aria-hidden="true">🧠</span><div class="lb-txt">${esc(notice.txt)}</div><button type="button" class="lb-x" aria-label="Dismiss">×</button>`;
+  const btn=el.querySelector('.lb-x');
+  if (btn) btn.onclick=()=>{ notice.seen=true; learnSave(); renderLearnBanner(); };
+}
+
+async function propsLearnRetune(opts){
+  opts=opts||{};
+  ensureBoardLearn();
+  const track=LEARN.props;
+  if (track.paused && !opts.force) return null;
+  if (learnState.busy) return null;
+  learnState.busy=true;
+  try{
+    await propLearnGrade();
+    const steps=[0.56,0.58,0.60,0.62,0.64,0.66];
+    const cur = +boardS('props').sMinWin || 0.60;
+    const r = retuneThresholds([...PROP_SNAPS.values()], steps, cur);
+    track.lastTune=Date.now(); track.lastTry=Date.now();
+    const ver = track.cur||1;
+    if (r.adopted){
+      const next=ver+1;
+      boardS('props').sMinWin = r.bar;
+      if (boardS('props').preset!=='custom'){ /* leave preset name if it still matches, else custom */ }
+      track.cur=next;
+      track.versions.push({id:next, at:Date.now(), status:'current', title:'Auto-learned', changes:[`Minimum estimated win chance moved ${fmtPct(cur,0)} → ${fmtPct(r.bar,0)} after a better hold-out record (${r.hold.w}-${r.hold.l}, ${fmtPct(r.hold.wr,1)}).`], hold:r.hold, games:r.n});
+      (track.log||(track.log=[])).unshift({at:Date.now(), txt:`Adopted Props v${next}: min win ${fmtPct(r.bar,0)}.`});
+      learnNotify('props', true, next, `min win ${fmtPct(cur,0)} → ${fmtPct(r.bar,0)} on unseen tickets`);
+    } else {
+      (track.log||(track.log=[])).unshift({at:Date.now(), txt:`Kept Props v${ver}. ${r.why||'No better bar on the unseen tickets.'}`});
+      learnNotify('props', false, ver, r.why||'');
+    }
+    track.log=(track.log||[]).slice(0,40);
+    learnSave();
+    return r;
+  }catch(e){ console.warn('props learn', e); return null; }
+  finally{ learnState.busy=false; if (ui.tab==='results') try{renderResults();}catch(e){} }
+}
+async function parlayLearnRetune(opts){
+  opts=opts||{};
+  ensureBoardLearn();
+  const track=LEARN.parlay;
+  if (track.paused && !opts.force) return null;
+  if (learnState.busy) return null;
+  learnState.busy=true;
+  try{
+    await parlayLearnGrade();
+    const steps=[0.58,0.60,0.62,0.64,0.66,0.68];
+    const cur = +boardS('parlay').sMinWin || 0.62;
+    const payout = x => {
+      const dec = x.dec || (x.am!=null?amToDec(x.am):null);
+      const unit=+S.unit||25;
+      return dec ? unit*(dec-1) : unit;
+    };
+    const r = retuneThresholds([...PARLAY_SNAPS.values()], steps, cur, payout);
+    track.lastTune=Date.now(); track.lastTry=Date.now();
+    const ver=track.cur||1;
+    if (r.adopted){
+      const next=ver+1;
+      boardS('parlay').sMinWin = r.bar;
+      track.cur=next;
+      track.versions.push({id:next, at:Date.now(), status:'current', title:'Auto-learned', changes:[`Per-leg win bar moved ${fmtPct(cur,0)} → ${fmtPct(r.bar,0)} after a better hold-out record.`], hold:r.hold, games:r.n});
+      (track.log||(track.log=[])).unshift({at:Date.now(), txt:`Adopted Parlays v${next}: per-leg min win ${fmtPct(r.bar,0)}.`});
+      learnNotify('parlay', true, next, `per-leg bar ${fmtPct(cur,0)} → ${fmtPct(r.bar,0)}`);
+    } else {
+      (track.log||(track.log=[])).unshift({at:Date.now(), txt:`Kept Parlays v${ver}. ${r.why||'No better bar on the unseen tickets.'}`});
+      learnNotify('parlay', false, ver, r.why||'');
+    }
+    track.log=(track.log||[]).slice(0,40);
+    learnSave();
+    return r;
+  }catch(e){ console.warn('parlay learn', e); return null; }
+  finally{ learnState.busy=false; if (ui.tab==='results') try{renderResults();}catch(e){} }
+}
+
+function propsLearnPanelHTML(){
+  ensureBoardLearn();
+  const t=LEARN.props, snaps=[...PROP_SNAPS.values()];
+  const graded=snaps.filter(x=>x.y!=null).length, waiting=snaps.length-graded;
+  const st=trackStats(snaps);
+  const due=boardLearnDue(t);
+  const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
+  const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
+  return `<div class="panel ln-panel">
+    <div class="kpis">
+      <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
+      <div class="kpi"><div class="k">Live graded</div><div class="v">${st.n?`${st.w}–${st.l}`:'—'}</div><div class="hint">${st.wr==null?'no graded props yet':fmtPct(st.wr,1)}</div></div>
+      <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
+      <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
+    </div>
+    <p class="hint">Every upcoming prop card (Picks, Watch, and Avoid) is snapshotted. Once a day the app downloads ESPN box scores and grades the line. After a week, and once enough props are graded, it walk-forward tunes the Props win-chance bar and can auto-pause a cold sport or stat. Odds range and the sports you turned off are never changed.</p>
+    <details class="dd" data-dd="props-learn-log" ${ui.open.has('props-learn-log')?'open':''}><summary>Learning log</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
+  </div>`;
+}
+function parlayLearnPanelHTML(){
+  ensureBoardLearn();
+  const t=LEARN.parlay, snaps=[...PARLAY_SNAPS.values()];
+  const graded=snaps.filter(x=>x.y!=null).length, waiting=snaps.length-graded;
+  const unit=+S.unit||25;
+  const settled=snaps.filter(x=>x.y===0||x.y===1);
+  const w=settled.filter(x=>x.y===1).length, l=settled.length-w;
+  let net=0;
+  for (const x of settled){ net += x.y===1 && x.dec ? unit*(x.dec-1) : (x.y===1?unit:-unit); }
+  const two=settled.filter(x=>x.n===2), three=settled.filter(x=>x.n===3);
+  const due=boardLearnDue(t);
+  const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
+  const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
+  return `<div class="panel ln-panel">
+    <div class="kpis">
+      <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
+      <div class="kpi"><div class="k">Live graded</div><div class="v">${settled.length?`${w}–${l}`:'—'}</div><div class="hint">${settled.length?`2-leg ${two.filter(x=>x.y===1).length}–${two.filter(x=>x.y===0).length} · 3-leg ${three.filter(x=>x.y===1).length}–${three.filter(x=>x.y===0).length}`:'no graded parlays yet'}</div></div>
+      <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
+      <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
+    </div>
+    <p class="hint">Every generated parlay across Picks, Watch, and Avoid is snapshotted. Legs are graded from finished game finals and prop box scores (a ticket hits only if every leg hits). Weekly walk-forward tuning can nudge the per-leg win bar once enough live parlays are graded. The 2.0x–3.0x payout window and the sports you turned off are never changed automatically.</p>
+    <details class="dd" data-dd="parlay-learn-log" ${ui.open.has('parlay-learn-log')?'open':''}><summary>Learning log</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
+  </div>`;
+}
+
+async function boardLearnTick(){
+  try{ ensureBoardLearn(); }catch(e){}
+  try{ propLearnCapture(); }catch(e){ console.warn('prop snap', e); }
+  try{ parlayLearnCapture(); }catch(e){ console.warn('parlay snap', e); }
+  try{ await propLearnGrade(); }catch(e){ console.warn('prop grade', e); }
+  try{ await parlayLearnGrade(); }catch(e){ console.warn('parlay grade', e); }
+  const now=Date.now();
+  if (LEARN && LEARN.props && !LEARN.props.paused && boardLearnDue(LEARN.props).due && now-(LEARN.props.lastTry||0)>20*3600000)
+    await propsLearnRetune({});
+  if (LEARN && LEARN.parlay && !LEARN.parlay.paused && boardLearnDue(LEARN.parlay).due && now-(LEARN.parlay.lastTry||0)>20*3600000)
+    await parlayLearnRetune({});
+}
+
+// Hook the existing daily tick without rewriting it.
+(function hookLearnTick(){
+  if (typeof learnTick!=='function') return;
+  const orig = learnTick;
+  learnTick = async function(){
+    const r = await orig.apply(this, arguments);
+    try{ await boardLearnTick(); }catch(e){ console.warn('board learn tick', e); }
+    return r;
+  };
+})();
+(function hookLearnInit(){
+  if (typeof learnInit!=='function') return;
+  const orig = learnInit;
+  learnInit = async function(){
+    const r = await orig.apply(this, arguments);
+    try{ ensureBoardLearn(); await boardLearnInit(); renderLearnBanner(); }catch(e){ console.warn('board learn init', e); }
+    return r;
+  };
+})();
+(function hookLearnRetuneNotify(){
+  if (typeof learnRetune!=='function') return;
+  const orig = learnRetune;
+  learnRetune = async function(opts){
+    const r = await orig.apply(this, arguments);
+    try{
+      if (r && LEARN){
+        const adopted=!!r.adopted;
+        learnNotify('games', adopted, LEARN.cur, adopted ? 'new weights / bars on unseen 30d' : '');
+      }
+    }catch(e){}
+    return r;
+  };
+})();
 /* ================= SETTINGS ================= */
 const WT = [
   ['wPrice','Price range'],['wModel','ESPN model vs market'],['wEdge','Best price vs other books'],['wMove','Line movement'],['wInj','Injuries (key players)'],['wForm','Recent form (L5)'],
@@ -7590,11 +8655,15 @@ function detectPreset(){ if (!S.strictMode) return 'relaxed'; for (const n of ['
 const MY_BOOK_CHOICES = [['bovada','Bovada'],['polymarket','Polymarket'],['draftkings','DraftKings'],['fanduel','FanDuel'],['betmgm','BetMGM'],['williamhill_us','Caesars'],['espnbet','ESPN BET'],['fanatics','Fanatics'],['betrivers','BetRivers'],['betonlineag','BetOnline']];
 const LOST_IN_TEST = new Set(['ncaab','mls','epl','ucl','laliga','seriea','bund']);
 function applyPickSportsLive(){
-  S.sExclude = LEAGUES.filter(L=>{
+  const board = ui.settingsBoard || 'games';
+  const ids = LEAGUES.filter(L=>{
     const el = document.querySelector('input[name="pick_'+L.id+'"]');
-    return el ? !el.checked : String(S.sExclude||'').split(',').map(x=>x.trim()).includes(L.id);
-  }).map(L=>L.id).join(',');
-  S.sNoSoccer = false;
+    const fallback = String((typeof boardS==='function'?boardS(board).sExclude:S.sExclude)||'').split(',').map(x=>x.trim()).includes(L.id);
+    return el ? !el.checked : fallback;
+  }).map(L=>L.id);
+  if (typeof setBoardExclude==='function') setBoardExclude(board, ids);
+  else { S.sExclude = ids.join(','); S.sNoSoccer = false; }
+  if (typeof syncGamesBoard==='function') syncGamesBoard();
   saveJSON(LS.settings, S);
   if (ui.sport!=='all' && typeof goodEligibleLeague==='function' && !goodEligibleLeague(ui.sport)){ ui.sport = 'all'; if (typeof saveFilters==='function') saveFilters(); }
   try{ if (typeof evaluateAll==='function') evaluateAll(); }catch(e){}
@@ -7606,28 +8675,55 @@ function applyPickSportsLive(){
   }catch(e){}
 }
 function renderSettings(){
-  const cur = detectPreset(); const books = myBookList();
-  const exl = new Set(String(S.sExclude||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean));
+  const books = myBookList();
+  const sb = ui.settingsBoard || 'games';
+  const B = typeof boardS==='function' ? boardS(sb) : S;
+  const cur = typeof boardPreset==='function' ? boardPreset(sb) : detectPreset();
+  const exl = new Set(String(B.sExclude||S.sExclude||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean));
+  const boardLabs = {games:'🏟️ Games', props:'🏀 Props', parlay:'🎟️ Parlay'};
+  const presetNote = sb==='parlay'
+    ? (cur==='super' ? 'Super picky parlays: 68%+ per leg, no negative edge, clean signals, 2.0x–3.0x sweet spot.'
+      : cur==='picky' ? 'Picky parlays: 62%+ per leg, slight edge tolerance, legs −650 to −140, tickets around 2–3x. This is the tested default.'
+      : cur==='relaxed' ? 'Relaxed parlays: 58%+ per leg, broader tickets still inside the payout window.'
+      : 'Custom parlay settings.')
+    : (sb==='props'
+      ? (cur==='super' ? 'Super picky props stay on the calibrated 60%+ bar and the −150 to +150 singles range.'
+        : cur==='picky' ? 'Picky props use a slightly broader bar than Super, still inside −150 to +150.'
+        : cur==='relaxed' ? 'Relaxed props allow more tickets (around 54–56%+) inside your odds range.'
+        : 'Custom prop settings.')
+      : (cur==='custom' ? 'Custom: you changed something under Advanced. Pick one above to go back to a tested setting.' : esc((PRESETS[cur]&&PRESETS[cur].test)||'')));
+  const oddsRow = sb==='parlay' ? `
+    <div class="s-row"><div class="s-h">Parlay leg odds</div>
+      <div class="s-inline"><label>Heaviest favorite I'll include<input name="sFavMin" type="number" step="1" value="${B.sFavMin??-650}"></label>
+      <label>Lightest favorite I'll include<input name="sDogMax" type="number" step="1" value="${B.sDogMax??-140}"></label></div>
+      <div class="s-note">These are not the singles range. Default is −650 to −140 so legs are real favorites (~58–87% implied), not −110 coin-flips.</div></div>
+    <div class="s-row"><div class="s-h">Target parlay payout</div>
+      <div class="s-inline"><label>Min payout (×)<input name="payoutMin" type="number" step="0.05" min="1.2" max="10" value="${B.payoutMin??1.85}"></label>
+      <label>Max payout (×)<input name="payoutMax" type="number" step="0.05" min="1.5" max="20" value="${B.payoutMax??3.25}"></label></div>
+      <div class="s-note">Sweet spot is 2.0x–3.0x (about +100 to +200). Tickets slightly outside still show, but Picks prefer the sweet spot. Example: −220 and −210 ≈ 2.15x; three legs around −280/−260/−240 ≈ 2.67x.</div></div>`
+    : `<div class="s-row"><div class="s-h">My odds range</div>
+      <div class="s-inline"><label>Most I'll lay<input name="sFavMin" type="number" step="1" value="${B.sFavMin??S.sFavMin}"></label>
+      <label>Longest I'll take<input name="sDogMax" type="number" step="1" value="${B.sDogMax??S.sDogMax}"></label></div>
+      <div class="s-note">Example: -150 means you never risk more than $150 to win $100. +150 means you never take a bet that pays more than $150 on $100. This range is saved for <b>${sb==='props'?'Props':'Games'}</b> only.</div></div>`;
   $('#view').innerHTML = `
   <div class="section-title"><h2><span class="h-emo" aria-hidden="true">⚙️</span>Settings</h2><span class="hint">Saved on this PC. Press Save when you're done.</span></div>
   <form id="setForm">
   <div class="panel simple">
-    <div class="s-row"><div class="s-h">How picky?</div>
-      <div class="seg">${['super','picky','relaxed'].map(n=>`<label class="${cur===n?'on':''}"><input type="radio" name="preset" value="${n}" ${cur===n?'checked':''} hidden>${PRESETS[n].label}${n==='super'?' <small>recommended</small>':''}</label>`).join('')}</div>
-      <div class="s-note" id="presetNote">${cur==='custom' ? 'Custom: you changed something under Advanced. Pick one above to go back to a tested setting.' : esc(PRESETS[cur].test)}</div></div>
-
-    <div class="s-row"><div class="s-h">My odds range</div>
-      <div class="s-inline"><label>Most I'll lay<input name="sFavMin" type="number" step="1" value="${S.sFavMin}"></label>
-      <label>Longest I'll take<input name="sDogMax" type="number" step="1" value="${S.sDogMax}"></label></div>
-      <div class="s-note">Example: -150 means you never risk more than $150 to win $100. +150 means you never take a bet that pays more than $150 on $100.</div></div>
+    <div class="s-row"><div class="s-h">Which board?</div>
+      <div class="board-seg" id="settingsBoardSeg">${['games','props','parlay'].map(b=>`<button type="button" data-set-board="${b}" class="${sb===b?'on':''}">${boardLabs[b]}</button>`).join('')}</div>
+      <div class="s-note">Pickiness, sports, and odds are independent for Games, Props, and Parlay. Changing Props to Relaxed leaves Games and Parlay alone. Shared settings (books, refresh, alerts, bet size) stay below.</div></div>
+    <div class="s-row"><div class="s-h">How picky? <span class="mut">(${boardLabs[sb]})</span></div>
+      <div class="seg">${['super','picky','relaxed'].map(n=>`<label class="${cur===n?'on':''}"><input type="radio" name="preset" value="${n}" ${cur===n?'checked':''} hidden>${(PRESETS[n]&&PRESETS[n].label)||n}${n==='picky'&&sb==='parlay'?' <small>recommended</small>':''}${n==='super'&&sb!=='parlay'?' <small>recommended</small>':''}</label>`).join('')}</div>
+      <div class="s-note" id="presetNote">${presetNote}</div></div>
+    ${oddsRow}
 
     <div class="s-row"><div class="s-h">My books</div>
       <div class="filters">${MY_BOOK_CHOICES.map(([k,l])=>`<label class="chip ${books.includes(k)?'on':''}"><input type="checkbox" name="book_${k}" ${books.includes(k)?'checked':''} hidden>${l}</label>`).join('')}</div>
       <div class="s-note">Cards tell you where to bet among these. Polymarket and DraftKings work for free; the others need the odds key below.</div></div>
 
-    <div class="s-row"><div class="s-h">Sports I want picks for</div>
+    <div class="s-row"><div class="s-h">Sports I want picks for <span class="mut">(${sb==='props'?'Props':sb==='parlay'?'Parlay':'Games'})</span></div>
       <div class="filters">${LEAGUES.map(L=>`<label class="chip ${!exl.has(L.id)?'on':''}"><input type="checkbox" name="pick_${L.id}" ${!exl.has(L.id)?'checked':''} hidden>${sportChipLabel(L)}${LOST_IN_TEST.has(L.id)?' <small class="mut">*</small>':''}</label>`).join('')}</div>
-      <div class="s-note">* College basketball and soccer lost money in testing, so they are off by default. Their games still show in All Games, but not in the Picks, Watchlist, or Avoid sport filters. Sports you turn off in Settings are hidden from those filters too.</div></div>
+      <div class="s-note">These sports apply to this board only. NCAAB can be off for Games and on for Props. * College basketball and soccer lost money in the Games test, so they start off on Games. All Games still lists every loaded sport.</div></div>
 
     <div class="s-row"><div class="s-h">Refresh every</div>
       <div class="seg seg-pills">${[[15,'15s'],[30,'30s'],[60,'1 min'],[120,'2 min'],[300,'5 min'],[600,'10 min']].map(([v,l])=>`<label class="${+S.refreshSec===v?'on':''}"><input type="radio" name="refreshSec" value="${v}" ${+S.refreshSec===v?'checked':''} hidden>${l}${v===60?' <small>recommended</small>':''}</label>`).join('')}</div>
@@ -7719,12 +8815,23 @@ function renderSettings(){
   $('#view').querySelectorAll('.seg input').forEach(i=>i.onchange=()=>{
     const g = i.closest('.seg');
     if (g) g.querySelectorAll('label').forEach(l=>l.classList.toggle('on', l.contains(i)));
-    if (i.name==='preset' && PRESETS[i.value] && $('#presetNote')) $('#presetNote').textContent = PRESETS[i.value].test;
+    if (i.name==='preset' && $('#presetNote')){
+      const sb = ui.settingsBoard||'games';
+      if (sb==='games' && PRESETS[i.value]) $('#presetNote').textContent = PRESETS[i.value].test;
+    }
+  });
+  const seg = $('#settingsBoardSeg');
+  if (seg) seg.querySelectorAll('[data-set-board]').forEach(b=>b.onclick=ev=>{
+    ev.preventDefault();
+    ui.settingsBoard = b.getAttribute('data-set-board');
+    renderSettings();
   });
   $('#setForm').onsubmit = e=>{
     e.preventDefault(); const f = new FormData(e.target);
     const before = detectPreset();
-    for (const k of ['lookaheadDays','unit','oddsEveryMin','summaryTTL','summaryHorizonHrs','maxSummaries',...TH.map(t=>t[0]),...WT.map(t=>t[0]),...ST.map(t=>t[0])]){ const v=parseFloat(f.get(k)); if (isFinite(v)) S[k]=v; }
+    const _sb = ui.settingsBoard || 'games';
+    const skipGlobal = _sb!=='games' ? new Set(['sFavMin','sDogMax','sMinWin','sModelMin','sModelEdge','sMinPos','sMinEV','sMinConf','sMaxAdvPct','sMinScore']) : new Set();
+    for (const k of ['lookaheadDays','unit','oddsEveryMin','summaryTTL','summaryHorizonHrs','maxSummaries',...TH.map(t=>t[0]),...WT.map(t=>t[0]),...ST.map(t=>t[0])]){ if (skipGlobal.has(k)) continue; const v=parseFloat(f.get(k)); if (isFinite(v)) S[k]=v; }
     const rs = parseFloat(f.get('refreshSec')); if (isFinite(rs)){ S.refreshSec = rs; S.refreshMin = rs>=60 ? rs/60 : rs/60; }
     const newKey = String(f.get('oddsKey')||'').trim();
     if (newKey!==S.oddsKey) oddsCache = null;
@@ -7733,14 +8840,31 @@ function renderSettings(){
     S.deepData = f.get('deepData')==='1'; S.sMarkets = f.get('sMarkets'); S.sNoModelSports = f.get('sNoModelSports')==='1'; S.pmOn = f.get('pmOn')==='1';
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).concat(extra).join(',');
-    S.sExclude = LEAGUES.filter(L=>!f.get('pick_'+L.id)).map(L=>L.id).join(','); S.sNoSoccer = false;
+    if ((ui.settingsBoard||'games')==='games'){ S.sExclude = LEAGUES.filter(L=>!f.get('pick_'+L.id)).map(L=>L.id).join(','); S.sNoSoccer = false; }
     S.alertNewPlays = !!f.get('alertNewPlays'); S.alertPulledPlays = !!f.get('alertPulledPlays');
     S.ntfyOn = !!f.get('ntfyOn');
     const topic = typeof normalizeNtfyTopic==='function' ? normalizeNtfyTopic(f.get('ntfyTopic')) : String(f.get('ntfyTopic')||'').trim();
     S.ntfyTopic = topic || S.ntfyTopic || (typeof randomNtfyTopic==='function' ? randomNtfyTopic() : S.ntfyTopic);
 
+    const sb = ui.settingsBoard || 'games';
     const chosen = f.get('preset') || before;
-    if (chosen !== before && PRESETS[chosen]) applyPreset(chosen); else S.preset = detectPreset();
+    if (sb==='games'){
+      if (chosen !== before && PRESETS[chosen]) applyPreset(chosen); else S.preset = detectPreset();
+      if (typeof syncGamesBoard==='function') syncGamesBoard();
+    } else {
+      const B = typeof boardS==='function' ? boardS(sb) : S;
+      const fav = parseFloat(f.get('sFavMin')); const dog = parseFloat(f.get('sDogMax'));
+      if (isFinite(fav)) B.sFavMin = fav;
+      if (isFinite(dog)) B.sDogMax = dog;
+      if (sb==='parlay'){
+        const pmn=parseFloat(f.get('payoutMin')), pmx=parseFloat(f.get('payoutMax'));
+        if (isFinite(pmn)) B.payoutMin = pmn;
+        if (isFinite(pmx)) B.payoutMax = pmx;
+      }
+      B.sExclude = LEAGUES.filter(L=>!f.get('pick_'+L.id)).map(L=>L.id).join(',');
+      if (typeof applyBoardPreset==='function' && chosen) applyBoardPreset(sb, chosen);
+      else B.preset = chosen;
+    }
     saveJSON(LS.settings, S); if (typeof startRefreshWatch==='function') startRefreshWatch();
     toast('Saved. Refreshing…'); refresh(); renderSettings();
   };
@@ -7770,13 +8894,13 @@ function syncSubbar(){
   bar.querySelectorAll('[data-sub]').forEach(b=>{
     const sub = b.getAttribute('data-sub');
     b.classList.toggle('on', slate && tab===sub);
-    const key = board==='props' ? 'props-'+sub : sub;
+    const key = (board==='games'||!board) ? sub : board+'-'+sub;
     const src = document.querySelector('#tabCountStore [data-cnt="'+key+'"]') || document.querySelector('[data-cnt="'+key+'"]');
     const cnt = b.querySelector('[data-sub-cnt]');
     if (cnt && src) cnt.textContent = src.textContent || '0';
     const dot = b.querySelector('[data-sub-pull]');
     if (dot){
-      if (board==='props'){ dot.hidden = true; }
+      if (board==='props'||board==='parlay'){ dot.hidden = true; }
       else {
         const n = typeof visiblePulled==='function' ? visiblePulled(sub).length : 0;
         dot.hidden = n===0;
@@ -7836,9 +8960,9 @@ function setNavPop(board){
     else { scrim.classList.remove('open'); requestAnimationFrame(()=>requestAnimationFrame(()=>scrim.classList.add('open'))); }
   }
   const items = [
-    {tab:'good', lab:'Picks', cnt: board==='props'?'props-good':'good', ic:'target'},
-    {tab:'watch', lab:'Watch', cnt: board==='props'?'props-watch':'watch', ic:'eye'},
-    {tab:'avoid', lab:'Avoid', cnt: board==='props'?'props-avoid':'avoid', ic:'shield'}
+    {tab:'good', lab:'Picks', cnt: board==='games'||!board?'good':board+'-good', ic:'target'},
+    {tab:'watch', lab:'Watch', cnt: board==='games'||!board?'watch':board+'-watch', ic:'eye'},
+    {tab:'avoid', lab:'Avoid', cnt: board==='games'||!board?'avoid':board+'-avoid', ic:'shield'}
   ];
   const svg = {
     target:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.4"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
@@ -7851,6 +8975,7 @@ function setNavPop(board){
   if (reduce) pop.classList.add('open');
   else { pop.classList.remove('open'); requestAnimationFrame(()=>requestAnimationFrame(()=>pop.classList.add('open'))); }
   if (typeof updatePropTabCounts==='function') updatePropTabCounts();
+  if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
   if (typeof syncTabChrome==='function') syncTabChrome();
 }
 function setTab(t, opts){
@@ -7950,7 +9075,18 @@ $('#view').addEventListener('click', e=>{
   if (sc){ ui.pullAll = sc.dataset.pullScope==='all'; render(); return; }
   if (e.target.closest('#btnSideToggle')){ ui.sideOpen = !ui.sideOpen; render(); return; }
   const b = e.target.closest('[data-log]'); if(!b) return;
-  const p = plays.find(x=>x.id===b.dataset.log) || ((typeof props!=='undefined' ? props : []).find(x=>x.id===b.dataset.log)); if(!p) return;
+  const p = plays.find(x=>x.id===b.dataset.log) || ((typeof props!=='undefined' ? props : []).find(x=>x.id===b.dataset.log)) || ((typeof parlays!=='undefined' ? parlays : []).find(x=>x.id===b.dataset.log)); if(!p) return;
+  if (p.isParlay){
+    if (typeof isPlayLogged==='function' && isPlayLogged(p)){
+      if (!confirm('You already tailed this — tail again?')) return;
+    }
+    setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
+    const summary = (p.legs||[]).map(l=>l.playerName||l.label).join(' / ');
+    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id}};
+    renderTracker(pf);
+    window.scrollTo({top:0}); toast('Pre-filled this parlay. Confirm the combined odds at your book, then add the tailed bet.');
+    return;
+  }
   if (p.g && p.g.eventId && typeof rememberInjSnap==='function' && typeof playResultKey==='function') rememberInjSnap(playResultKey(p), p.g);
   if (typeof isPlayLogged==='function' && isPlayLogged(p)){
     if (!confirm('You already tailed this — tail again?')) return;
