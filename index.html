@@ -3306,14 +3306,61 @@ function checkTailedBoardPulls(board){
         }
       }
     }
-    if (boards.includes('parlay')){
+    if (boards.includes('parlay') && (String(k).startsWith('parlay:') || (b.link && b.link.mk==='parlay'))){
       const pl = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===k);
-      if (pl && !(pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')){
-        if (pl.verdict==='avoid'){
-          const why = (pl.reasons && pl.reasons[0]) || 'no longer passes parlay gates';
-          ensureNote(k, 'parlay', pl.label||b.label||k, `${pl.n||((pl.legs||[]).length)}-leg parlay`, typeof itemStartMs==='function'?itemStartMs(pl):0, why);
-        } else if (pl.verdict==='good'){
-          markReadded(k, now, 'avoid');
+      if (pl){
+        if (!(pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')){
+          if (pl.verdict==='avoid'){
+            const why = (pl.reasons && pl.reasons[0]) || 'no longer passes parlay gates';
+            ensureNote(k, 'parlay', pl.label||b.pick||b.label||k, `${pl.n||((pl.legs||[]).length)}-leg parlay`, typeof itemStartMs==='function'?itemStartMs(pl):0, why);
+          } else if (pl.verdict==='good'){
+            markReadded(k, now, 'avoid');
+          }
+        }
+      } else if (String(k).startsWith('parlay:')){
+        // Parlay is no longer on the board (e.g. a late Games/Props Pick flipped to the opposite side, or a leg lost favorite status).
+        const toks = String(k).slice(7).split('+').filter(Boolean);
+        let anyStarted = false, minStart = Infinity, pullWhy = '';
+        for (const tok of toks){
+          if (tok.endsWith('|parlay')){
+            const parts = tok.split('|');
+            const gid = parts[0], mk = parts[1], side = parts[2];
+            const g = (typeof games!=='undefined' ? games : []).find(x=>x && x.id===gid);
+            if (!g) continue;
+            if (g.state && g.state!=='pre'){ anyStarted = true; break; }
+            if (g.start && +g.start < minStart) minStart = +g.start;
+            const sd = g.analysis && g.analysis[mk] && g.analysis[mk].sides && g.analysis[mk].sides[side];
+            const leg = {isProp:false, g, eventId:g.eventId, mk, side};
+            const legName = typeof sideLabel==='function' ? sideLabel(g, mk, side, sd&&sd.point) : `${mk} ${side}`;
+            if (typeof contradictsBoardPick==='function' && contradictsBoardPick(leg)){
+              pullWhy = `Games Picks flipped to the opposite side of ${legName}`;
+              break;
+            }
+            if (sd && sd.best && sd.best.price!=null && sd.best.price > -110){
+              pullWhy = `${legName} is no longer a favorite (${fmtAm(sd.best.price)})`;
+              break;
+            }
+          } else if (tok.startsWith('prop:')){
+            const parts = tok.split(':');
+            const ev = parts[1], pid = parts[2], kind = parts[3], side = parts[4], line = parts[5];
+            const g = (typeof games!=='undefined' ? games : []).find(x=>x && String(x.eventId)===String(ev));
+            if (g && g.state && g.state!=='pre'){ anyStarted = true; break; }
+            if (g && g.start && +g.start < minStart) minStart = +g.start;
+            const leg = {isProp:true, g, eventId:ev, playerId:pid, kind, side, line};
+            if (typeof contradictsBoardPick==='function' && contradictsBoardPick(leg)){
+              pullWhy = 'Props Picks flipped to the opposite side of a leg in this parlay';
+              break;
+            }
+            const pr = (typeof props!=='undefined' ? props : []).find(x=>x && String((x.g&&x.g.eventId)||x.eventId||'')===String(ev) && String(x.playerId||'')===String(pid) && x.kind===kind);
+            if (pr && ((pr.side && side && String(pr.side).toLowerCase()!==String(side).toLowerCase()) || pr.verdict==='avoid')){
+              pullWhy = `${pr.playerName||'A prop leg'} flipped to Avoid or the opposite side`;
+              break;
+            }
+          }
+        }
+        if (!anyStarted && pullWhy){
+          const stMs = isFinite(minStart) ? minStart : ((b.link && b.link.start) || (now+3600000));
+          ensureNote(k, 'parlay', b.pick||b.label||'Tailed parlay', `${(b.link&&b.link.n)||toks.length}-leg parlay`, stMs, pullWhy);
         }
       }
     }
@@ -11167,7 +11214,7 @@ $('#view').addEventListener('click', e=>{
     }
     setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
     const summary = (p.legs||[]).map(l=>typeof parlayLegLabel==='function'?parlayLegLabel(l):(l.label||l.playerName)).join(' / ');
-    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id}};
+    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id, start:isFinite(p.start)?p.start:null}};
     renderTracker(pf);
     window.scrollTo({top:0}); toast('Pre-filled this parlay. Confirm the combined odds at your book, then add the tailed bet.');
     return;
