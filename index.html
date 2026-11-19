@@ -818,6 +818,14 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 .auth-blocked a{color:var(--acc-hi);font-weight:700;white-space:nowrap}
 .acct-note a{color:var(--acc-hi);font-weight:700}
 @media (max-width:520px){ .vc-pill{border-radius:16px} }
+
+.unit-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.01em;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--txt);white-space:nowrap}
+.unit-pill.u-1{background:rgba(59,130,246,.22);border-color:rgba(96,165,250,.55);color:#dbeafe}
+.unit-pill.u-half{background:rgba(34,197,94,.16);border-color:rgba(74,222,128,.42);color:#dcfce7}
+.unit-pill.u-qtr{background:rgba(245,158,11,.16);border-color:rgba(251,191,36,.42);color:#fef3c7}
+.unit-pill.u-skip{background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.25);color:var(--mut)}
+.cfoot-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.unit-judge{margin-top:6px;font-size:12.5px;color:var(--txt);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -969,6 +977,54 @@ const BOOK_CAPABILITIES = Object.assign(
   { polymarket: { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] } },
   Object.fromEntries(TRAD_BOOKS.map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
 );
+
+function fmtUnitDollars(u){
+  const base = (typeof S!=='undefined' && +S.unit>0) ? +S.unit : 25;
+  const d = Math.round(u * base * 100) / 100;
+  return '$' + (Number.isInteger(d) ? d.toFixed(0) : d.toFixed(2).replace(/0$/,''));
+}
+function recommendedUnits(item, kind){
+  const isParlay = kind==='parlay' || !!(item && item.legs && item.legs.length>1);
+  const rawV = String((item && (item.verdict || item.J)) || '').toLowerCase();
+  const isGood = rawV==='good' || rawV==='bet';
+  const isWatch = rawV==='watch' || rawV==='watchlist' || rawV==='maybe later';
+  const p = item && (item.p!=null ? item.p : (item.E && item.E.final!=null ? item.E.final : null));
+  const conf = item && (
+    (item.j && item.j.conf && item.j.conf.v!=null) ? item.j.conf.v :
+    (typeof item.conf==='number' ? (item.conf<=5 ? item.conf*20 : item.conf) : null)
+  );
+  if (!isGood && !isWatch){
+    return {u:0, label:'0u (Skip)', short:'Skip (0u)', dollars:0, cls:'u-skip', note:'Skip — pass on this spot'};
+  }
+  let u = 0.25;
+  if (isParlay){
+    if (isGood && ((p!=null && p>=0.48) || (conf!=null && conf>=75))) u = 0.5;
+    else u = 0.25;
+  } else {
+    if (isGood){
+      if ((conf!=null && conf>=75) || (p!=null && p>=0.68)) u = 1;
+      else if ((conf!=null && conf>=55) || (p!=null && p>=0.62) || (conf==null && p==null)) u = 0.5;
+      else u = 0.25;
+    } else {
+      u = 0.25;
+    }
+  }
+  const base = (typeof S!=='undefined' && +S.unit>0) ? +S.unit : 25;
+  const dollars = Math.round(u * base * 100) / 100;
+  const uTxt = (u===1?'1u':u===0.5?'0.5u':'0.25u');
+  const cls = u===1 ? 'u-1' : u===0.5 ? 'u-half' : 'u-qtr';
+  const note = u===1 ? 'Full unit — high confidence' : u===0.5 ? 'Half unit — solid confidence' : (isWatch ? 'Quarter unit — light lean only' : 'Quarter unit — smaller spot');
+  return {u, label:`${uTxt} (${fmtUnitDollars(u)})`, short:uTxt, dollars, cls, note};
+}
+function unitPillHTML(item, kind){
+  const r = recommendedUnits(item, kind);
+  return `<span class="unit-pill ${r.cls}" title="${esc(r.note)}">Size: ${esc(r.label)}</span>`;
+}
+function unitJudgeLineHTML(item, kind){
+  const r = recommendedUnits(item, kind);
+  return `<div class="unit-judge"><span class="unit-pill ${r.cls}">Recommended: ${esc(r.label)}</span><span class="mut">${esc(r.note)}</span></div>`;
+}
+
 function selectedBooks(){
   return (typeof myBookList==='function')
     ? myBookList()
@@ -4240,7 +4296,7 @@ function courtroomHTML(p, C){
     <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${C.lose.map(li).join('')}</ul></div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v):''}</div>
       <div class="c-sent">${esc(C.sentence)}</div>
-      <div class="wr-inline">${esc(hitRateText(wr))}</div></div>
+      ${unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game")}<div class="wr-inline">${esc(hitRateText(wr))}</div></div>
     ${matchupTableHTML(p, C)}
     ${marginChartsHTML(p)}
   </div>`;
@@ -4668,7 +4724,7 @@ function playCard(p){
     ${lazy(cid, '⚖️ Courtroom', 'court', courtBody, ' court-dd')}
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(p):''}
     ${lazy(mid, '📐 Numbers', 'nums', numsBody)}
-    <div class="cfoot"><span>${confBadge(p.j.conf)}</span><button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></div>
+    <div class="cfoot"><span class="cfoot-meta">${confBadge(p.j.conf)}${unitPillHTML(p,"game")}</span><button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></div>
   </div>`;
 }
 
@@ -6508,14 +6564,14 @@ ${resultBan}
       <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${leg.yes.length?legSort(leg.yes,1).slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul></div>
       <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${legSort(leg.no,-1).slice(0,4).map(legItem).join('')}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul></div>
       <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf):''}</div>
-        <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>
+        <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
         ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: (leg.p!=null&&leg.implied!=null?`<div class="wr-inline">These odds break even at about ${outOf10(leg.implied)} of 10; we estimate ${outOf10(leg.p)}.</div>`:'')}</div>
     </div></details>`}
     ${!research ? `<details class="dd" data-dd="verdict|${i}|math" ${ui.open.has('verdict|'+i+'|math')?'open':''}><summary>📐 Nerd stats / Show the math</summary><div style="margin-top:6px">
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
       <div class="hint">${esc(leg.formula||'—')}</div>
       ${leg.info.length?`<ul class="why">${leg.info.map(x=>`<li class="mut">${esc(x)}</li>`).join('')}</ul>`:''}</div></details>`:''}
-    <div class="cfoot pk-log" style="margin-top:14px"><span>${verdictBadge(leg.verdict)}</span><button class="btn sm" data-logleg="${i}">Tail as single</button></div>`}
+    <div class="cfoot pk-log" style="margin-top:14px"><span class="cfoot-meta">${verdictBadge(leg.verdict)}${unitPillHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}</span><button class="btn sm" data-logleg="${i}">Tail as single</button></div>`}
   </div>`;
 }
 function parlaySummary(){
@@ -6554,7 +6610,7 @@ function parlaySummary(){
     <ol class="why">${ranked.map(x=>`<li><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)} · ${verdictBadge(x.l.verdict)} ${esc(x.l.why||'')}</li>`).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(l.desc)).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(l.desc||l.raw)).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
-    <div style="margin-top:10px"><button class="btn primary sm" id="btnLogParlay">Tail whole ticket as parlay</button></div>
+    <div class="cfoot" style="margin-top:10px">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}<button class="btn primary sm" id="btnLogParlay">Tail whole ticket as parlay</button></div>
   </div>`;
 }
 /* TRY chips: 4 always-valid bets. Built from today's real slate (1 ML, 1 spread, 1 matchup total with BOTH teams,
@@ -7965,7 +8021,7 @@ function propCourtroomHTML(p){
     <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${(C.lose&&C.lose.length)?C.lose.map(li).join(''):'<li class="mut">No red flags recorded.</li>'}</ul></div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span></div>
       <div class="c-sent">${esc(C.sentence||'')}</div>
-      ${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
+      ${unitJudgeLineHTML(p,"prop")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
     ${propStatTableHTML(p)}
     ${l10PropChartHTML(p)}
   </div>`;
@@ -8034,7 +8090,7 @@ function propCard(p){
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
     ${lazy(nid, '🩺 Injuries, lineups &amp; news', 'inj', propInjBody(p))}
     ${lazy(mid, '📐 Numbers', 'nums', propNumbersHTML(p))}
-    <div class="cfoot"><span>${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}</span><button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></div>
+    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><button class="btn sm" data-log="${esc(p.id)}">${logBtn}</button></div>
   </div>`;
 }
 
@@ -8488,7 +8544,7 @@ function parlayCourtroomHTML(pl){
     <div class="c-col lose"><div class="ct">⚠️ Why this parlay could miss</div><ul>${lose.map(x=>`<li><span>${esc(x.txt)}</span></li>`).join('')}</ul></div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(J)}</span></div>
       <div class="c-sent">${esc(sentence)}</div>
-      ${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
+      ${unitJudgeLineHTML(pl,"parlay")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
     <table class="ftab" style="margin-top:10px"><tr><th>Leg</th><th>Odds</th><th>Implied</th><th>Our estimate</th></tr>${rows}</table>
   </div>`;
 }
@@ -8543,7 +8599,7 @@ function parlayCard(pl){
     ${lazy(cid,'⚖️ Courtroom','court',parlayCourtroomHTML(pl))}
     ${lazy(nid,'🩺 Injuries, lineups &amp; news','inj',parlayInjBody(pl))}
     ${lazy(mid,'📐 Numbers','nums',parlayNumbersHTML(pl))}
-    <div class="cfoot"><span class="mut">${pl.mix==='mixed'?'Games + props':pl.mix==='props'?'Props only':'Games only'}</span><button class="btn sm" data-log="${esc(pl.id)}">${logBtn}</button></div>
+    <div class="cfoot"><span class="cfoot-meta"><span class="mut">${pl.mix==='mixed'?'Games + props':pl.mix==='props'?'Props only':'Games only'}</span>${unitPillHTML(pl,"parlay")}</span><button class="btn sm" data-log="${esc(pl.id)}">${logBtn}</button></div>
   </div>`;
 }
 
@@ -9692,7 +9748,7 @@ $('#view').addEventListener('click', e=>{
     }
     setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
     const summary = (p.legs||[]).map(l=>l.playerName||l.label).join(' / ');
-    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id}};
+    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id}};
     renderTracker(pf);
     window.scrollTo({top:0}); toast('Pre-filled this parlay. Confirm the combined odds at your book, then add the tailed bet.');
     return;
