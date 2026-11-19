@@ -676,6 +676,18 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .res-pill.loss,.res-pill.lost{background:var(--avoid-bg);color:#fca5a5}
 .res-pill.push,.res-pill.void{background:rgba(255,255,255,.06);color:var(--mut)}
 .res-pill.pulled{background:rgba(180,30,30,.28);color:#fecaca}
+.bet-card.bet-row{cursor:default}
+.bet-card.bet-row:hover{transform:none}
+.bet-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:12px}
+.res-seg{display:inline-flex;flex-wrap:wrap;gap:4px;padding:3px;border-radius:999px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.08)}
+.res-seg-btn{border:0;background:transparent;color:var(--txt2,#cbd5e1);font:inherit;font-size:12px;font-weight:700;padding:6px 10px;border-radius:999px;cursor:pointer;min-height:30px}
+@media (hover:hover){.res-seg-btn:not(.on):hover{background:rgba(255,255,255,.08);color:var(--txt)}}
+.res-seg-btn.on.r-pending{background:rgba(59,130,246,.3);color:#dbeafe}
+.res-seg-btn.on.r-win{background:rgba(34,197,94,.3);color:#dcfce7}
+.res-seg-btn.on.r-loss{background:rgba(239,68,68,.3);color:#fee2e2}
+.res-seg-btn.on.r-push,.res-seg-btn.on.r-void{background:rgba(255,255,255,.16);color:#f1f5f9}
+.bet-del{border-radius:999px}
+@media (max-width:420px){.res-seg-btn{padding:6px 8px;font-size:11.5px}}
 .bet-more{display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);cursor:default}
 .bet-card.open .bet-more{display:block}
 .bet-more .full{font-size:12.5px;color:var(--txt2);margin:0 0 8px;line-height:1.4}
@@ -897,18 +909,38 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
   transition:transform .14s ease, box-shadow .14s ease, border-color .14s ease;
 }
 .btn-book:hover{transform:translateY(-1px);border-color:rgba(96,165,250,.45);color:var(--txt);box-shadow:0 4px 12px rgba(15,23,42,.35)}
-.open-book-menu{
-  position:absolute;right:0;bottom:calc(100% + 6px);min-width:175px;padding:6px;border-radius:14px;
-  background:rgba(11,18,36,.97);border:1px solid rgba(96,165,250,.35);
-  box-shadow:0 14px 34px rgba(0,0,0,.55);z-index:90;
-  display:flex;flex-direction:column;gap:3px;
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.pick .what.what-sel{min-width:0;max-width:100%}
+.pk-what-sel{display:block;margin:0;max-width:100%;color:inherit;font-size:inherit}
+.pk-what-sel select{
+  width:100%;max-width:100%;font:inherit;font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--txt);
+  background:rgba(255,255,255,.06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2393c5fd' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 12px center;
+  border:1px solid rgba(96,165,250,.35);border-radius:12px;padding:8px 34px 8px 11px;min-height:40px;
+  -webkit-appearance:none;appearance:none;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;cursor:pointer;
+}
+.pk-what-sel select:focus{outline:2px solid rgba(96,165,250,.6);outline-offset:1px}
+.pk-what-sel select option,.pk-what-sel select optgroup{background:#0b1224;color:#e5edff;font-weight:500}
+.mybooks-sel{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}
+.mybook-pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 11px;font-size:12.5px;font-weight:600;background:rgba(59,130,246,.16);border:1px solid rgba(96,165,250,.35);color:#e0ecff}
+.mybook-pill.pred{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.35);color:#d1fae5}
+.book-group{margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(148,163,184,.14)}
+.book-group-h{font-weight:700;font-size:13px;margin-bottom:6px}
+.open-book-tpl{display:none}
+.open-book-pop[hidden]{display:none !important}
+.open-book-pop{
+  position:fixed;z-index:1000;max-height:min(60vh,360px);overflow-y:auto;padding:6px;border-radius:14px;
+  background:#0b1224;opacity:1;isolation:isolate;border:1px solid rgba(96,165,250,.35);
+  box-shadow:0 14px 34px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:3px;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
 }
 .open-book-item{
-  display:flex;align-items:center;justify-content:space-between;gap:10px;
-  border-radius:999px;padding:8px 11px;color:var(--txt);text-decoration:none;font-weight:600;font-size:12.5px;
-  background:rgba(255,255,255,.04);border:1px solid transparent;
+  display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;
+  border-radius:10px;padding:9px 11px;color:var(--txt);text-decoration:none;font-weight:600;font-size:13px;
+  background:#131c31;border:1px solid transparent;min-height:38px;
 }
-.open-book-item:hover{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.35);color:#eff6ff}
+.open-book-item .ob-price{font-variant-numeric:tabular-nums;font-weight:700}
+.open-book-item .ob-price.mut{font-weight:500}
+.open-book-item:hover,.open-book-item:focus{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.35);color:#eff6ff;outline:none}
 .card, .pk-ticket, .pk-leg, .pk-log{overflow:visible}
 .unit-judge{margin-top:6px;font-size:12.5px;color:var(--txt);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
@@ -1096,11 +1128,70 @@ const BOOK_NAMES = {polymarket:'Polymarket',polymarket_us:'Polymarket US',kalshi
 const ALL_PROP_STATS = ['pts','reb','ast','threes','pra','pr','pa','ar','stl','blk','tov','sog','saves','goals','hpts','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td','ks'];
 const ALL_GAME_MKTS = ['h2h','spreads','totals','ml','spread','total'];
 const TRAD_BOOKS = ['bovada','draftkings','fanduel','betmgm','williamhill_us','espnbet','fanatics','betrivers','betonlineag'];
+// v35: Settings groups. Prediction markets price from their own free public APIs (no Odds API credits).
+const PREDICTION_BOOKS = ['polymarket','polymarket_us','kalshi'];
+const POPULAR_BOOKS = TRAD_BOOKS.slice();
+const isPredictionBook = k => PREDICTION_BOOKS.includes(String(k||'').toLowerCase());
 const PM_BOOK_CAPS = { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] };
 const BOOK_CAPABILITIES = Object.assign(
   { polymarket: Object.assign({}, PM_BOOK_CAPS), polymarket_us: Object.assign({}, PM_BOOK_CAPS) },
   Object.fromEntries(TRAD_BOOKS.concat(['kalshi']).map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
 );
+
+/* v35: one fact, one line. Reasons from different builders (context facts, schedule spot,
+   model steps, prop features) sometimes say the same thing in different words — e.g.
+   "COL played yesterday (back-to-back); ANA had 2 days off" and "COL is on a back-to-back".
+   factKeyOf() maps a reason to a fact signature; dedupeReasons() keeps one per fact (the
+   more informative, i.e. longer, wording) in the position of the first occurrence. */
+function reasonText(x){ return typeof x==='string' ? x : String((x && (x.txt!=null ? x.txt : x.t)) || ''); }
+function factKeyOf(txt){
+  const t = String(txt||'').replace(/\s+/g,' ').trim();
+  if (!t) return '';
+  const lo = t.toLowerCase();
+  const b2b = t.match(/^(?:the\s+)?([A-Za-z0-9.'&\- ]{2,40}?)\s+(?:is\s+|are\s+)?(?:on (?:a|the 2nd night of a) back-to-back|played yesterday|on the 2nd night)/i);
+  if (b2b) return 'b2b:'+b2b[1].toLowerCase().trim();
+  if (/short rest \/ back-to-back|back-to-back/.test(lo) && !/\d+ days? (of rest|off)/.test(lo)) return 'b2b:any';
+  const restVs = t.match(/^([A-Za-z0-9.'&\- ]{2,40}?)\s+had\s+(\d+)\s+days? of rest vs/i);
+  if (restVs) return 'rest:'+restVs[1].toLowerCase().trim();
+  const days = t.match(/^(\d+) days of rest/i);
+  if (days) return 'rest:self';
+  const nth = t.match(/^([A-Za-z0-9.'&\- ]{2,40}?)\s+is playing the \w+ game in \d+ nights/i);
+  if (nth) return 'sched:'+nth[1].toLowerCase().trim();
+  const notInj = t.match(/^(.+?) (?:is )?not on the injury report/i);
+  if (notInj) return 'noinj:'+notInj[1].toLowerCase().trim();
+  return 'txt:'+lo.replace(/[^a-z0-9]+/g,' ').trim();
+}
+function dedupeReasons(list, alsoSeen){
+  if (!Array.isArray(list)) return list;
+  const out = [], at = new Map();
+  const seen = alsoSeen instanceof Set ? alsoSeen : null;
+  for (const x of list){
+    const txt = reasonText(x); const k = factKeyOf(txt);
+    if (!k){ out.push(x); continue; }
+    if (k==='b2b:any'){
+      // generic "short rest / back-to-back" is covered by any team-specific back-to-back line
+      if ([...at.keys()].some(z=>z.indexOf('b2b:')===0) || (seen && [...seen].some(z=>z.indexOf('b2b:')===0))) continue;
+    } else if (k.indexOf('b2b:')===0 && at.has('b2b:any')){
+      const i = at.get('b2b:any'); out[i] = x; at.delete('b2b:any'); at.set(k, i); continue;
+    }
+    if (seen && seen.has(k)) continue;
+    if (at.has(k)){
+      const i = at.get(k);
+      if (txt.length > reasonText(out[i]).length) out[i] = x;   // keep the more informative wording
+      continue;
+    }
+    at.set(k, out.length); out.push(x);
+  }
+  if (seen) for (const k of at.keys()) seen.add(k);
+  return out;
+}
+// "why it could win" + "why it could lose": each fact once across both lists (win keeps it)
+function dedupeWinLose(win, lose){
+  const seen = new Set();
+  const w = dedupeReasons(win||[], seen);
+  const l = dedupeReasons(lose||[], seen);
+  return {win:w, lose:l};
+}
 
 function fmtUnitDollars(u){
   const base = (typeof S!=='undefined' && +S.unit>0) ? +S.unit : 25;
@@ -1209,23 +1300,34 @@ function polymarketFeedLive(){
     (g.pm.total && Object.keys(g.pm.total).length)
   )));
 }
+function kalshiFeedLive(){
+  return (typeof games!=='undefined' && (games||[]).some(g=>g && g.kalshi && g.kalshi.ml && (g.kalshi.ml.home || g.kalshi.ml.away)));
+}
+// "Prediction-only" mode: every selected book is Polymarket / Polymarket US / Kalshi and at least one feed is live
 function polymarketOnlyFilterActive(){
   const books = selectedBooks();
   if (!books.length) return false;
-  if (!books.every(b => b==='polymarket' || b==='polymarket_us')) return false;
-  return polymarketFeedLive();
+  if (!books.every(b => PREDICTION_BOOKS.includes(b))) return false;
+  const pmSel = books.some(b=>b==='polymarket'||b==='polymarket_us'), kSel = books.includes('kalshi');
+  return (pmSel && polymarketFeedLive()) || (kSel && kalshiFeedLive());
 }
 function playHasPolymarketLine(p){
-  if (!p || !p.g || !p.g.pm) return false;
+  if (!p || !p.g) return false;
   const mk = p.mk || 'ml';
-  return !!(p.g.pm[mk] && ((p.side && p.g.pm[mk][p.side]) || Object.keys(p.g.pm[mk]).length));
+  const has = src => !!(src && src[mk] && ((p.side && src[mk][p.side]) || Object.keys(src[mk]).length));
+  const books = selectedBooks();
+  return (books.some(b=>b==='polymarket'||b==='polymarket_us') && has(p.g.pm)) || (books.includes('kalshi') && has(p.g.kalshi));
 }
 function gameHasPolymarketLine(g){
-  return !!(g && g.pm && (
+  if (!g) return false;
+  const books = selectedBooks();
+  const pm = !!(g.pm && (
     (g.pm.ml && (g.pm.ml.home || g.pm.ml.away)) ||
     (g.pm.spread && Object.keys(g.pm.spread).length) ||
     (g.pm.total && Object.keys(g.pm.total).length)
   ));
+  const k = !!(g.kalshi && g.kalshi.ml && (g.kalshi.ml.home || g.kalshi.ml.away));
+  return (pm && (!books.length || books.some(b=>b==='polymarket'||b==='polymarket_us'))) || (k && (!books.length || books.includes('kalshi')));
 }
 function selectedBooksAllowGame(g){
   if (!g) return false;
@@ -1306,55 +1408,116 @@ function bookOpenUrl(bookKey, item, kind){
   const mapped = BOOK_LEAGUE_URL[book] && lg && BOOK_LEAGUE_URL[book][lg];
   return mapped || BOOK_HOME_URL[book] || BOOK_HOME_URL.bovada;
 }
+// v35: per-book price shown inside the "Open book" menu (games, props, verdict legs). Null when unknown.
+function bookPriceFor(item, kind, bookKey){
+  try{
+    const b = String(bookKey||'').toLowerCase();
+    if (!item) return null;
+    const cents = c => (c!=null && isFinite(+c)) ? Math.round(+c*100)+'¢' : null;
+    // Verdict leg: {L, g, side}
+    let g = item.g, mk = item.mk, side = item.side, point = item.sd && item.sd.point;
+    if (item.L && !item.isProp && item.L.kind!=='prop'){ mk = item.L.kind; side = mk==='total' ? item.L.dir : item.side; point = item.L.line; }
+    const isProp = !!(item.isProp || kind==='prop' || (item.L && item.L.kind==='prop'));
+    if (kind==='parlay' || (item.legs && item.legs.length>1)) return null;
+    if (isProp){
+      const sd = item.side || (item.L && item.L.dir) || 'over';
+      const bp = item.bookPrices && item.bookPrices[b];
+      if (bp && bp[sd]!=null) return fmtAm(+bp[sd]);
+      if (item.pmProp && item.pmProp.book===b && item.pmProp.ask!=null) return cents(item.pmProp.ask);
+      if (b==='draftkings' && item.price!=null && /draftkings|espn/i.test(String(item.source||item.bookName||''))) return fmtAm(+item.price);
+      if (item.bookName && BOOK_NAMES[b] && String(item.bookName).toLowerCase().indexOf(BOOK_NAMES[b].toLowerCase())===0 && item.price!=null) return fmtAm(+item.price);
+      return null;
+    }
+    if (!g || !mk || !side) return null;
+    if (b==='polymarket' || b==='polymarket_us'){
+      const m = g.pm && g.pm[mk] && g.pm[mk][side];
+      return m && (mk==='ml' || point==null || m.point===point) ? cents(m.ask) : null;
+    }
+    if (b==='kalshi'){
+      const m = g.kalshi && g.kalshi[mk] && g.kalshi[mk][side];
+      return m ? cents(m.ask) : null;
+    }
+    const qs = (g.quotes && g.quotes[mk] && g.quotes[mk][side]) || [];
+    const q = qs.find(x=>String(x.bk||'').toLowerCase()===b && (mk==='ml' || point==null || x.point===point))
+          || qs.find(x=>String(x.bk||'').toLowerCase()===b);
+    if (!q) return null;
+    return (mk!=='ml' && q.point!=null && point!=null && q.point!==point ? (mk==='spread'?fmtPt(q.point):q.point)+' ' : '') + fmtAm(q.price);
+  }catch(e){ return null; }
+}
+let _obSeq = 0;
 function openInBookHTML(item, kind){
   let books = [];
   try{ books = typeof selectedBooks==='function' ? selectedBooks() : []; }catch(e){ books = []; }
   if (!Array.isArray(books) || !books.length) books = DEFAULT_ALL_BOOKS.split(',');
-  books = books.map(b=>String(b).toLowerCase()).filter(Boolean);
+  books = [...new Set(books.map(b=>String(b).toLowerCase()).filter(Boolean))];
   if (!books.length) books = DEFAULT_ALL_BOOKS.split(',');
   const label = (k)=> (typeof bookLabelOf==='function'?bookLabelOf(k):k);
-  if (books.length===1){
-    const url = bookOpenUrl(books[0], item, kind);
-    return `<a class="btn sm btn-book" href="${esc(url)}" target="_blank" rel="noopener">↗ ${esc(label(books[0]))}</a>`;
-  }
-  const items = books.map(b=>`<a class="open-book-item" href="${esc(bookOpenUrl(b,item,kind))}" target="_blank" rel="noopener"><span>${esc(label(b))}</span><span class="mut">↗</span></a>`).join('');
-  return `<div class="open-book-wrap"><button type="button" class="btn sm btn-book" data-open-book-toggle="1" aria-expanded="false">↗ Open in book ▾</button><div class="open-book-menu" hidden>${items}</div></div>`;
+  const rows = books.map(b=>({b, url:bookOpenUrl(b,item,kind), price:bookPriceFor(item, kind, b)}));
+  // books that price this bet first, then the rest in your order
+  rows.sort((x,y)=>(y.price?1:0)-(x.price?1:0));
+  const items = rows.map(r=>`<a class="open-book-item" href="${esc(r.url)}" target="_blank" rel="noopener"><span class="ob-name">${esc(label(r.b))}</span><span class="ob-price${r.price?'':' mut'}">${r.price?esc(r.price):'—'}</span><span class="mut ob-go" aria-hidden="true">↗</span></a>`).join('');
+  const id = 'ob'+(++_obSeq);
+  return `<span class="open-book-wrap"><button type="button" class="btn sm btn-book" data-open-book-toggle="${id}" aria-haspopup="menu" aria-expanded="false">Open book ▾</button><template class="open-book-tpl">${items}</template></span>`;
 }
 (function bindOpenBookMenus(){
   if (typeof document==='undefined' || window.__openBookBound) return;
   window.__openBookBound = true;
-  const closeAll = (except)=>{
-    document.querySelectorAll('.open-book-menu:not([hidden])').forEach(m=>{
-      if (except && m===except) return;
-      m.hidden = true;
-      const t = m.parentElement && m.parentElement.querySelector('[data-open-book-toggle]');
-      if (t) t.setAttribute('aria-expanded','false');
-    });
+  let pop = null, owner = null;
+  const ensurePop = ()=>{
+    if (pop && document.body.contains(pop)) return pop;
+    pop = document.createElement('div');
+    pop.className = 'open-book-pop'; pop.setAttribute('role','menu'); pop.hidden = true;
+    document.body.appendChild(pop);
+    return pop;
   };
+  const closeAll = ()=>{
+    if (pop) { pop.hidden = true; pop.innerHTML = ''; }
+    if (owner) owner.setAttribute('aria-expanded','false');
+    owner = null;
+  };
+  const place = ()=>{
+    if (!pop || pop.hidden || !owner || !document.body.contains(owner)) return;
+    const r = owner.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth, vh = window.innerHeight || document.documentElement.clientHeight;
+    const w = Math.min(260, vw - 16);
+    pop.style.width = w+'px';
+    // keep clear of the floating bottom nav on phones
+    let bottomLimit = vh;
+    const nav = document.querySelector('.bottom-nav');
+    if (nav){ const nr = nav.getBoundingClientRect(); if (nr.height && getComputedStyle(nav).display!=='none' && nr.top > r.bottom) bottomLimit = Math.min(vh, nr.top); }
+    pop.style.maxHeight = Math.max(160, Math.min(360, Math.round(bottomLimit*0.9) - 16, bottomLimit - 16))+'px';
+    const h = pop.offsetHeight;
+    let left = r.right - w; left = Math.max(8, Math.min(left, vw - w - 8));
+    let top = r.bottom + 6;
+    if (top + h > bottomLimit - 8 && r.top - h - 6 >= 8) top = r.top - h - 6;      // flip above when no room below
+    top = Math.max(8, Math.min(top, bottomLimit - h - 8));
+    pop.style.left = Math.round(left)+'px'; pop.style.top = Math.round(top)+'px';
+  };
+  window.closeOpenBookMenus = closeAll;
   document.addEventListener('click', ev=>{
     const btn = ev.target.closest && ev.target.closest('[data-open-book-toggle]');
     if (btn){
-      ev.preventDefault();
-      ev.stopPropagation();
-      const wrap = btn.closest('.open-book-wrap');
-      const menu = wrap && wrap.querySelector('.open-book-menu');
-      const willOpen = !!(menu && menu.hidden);
-      closeAll(willOpen?menu:null);
-      if (menu){
-        menu.hidden = !willOpen;
-        btn.setAttribute('aria-expanded', willOpen?'true':'false');
-      }
+      ev.preventDefault(); ev.stopPropagation();
+      if (owner===btn && pop && !pop.hidden){ closeAll(); return; }
+      closeAll();
+      const tpl = btn.parentElement && btn.parentElement.querySelector('template.open-book-tpl');
+      if (!tpl) return;
+      const p = ensurePop();
+      p.innerHTML = tpl.innerHTML; p.hidden = false; owner = btn; btn.setAttribute('aria-expanded','true');
+      place();
+      clearInterval(window.__obWatch);
+      window.__obWatch = setInterval(()=>{ if (!pop || pop.hidden){ clearInterval(window.__obWatch); return; } if (!owner || !document.body.contains(owner)) closeAll(); }, 800);
       return;
     }
-    if (ev.target.closest && ev.target.closest('.open-book-item')){
-      closeAll();
+    if (pop && !pop.hidden && pop.contains(ev.target)){
+      if (ev.target.closest && ev.target.closest('.open-book-item')) setTimeout(closeAll, 0);
       return;
     }
     closeAll();
-  });
-  document.addEventListener('keydown', ev=>{
-    if (ev.key==='Escape') closeAll();
-  });
+  }, true);
+  document.addEventListener('keydown', ev=>{ if (ev.key==='Escape') closeAll(); });
+  window.addEventListener('resize', closeAll);
+  window.addEventListener('scroll', ()=>{ if (pop && !pop.hidden){ if (!owner || !document.body.contains(owner)) closeAll(); else place(); } }, true);
 })();
 
 
@@ -1373,7 +1536,7 @@ const DEFAULTS = {
   // strict mode (tuned by backtest; see Backtest tab)
   strictMode:true, sMarkets:'ml', sFavMin:-150, sDogMax:150, sMinWin:0.50, sModelMin:0.58, sModelEdge:0, sNoModelSports:true, sNoSoccer:false, sExclude:'ncaab,mls,epl,ucl,laliga,seriea,bund', preset:'super', sMaxAdvPct:1.0, sMinPos:2, sMinScore:-99, sMinConf:80, sMinEV:-99,
   // your books
-  myBooks:DEFAULT_ALL_BOOKS, pmOn:true, pmThinSpread:0.03, pmThinLiq:5000, pmFeeRate:0.05,
+  myBooks:DEFAULT_ALL_BOOKS, pmOn:true, kalshiOn:true, kalshiRelay:'', pmThinSpread:0.03, pmThinLiq:5000, pmFeeRate:0.05,
   alertNewPlays:true, alertPulledPlays:true,
 };
 const LS = {settings:'bl_settings', firstSeen:'bl_firstseen', bets:'bl_bets', oddsCache:'bl_oddscache', sum:'bl_sumcache', geo:'bl_geo', wx:'bl_wxcache', results:'bl_results', pm:'bl_pmcache', pulledDismiss:'bl_pulled_dismiss', playTabs:'bl_play_tabs', pullNotes:'bl_pull_notes', newPlayNotified:'bl_new_play_notified', installTip:'bl_install_tip_dismiss', injSnap:'bl_inj_snap', filters:'bl_filters', filterViews:'bl_filter_views'};
@@ -1744,6 +1907,12 @@ function defaultPmFeeRate(p){
 function oddsPreviewLine(type, entered, stake, rate){
   const st = +stake || (typeof S!=='undefined' ? +S.unit : 25) || 25;
   const stTxt = Math.abs(st-Math.round(st))<1e-9 ? String(Math.round(st)) : st.toFixed(2);
+  if (type==='multiplier'){
+    const d = parseMultiplier(entered);
+    if (d==null) return '';
+    const am = decToAmerican(d);
+    return `${fmtMult(d)} ≈ ${fmtAm(am)}, get back $${(st*d).toFixed(2)} (win $${(st*(d-1)).toFixed(2)}) on $${stTxt}`;
+  }
   if (type==='polymarket'){
     const c = parsePmCents(entered);
     if (c==null) return '';
@@ -1759,8 +1928,38 @@ function oddsPreviewLine(type, entered, stake, rate){
   const win = profitOn(am, st);
   return `${fmtAm(am)}, win $${Math.abs(win).toFixed(2)} on $${stTxt}`;
 }
+// v35: third way to enter a tailed bet — payout multiplier (total return ÷ stake = decimal odds)
+const ODDS_PLACEHOLDER = {american:'-150', polymarket:'58 or 58¢', multiplier:'2.5x'};
+function parseMultiplier(x){
+  if (x==null || x==='') return null;
+  const n = parseFloat(String(x).trim().toLowerCase().replace(/[x×]/g,'').replace(/,/g,'.'));
+  return isFinite(n) && n>1.0001 && n<1001 ? n : null;
+}
+function decToAmerican(d){ if (!(d>1)) return null; return d>=2 ? (d-1)*100 : -100/(d-1); }
+function americanToDec(a){ a = +a; if (!isFinite(a) || Math.abs(a)<100) return null; return a>0 ? 1+a/100 : 1+100/(-a); }
+function fmtMult(d){ if (d==null) return ''; const r = Math.round(d*100)/100; return (Number.isInteger(r)? r.toFixed(1) : String(r))+'x'; }
+function enteredToAmerican(type, entered, rate){
+  if (type==='polymarket'){ const c = parsePmCents(entered); return c==null ? null : oddsFromPmCents(c, rate); }
+  if (type==='multiplier'){ const d = parseMultiplier(entered); return d==null ? null : decToAmerican(d); }
+  return parseAm(entered);
+}
+function americanToEntered(type, am, rate){
+  if (am==null) return null;
+  if (type==='multiplier'){ const d = americanToDec(am); return d ? fmtMult(d) : null; }
+  if (type==='polymarket'){
+    const cost = imp(am); if (cost==null) return null;
+    const fee = rate==null ? (+S.pmFeeRate||0) : +rate;
+    const c = (fee>0 && typeof pmMaxCents==='function') ? pmMaxCents(cost, fee) : cost;
+    return c>0 && c<1 ? String(Math.round(c*100)) : null;
+  }
+  return fmtAm(Math.round(am));
+}
 function fmtBetOdds(b){
   if (!b) return '—';
+  if (b.oddsType==='multiplier'){
+    const d = b.oddsMult!=null ? +b.oddsMult : parseMultiplier(b.oddsEntered);
+    if (d) return fmtMult(d);
+  }
   if (b.oddsType==='polymarket'){
     const c = b.oddsCents!=null ? +b.oddsCents : parsePmCents(b.oddsEntered);
     if (c!=null) return Math.round(c*100)+'¢';
@@ -1977,16 +2176,42 @@ function addEspnOdds(g, oddsArr){
     }
   }
 }
-/* ---------- The Odds API (optional) ---------- */
+/* ---------- The Odds API (optional) ----------
+   v35 credit saving:
+   - bookmakers= instead of regions=: only Pinnacle (the sharp reference for games) + the sportsbooks
+     you actually picked. Prediction markets (Polymarket, Polymarket US, Kalshi) never use credits.
+     DraftKings already comes free from ESPN, so it is not requested on its own.
+   - Strict "moneyline only" mode asks for h2h only (1 credit per league instead of 3); spreads and
+     totals still come free from ESPN.
+   - Only leagues with a game starting in the next 24h; regular refreshes slow down when the next
+     game is far away (pre-game boosts at ~60 and ~15 minutes still fire). */
+function oddsApiBookList(){
+  const picked = (typeof myBookList==='function' ? myBookList() : []).filter(b=>!PREDICTION_BOOKS.includes(b) && b!=='draftkings');
+  const custom = String(S.oddsBooks||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+  const base = custom.length ? custom : picked;
+  return [...new Set(['pinnacle'].concat(base))];
+}
+function oddsApiMarkets(){
+  return (S.strictMode!==false && S.sMarkets==='ml') ? 'h2h' : 'h2h,spreads,totals';
+}
+function oddsApiLeagueIds(){
+  const now = Date.now();
+  return new Set((games||[]).filter(g=>g.state==='pre' && g.start && (g.start.getTime()-now) < 24*3600000).map(g=>g.league));
+}
 function oddsCostPerFetch(){
-  const regions = (S.oddsBooks||'').trim() ? Math.ceil(S.oddsBooks.split(',').filter(Boolean).length/10) : String(S.oddsRegions||'us').split(',').filter(Boolean).length;
-  const n = Math.max(1, new Set((games||[]).filter(g=>g.state!=='post').map(g=>g.league)).size);
-  return n * 3 * Math.max(1, regions||1);
+  const regions = Math.max(1, Math.ceil(oddsApiBookList().length/10));
+  const n = Math.max(1, oddsApiLeagueIds().size);
+  return n * oddsApiMarkets().split(',').length * regions;
 }
 function daysLeftInOddsMonth(){
   const now = new Date();
   const end = new Date(now.getFullYear(), now.getMonth()+1, 1);
   return Math.max(1, (end - now)/86400000);
+}
+function nextGameStartMs(){
+  const now = Date.now(); let m = Infinity;
+  for (const g of (games||[])) if (g && g.state==='pre' && g.start){ const t = g.start.getTime(); if (t>now && t<m) m = t; }
+  return m;
 }
 function minOddsIntervalMs(){
   const cost = Math.max(1, oddsCostPerFetch());
@@ -1996,7 +2221,10 @@ function minOddsIntervalMs(){
   const maxFetches = Math.floor(spendable / cost);
   const spaced = maxFetches<=0 ? 24*3600000 : (daysLeftInOddsMonth()*86400000)/maxFetches;
   const configured = Math.max(30, +S.oddsEveryMin||120)*60000;
-  return Math.max(configured, spaced);
+  // far from game time, lines barely move: stretch the gap (x2 at 6h+, x3 at 12h+)
+  const lead = nextGameStartMs() - Date.now();
+  const stretch = lead > 12*3600000 ? 3 : lead > 6*3600000 ? 2 : 1;
+  return Math.max(configured*stretch, spaced);
 }
 function upcomingGoodOddsWindows(){
   const now = Date.now();
@@ -2023,6 +2251,7 @@ function upcomingGoodOddsWindows(){
 function shouldFetchOdds(force){
   if (!S.oddsKey) return false;
   if (force) return true;
+  if (!oddsApiLeagueIds().size) return false;           // nothing starts in the next 24h
   const rem = oddsCache && oddsCache.remaining!=null && isFinite(+oddsCache.remaining) ? +oddsCache.remaining : null;
   const cost = oddsCostPerFetch();
   if (rem!=null && rem < cost) return false;
@@ -2055,12 +2284,13 @@ async function fetchOddsApi(force){
     else if (active.includes(L.oa)) wanted.push({L,key:L.oa});
   }
   // spend credits only on leagues with upcoming games in ESPN (UFC/tennis always, ESPN rarely prices them)
-  const withGames = new Set(games.filter(g=>g.state!=='post').map(g=>g.league));
-  const list = wanted.filter(w=>withGames.has(w.L.id) || w.L.kind==='ind');
-  const books = S.oddsBooks.trim() ? `&bookmakers=${encodeURIComponent(S.oddsBooks.replace(/\s+/g,''))}` : `&regions=${encodeURIComponent(S.oddsRegions||'us')}`;
+  const withGames = oddsApiLeagueIds();
+  const list = wanted.filter(w=>withGames.has(w.L.id));
+  const books = `&bookmakers=${encodeURIComponent(oddsApiBookList().join(','))}`;
+  const markets = oddsApiMarkets();
   let remaining = oddsCache&&oddsCache.remaining, used = null;
   const res = await pool(list.map(w=>async()=>{
-    const r = await fetchJSON(`https://api.the-odds-api.com/v4/sports/${w.key}/odds/?apiKey=${key}${books}&markets=h2h,spreads,totals&oddsFormat=american`);
+    const r = await fetchJSON(`https://api.the-odds-api.com/v4/sports/${w.key}/odds/?apiKey=${key}${books}&markets=${markets}&oddsFormat=american`);
     const rem = r.headers.get('x-requests-remaining'), us = r.headers.get('x-requests-used');
     if (rem!=null && isFinite(+rem)) remaining = +rem; if (us!=null && isFinite(+us)) used = +us;
     if (!r.ok || !Array.isArray(r.data)){
@@ -2095,7 +2325,7 @@ function nameMatch(a,b){
 function mergeOddsApi(){
   if (!S.oddsKey || !oddsCache || !oddsCache.events) return;
   if (Date.now() - oddsCache.t > 24*3600000) return; // too stale to use
-  const wantBooks = S.oddsBooks.trim() ? new Set(S.oddsBooks.split(',').map(s=>s.trim()).filter(Boolean)) : null;
+  const wantBooks = S.oddsBooks.trim() ? new Set(S.oddsBooks.split(',').map(s=>s.trim()).filter(Boolean).concat(['pinnacle'])) : null;
   for (const {league, ev} of oddsCache.events){
     const t = new Date(ev.commence_time).getTime();
     if (!(t > Date.now() - 6*3600000)) continue;
@@ -2198,7 +2428,9 @@ function analyzeMarket(g, mk){
     if (pp.every(x=>x!=null)) { const nv = noVig(pp); if (nv){ pinNv = Object.fromEntries(sides.map((s,i)=>[s,nv[i]])); out.truth = 'Pinnacle'; } } }
   for (const s of sides){
     const qs = Q[s];
-    let best = qs[0]; for (const q of qs) if (betterPrice(q.price, best.price)) best = q;
+    // Pinnacle is the reference line, not a place most US bettors can bet — pick "best price" from the other books
+    const betQs = qs.filter(q=>!/pinnacle/i.test(q.bk||q.book)); const pool_ = betQs.length ? betQs : qs;
+    let best = pool_[0]; for (const q of pool_) if (betterPrice(q.price, best.price)) best = q;
     const nv = pinNv ? pinNv[s] : nvAcc[s]/wSum;
     const edge = nFull>=2 ? nv - imp(best.price) : null;
     let impSum=0, nImp=0, ptSum=0, nPt=0, fsOnly=true;
@@ -2833,7 +3065,7 @@ function strictGates(p, opts){
     if (neo) F.push('key player ruled out: '+(neo.n||'a key player'));
     const E = estimate(p), P = priceMath(p, E); p.E = E; p.P = P;
     if (+S.sMinEV > -99 && P.edge*100 < +S.sMinEV) F.push(`the price at ${P.book} (${P.pm?Math.round(P.cents*100)+'¢':fmtAm(P.am)}) is worse than what it's worth (${fmtAm(probToAm(E.final))})`);
-    const mb = p.my; if (mb){ if (mb.best && mb.best.thin) F.push('Polymarket market is thin (wide spread or low money)'); if (!mb.best && S.oddsKey && mb.required) F.push(`none of your books (${mb.names}) has this line`); }
+    const mb = p.my; if (mb){ if (mb.best && mb.best.thin) F.push(`${mb.best.book||'Prediction'} market is thin (wide spread or low money)`); if (!mb.best && S.oddsKey && mb.required) F.push(`none of your books (${mb.names}) has this line`); }
   }
   return F;
 }
@@ -2878,7 +3110,7 @@ function myBooks(p){
   const {g, mk, sd} = p; const fair = sd.nv;
   const hasPm = list.includes('polymarket') || list.includes('polymarket_us');
   const pmLabel = (list.includes('polymarket_us') && !list.includes('polymarket')) ? 'Polymarket US' : 'Polymarket';
-  const out = {names: list.map(BOOK_LABEL).join(', '), quotes:[], required: list.some(b=>b!=='polymarket' && b!=='polymarket_us')};
+  const out = {names: list.map(BOOK_LABEL).join(', '), quotes:[], required: list.some(b=>!PREDICTION_BOOKS.includes(b))};
   for (const q of (g.quotes[mk][p.side]||[])){
     const k = (q.bk||'').toLowerCase(); if (!list.includes(k)) continue;
     if (mk!=='ml' && q.point!==sd.point) continue;
@@ -2886,18 +3118,31 @@ function myBooks(p){
   }
   if (hasPm && g.pm && g.pm[mk] && g.pm[mk][p.side]){
     const m = g.pm[mk][p.side];
-    if (mk==='ml' || m.point===sd.point){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:pmLabel, price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:m.thin, pm:m}); }
+    if (mk==='ml' || m.point===sd.point){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:pmLabel, bk:'polymarket', price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:m.thin, pm:m}); }
+  }
+  if (list.includes('kalshi') && g.kalshi && g.kalshi[mk] && g.kalshi[mk][p.side]){
+    const m = g.kalshi[mk][p.side];
+    const cost = pmCost(m.ask, m.fee); out.quotes.push({book:'Kalshi', bk:'kalshi', price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', venue:'kalshi', thin:m.thin, pm:m});
   }
   out.quotes.sort((a,b)=>b.edge-a.edge); out.best = out.quotes[0] || null;
   out.fairAm = probToAm(fair); out.maxCents = pmMaxCents(fair);
   return out;
 }
+function fairRefLabel(A, sd){
+  if (!A) return 'the market';
+  if (A.truth==='Pinnacle') return 'Pinnacle';
+  if ((A.booksFull||0)>=2) return `the average of ${A.booksFull} books`;
+  return (sd && sd.best && sd.best.book) || 'DraftKings';
+}
+function refBookText(){
+  // plain words: which book sets the "fair" line we compare your price to
+  return 'Fair price: Pinnacle for games (the sharpest book) when available, otherwise the average of all books; DraftKings for player props';
+}
 function priceSourceNote(){
   if (S.oddsKey) return '';
-  const pm = myBookList().some(b=>b==='polymarket'||b==='polymarket_us') && S.pmOn!==false;
-  const text = pm
-    ? 'Prices from DraftKings and Polymarket — add Odds API key in Settings for Bovada prices'
-    : 'Prices from DraftKings — add Odds API key in Settings for Bovada prices';
+  const pred = myBookList().filter(b=>PREDICTION_BOOKS.includes(b)).map(BOOK_LABEL);
+  const text = (pred.length ? `Prices from DraftKings (free ESPN feed) and ${pred.join(', ')}` : 'Prices from DraftKings (free ESPN feed)')
+    + ' — add an Odds API key in Settings for Pinnacle and your other sportsbooks';
   return `<div class="banner price-banner">${text}.</div>`;
 }
 function missingBovadaHint(my){
@@ -2912,11 +3157,11 @@ function betOnText(p){
   const sideName = p.mk==='total' ? (p.side==='over'?'Over':'Under')+' '+sd.point : p.side==='draw' ? 'Draw' : (p.g[p.side].nick||p.g[p.side].short||p.g[p.side].name);
   const ref = `${sd.best.book} ${fmtAm(sd.best.price)}`;
   const bovadaHint = missingBovadaHint(my);
-  if (!my || !my.best) return {line:`Bet on: ${ref}${my?` (${my.names} not in the data${!S.oddsKey&&my.required?': add an Odds API key to see Bovada':''})`:''}`, max:`Don't pay more than ${fmtAm(fair)}`};
+  if (!my || !my.best) return {line:`Bet on: ${ref}${my?` (${my.names} not in the data${!S.oddsKey&&my.required?': add an Odds API key to see your other sportsbooks':''})`:''}`, max:`Don't pay more than ${fmtAm(fair)} · fair line from ${fairRefLabel(p.A, sd)}`};
   const b = my.best;
-  const line = (b.kind==='pm' ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on Polymarket at ${Math.round(b.cents*100)}¢ (≈ ${fmtAm(b.price)} after fee)` : `Bet on: ${b.book} at ${fmtAm(b.price)}`) + bovadaHint;
-  const max = list => list;
-  return {line, max:`Don't pay more than ${fmtAm(fair)}${my.quotes.some(q=>q.kind==='pm')||myBookList().includes('polymarket')?` · Polymarket max ${Math.floor(pmMaxCents(estP)*100)}¢`:''}`, ok: (b.cost!=null?estP-b.cost:estP-imp(b.price))>=0, thin:b.thin};
+  const line = (b.kind==='pm' ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${b.book} at ${Math.round(b.cents*100)}¢ (≈ ${fmtAm(b.price)} after fee)` : `Bet on: ${b.book} at ${fmtAm(b.price)}`) + bovadaHint;
+  const pmMax = (my.quotes.some(q=>q.kind==='pm') || myBookList().some(x=>PREDICTION_BOOKS.includes(x))) ? ` · Prediction-market max ${Math.floor(pmMaxCents(estP)*100)}¢` : '';
+  return {line, max:`Don't pay more than ${fmtAm(fair)}${pmMax} · fair line from ${fairRefLabel(p.A, sd)}`, ok: (b.cost!=null?estP-b.cost:estP-imp(b.price))>=0, thin:b.thin};
 }
 
 /* ================= POLYMARKET (public API, no key) ================= */
@@ -2960,6 +3205,84 @@ function mergePolymarket(){
       g.sources.add('Polymarket');
       break;
     }
+  }
+}
+
+/* ================= KALSHI (public market data, no key, no Odds API credits) =================
+   GET {base}/markets?series_ticker=KXNBAGAME&status=open — one call per league, refreshed about every 60s.
+   Each game is one event with one binary market per team ("Portland wins"); the ticker suffix is the
+   team abbreviation. Soccer adds a "Tie" market. Prices are dollars (0.59 = 59¢). Kalshi's taker fee
+   is about 7% × price × (1 − price), the same shape as the Polymarket fee, so pmCost() works. */
+const KALSHI_SERIES = {nba:'KXNBAGAME', nhl:'KXNHLGAME', nfl:'KXNFLGAME', mlb:'KXMLBGAME', ncaab:'KXNCAAMBGAME', ncaaf:'KXNCAAFGAME', wnba:'KXWNBAGAME',
+  mls:'KXMLSGAME', epl:'KXEPLGAME', ucl:'KXUCLGAME', laliga:'KXLALIGAGAME', seriea:'KXSERIEAGAME', bund:'KXBUNDESLIGAGAME', ufc:'KXUFCFIGHT', atp:'KXATPMATCH', wta:'KXWTAMATCH'};
+const KALSHI_FEE = 0.07;
+const KALSHI_ABBR_FIX = {gsw:'gs', nyk:'ny', nop:'no', sas:'sa', pho:'phx', brk:'bkn', cho:'cha', was:'wsh', njd:'nj', lak:'la', sjs:'sj', tbl:'tb', kcc:'kc', gnb:'gb', sfo:'sf', nwe:'ne', nor:'no', tam:'tb', uta:'utah', lvk:'vgk', vgk:'vgk', clb:'cbj', mon:'mtl'};
+function kalshiBase(){ return String(S.kalshiRelay||'').trim().replace(/\/+$/,'') || 'https://api.elections.kalshi.com/trade-api/v2'; }
+let kalshiCache = loadJSON('bl_kalshicache', null); let kalshiErr = null;
+function wantsKalshi(){ return myBookList().includes('kalshi') && S.kalshiOn!==false; }
+async function fetchKalshi(){
+  if (!wantsKalshi()){ kalshiErr = null; return; }
+  const fresh = Math.max(10*1000, (typeof refreshIntervalMs==="function"?refreshIntervalMs():60000) - 2000);
+  if (kalshiCache && Date.now()-kalshiCache.t < fresh) return;
+  // after a failure, back off 5 minutes instead of hammering a blocked endpoint every refresh
+  if (kalshiCache && kalshiCache.failT && Date.now()-kalshiCache.failT < 5*60000) return;
+  const want = Object.keys(KALSHI_SERIES).filter(id=>S.enabled.includes(id) && games.some(g=>g.league===id && g.state==='pre'));
+  const res = {t:Date.now(), m:{}}; let errs=0;
+  await pool(want.map(id=>async()=>{
+    try{
+      const r = await fetchJSON(`${kalshiBase()}/markets?series_ticker=${KALSHI_SERIES[id]}&status=open&limit=1000`, 15000);
+      if (!r.ok || !r.data || !Array.isArray(r.data.markets)) throw new Error('HTTP '+r.status);
+      res.m[id] = r.data.markets.map(m=>({ev:m.event_ticker, tk:m.ticker, sub:m.yes_sub_title||m.title||'',
+        ask:m.yes_ask_dollars!=null?+m.yes_ask_dollars:null, bid:m.yes_bid_dollars!=null?+m.yes_bid_dollars:null,
+        last:m.last_price_dollars!=null?+m.last_price_dollars:null, v24:+m.volume_24h_fp||0, oi:+m.open_interest_fp||0,
+        t:Date.parse(m.occurrence_datetime||m.expected_expiration_time||'')}));
+    }catch(e){ errs++; }
+  }), 4);
+  if (want.length && errs===want.length){
+    kalshiErr = 'Kalshi prices could not load in this browser (Kalshi blocks web apps from reading prices directly).';
+    kalshiCache = Object.assign({t:0, m:{}}, kalshiCache||{}, {failT:Date.now()});
+    return;
+  }
+  kalshiErr = errs ? `${errs} Kalshi league(s) failed` : null; kalshiCache = res; saveJSON('bl_kalshicache', kalshiCache);
+}
+function kalshiAbbr(tk){ const a = String(tk||'').split('-').pop().toLowerCase(); return KALSHI_ABBR_FIX[a]||a; }
+function mergeKalshi(){
+  for (const g of games) g.kalshi = null;
+  if (!kalshiCache || !kalshiCache.m || !wantsKalshi()) return;
+  const N = s => norm(s).replace(/\s+/g,' ').trim();
+  const fixAb = a => { a = String(a||'').toLowerCase(); return KALSHI_ABBR_FIX[a]||a; };
+  for (const g of games){
+    const list = kalshiCache.m[g.league]; if (!list || !list.length || !g.start) continue;
+    const byEv = {};
+    for (const m of list){ if (!isFinite(m.t) || Math.abs(m.t - g.start.getTime()) > 6*3600000) continue; (byEv[m.ev]||(byEv[m.ev]=[])).push(m); }
+    const scoreSide = (m, side) => {
+      const T = g[side]; if (!T) return 0;
+      let sc = 0;
+      if (T.short && fixAb(T.short)===kalshiAbbr(m.tk)) sc += 3;
+      const sub = N(m.sub);
+      const names = [T.loc, T.name, T.short, T.nick].filter(Boolean).map(N);
+      if (names.some(x=>x && (x===sub))) sc += 3;
+      else if (names.some(x=>x && sub.length>3 && (x.indexOf(sub)===0 || sub.indexOf(x)===0))) sc += 2;
+      else if (typeof nameMatch==='function' && nameMatch(m.sub, T.name)) sc += 1;
+      return sc;
+    };
+    let best = null, bestSc = 0;
+    for (const ev in byEv){
+      const ms = byEv[ev];
+      const tie = ms.find(m=>/^tie$|^draw$/i.test(m.sub));
+      const teams = ms.filter(m=>m!==tie);
+      if (teams.length!==2) continue;
+      const a0 = scoreSide(teams[0],'away'), h1 = scoreSide(teams[1],'home'), h0 = scoreSide(teams[0],'home'), a1 = scoreSide(teams[1],'away');
+      let map = null, sc = 0;
+      if (a0 && h1 && a0+h1 > h0+a1){ map = {away:teams[0], home:teams[1]}; sc = a0+h1; }
+      else if (h0 && a1){ map = {home:teams[0], away:teams[1]}; sc = h0+a1; }
+      if (map && sc>bestSc){ bestSc = sc; best = {map, tie, ev}; }
+    }
+    if (!best) continue;
+    g.kalshi = {ml:{}, ev:best.ev};
+    const put = (side, m) => { if (m && m.ask!=null && m.ask>0 && m.ask<1){ const spread = (m.bid!=null) ? m.ask-m.bid : null; g.kalshi.ml[side] = {ask:m.ask, bid:m.bid, mid:(m.bid!=null?(m.ask+m.bid)/2:m.ask), spread, fee:KALSHI_FEE, thin: spread==null || spread > Math.max(+S.pmThinSpread||0.03, 0.04) || (m.oi<500 && m.v24<500), point:null, tk:m.tk}; } };
+    put('home', best.map.home); put('away', best.map.away); if (best.tie) put('draw', best.tie);
+    if (Object.keys(g.kalshi.ml).length) g.sources.add('Kalshi'); else g.kalshi = null;
   }
 }
 
@@ -4521,7 +4844,7 @@ function estimate(p, o){
 /* ---------- price math at your book ---------- */
 function priceMath(p, E){
   const my = p.my; let src = null;
-  if (my && my.best) src = my.best.kind==='pm' ? {book:'Polymarket', cost:my.best.cost, cents:my.best.cents, am:my.best.price, pm:true, thin:my.best.thin} : {book:my.best.book, cost:imp(my.best.price), am:my.best.price};
+  if (my && my.best) src = my.best.kind==='pm' ? {book:my.best.book||'Polymarket', cost:my.best.cost, cents:my.best.cents, am:my.best.price, pm:true, thin:my.best.thin} : {book:my.best.book, cost:imp(my.best.price), am:my.best.price};
   else src = {book:p.sd.best.book, cost:imp(p.sd.best.price), am:p.sd.best.price, ref:true};
   const dec = 1/src.cost; const ev = E.final*(dec-1) - (1-E.final); // per $1
   return Object.assign(src, {need:src.cost, edge:E.final-src.cost, ev, ev25: ev*(+S.unit||25)});
@@ -4790,8 +5113,11 @@ function contextFacts(p){
   // schedule spot (3rd in 4 nights, etc.)
   if (team){
     const spotA = scheduleSpot(g, side), spotB = scheduleSpot(g, opp);
-    if (spotA) addFact('spot', `${T.short} ${spotA.txt}`, !spotA.tough);
-    if (spotB && spotB.tough) addFact('spot', `${O.short} ${spotB.txt}`, true);
+    // the rest fact above already says "X played yesterday (back-to-back)" — don't repeat it here
+    const restSaysB2b = facts.some(f=>f.kind==='rest' && /back-to-back/i.test(f.txt||''));
+    const plainB2b = sp2 => sp2 && /back-to-back/i.test(sp2.txt||'') && !/game in \d+ nights/i.test(sp2.txt||'');
+    if (spotA && !(restSaysB2b && plainB2b(spotA))) addFact('spot', `${T.short} ${spotA.txt}`, !spotA.tough);
+    if (spotB && spotB.tough && !(restSaysB2b && plainB2b(spotB))) addFact('spot', `${O.short} ${spotB.txt}`, true);
   }
 
   // app record at this price
@@ -4947,6 +5273,8 @@ function courtModel(p){
     }
     return out.concat(price);
   };
+  // one fact, one line (e.g. rest fact + schedule spot + model b2b step all saying "played yesterday")
+  { const D = typeof dedupeWinLose==='function' ? dedupeWinLose(win, lose) : {win, lose}; win.splice(0, win.length, ...D.win); lose.splice(0, lose.length, ...D.lose); }
   const winOut = take(win, 5, 1);
   const loseOut = take(lose, 5, 2);
   if (!loseOut.some(x=>/no side wins every night|even good picks lose/i.test(x.txt)))
@@ -4970,10 +5298,11 @@ function courtroomHTML(p, C){
   const li = x => `<li><span>${esc(x.txt)}</span></li>`;
   const cls = C.J==='BET'?'b-good':C.J==='MAYBE LATER'?'b-watch':'b-avoid';
   const wr = C.wr || hitRateFor(C.P && C.P.am, p.g && p.g.league, p.mk);
+  const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]};
   return `<div class="court2">
     ${chanceBarHTML(p, C)}
-    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${C.win.length?C.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way.</li>'}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${C.lose.map(li).join('')}</ul></div>
+    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way.</li>'}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.map(li).join('')}</ul></div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v):''}</div>
       <div class="c-sent">${esc(C.sentence)}</div>
       ${unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game")}<div class="wr-inline">${esc(hitRateText(wr))}</div></div>
@@ -5237,6 +5566,8 @@ async function refresh(forceOdds=false){
     mergeOddsApi();
     try{ await fetchPolymarket(); }catch(e){ pmErr = String(e.message||e); }
     mergePolymarket();
+    try{ if (typeof fetchKalshi==='function') await fetchKalshi(); }catch(e){ kalshiErr = String(e.message||e); }
+    try{ if (typeof mergeKalshi==='function') mergeKalshi(); }catch(e){ console.warn('kalshi merge', e); }
     stampFirstSeen();
     attachFx();
     evaluateAll();
@@ -5287,7 +5618,7 @@ function softRender(){ // live update without wiping forms on Tracker/Settings
 }
 function updateOddsPill(){
   const d=$('#dotOdds'), t=$('#oddsTxt');
-  if (!S.oddsKey){ d.className='dot'; t.textContent='off — DraftKings only, add a key for Bovada'; return; }
+  if (!S.oddsKey){ d.className='dot'; t.textContent='off — free DraftKings + prediction markets'; return; }
   if (oddsErrors.length){ d.className='dot err'; t.textContent='error, see list'; return; }
   if (!oddsCache){ d.className='dot warn'; t.textContent='not fetched yet'; return; }
   d.className='dot ok';
@@ -5752,11 +6083,10 @@ function pickinessLabel(board){
   return n==='super' ? 'Super picky' : n==='picky' ? 'Picky' : n==='relaxed' ? 'Relaxed' : 'Custom';
 }
 function compactPriceLine(){
-  if (S.oddsKey) return 'Prices include your Odds API books (Bovada when available).';
-  const pm = typeof myBookList==='function' && myBookList().some(b=>b==='polymarket'||b==='polymarket_us') && S.pmOn!==false;
-  return pm
-    ? 'Prices from DraftKings and Polymarket — add an Odds API key in Settings for Bovada.'
-    : 'Prices from DraftKings — add an Odds API key in Settings for Bovada.';
+  const pred = (typeof myBookList==='function' ? myBookList() : []).filter(b=>PREDICTION_BOOKS.includes(b)).map(b=>typeof bookLabelOf==='function'?bookLabelOf(b):b);
+  const predTxt = pred.length ? ` ${pred.join(', ')} prices are free and refresh every minute.` : '';
+  if (S.oddsKey) return 'Game prices are compared to Pinnacle (the sharpest book) when available; props to DraftKings.' + predTxt;
+  return 'Prices from DraftKings (free ESPN feed).' + predTxt + ' Add an Odds API key in Settings for Pinnacle and your other sportsbooks.';
 }
 function fillFilterMeta(){
   const board = ui.board||'games';
@@ -6333,26 +6663,22 @@ function renderTracker(pf){
   const betCards = bets.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.created||0)-(a.created||0)).map(b=>{
     const pr = betProfit(b);
     const pulled = betIsPulled(b);
-    const open = trackerUI.open.has(b.id);
     const res = b.result||'pending';
-    const cls = `bet-card ${res} ${pulled?'pulled':''} ${open?'open':''}`;
+    const cls = `bet-card bet-row ${res} ${pulled?'pulled':''}`;
     const pill = pulled && res==='pending' ? 'pulled' : (res==='win'?'won':res==='loss'?'lost':res);
     const pillTxt = pulled && res==='pending' ? 'Pulled' : resultLabel(res);
+    const segBtn = (r, lab) => `<button type="button" class="res-seg-btn r-${r}${res===r?' on':''}" data-setres="${esc(b.id)}" data-r="${r}" aria-pressed="${res===r?'true':'false'}">${lab}</button>`;
     return `<article class="${cls}" data-bet="${esc(b.id)}">
-      <div class="bet-top"><div class="bet-name">${esc(shortBetName(b))}</div><span class="res-pill ${pill}">${esc(pillTxt)}</span></div>
+      <div class="bet-top"><div class="bet-name" title="${esc(b.pick||'')}">${esc(shortBetName(b))}</div><span class="res-pill ${pill}">${esc(pillTxt)}</span></div>
       <div class="bet-meta">
         <span class="sport-pill">${esc(b.sport||'Other')}</span>
         <span class="meta-pill">${esc(typeof fmtBetOdds==='function'?fmtBetOdds(b):fmtAm(+b.odds))}</span>
         <span class="meta-pill">$${((+b.stake)||0).toFixed((+b.stake)%1?2:0)}</span>
         ${res!=='pending'?`<span class="meta-pill ${pr>0?'pos':pr<0?'neg':''}">${pr?moneyShort(pr):'—'}</span>`:''}
       </div>
-      <div class="bet-more">
-        <div class="full">${esc(b.pick||'')}${b.date?` · ${esc(b.date)}`:''}${b.market?` · ${esc(b.market)}`:''}${b.autoGraded?' · auto-graded':''}</div>
-        <div class="row">
-          <label class="hint">Result <select data-res="${esc(b.id)}">${['pending','win','loss','push','void'].map(r=>`<option value="${r}" ${res===r?'selected':''}>${resultLabel(r)}</option>`).join('')}</select></label>
-          <span class="hint">${b.clv!=null?`CLV ${fmtEdge(b.clv)}`:''}</span>
-          <button type="button" class="btn sm danger" data-del="${esc(b.id)}">Delete</button>
-        </div>
+      <div class="bet-actions">
+        <div class="res-seg" role="group" aria-label="Result">${segBtn('pending','Pending')}${segBtn('win','Win')}${segBtn('loss','Loss')}${segBtn('push','Push')}${segBtn('void','Void')}</div>
+        <button type="button" class="btn sm danger bet-del" data-del="${esc(b.id)}" aria-label="Delete this bet">Delete</button>
       </div>
     </article>`;
   }).join('');
@@ -6378,8 +6704,8 @@ function renderTracker(pf){
       <div class="log-bet"><span>Bet</span><input name="pick" value="${esc(prePick)}" placeholder="e.g. Rockets ML, Lakers/Celtics Over 225.5" required></div>
       <div class="log-row">
         <label class="odds-field">Odds
-          <div class="seg odds-type" id="oddsTypeSeg">${[['american','American'],['polymarket','Polymarket ¢']].map(([v,l])=>`<label class="${(pf.oddsType||'american')===v?'on':''}"><input type="radio" name="oddsType" value="${v}" ${(pf.oddsType||'american')===v?'checked':''} hidden>${l}</label>`).join('')}</div>
-          <input name="odds" id="betOdds" value="${esc(pf.odds||'')}" placeholder="${(pf.oddsType||'american')==='polymarket'?'58 or 58¢':'-150'}" required>
+          <div class="seg odds-type" id="oddsTypeSeg">${[['american','American'],['polymarket','Polymarket ¢'],['multiplier','Payout ×']].map(([v,l])=>`<label class="${(pf.oddsType||'american')===v?'on':''}"><input type="radio" name="oddsType" value="${v}" ${(pf.oddsType||'american')===v?'checked':''} hidden>${l}</label>`).join('')}</div>
+          <input name="odds" id="betOdds" value="${esc(pf.odds||'')}" placeholder="${ODDS_PLACEHOLDER[pf.oddsType||'american']||'-150'}" inputmode="${(pf.oddsType||'american')==='american'?'text':'decimal'}" required>
           <span class="hint" id="oddsPreview"></span>
         </label>
         <label>Stake ($)
@@ -6450,10 +6776,19 @@ function renderTracker(pf){
     document.querySelectorAll('#stakeChips [data-stake]').forEach(c=>c.classList.toggle('on', Math.abs(+c.dataset.stake-val)<1e-9));
   }
   const typeSeg = $('#oddsTypeSeg');
+  let lastType = currentOddsType();
   if (typeSeg) typeSeg.querySelectorAll('input').forEach(i=>i.onchange=()=>{
     typeSeg.querySelectorAll('label').forEach(l=>l.classList.toggle('on', l.contains(i)));
     const inp = $('#betOdds');
-    if (inp) inp.placeholder = i.value==='polymarket' ? '58 or 58¢' : '-150';
+    const fee = (pendingLink && pendingLink.fee!=null) ? pendingLink.fee : (typeof defaultPmFeeRate==='function'?defaultPmFeeRate(): +S.pmFeeRate);
+    // keep the three entry methods in sync: convert what's typed into the new format
+    if (inp && inp.value.trim()){
+      const am = enteredToAmerican(lastType, inp.value, fee);
+      const conv = am!=null ? americanToEntered(i.value, am, fee) : null;
+      if (conv!=null) inp.value = conv;
+    }
+    if (inp){ inp.placeholder = ODDS_PLACEHOLDER[i.value] || '-150'; inp.setAttribute('inputmode', i.value==='american'?'text':'decimal'); }
+    lastType = i.value;
     refreshOddsPreview();
   });
   const oddsInp = $('#betOdds'), stakeInp = $('#betStake');
@@ -6472,12 +6807,18 @@ function renderTracker(pf){
     const typ = f.get('oddsType')||'american';
     const entered = String(f.get('odds')||'').trim();
     let o=null, cents=null, fee=null;
+    let mult = null;
     if (typ==='polymarket'){
       cents = parsePmCents(entered);
       if (cents==null){ toast('Polymarket odds must be a percent or cents, e.g. 58 or 58¢'); return; }
       fee = (pendingLink && pendingLink.fee!=null) ? +pendingLink.fee : (typeof defaultPmFeeRate==='function'?defaultPmFeeRate(): +S.pmFeeRate);
       o = oddsFromPmCents(cents, fee);
       if (o==null){ toast('Polymarket price is out of range'); return; }
+    } else if (typ==='multiplier'){
+      mult = parseMultiplier(entered);
+      if (mult==null){ toast('Payout must be more than 1x, e.g. 2.5x (total back ÷ stake)'); return; }
+      o = decToAmerican(mult);
+      if (o==null){ toast('Payout is out of range'); return; }
     } else {
       o = parseAm(entered);
       if (o==null){ toast('Odds must be American, e.g. -150 or +120'); return; }
@@ -6488,18 +6829,13 @@ function renderTracker(pf){
     const result = f.get('result') || 'pending';
     const nb = {id:'b'+Date.now()+Math.random().toString(36).slice(2,6), created:Date.now(), updatedAt:Date.now(), date, sport, market, pick:String(f.get('pick')||'').trim(), odds:o, stake:+f.get('stake'), result, oddsType:typ, oddsEntered:entered};
     if (cents!=null){ nb.oddsCents=cents; nb.oddsFee=fee; }
+    if (mult!=null) nb.oddsMult = mult;
     if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; pendingLink = null; }
     bets.push(nb);
     saveBets(); toast('Bet logged'); renderTracker();
   };
-  $('#view').querySelectorAll('[data-res]').forEach(s=>s.onchange=()=>{ const b=bets.find(x=>x.id===s.dataset.res); if(b){ b.result=s.value; if (typeof touchBet==='function') touchBet(b); saveBets(); renderTracker(); } });
+  $('#view').querySelectorAll('[data-setres]').forEach(btn=>btn.onclick=()=>{ const b=bets.find(x=>x.id===btn.dataset.setres); const r = btn.dataset.r; if(b && r && b.result!==r){ b.result=r; if (typeof touchBet==='function') touchBet(b); saveBets(); const keep=readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; renderTracker(keep); } });
   $('#view').querySelectorAll('[data-del]').forEach(s=>s.onclick=()=>{ if(!confirm('Delete this bet?')) return; if (typeof tombstoneBet==='function') tombstoneBet(s.dataset.del); bets=bets.filter(x=>x.id!==s.dataset.del); saveBets(); renderTracker(); });
-  $('#view').querySelectorAll('[data-bet]').forEach(card=>card.addEventListener('click', e=>{
-    if (e.target.closest('button,select,input,label,a')) return;
-    const id=card.dataset.bet;
-    if (trackerUI.open.has(id)) trackerUI.open.delete(id); else trackerUI.open.add(id);
-    card.classList.toggle('open', trackerUI.open.has(id));
-  }));
   const allDet = $('#view').querySelector('details.trk-allbets');
   if (allDet) allDet.addEventListener('toggle', ()=>{ trackerUI.allOpen = !!allDet.open; });
   const sportDet = $('#view').querySelector('details[data-trk="sport"]');
@@ -6751,14 +7087,15 @@ const statVal = (r, st) => st==='pra' ? r.pts+r.reb+r.ast : st==='pr' ? r.pts+r.
 async function propMarket(g, L, playerName){
   if (typeof espnPropForPlayer==='function' && g){
     try{
-      const espn = espnPropForPlayer(g, playerName, L.stat);
+      const espn = espnPropForPlayer(g, playerName, L.stat, L.incl && L.dir!=='under' ? L.line-0.5 : L.line);
       if (espn && espn.line!=null) return espn;
     }catch(e){}
   }
   if (!S.oddsKey || !g.oaId || !OA_PROP[L.stat]) return {err: !S.oddsKey ? 'no live ESPN line for this player yet (you can still research the game log). Add an Odds API key in Settings for more books.' : 'no Odds API event match'};
   const k = `${g.oaId}|${OA_PROP[L.stat]}`; let c = propOddsCache[k];
   if (!c || Date.now()-c.t > 30*60000){
-    const r = await fetchJSON(`https://api.the-odds-api.com/v4/sports/${g.oaSport}/events/${g.oaId}/odds?apiKey=${encodeURIComponent(S.oddsKey)}&regions=${encodeURIComponent(S.oddsRegions||'us')}&markets=${OA_PROP[L.stat]}&oddsFormat=american`);
+    const bks = typeof propOddsApiBooks==='function' ? propOddsApiBooks() : ['draftkings'];
+    const r = await fetchJSON(`https://api.the-odds-api.com/v4/sports/${g.oaSport}/events/${g.oaId}/odds?apiKey=${encodeURIComponent(S.oddsKey)}&bookmakers=${encodeURIComponent(bks.join(','))}&markets=${OA_PROP[L.stat]}&oddsFormat=american`);
     if (!r.ok || !r.data) return {err:`Odds API HTTP ${r.status}`};
     c = propOddsCache[k] = {t:Date.now(), data:r.data};
     const rem = r.headers.get('x-requests-remaining'); if (rem!=null && oddsCache) { oddsCache.remaining = rem; saveJSON(LS.oddsCache, oddsCache); }
@@ -6932,7 +7269,12 @@ async function propLegAnalysis(leg){
   if (!mkt.err){
     const bookLine = mkt.line; leg.info.push(`Prop market (${mkt.books} books): line ${bookLine}, best over ${mkt.bestOver?fmtAm(mkt.bestOver.price)+' '+mkt.bestOver.book:'—'}, best under ${mkt.bestUnder?fmtAm(mkt.bestUnder.price)+' '+mkt.bestUnder.book:'—'}`);
     const userEq = (L.incl ? L.line-0.5 : L.line) === bookLine;
-    if (mkt.nvOver!=null && userEq){ const nvSide = L.dir==='under' ? 1-mkt.nvOver : mkt.nvOver; p = 0.65*p + 0.35*nvSide; parts.push(`blend 65/35 with market no-vig ${fmtPct(nvSide)}`); const b = L.dir==='under'?mkt.bestUnder:mkt.bestOver; if (b){ leg.bookPrice=b.price; leg.bookName=b.book; } }
+    if (userEq && mkt.nvOver==null && mkt.bestOver && mkt.bestUnder && typeof noVig==='function'){ const nv = noVig([mkt.bestOver.price, mkt.bestUnder.price]); if (nv) mkt.nvOver = nv[0]; }
+    if (userEq){
+      // v35: a live priced line always prices the leg (it used to need a no-vig pair, so ESPN lines showed "no price")
+      const b = L.dir==='under'?mkt.bestUnder:mkt.bestOver; if (b){ leg.bookPrice=b.price; leg.bookName=b.book; }
+      if (mkt.nvOver!=null){ const nvSide = L.dir==='under' ? 1-mkt.nvOver : mkt.nvOver; p = 0.65*p + 0.35*nvSide; parts.push(`blend 65/35 with market no-vig ${fmtPct(nvSide)}`); }
+    }
     else if (!userEq) leg.no.push(`Book line is ${bookLine}, not your ${L.line}${L.incl?'+':''}: no exact price for your line`);
   } else leg.no.push(`Prop price unavailable: ${mkt.err}`);
   if (typeof estimateProp==='function' && (leg._propRows||[]).length){
@@ -7106,6 +7448,30 @@ function sharedGameResearchHTML(pl, keyPrefix){
       ${typeof checksHTML==='function'?checksHTML(g):''}</details>`;
 }
 
+/* v35: live priced props for one player in one game, from the Props board (ESPN DraftKings feed + any
+   Odds API books you picked). Used to price typed Verdict props and to fill the match dropdown. */
+function propKindToStat(kind){ const m = {threes:'3pm', ar:'ra'}; const st = m[kind] || kind; return STAT_LABEL[st] ? st : null; }
+function livePropPrice(p, dir){
+  if (!p) return null;
+  const v = dir==='under' ? p.underPrice : p.overPrice;
+  if (v!=null && isFinite(+v)) return +v;
+  const bp = p.bookPrices || {}; let best = null;
+  for (const k in bp){ const x = bp[k] && bp[k][dir==='under'?'under':'over']; if (x!=null && (best==null || betterPrice(+x, best))) best = +x; }
+  return best;
+}
+function livePropBook(p, dir){
+  const bp = (p && p.bookPrices) || {}; const want = livePropPrice(p, dir);
+  for (const k in bp){ const x = bp[k] && bp[k][dir==='under'?'under':'over']; if (x!=null && +x===want) return (typeof bookLabelOf==='function'?bookLabelOf(k):k); }
+  return /odds api/i.test(String(p && p.source || '')) ? 'Sportsbook' : 'DraftKings';
+}
+function livePropsForPlayer(player, g){
+  if (!player || !g) return [];
+  const list = (typeof props!=='undefined' && props) || [];
+  return list.filter(p=>p && p.g && p.g.eventId===g.eventId && propKindToStat(p.kind)
+      && (String(p.playerId)===String(player.id) || nameScore(player.name, p.playerName||'')>=7)
+      && (p.overPrice!=null || p.underPrice!=null || (p.bookPrices && Object.keys(p.bookPrices).length)))
+    .sort((a,b)=>String(a.kind).localeCompare(String(b.kind)) || a.line-b.line);
+}
 async function resolveLeg(raw, override){
   const L = parseLeg(raw);
   const leg = {raw, L, yes:[], no:[], info:[], cands:[], p:null};
@@ -7119,7 +7485,15 @@ async function resolveLeg(raw, override){
     if (L.kind==='prop'){
       const cands = await playerCandidates(L.nameText);
       leg.cands = cands.slice(0,10).map(c=>({key:`p:${c.a.id}:${c.g?c.g.id:''}`, label:`${c.a.name}${c.g?` · ${c.g[c.side].short} (${c.g.away.short} @ ${c.g.home.short}, ${fmtTime(c.g.start)})`:' · no game loaded'}`, c}));
-      let pick = override ? leg.cands.find(x=>x.key===override) : leg.cands[0];
+      // v35: "lp:<prop id>" = a live priced line picked from the match dropdown
+      const liveOverride = (override && String(override).indexOf('lp:')===0) ? ((typeof props!=='undefined' && props) || []).find(x=>'lp:'+x.id===override) : null;
+      if (liveOverride){
+        const st = propKindToStat(liveOverride.kind);
+        if (st){ L.stat = st; L.line = +liveOverride.line; L.incl = false; if (!L.dir) L.dir = 'over'; }
+      }
+      let pick = liveOverride
+        ? (leg.cands.find(x=>x.c && x.c.g && x.c.g.eventId===(liveOverride.g&&liveOverride.g.eventId) && (String(x.c.a.id)===String(liveOverride.playerId) || nameScore(x.c.a.name, liveOverride.playerName)>=7)) || leg.cands[0])
+        : (override ? leg.cands.find(x=>x.key===override) : leg.cands[0]);
       if (!pick){ leg.err = `Couldn't find a player matching “${L.nameText}” on today's schedule. Try the full name, like “Nikola Jokic Over 25.5 pts”.`; leg.hint = 'nomatch'; return leg; }
       leg.matchKey = pick.key; leg.player = pick.c.a; leg.g = pick.c.g; leg.side = pick.c.side;
       if (!override && leg.g && leg.g.state==='post' && pick.c.side){
@@ -7143,6 +7517,24 @@ async function resolveLeg(raw, override){
         }catch(e){ console.warn('import player game', e); }
       }
       if (!leg.g){ leg.err = `Matched ${leg.player.name}, but there's no game for them on today's ESPN schedule right now.`; leg.hint = 'nomatch'; return leg; }
+      // v35: match a live priced line (any book) before falling back to "no price"
+      leg.liveProps = livePropsForPlayer(leg.player, leg.g);
+      if (liveOverride){ leg.liveMatched = liveOverride; leg.matchKey = 'lp:'+liveOverride.id; }
+      else {
+        const kind = L.stat==='3pm' ? 'threes' : L.stat==='ra' ? 'ar' : L.stat;
+        const typedLine = L.incl && L.dir!=='under' ? L.line-0.5 : L.line;
+        const same = leg.liveProps.filter(x=>x.kind===kind);
+        const exact = same.find(x=>Math.abs(+x.line - typedLine)<1e-9);
+        if (exact){ leg.liveMatched = exact; if (!override) leg.matchKey = 'lp:'+exact.id; }
+        else if (!override && same.length){
+          // closest live line within 1 point on the same stat: use it (the dropdown keeps "your line" as an option)
+          const near = same.slice().sort((a,b)=>Math.abs(a.line-typedLine)-Math.abs(b.line-typedLine))[0];
+          if (near && Math.abs(near.line-typedLine)<=1 && livePropPrice(near, L.dir)!=null){
+            leg.lineSwitched = {from: L.line, incl: L.incl, to: +near.line};
+            L.line = +near.line; L.incl = false; leg.liveMatched = near; leg.matchKey = 'lp:'+near.id;
+          }
+        }
+      }
       await ensureFx(leg.g); evaluateAll();
       await propLegAnalysis(leg);
       if (typeof loadOddsHistory==='function') loadOddsHistory().catch(()=>{});
@@ -7252,6 +7644,7 @@ function legAssistHTML(leg, i){
   const g = leg.g;
   if (leg.viaPlayer && g) bits.push(`<div class="pk-assume">🔎 ${esc(leg.viaPlayer)} plays for <b>${esc(g[leg.side].name)}</b> — checking their ${leg.L.kind==='spread'?'spread':'moneyline'}.</div>`);
   if (leg.assumeNote) bits.push(`<div class="pk-assume">🔎 ${esc(leg.assumeNote)}</div>`);
+  if (leg.lineSwitched) bits.push(`<div class="pk-assume">🔎 No book has ${esc(String(leg.lineSwitched.from))}${leg.lineSwitched.incl?'+':''} right now, so this uses the live line <b>${esc(String(leg.lineSwitched.to))}</b>. Pick “your line” in the title menu to research ${esc(String(leg.lineSwitched.from))} instead.</div>`);
   if (!leg.err && g && leg.L && leg.L.assumedMl && !leg.player){
     const T = g[leg.side];
     const alts = [];
@@ -7276,9 +7669,48 @@ function verdictShortName(T, g){
   if (g && g.ind){ const parts = String(T.name||'').split(' '); return parts[parts.length-1]||T.name; }
   return T.nick || (typeof shortTeamToken==='function' ? shortTeamToken(T.short||T.name) : (T.short||T.name));
 }
+/* v35: the play title IS the match. It is a dropdown: change it if we matched the wrong team, player,
+   or line, and the verdict re-runs for that pick. Props list live priced lines first. */
+function legOptionLabel(leg, c){
+  const L = leg.L || {};
+  if (!c || !c.g) return c && c.label || '';
+  const g = c.g, lg = (LMAP[g.league]||{}).label || '';
+  const where = `${g.away.short} @ ${g.home.short} · ${lg} · ${fmtTime(g.start)}`;
+  if (leg.player || L.kind==='prop'){
+    const nm = (c.a && c.a.name) || (leg.player && leg.player.name) || '';
+    const dir = L.dir==='under' ? 'Under' : 'Over';
+    const lineTxt = leg.lineSwitched ? (leg.lineSwitched.from + (leg.lineSwitched.incl?'+':'')) : (L.line + (L.incl?'+':''));
+    return `${nm} ${dir} ${lineTxt} ${STAT_LABEL[L.stat]||''} · your line${leg.liveMatched && !leg.lineSwitched ? '' : ', research only'} — ${g[c.side]?g[c.side].short:''} (${where})`;
+  }
+  const T = g[c.side] || {};
+  const mk = L.kind;
+  const what = mk==='spread' ? `${T.name} ${L.line===0?'PK':fmtPt(L.line)}` : mk==='total' ? `${L.dir==='under'?'Under':'Over'} ${L.line} (${g.away.short} @ ${g.home.short})` : `${T.name} ML`;
+  return `${what} — ${where}`;
+}
+function legMatchSelectHTML(leg, i){
+  const opts = [];
+  const dir = (leg.L && leg.L.dir)==='under' ? 'under' : 'over';
+  if (leg.player && (leg.liveProps||[]).length){
+    const kindLab = k => (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[k]) || k;
+    const live = leg.liveProps.map(p=>{ const pr = livePropPrice(p, dir); return `<option value="${esc('lp:'+p.id)}" ${leg.matchKey==='lp:'+p.id?'selected':''}>${esc(`${p.playerName} ${dir==='under'?'Under':'Over'} ${p.line} ${kindLab(p.kind)} · ${pr!=null?livePropBook(p, dir)+' '+fmtAm(pr):'no price'}`)}</option>`; }).join('');
+    opts.push(`<optgroup label="Live priced lines">${live}</optgroup>`);
+  }
+  if (leg.cands.length){
+    const own = leg.cands.map(c=>`<option value="${esc(c.key)}" ${c.key===leg.matchKey?'selected':''}>${esc(legOptionLabel(leg, c.c ? Object.assign({label:c.label}, c.c) : c))}</option>`).join('');
+    opts.push(leg.player ? `<optgroup label="${(leg.liveProps||[]).length?'Your typed line / other players':'Players'}">${own}</optgroup>` : own);
+  }
+  if (!opts.length) return '';
+  return `<label class="pk-what-sel" title="Wrong match? Pick the right one and the verdict re-runs"><span class="sr-only">Matched to</span><select data-fix="${i}" aria-label="Matched to — change if wrong">${opts.join('')}</select></label>`;
+}
+function injectMatchTitle(cardHtml, selHtml){
+  if (!selHtml) return cardHtml;
+  const re = /<div class="what">[\s\S]*?<\/div>/;
+  return re.test(cardHtml) ? cardHtml.replace(re, `<div class="what what-sel">${selHtml}</div>`) : selHtml + cardHtml;
+}
 function legCard(leg, i, weakest){
   const g = leg.g;
-  const sel = leg.cands.length ? `<div class="pk-match"><label><span class="lab">Matched to</span><select data-fix="${i}">${leg.cands.map(c=>`<option value="${esc(c.key)}" ${c.key===leg.matchKey?'selected':''}>${esc(c.label)}</option>`).join('')}</select></label></div>` : '';
+  const selHtml = legMatchSelectHTML(leg, i);
+  const sel = '';
   const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}</div>` + legAssistHTML(leg, i);
   const resultBan = leg.result?`<div class="banner" style="margin:6px 0">Result: <b class="${leg.result==='HIT'?'pos':leg.result==='MISS'?'neg':''}">${leg.result}</b>${leg.actual!=null?` (actual ${leg.actual})`:''}</div>`:'';
   const pl = (!leg.err && !leg.player) ? playFromLeg(leg) : null;
@@ -7287,16 +7719,16 @@ function legCard(leg, i, weakest){
     return `<div class="pk-leg${weakest?' weak':''}">
       ${typed}${sel}
 ${resultBan}
-      ${scopeVerdictCard(propCard(propPl), i, propPl)}
-      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button>${typeof openInBookHTML==='function'?openInBookHTML(propPl,'prop'):''}</div>
+      ${injectMatchTitle(scopeVerdictCard(propCard(propPl), i, propPl), selHtml)}
+      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button></div>
     </div>`;
   }
   if (pl && typeof playCard==='function'){
     return `<div class="pk-leg${weakest?' weak':''}">
       ${typed}${sel}
 ${resultBan}
-      ${scopeVerdictCard(playCard(pl), i, pl)}
-      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button>${typeof openInBookHTML==='function'?openInBookHTML(pl,'game'):''}</div>
+      ${injectMatchTitle(scopeVerdictCard(playCard(pl), i, pl), selHtml)}
+      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button></div>
     </div>`;
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
@@ -7305,7 +7737,7 @@ ${resultBan}
   const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
   return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
     ${head}
-    <div class="pick"><div><div class="mk">Leg ${i+1}${weakest?' · <span class="neg">WEAKEST LEG</span>':''} · ${esc(leg.market||'')}${leg.outRange?' · <span class="neg">OUTSIDE YOUR RANGE</span>':''}</div><div class="what">${esc(leg.desc||leg.raw)}</div></div>
+    <div class="pick"><div><div class="mk">Leg ${i+1}${weakest?' · <span class="neg">WEAKEST LEG</span>':''} · ${esc(leg.market||'')}${leg.outRange?' · <span class="neg">OUTSIDE YOUR RANGE</span>':''}</div>${selHtml?`<div class="what what-sel">${selHtml}</div>`:`<div class="what">${esc(leg.desc||leg.raw)}</div>`}</div>
       <div class="price">${leg.p!=null?fmtPct(leg.p,0):'—'}<small>est. probability</small></div></div>
     ${typed}${sel}
     ${leg.err ? `<div class="err-list">${leg.matchedName ? esc(leg.err).replace(esc(leg.matchedName), '<b>'+esc(leg.matchedName)+'</b>') : esc(leg.err)}</div>` : `
@@ -7318,8 +7750,8 @@ ${resultBan}
     ${resultBan}
     ${research || `<details class="dd court-dd" data-dd="verdict|${i}|court" ${ui.open.has('verdict|'+i+'|court')?'open':''}><summary>⚖️ Courtroom</summary>
     <div class="court2">
-      <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${leg.yes.length?legSort(leg.yes,1).slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul></div>
-      <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${legSort(leg.no,-1).slice(0,4).map(legItem).join('')}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul></div>
+      ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul></div>
+      <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.slice(0,4).map(legItem).join('')}`; })()}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul></div>
       <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf):''}</div>
         <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
         ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: (leg.p!=null&&leg.implied!=null?`<div class="wr-inline">These odds break even at about ${outOf10(leg.implied)} of 10; we estimate ${outOf10(leg.p)}.</div>`:'')}</div>
@@ -8745,7 +9177,8 @@ async function loadLiveProps(opts){
       }catch(e){ espnErr++; console.warn('prop board', g.eventId, e); }
     }), 3);
     // Optional Odds API merge, cached, never on every click.
-    if (S.oddsKey && typeof mergeOddsApiProps==='function'){
+    // DraftKings props already come free from ESPN; only spend credits when you picked another sportsbook
+    if (S.oddsKey && typeof mergeOddsApiProps==='function' && typeof propOddsApiBooks==='function' && propOddsApiBooks().some(b=>b!=='draftkings')){
       try{ await mergeOddsApiProps(slate, allRaw); }catch(e){ console.warn('odds api props', e); }
     }
     const seen = new Set();
@@ -8776,6 +9209,11 @@ async function loadLiveProps(opts){
   }
 }
 
+// Props reference = DraftKings; plus whatever sportsbooks you picked (never prediction markets, never all US books)
+function propOddsApiBooks(){
+  const picked = (typeof myBookList==='function' ? myBookList() : []).filter(b=>!PREDICTION_BOOKS.includes(b));
+  return [...new Set(['draftkings'].concat(picked))].slice(0, 10);
+}
 async function mergeOddsApiProps(slate, allRaw){
   // Cached 30 min, one request per event/market group, only if key is present.
   const cache = loadJSON('bl_oa_props', {}) || {};
@@ -8787,8 +9225,10 @@ async function mergeOddsApiProps(slate, allRaw){
       : g.league==='nhl' ? 'player_shots_on_goal' : 'player_pass_yds,player_rush_yds,player_reception_yds';
     const ck = `${g.oaId}|${markets}`;
     let rec = cache[ck];
-    if (!rec || Date.now()-rec.t > 30*60000){
-      const url = `https://api.the-odds-api.com/v4/sports/${sports}/events/${g.oaId}/odds?apiKey=${encodeURIComponent(S.oddsKey)}&regions=${encodeURIComponent(S.oddsRegions||'us')}&markets=${markets}&oddsFormat=american`;
+    const leadMs = g.start ? g.start.getTime()-Date.now() : 0;
+    const ttl = leadMs > 6*3600000 ? 90*60000 : 30*60000;   // far from game time props barely move
+    if (!rec || Date.now()-rec.t > ttl){
+      const url = `https://api.the-odds-api.com/v4/sports/${sports}/events/${g.oaId}/odds?apiKey=${encodeURIComponent(S.oddsKey)}&bookmakers=${encodeURIComponent(propOddsApiBooks().join(','))}&markets=${markets}&oddsFormat=american`;
       const r = await fetchJSON(url, 20000);
       if (!r.ok || !r.data) continue;
       rec = cache[ck] = {t:Date.now(), data:r.data};
@@ -8886,12 +9326,22 @@ async function runPropEnrichment(){
   try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
 }
 
-function espnPropForPlayer(g, playerName, stat){
-  const kind = stat==='3pm'?'threes':stat;
+function espnPropForPlayer(g, playerName, stat, line){
+  const kind = stat==='3pm'?'threes':stat==='ra'?'ar':stat;
   const list = (props||[]).filter(p => p.g && g && p.g.eventId===g.eventId && p.kind===kind && nameScore(playerName, p.playerName)>=7);
   if (!list.length) return null;
-  const p = list[0];
-  return {line:p.line, bestOver:p.overPrice!=null?{price:p.overPrice, book:'DraftKings (ESPN)'}:null, bestUnder:p.underPrice!=null?{price:p.underPrice, book:'DraftKings (ESPN)'}:null, nvOver:null, books:1, source:p.source, err:null};
+  const p = (line!=null && list.find(x=>Math.abs(+x.line - +line)<1e-9)) || list[0];
+  const baseBook = /odds api/i.test(String(p.source||'')) ? 'Sportsbook' : 'DraftKings';
+  const best = side => {
+    let out = null;
+    const main = side==='over' ? p.overPrice : p.underPrice;
+    if (main!=null) out = {price:+main, book:baseBook};
+    const bp = p.bookPrices || {};
+    for (const k in bp){ const v = bp[k] && bp[k][side]; if (v!=null && (!out || imp(+v) < imp(out.price))) out = {price:+v, book:(typeof bookLabelOf==='function'?bookLabelOf(k):k)}; }
+    return out;
+  };
+  const books = 1 + Object.keys(p.bookPrices||{}).filter(k=>k!=='draftkings').length;
+  return {line:p.line, bestOver:best('over'), bestUnder:best('under'), nvOver:null, books, source:p.source, err:null, bookPrices:p.bookPrices||null, propId:p.id};
 }
 
 function filteredProps(list){
@@ -8974,8 +9424,8 @@ function propCourtroomHTML(p){
     : '';
   return `<div class="court2">
     ${bar}
-    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${(C.win&&C.win.length)?C.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way yet.</li>'}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${(C.lose&&C.lose.length)?C.lose.map(li).join(''):'<li class="mut">No red flags recorded.</li>'}</ul></div>
+    ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way yet.</li>'}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.length?DD.lose.map(li).join(''):'<li class="mut">No red flags recorded.</li>'}</ul></div>`; })()}
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span></div>
       <div class="c-sent">${esc(C.sentence||'')}</div>
       ${unitJudgeLineHTML(p,"prop")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
@@ -9165,7 +9615,8 @@ function playFromPropLeg(leg){
     kind, line:leg.L.line, overPrice: leg.L.dir!=='under' ? (leg.price||leg.bookPrice||leg.userOdds) : null,
     underPrice: leg.L.dir==='under' ? (leg.price||leg.bookPrice||leg.userOdds) : null,
     source: leg.bookName ? ('Book / '+leg.bookName) : (leg.userOdds!=null?'Your typed odds':'ESPN game log research'),
-    sourceNote: 'Researched from the player’s real ESPN game log even if this line is not on the live board.',
+    sourceNote: leg.liveMatched ? 'Matched to a live priced line on the Props board.' : 'Researched from the player’s real ESPN game log even if this line is not on the live board.',
+    bookPrices: (leg.liveMatched && leg.liveMatched.bookPrices) || undefined,
     rows: (leg._propRows)||null
   };
   const feat = raw.rows ? propFeatures(raw.rows, kind, raw.line, raw.g, raw.home) : {n:0, line:raw.line};
@@ -9599,6 +10050,7 @@ function parlayCourtroomHTML(pl){
     const tag = d.isProp
       ? ((typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[l.kind]) || 'Prop')
       : (MKN[l.mk] || 'Game');
+    { const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(d.win||[], d.lose||[]) : null; if (DD){ d.win = DD.win; d.lose = DD.lose; } }
     const lWin = d.win.length ? d.win.map(li).join('') : '<li class="mut">Supported mainly by market strength and team baseline.</li>';
     const lLose = d.lose.length ? d.lose.map(li).join('') : '<li class="mut">No major red flags logged — normal game variance still applies.</li>';
     const candleChart = d.isProp
@@ -10712,7 +11164,7 @@ const TH = [
   ['watchMovePts','Watch: line moved toward side (pts)'],['watchMovePct','Watch: price moved toward side (%)'],['maxJuice','Spread/total Good: price no worse than'],['avoidJuice','Avoid juice worse than'],['sharpWeight','Pinnacle/sharp book weight in consensus'],
 ];
 function oddsCreditsLine(){
-  if (!S.oddsKey) return 'Odds API: off (add a key for Bovada prices).';
+  if (!S.oddsKey) return 'Odds API: off (add a key for Pinnacle and your other sportsbooks).';
   if (oddsCache && oddsCache.remaining!=null && isFinite(+oddsCache.remaining)) return 'Odds API: '+oddsCache.remaining+' credits left';
   return 'Odds API: credits show after the first fetch.';
 }
@@ -10735,6 +11187,15 @@ const PRESET_KEYS = ['strictMode','sMarkets','sMinWin','sModelMin','sModelEdge',
 function applyPreset(name){ const P = PRESETS[name]; if (!P) return; if (name==='relaxed'){ Object.assign(S, Object.fromEntries(PRESET_KEYS.map(k=>[k, PRESETS.super[k]]))); S.strictMode = false; } else for (const k of PRESET_KEYS) S[k] = P[k]; S.preset = name; }
 function detectPreset(){ if (!S.strictMode) return 'relaxed'; for (const n of ['super','picky']){ const P = PRESETS[n]; if (PRESET_KEYS.every(k=>String(S[k])===String(P[k]))) return n; } return 'custom'; }
 const MY_BOOK_CHOICES = [['bovada','Bovada'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi'],['draftkings','DraftKings'],['fanduel','FanDuel'],['betmgm','BetMGM'],['williamhill_us','Caesars'],['espnbet','ESPN BET'],['fanatics','Fanatics'],['betrivers','BetRivers'],['betonlineag','BetOnline']];
+const BOOK_CHOICES_POPULAR = MY_BOOK_CHOICES.filter(([k])=>!PREDICTION_BOOKS.includes(k));
+const BOOK_CHOICES_PREDICTIONS = PREDICTION_BOOKS.map(k=>MY_BOOK_CHOICES.find(c=>c[0]===k)).filter(Boolean);
+function myBooksSummaryHTML(books){
+  const lab = k => (MY_BOOK_CHOICES.find(c=>c[0]===k)||[k, (typeof bookLabelOf==='function'?bookLabelOf(k):k)])[1];
+  if (!books || !books.length) return '<span class="mut">None picked yet. Tap books below.</span>';
+  const pred = books.filter(b=>PREDICTION_BOOKS.includes(b)), sb = books.filter(b=>!PREDICTION_BOOKS.includes(b));
+  const pill = k => `<span class="mybook-pill${PREDICTION_BOOKS.includes(k)?' pred':''}">${esc(lab(k))}</span>`;
+  return sb.map(pill).join('') + pred.map(pill).join('');
+}
 const LOST_IN_TEST = new Set(['ncaab','mls','epl','ucl','laliga','seriea','bund']);
 function applyPickSportsLive(){
   const board = ui.settingsBoard || 'games';
@@ -10799,17 +11260,24 @@ function renderSettings(){
     ${oddsRow}
 
     <div class="s-row"><div class="s-h">My books</div>
-      <div class="filters">${MY_BOOK_CHOICES.map(([k,l])=>`<label class="chip ${books.includes(k)?'on':''}"><input type="checkbox" name="book_${k}" ${books.includes(k)?'checked':''} hidden>${l}</label>`).join('')}</div>
-      <div class="s-note">Cards tell you where to bet among these. Polymarket and DraftKings work for free; the others need the odds key below.</div></div>
+      <div class="mybooks-sel" id="myBooksSel">${myBooksSummaryHTML(books)}</div>
+      <div class="s-note">Cards tell you where to bet among these, and the <b>Open book</b> menu lists them with their prices.</div>
+      <div class="book-group"><div class="book-group-h">Popular books <span class="mut">(sportsbooks)</span></div>
+        <div class="filters">${BOOK_CHOICES_POPULAR.map(([k,l])=>`<label class="chip ${books.includes(k)?'on':''}"><input type="checkbox" name="book_${k}" ${books.includes(k)?'checked':''} hidden>${l}</label>`).join('')}</div>
+        <div class="s-note">DraftKings comes free from ESPN. The others need the Odds API key below, and only the books you pick here are requested, so unpicked books never use credits.</div></div>
+      <div class="book-group"><div class="book-group-h">My predictions <span class="mut">(prediction markets)</span></div>
+        <div class="filters">${BOOK_CHOICES_PREDICTIONS.map(([k,l])=>`<label class="chip ${books.includes(k)?'on':''}"><input type="checkbox" name="book_${k}" ${books.includes(k)?'checked':''} hidden>${l}</label>`).join('')}</div>
+        <div class="s-note">Polymarket, Polymarket US and Kalshi prices come from their own free public feeds and refresh about every minute. They never use Odds API credits.${typeof kalshiErr!=='undefined' && kalshiErr && books.includes('kalshi') ? ` <b>${esc(kalshiErr)}</b>` : ''}</div></div>
+      <div class="s-note">${esc(typeof refBookText==='function'?refBookText():'')}.</div></div>
 
     <div class="s-row"><div class="s-h">Refresh every</div>
       <div class="seg seg-pills">${[[15,'15s'],[30,'30s'],[60,'1 min'],[120,'2 min'],[300,'5 min'],[600,'10 min']].map(([v,l])=>`<label class="${+S.refreshSec===v?'on':''}"><input type="radio" name="refreshSec" value="${v}" ${+S.refreshSec===v?'checked':''} hidden>${l}${v===60?' <small>recommended</small>':''}</label>`).join('')}</div>
-      <div class="s-note">Free sources (ESPN and Polymarket) refresh this often, including when the window is minimized, so phone alerts can go out. 1 minute is the default. If the feed rate-limits us, the app slows to every 3 minutes for 10 minutes. The Odds API (Bovada) is fetched about every 2 hours and again about 60 and 15 minutes before a Pick, and is throttled so it stays within your monthly credits.</div></div>
+      <div class="s-note">Free sources (ESPN, Polymarket and Kalshi) refresh this often, including when the window is minimized, so phone alerts can go out. 1 minute is the default. If the feed rate-limits us, the app slows to every 3 minutes for 10 minutes. The Odds API (Pinnacle + your picked sportsbooks) is fetched about every 2 hours (less often when the next game is many hours away) and again about 60 and 15 minutes before a Pick, and is throttled so it stays within your monthly credits.</div></div>
 
     <div class="s-row"><div class="s-h">Odds key (optional)</div>
       <input name="oddsKey" type="password" autocomplete="off" value="${esc(S.oddsKey)}" placeholder="paste your free key here" style="max-width:420px">
       <div class="s-note"><b>${esc(oddsCreditsLine())}</b></div>
-      <div class="s-note">What is this? A free key from <a href="https://the-odds-api.com" target="_blank" rel="noopener">the-odds-api.com</a> that lets the app see Bovada, FanDuel and other books, not just DraftKings and Polymarket.</div></div>
+      <div class="s-note">What is this? A free key from <a href="https://the-odds-api.com" target="_blank" rel="noopener">the-odds-api.com</a> that adds Pinnacle (the sharp line we compare game prices to) and the sportsbooks you picked. You don't need it for DraftKings, Polymarket, Polymarket US or Kalshi.</div></div>
 
     <div class="s-row"><div class="s-h">Bet size</div>
       <label class="s-inline">$ per bet<input name="unit" type="number" min="1" step="0.01" value="${S.unit}" style="max-width:120px"></label></div>
@@ -10843,19 +11311,21 @@ function renderSettings(){
   <div class="filters" style="margin-top:12px">${LEAGUES.map(L=>`<label class="chip ${S.enabled.includes(L.id)?'on':''}"><input type="checkbox" name="en_${L.id}" ${S.enabled.includes(L.id)?'checked':''} hidden>${sportChipLabel(L)}</label>`).join('')}</div>
   <div class="hint">Turning a sport off here hides its games everywhere. ESPN's free feed carries DraftKings odds for NBA, NHL, NFL, MLB, NCAA, WNBA and soccer.</div></div>
 
-  <div class="panel"><h3>Strict checks & Polymarket</h3><div class="form">
+  <div class="panel"><h3>Strict checks & prediction markets</h3><div class="form">
     <label>Markets in strict<select name="sMarkets">${[['ml','Moneyline only (tested)'],['ml,spread','ML + spreads'],['ml,spread,total','All']].map(([v,l])=>`<option value="${v}" ${S.sMarkets===v?'selected':''}>${l}</option>`).join('')}</select></label>
     <label>Sports without ESPN computer (NHL, MLB)<select name="sNoModelSports"><option value="1" ${S.sNoModelSports?'selected':''}>Allowed</option><option value="0" ${!S.sNoModelSports?'selected':''}>Not allowed</option></select></label>
     <label>Polymarket prices<select name="pmOn"><option value="1" ${S.pmOn?'selected':''}>On</option><option value="0" ${!S.pmOn?'selected':''}>Off</option></select></label>
+    <label>Kalshi prices<select name="kalshiOn"><option value="1" ${S.kalshiOn!==false?'selected':''}>On</option><option value="0" ${S.kalshiOn===false?'selected':''}>Off</option></select></label>
+    <label style="grid-column:span 2">Kalshi price relay (optional URL; blank = Kalshi's public API)<input name="kalshiRelay" value="${esc(S.kalshiRelay||'')}" placeholder="https://…/trade-api/v2"></label>
     ${ST.filter(([k])=>k!=='sFavMin'&&k!=='sDogMax').map(([k,l])=>`<label>${l}<input name="${k}" type="number" step="any" value="${S[k]}"></label>`).join('')}
   </div><div class="hint" style="margin-top:8px">The pickiness buttons set these for you. Changing them here makes the setting "Custom". Polymarket's 5% taker fee is added before comparing prices.</div></div>
 
   <div class="panel"><h3>Odds API details</h3><div class="form">
-        <label>Regions<select name="oddsRegions">${['us','us,us2','us,eu','us,us2,eu','eu','uk'].map(r=>`<option ${S.oddsRegions===r?'selected':''}>${r}</option>`).join('')}</select></label>
+<input type="hidden" name="oddsRegions" value="${esc(S.oddsRegions||'us')}">
     <label>Fetch odds every (min, 0 = manual)<input name="oddsEveryMin" type="number" min="0" value="${S.oddsEveryMin}"></label>
-    <label style="grid-column:span 2">Only these books (optional, comma-separated keys)<input name="oddsBooks" value="${esc(S.oddsBooks)}" placeholder="draftkings,fanduel,betmgm,williamhill_us,pinnacle"></label>
+    <label style="grid-column:span 2">Override which sportsbooks to request (optional, comma-separated keys; blank = the Popular books you picked)<input name="oddsBooks" value="${esc(S.oddsBooks)}" placeholder="fanduel,betmgm,williamhill_us"></label>
   </div>
-  <div class="hint" style="margin-top:8px">Free plan: 500 credits/month. Each sport fetch costs 3 credits per region (or per 10 listed books). Regular fetches are about every 2 hours, plus a pre-game fetch ~60 and ~15 minutes before a Pick, and auto-throttled to last the month. With these settings: <b>${estimateCredits()}</b>. <b>${esc(oddsCreditsLine())}</b> Pinnacle is in the <b>eu</b> region (or list <code>pinnacle</code> as a book).</div>
+  <div class="hint" style="margin-top:8px">Free plan: 500 credits/month. The app only asks for <b>Pinnacle</b> (the sharp line we compare game prices to) plus the sportsbooks you picked (now: ${esc((typeof oddsApiBookList==='function'?oddsApiBookList():['pinnacle']).map(k=>typeof bookLabelOf==='function'?bookLabelOf(k):k).join(', '))}). Moneyline-only strict mode asks for moneylines only (1 credit per sport), only for sports with a game in the next 24 hours, and fetches less often when the next game is far away. Polymarket, Polymarket US and Kalshi never use credits. Player props use DraftKings from ESPN for free; the Odds API is only asked for props when you picked another sportsbook. With these settings: <b>${estimateCredits()}</b>. <b>${esc(oddsCreditsLine())}</b></div>
   <div style="margin-top:10px"><button type="button" class="btn sm" id="btnOddsNow">Fetch Odds API now</button></div></div>
 
   <div class="panel"><h3>Deep data (free ESPN game pages + Open-Meteo weather)</h3><div class="form">
@@ -10887,6 +11357,10 @@ function renderSettings(){
   </form>`;
   $('#view').querySelectorAll('label.chip input').forEach(i=>i.onchange=()=>{
     i.parentElement.classList.toggle('on', i.checked);
+    if (i.name && i.name.indexOf('book_')===0 && $('#myBooksSel')){
+      const sel = MY_BOOK_CHOICES.map(c=>c[0]).filter(k=>{ const el = document.querySelector('input[name="book_'+k+'"]'); return el && el.checked; });
+      $('#myBooksSel').innerHTML = myBooksSummaryHTML(sel);
+    }
     if (i.name && i.name.indexOf('pick_')===0) applyPickSportsLive();
   });
   $('#view').querySelectorAll('.seg input').forEach(i=>i.onchange=()=>{
@@ -10914,7 +11388,7 @@ function renderSettings(){
     if (newKey!==S.oddsKey) oddsCache = null;
     S.oddsKey = newKey; S.oddsRegions = f.get('oddsRegions'); S.oddsBooks = String(f.get('oddsBooks')||'').trim();
     S.enabled = LEAGUES.filter(L=>f.get('en_'+L.id)).map(L=>L.id);
-    S.deepData = f.get('deepData')==='1'; S.sMarkets = f.get('sMarkets'); S.sNoModelSports = f.get('sNoModelSports')==='1'; S.pmOn = f.get('pmOn')==='1';
+    S.deepData = f.get('deepData')==='1'; S.sMarkets = f.get('sMarkets'); S.sNoModelSports = f.get('sNoModelSports')==='1'; S.pmOn = f.get('pmOn')==='1'; S.kalshiOn = f.get('kalshiOn')!=='0'; S.kalshiRelay = String(f.get('kalshiRelay')||'').trim(); if (typeof kalshiCache!=='undefined' && kalshiCache) kalshiCache.failT = 0;
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).concat(extra).join(',');
     S.myBooksCustom = true;
