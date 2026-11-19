@@ -1457,8 +1457,8 @@ function itemState(x){
   if (x.legs && (x.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')) return 'in';
   return 'pre';
 }
-function inHorizon(startMs, state){
-  const h = (typeof ui!=='undefined' && ui.horizon) ? normalizeHorizon(ui.horizon) : '24h';
+function inHorizon(startMs, state, hOverride){
+  const h = hOverride ? normalizeHorizon(hOverride) : ((typeof ui!=='undefined' && ui.horizon) ? normalizeHorizon(ui.horizon) : '24h');
   const now = Date.now();
   const start = +startMs || 0;
   if (state && state!=='pre') return true;
@@ -5711,7 +5711,19 @@ function render(){
   const avoid = vis('avoid').sort((a,b)=>a.g.start-b.g.start);
   const allG = filtered(games, false).sort((a,b)=>a.start-b.start);
   const gamesLive = (ui.board||'games')==='games';
-  const hideOnly = (list, v) => list.filter(p=>p.verdict===v && !(ui.hideStarted && p.g && p.g.state!=='pre')).length;
+  const hideOnly = (list, v) => {
+    const fv = (typeof ensureFilterView==='function') ? ensureFilterView('games:good') : null;
+    const h = fv ? fv.horizon : '24h';
+    const hs = fv && typeof fv.hideStarted==='boolean' ? fv.hideStarted : !!ui.hideStarted;
+    const sp = fv && Array.isArray(fv.sports) ? fv.sports : null;
+    return list.filter(p=>{
+      if (p.verdict!==v) return false;
+      if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
+      if (hs && p.g && p.g.state!=='pre') return false;
+      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h)) return false;
+      return true;
+    }).length;
+  };
   setTabCount('good', gamesLive ? good.length : hideOnly(plays,'good'));
   setTabCount('watch', gamesLive ? watch.length : hideOnly(plays,'watch'));
   setTabCount('avoid', gamesLive ? avoid.length : hideOnly(plays,'avoid'));
@@ -8840,9 +8852,19 @@ function renderPropsBoard(tab, errs){
 
 function updatePropTabCounts(){
   const live = (ui.board||'games')==='props' && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+  const fv = (typeof ensureFilterView==='function') ? ensureFilterView('props:good') : null;
+  const h = fv ? fv.horizon : '24h';
+  const hs = fv && typeof fv.hideStarted==='boolean' ? fv.hideStarted : !!ui.hideStarted;
+  const sp = fv && Array.isArray(fv.sports) ? fv.sports : null;
   const vis = v => live
     ? filteredProps((props||[]).filter(p=>p.verdict===v)).length
-    : (props||[]).filter(p=>p.verdict===v && !(ui.hideStarted && p.g && p.g.state!=='pre')).length;
+    : (props||[]).filter(p=>{
+        if (p.verdict!==v) return false;
+        if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
+        if (hs && p.g && p.g.state!=='pre') return false;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h)) return false;
+        return true;
+      }).length;
   if (typeof setTabCount==='function'){
     setTabCount('props-good', vis('good'));
     setTabCount('props-watch', vis('watch'));
@@ -9359,8 +9381,20 @@ function filteredParlays(list){
 }
 function updateParlayTabCounts(){
   const live = (ui.board||'games')==='parlay' && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+  const fv = (typeof ensureFilterView==='function') ? ensureFilterView('parlay:good') : null;
+  const h = fv ? fv.horizon : '24h';
+  const hs = fv && typeof fv.hideStarted==='boolean' ? fv.hideStarted : !!ui.hideStarted;
+  const sp = fv && Array.isArray(fv.sports) ? fv.sports : null;
   const vis = v => live ? filteredParlays((parlays||[]).filter(p=>p.verdict===v)).length
-    : (parlays||[]).filter(p=>p.verdict===v && !(ui.hideStarted && (p.legs||[]).some(l=>l.g&&l.g.state&&l.g.state!=='pre'))).length;
+    : (parlays||[]).filter(p=>{
+        if (p.verdict!==v) return false;
+        const sports = (p.sports && p.sports.length) ? p.sports : [p.league];
+        if (sp && sports.filter(Boolean).some(lg=>!sp.includes(lg))) return false;
+        const started = (p.legs||[]).some(l=>l.g&&l.g.state&&l.g.state!=='pre');
+        if (hs && started) return false;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, started?'in':'pre', h)) return false;
+        return true;
+      }).length;
   if (typeof setTabCount==='function'){
     setTabCount('parlay-good', vis('good'));
     setTabCount('parlay-watch', vis('watch'));
