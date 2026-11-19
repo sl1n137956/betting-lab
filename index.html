@@ -3139,7 +3139,7 @@ function propAlertLine(p){
 }
 function parlayAlertLine(pl){
   const pay = (typeof fmtDecX==='function' && pl.dec!=null ? fmtDecX(pl.dec)+' / ' : '') + (pl.am!=null ? fmtAm(pl.am) : '');
-  const legs = (pl.legs||[]).map(l=>l.label||l.playerName||'').filter(Boolean).join(' + ');
+  const legs = (pl.legs||[]).map(l=>typeof parlayLegLabel==='function'?parlayLegLabel(l):(l.label||l.playerName||'')).filter(Boolean).join(' + ');
   const when = isFinite(pl.start) && pl.start!==Infinity ? alertWhen(new Date(pl.start)) : '';
   return `${pl.n||((pl.legs||[]).length)}-leg (${pay}): ${legs}${when?` · ${when}`:''}`;
 }
@@ -9385,14 +9385,23 @@ function buildParlays(){
   };
   for (let i=0;i<legs.length;i++) for (let j=i+1;j<legs.length;j++) pushCombo([legs[i],legs[j]]);
   for (let i=0;i<legs.length;i++) for (let j=i+1;j<legs.length;j++) for (let k=j+1;k<legs.length;k++) pushCombo([legs[i],legs[j],legs[k]]);
-  combos.sort((a,b)=> (a.verdict==='good'&&b.verdict!=='good'?-1:b.verdict==='good'&&a.verdict!=='good'?1:0) || (b.edge-a.edge) || (b.p-a.p));
-  const kept=[], used=new Map();
-  const share = (a,b)=>{ const A=new Set(a.legs.map(parlayEventId)), B=b.legs.map(parlayEventId); return B.filter(x=>A.has(x)).length; };
+  const vOrd = v => v==='good'?0:v==='watch'?1:2;
+  combos.sort((a,b)=> (vOrd(a.verdict)-vOrd(b.verdict)) || (b.edge-a.edge) || (b.p-a.p));
+  const kept = [];
+  const usedGood = new Set(), usedWatch = new Set(), usedAvoid = new Set();
+  const legKey = l => parlayEventId(l) || l.id;
   for (const c of combos){
-    if (kept.some(k=>share(k,c)>=2)) continue;
-    const over = c.legs.some(l=>{ const ev=parlayEventId(l); return (used.get(ev)||0)>=3; });
-    if (over) continue;
-    kept.push(c); c.legs.forEach(l=>used.set(parlayEventId(l), (used.get(parlayEventId(l))||0)+1));
+    const keys = c.legs.map(legKey).filter(Boolean);
+    if (c.verdict==='good'){
+      if (keys.some(k=>usedGood.has(k))) continue;
+      kept.push(c); keys.forEach(k=>usedGood.add(k));
+    } else if (c.verdict==='watch'){
+      if (keys.some(k=>usedGood.has(k) || usedWatch.has(k))) continue;
+      kept.push(c); keys.forEach(k=>usedWatch.add(k));
+    } else {
+      if (keys.some(k=>usedAvoid.has(k))) continue;
+      kept.push(c); keys.forEach(k=>usedAvoid.add(k));
+    }
     const nGood=kept.filter(x=>x.verdict==='good').length;
     const nWatch=kept.filter(x=>x.verdict==='watch').length;
     const nAvoid=kept.filter(x=>x.verdict==='avoid').length;
@@ -9416,14 +9425,28 @@ function parlayChanceBarHTML(pl){
     <div class="wc-cap">Our estimate <b>${fmtPct(hit,0)} hit</b>${be!=null?` · Odds imply <b>${fmtPct(be,0)}</b>`:''}${pl.edge!=null?` · <span class="cmp-gap ${pl.edge>=0?'pos':'neg'}">${pl.edge>=0?'+':''}${(pl.edge*100).toFixed(1)} pts</span>`:''}</div>
   </div>`;
 }
+function parlayLegLabel(l){
+  if (!l) return '';
+  const isProp = !!(l.isProp || (l.kind && l.playerName));
+  if (isProp){
+    const stat = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[l.kind]) || l.kind || '';
+    const dir = l.side ? (String(l.side).toLowerCase()==='under' ? 'Under' : 'Over') : '';
+    if (l.label && /\b(over|under)\b/i.test(l.label)) return l.label;
+    if (l.playerName && l.line!=null && dir) return `${l.playerName} ${dir} ${l.line}${stat?' '+stat:''}`;
+    return l.label || l.playerName || '';
+  }
+  return l.label || '';
+}
 function parlayLegRow(l){
   const isProp=!!(l.isProp||l.kind&&l.playerName);
   const pic = isProp && typeof playerPfpHTML==='function' ? playerPfpHTML(l)
     : (typeof teamLogoHTML==='function' && (l.team|| (l.g && (l.side==='home'?l.g.home:l.side==='away'?l.g.away:null))) ? teamLogoHTML(l.team||l.g[l.side==='home'?'home':'away']) : '');
-  const name = isProp ? (l.playerName||l.label) : l.label;
+  const name = parlayLegLabel(l);
+  const lgLab = (LMAP[l.league||(l.g&&l.g.league)]||{}).label || '';
+  const matchTxt = l.g ? `${(l.g.away&&l.g.away.short)||''} @ ${(l.g.home&&l.g.home.short)||''}` : '';
   const meta = isProp
-    ? `${(l.team&&(l.team.short||l.team.name))||''}${l.kind?` · ${((typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[l.kind])||l.kind)}`:''}`
-    : `${(LMAP[l.league||l.g&&l.g.league]||{}).label||''}${l.g?` · ${(l.g.away&&l.g.away.short)||''} @ ${(l.g.home&&l.g.home.short)||''}`:''}`;
+    ? [lgLab, (l.team&&(l.team.short||l.team.name))||'', matchTxt].filter(Boolean).join(' · ')
+    : `${lgLab}${matchTxt?` · ${matchTxt}`:''}`;
   return `<div class="pl-leg">
     <div class="pl-pic">${pic||''}</div>
     <div class="who"><div class="what">${esc(name)}</div><div class="mut">${esc(meta)}</div></div>
@@ -9454,7 +9477,7 @@ function parlayCourtroomHTML(pl){
   const sortedByProb = legData.slice().sort((a,b)=>(a.leg.p||0)-(b.leg.p||0));
   const weakest = sortedByProb[0] && sortedByProb[0].leg;
   const strongest = sortedByProb[sortedByProb.length-1] && sortedByProb[sortedByProb.length-1].leg;
-  const legTitle = l => (l.isProp || l.playerName) ? (l.label || l.playerName) : l.label;
+  const legTitle = l => parlayLegLabel(l);
 
   const J = (pl.C&&pl.C.J)||'SKIP';
   const cls = J==='BET'?'b-good':J==='MAYBE LATER'?'b-watch':'b-avoid';
@@ -9526,14 +9549,14 @@ function parlayInjBody(pl){
     try{
       if (typeof lineupsNewsHTML==='function' && l.g){
         const html = lineupsNewsHTML({id:l.id, g:l.g}, true);
-        if (html) bits.push(`<div class="pl-inj"><div class="pl-inj-h">${esc(l.playerName||l.label)}</div>${html}</div>`);
+        if (html) bits.push(`<div class="pl-inj"><div class="pl-inj-h">${esc(parlayLegLabel(l))}</div>${html}</div>`);
       }
     }catch(e){}
   }
   return bits.length ? bits.join('') : `<div class="hint">Injury and lineup notes for each leg show up here once those game pages have loaded.</div>`;
 }
 function parlayNumbersHTML(pl){
-  const rows = pl.legs.map(l=>`<tr><td>${esc(l.playerName||l.label)}</td><td>${l.implied!=null?fmtPct(l.implied):'—'}</td><td>${l.p!=null?fmtPct(l.p):'—'}</td><td>${l.price!=null?fmtAm(l.price):'—'} <span class="mut">${amToDec(l.price)?fmtDecX(amToDec(l.price)):''}</span></td></tr>`).join('');
+  const rows = pl.legs.map(l=>`<tr><td>${esc(parlayLegLabel(l))}</td><td>${l.implied!=null?fmtPct(l.implied):'—'}</td><td>${l.p!=null?fmtPct(l.p):'—'}</td><td>${l.price!=null?fmtAm(l.price):'—'} <span class="mut">${amToDec(l.price)?fmtDecX(amToDec(l.price)):''}</span></td></tr>`).join('');
   return `<div class="stats" style="margin-top:8px">
       <div class="stat"><div class="k">Combined est.</div><div class="v">${fmtPct(pl.p)}</div></div>
       <div class="stat"><div class="k">Break-even</div><div class="v">${fmtPct(pl.implied)}</div></div>
@@ -11093,7 +11116,7 @@ $('#view').addEventListener('click', e=>{
       if (!confirm('You already tailed this — tail again?')) return;
     }
     setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
-    const summary = (p.legs||[]).map(l=>l.playerName||l.label).join(' / ');
+    const summary = (p.legs||[]).map(l=>typeof parlayLegLabel==='function'?parlayLegLabel(l):(l.label||l.playerName)).join(' / ');
     const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id}};
     renderTracker(pf);
     window.scrollTo({top:0}); toast('Pre-filled this parlay. Confirm the combined odds at your book, then add the tailed bet.');
