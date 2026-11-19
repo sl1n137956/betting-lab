@@ -1399,14 +1399,12 @@ if (!(+S.sVer >= 9)){
   S.refreshSec = 60; S.refreshMin = 1; S.sVer = 9;
   try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
 }
-// v10: signed-out / untouched installs default to every book; preserve any custom or synced book selection.
-if (!(+S.sVer >= 10)){
-  let syncedAt = 0;
-  try{ const sm = JSON.parse(localStorage.getItem('bl_sync_meta')||'{}'); syncedAt = +sm.settingsAt||0; }catch(e){}
-  if (!S.myBooksCustom && !syncedAt && (!S.myBooks || S.myBooks === 'bovada,polymarket')){
+// v11: signed-out / untouched installs default to every book; preserve any custom book selection.
+if (!(+S.sVer >= 11)){
+  if (!S.myBooksCustom && (!S.myBooks || S.myBooks === 'bovada,polymarket')){
     S.myBooks = DEFAULTS.myBooks;
   }
-  S.sVer = 10;
+  S.sVer = 11;
   try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
 }
 if (S.refreshSec==null || !isFinite(+S.refreshSec)) S.refreshSec = Math.round((+S.refreshMin||1)*60);
