@@ -19,7 +19,7 @@
   --acc:#3b82f6;--acc-hi:#7dd3fc;--acc-hover:#60a5fa;--acc-dim:rgba(59,130,246,.16);--acc2:#93c5fd;
   --good:#34d399;--watch:#f5b942;--avoid:#f07167;--none:#6b7c94;--live:#f07167;
   --good-bg:rgba(52,211,153,.12);--watch-bg:rgba(245,185,66,.12);--avoid-bg:rgba(240,113,103,.12);
-  --logged:#8b5cf6;--logged-hi:#c4b5fd;--logged-dim:rgba(139,92,246,.16);
+  --logged:#22d3ee;--logged-hi:#a5f3fc;--logged-dim:rgba(34,211,238,.20);
   --pull:#f97316;--pull-hi:#fb923c;--pull-bg:rgba(249,115,22,.14);
   --shadow:0 1px 0 rgba(255,255,255,.04) inset,0 10px 28px -14px rgba(0,0,0,.7);
   --r:20px;--ease:cubic-bezier(.2,.7,.2,1);
@@ -152,8 +152,8 @@ footer b{color:var(--mut)}
 .foot-inner{max-width:720px;margin:0 auto}
 .foot-inner p{margin:0 0 8px}
 .foot-inner p:last-child{margin-bottom:0}
-.filter-details{margin:6px 0 10px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.015)}
-.filter-details > summary{list-style:none;cursor:pointer;padding:8px 14px;color:var(--txt2);font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:10px;min-height:40px}
+.filter-details{margin:8px 0 4px;border:1px solid rgba(125,211,252,.18);border-radius:18px;background:linear-gradient(180deg,rgba(36,64,110,.45),rgba(19,32,51,.55));padding:2px 4px;box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
+.filter-details > summary{list-style:none;cursor:pointer;padding:8px 12px;color:var(--txt);font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:10px;min-height:44px}
 .filter-details > summary::-webkit-details-marker,.filter-details > summary::marker{display:none;content:none}
 .filter-extra{padding:2px 14px 12px;display:flex;flex-direction:column;gap:8px}
 .filter-pickiness{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
@@ -290,13 +290,32 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .g-row b{color:var(--txt);font-variant-numeric:tabular-nums;font-weight:650}
 .side-toggle{display:none}
 .head-tools{display:flex;align-items:center;gap:10px;padding:0 0 12px}.head-tools[hidden],#filterBar[hidden]{display:none !important}
-.head-tools .search{flex:1;min-width:180px;max-width:520px}
-.filters-btn{display:none;flex:none;white-space:nowrap}
+.head-tools .search{flex:1;min-width:180px;max-width:520px;min-height:42px;padding:8px 16px;border-radius:999px;border:1px solid rgba(125,211,252,.22);background:var(--inset);box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
+.head-tools .search:focus{border-color:rgba(125,211,252,.5);box-shadow:0 0 0 4px rgba(59,130,246,.16)}
+.btn.filters-btn,.btn.sm.filters-btn,.filters-btn{display:none;flex:none;white-space:nowrap;border-radius:999px;border:1px solid rgba(125,211,252,.32);background:linear-gradient(180deg,#1e3a66,#152848);color:var(--acc-hi);font-weight:700;padding:8px 14px 8px 10px;gap:8px;align-items:center;box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 6px 16px -10px rgba(37,99,235,.55)}
+.filters-btn:hover{border-color:rgba(125,211,252,.55);color:#fff;background:linear-gradient(180deg,#244677,#1a3354)}
+.filters-btn::before{
+  content:'';display:inline-block;flex:0 0 auto;width:22px;height:22px;border-radius:8px;
+  background-color:#1e3a66;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%237dd3fc' d='M6.2 9.1a1.5 1.5 0 0 1 2.1 0L12 12.8l3.7-3.7a1.5 1.5 0 1 1 2.1 2.1l-4.8 4.8a1.5 1.5 0 0 1-2.1 0L6.2 11.2a1.5 1.5 0 0 1 0-2.1z'/></svg>");
+  background-repeat:no-repeat;background-position:center;background-size:14px 14px;
+  box-shadow:0 0 0 1px rgba(125,211,252,.3) inset,0 4px 10px -4px rgba(37,99,235,.6);
+  transform:rotate(-90deg);transition:transform .22s var(--ease);
+}
+body.filters-open .filters-btn::before{transform:rotate(0deg)}
+#filterBar{background:linear-gradient(180deg,rgba(26,43,68,.98),#132033);border:1px solid rgba(125,211,252,.18);border-radius:22px;padding:12px 16px 14px;margin:0 0 18px;box-shadow:var(--shadow)}
+#filterBar .filters{margin:8px 0;gap:8px}
+#filterBar .filters:first-child{margin-top:2px}
+#filterBar .chip{border-radius:999px;padding:7px 14px;background:rgba(255,255,255,.03);box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
+#filterBar .chip.on{background:var(--acc-dim);box-shadow:0 0 0 1px rgba(59,130,246,.2),0 1px 0 rgba(255,255,255,.05) inset}
+#filterBar .chk{border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.03);padding:7px 14px;min-height:40px;box-shadow:0 1px 0 rgba(255,255,255,.04) inset}
+#filterBar .seg{border-radius:999px;overflow:hidden;border-color:rgba(125,211,252,.22);background:rgba(255,255,255,.03)}
+#filterBar .seg label{padding:8px 16px}
 #loggedFilterWrap{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 #loggedFilterWrap[hidden]{display:none}
-.logged-badge{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:4px 10px;border-radius:999px;background:var(--logged-dim);color:var(--logged-hi);border:1px solid rgba(139,92,246,.5);font-size:11.5px;font-weight:650;letter-spacing:.01em}
-.card.logged{border-color:rgba(139,92,246,.75);box-shadow:0 0 0 1px rgba(139,92,246,.35),0 0 28px -6px rgba(139,92,246,.55),var(--shadow);background:linear-gradient(180deg,rgba(139,92,246,.2) 0%,#132033 42%)}
-.card.logged:before{background:var(--logged);width:3px}
+.logged-badge{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:5px 11px;border-radius:999px;background:var(--logged-dim);color:var(--logged-hi);border:1px solid rgba(103,232,249,.65);font-size:11.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;box-shadow:0 0 12px -4px rgba(34,211,238,.55)}
+.card.logged{border:2px solid rgba(34,211,238,.85);box-shadow:0 0 0 1px rgba(34,211,238,.35),0 0 32px -4px rgba(34,211,238,.6),var(--shadow);background:linear-gradient(180deg,rgba(8,187,214,.42) 0%,#13364d 42%,#10283c 100%)}
+.card.logged:before{background:linear-gradient(180deg,#67e8f9,#06b6d4);width:6px;top:10px;bottom:10px;box-shadow:0 0 14px rgba(34,211,238,.75);border-radius:0 5px 5px 0}
 .you-bet-lab{display:inline-flex;align-items:center;margin:0 0 8px;padding:3px 9px;border-radius:6px;background:rgba(90,8,18,.85);color:#ffd0cc;border:1px solid rgba(180,30,48,.7);font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
 .card.logged-pulled{border:2px solid #8e1728;background:linear-gradient(180deg,#4a0d16 0%,#241114 55%);box-shadow:0 0 0 1px rgba(90,10,20,.9),0 0 28px -4px rgba(140,16,32,.75),var(--shadow)}
 .card.logged-pulled:before{background:#c42338;width:3px}
@@ -351,10 +370,11 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .pk-log{display:flex;justify-content:flex-end;align-items:center;margin:14px 2px 6px}
 .pk-log .btn{border-radius:999px;padding:10px 16px}
 
-.trk-allbets{margin:8px 0 18px;border:1px solid rgba(125,211,252,.18);border-radius:22px;padding:6px 10px 8px;background:linear-gradient(180deg,#1a2b44,#132033);box-shadow:var(--shadow)}
-.trk-allbets > summary{font-size:15.5px;font-weight:700;color:var(--txt);padding:10px 8px;min-height:44px;letter-spacing:-.02em}
-.trk-allbets-body{padding:4px 2px 10px}
+.trk-dd,.trk-allbets{margin:8px 0 16px;border:1px solid rgba(125,211,252,.18);border-radius:22px;padding:6px 10px 8px;background:linear-gradient(180deg,#1a2b44,#132033);box-shadow:var(--shadow)}
+.trk-dd > summary,.trk-allbets > summary{font-size:15.5px;font-weight:700;color:var(--txt);padding:10px 8px;min-height:44px;letter-spacing:-.02em}
+.trk-dd-body,.trk-allbets-body{padding:6px 4px 10px}
 .trk-allbets .bet-empty{padding:18px 8px}
+.trk-dd-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));margin-top:6px}
 
 .ntab,.mtab,.ftab{max-width:100%}
 #view,.slate-main,.pk-leg,.court2,.ln-sec,.inj-sec{min-width:0;max-width:100%}
@@ -393,16 +413,16 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
   .filters{margin:8px 0}
   .head-tools{grid-column:1/-1;grid-row:3;padding:0 0 10px;display:flex}
   .head-tools .search{max-width:none;min-height:44px}
-  .filters-btn{display:inline-flex;align-items:center;min-height:44px;min-width:48px}
+  .btn.filters-btn,.btn.sm.filters-btn,.filters-btn{display:inline-flex;align-items:center;min-height:44px;min-width:48px;border-radius:999px}
   .topbar{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px 10px;padding:8px 0 8px}
-  #filterBar{display:none;position:fixed;left:0;right:0;z-index:21;background:rgba(22,23,27,.96);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);border-bottom:1px solid var(--line);padding:8px 14px 14px;max-height:min(70vh, calc(100vh - 140px));overflow:auto;box-shadow:0 16px 32px -16px rgba(0,0,0,.8)}
+  #filterBar{display:none;position:fixed;left:10px;right:10px;z-index:21;background:linear-gradient(180deg,rgba(22,40,66,.98),#102033);backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);border:1px solid rgba(125,211,252,.28);border-radius:0 0 24px 24px;padding:12px 14px 16px;margin:0;max-height:min(70vh, calc(100vh - 140px));overflow:auto;box-shadow:0 18px 36px -12px rgba(0,0,0,.85),0 0 0 1px rgba(59,130,246,.12)}
   body.filters-open #filterBar:not([hidden]){display:block}
   main{padding-top:16px;padding-bottom:calc(40px + 100px + env(safe-area-inset-bottom,0px))}
   main.wrap{padding-top:16px;padding-bottom:calc(40px + 100px + env(safe-area-inset-bottom,0px));padding-left:14px;padding-right:14px}
   footer{margin-top:12px;padding-top:28px;padding-bottom:calc(40px + 100px + env(safe-area-inset-bottom,0px))}
-  .filter-details{border:0;background:transparent;margin:8px 0 0}
+  .filter-details{border:0;background:transparent;margin:8px 0 0;padding:0}
   .filter-details > summary{display:none}
-  .filter-details .filter-extra{display:block;padding:0}
+  .filter-details .filter-extra,.filter-details:not([open]) .filter-extra{display:block !important;padding:4px 2px 2px}
   .grid{grid-template-columns:1fr}
   .stats{grid-template-columns:repeat(2,1fr)}
   .card{width:100%;max-width:100%;overflow:visible}
@@ -571,9 +591,9 @@ details.adv>summary{font-size:13.5px;color:var(--txt2);padding:10px 2px}
 .bet-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:4px 0 12px}
 .bet-head h3{margin:0;font-size:16px}
 .bet-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
-.bet-card{background:linear-gradient(180deg,#1a2b44,#132033);border:1px solid var(--line);border-radius:20px;padding:14px 15px 12px;cursor:pointer;box-shadow:var(--shadow);position:relative;overflow:hidden;transition:transform .16s var(--ease),border-color .2s,box-shadow .2s}
-.bet-card:before{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--logged);border-radius:20px 0 0 20px}
-.bet-card:hover{border-color:rgba(139,92,246,.35);transform:translateY(-1px)}
+.bet-card{background:linear-gradient(180deg,rgba(8,187,214,.34) 0%,#13364d 48%,#10283c 100%);border:2px solid rgba(34,211,238,.7);border-radius:20px;padding:14px 15px 12px;cursor:pointer;box-shadow:0 0 0 1px rgba(34,211,238,.25),0 0 24px -6px rgba(34,211,238,.45),var(--shadow);position:relative;overflow:hidden;transition:transform .16s var(--ease),border-color .2s,box-shadow .2s}
+.bet-card:before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;background:linear-gradient(180deg,#67e8f9,#06b6d4);border-radius:20px 0 0 20px;box-shadow:0 0 12px rgba(34,211,238,.7)}
+.bet-card:hover{border-color:rgba(103,232,249,.9);transform:translateY(-1px)}
 .bet-card.pulled:before{background:#9b1c1c;width:6px}
 .bet-card.pulled{background:linear-gradient(180deg,#3a1520,#1a1020);border-color:rgba(180,40,40,.35)}
 .bet-card.won:after,.bet-card.lost:after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:20px}
@@ -643,7 +663,7 @@ details[open] > summary::before{transform:rotate(0deg)}
     </nav>
     <div class="head-tools" id="headTools">
       <input class="search" id="search" placeholder="Search team…" aria-label="Search team">
-      <button type="button" class="btn sm filters-btn" id="btnFilters" aria-expanded="false" aria-controls="filterBar">Filters</button>
+      <button type="button" class="btn sm filters-btn" id="btnFilters" aria-expanded="false" aria-controls="filterBar"><span class="filters-lab">Filters</span></button>
     </div>
     <div class="install-tip" id="installTip" hidden>
       <span>Tap Share → Add to Home Screen to install and get alerts.</span>
@@ -4484,7 +4504,8 @@ function updateFilterChrome(){
   const btn = $('#btnFilters');
   if (btn){
     const n = activeFilterCount();
-    btn.textContent = n ? `Filters · ${n}` : 'Filters';
+    const lab = btn.querySelector('.filters-lab') || btn;
+    lab.textContent = n ? `Filters · ${n}` : 'Filters';
     btn.setAttribute('aria-expanded', document.body.classList.contains('filters-open')?'true':'false');
   }
   if (typeof fillFilterMeta==='function') fillFilterMeta();
@@ -4495,6 +4516,8 @@ function setFiltersOpen(open){
   document.body.classList.toggle('filters-open', !!open);
   const btn = $('#btnFilters');
   if (btn) btn.setAttribute('aria-expanded', open?'true':'false');
+  const det = $('#filterDetails');
+  if (det && open && window.matchMedia && window.matchMedia('(max-width:767.98px)').matches) det.open = true;
   if (open) syncFilterDrawerPos();
 }
 
@@ -4613,7 +4636,7 @@ function sportFilterEmpty(generic){
   return `No ${lab} plays right now`;
 }
 function section(title, sub, list, emptyMsg){
-  return `<div class="section-title"><h2>${title}</h2><span class="hint">${sub}</span></div>` + (list.length ? `<div class="grid">${list.map(playCard).join('')}</div>` : `<div class="empty-state">${emptyMsg}</div>`);
+  return `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length ? `<div class="grid">${list.map(playCard).join('')}</div>` : `<div class="empty-state">${emptyMsg}</div>`);
 }
 function render(){
   renderChips();
@@ -4634,7 +4657,7 @@ function render(){
   if (!lastUpdated){ v.innerHTML = busy ? `<div class="empty-state">Loading the slate…</div>` : `<div class="empty-state">No data yet.</div>${errs}`; return; }
   if (ui.tab==='good'){
     const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
-    v.innerHTML = slateLayout('good', section('Good Plays', S.strictMode ? `Your range ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)}, ranked by win chance. Passed every strict check: market + ESPN agree, 2+ supporting factors, no move against, nothing strongly against, full data. Sports you turned off in Settings are left out. One per game.` : 'Rule-based plays, one per game.', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
+    v.innerHTML = slateLayout('good', section('Good Plays', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')) + errs, counts);
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
@@ -4859,7 +4882,7 @@ function shortBetName(b){
   return core.replace(/\s*\([^)]*\)/g,'').trim().slice(0,24);
 }
 const TRACKER_LS = 'bl_tracker';
-const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false};
+const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false, sportOpen:false, oddsOpen:false};
 (function loadTrackerUI(){
   const t = (typeof loadJSON==='function') ? loadJSON(TRACKER_LS, null) : null;
   if (t && typeof t==='object' && ['day','week','month','year','all'].includes(t.period)) trackerUI.period = t.period;
@@ -4867,6 +4890,8 @@ const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false};
 function saveTrackerPeriod(){ try{ saveJSON(TRACKER_LS, {period:trackerUI.period||'all'}); }catch(e){} }
 function resetTrackerOpen(){
   trackerUI.allOpen = false;
+  trackerUI.sportOpen = false;
+  trackerUI.oddsOpen = false;
   if (trackerUI.open && typeof trackerUI.open.clear==='function') trackerUI.open.clear();
 }
 function settledBetsChrono(){
@@ -5018,14 +5043,16 @@ function renderTracker(pf){
     </div>
     ${chart}
   </div>
-  <details class="dd" style="border:0;padding:0;margin:0 0 16px"><summary>By sport and market</summary>
-    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(320px,1fr));margin-top:10px">
+  <details class="dd trk-dd" data-trk="sport" ${trackerUI.sportOpen?'open':''}><summary>By sport and market</summary>
+    <div class="trk-dd-body">
+    <div class="grid trk-dd-grid">
       <div class="panel overflow" style="margin:0"><h3>By sport</h3><table><tr><th>Sport</th><th>W-L</th><th>Win%</th><th>Net</th><th>Units</th><th>ROI</th></tr>${breakdown(st.bySport)}</table></div>
       <div class="panel overflow" style="margin:0"><h3>By market</h3><table><tr><th>Market</th><th>W-L</th><th>Win%</th><th>Net</th><th>Units</th><th>ROI</th></tr>${breakdown(st.byMkt)}</table></div>
     </div>
+    </div>
   </details>
-  ${typeof oddsHistoryTable==='function'?`<details class="dd" style="border:0;padding:0;margin:0 0 16px"><summary>Win rate by odds</summary><div style="margin-top:10px">${oddsHistoryTable()}</div></details>`:''}
-  <details class="dd trk-allbets" ${trackerUI.allOpen?'open':''}>
+  ${typeof oddsHistoryTable==='function'?`<details class="dd trk-dd" data-trk="odds" ${trackerUI.oddsOpen?'open':''}><summary>Win rate by odds</summary><div class="trk-dd-body">${oddsHistoryTable()}</div></details>`:''}
+  <details class="dd trk-dd trk-allbets" ${trackerUI.allOpen?'open':''}>
     <summary>All bets (${bets.length})</summary>
     <div class="trk-allbets-body">
       ${betCards ? `<div class="bet-cards">${betCards}</div>` : `<div class="bet-empty">No bets yet. Log one above, or use <b>+ Log bet</b> on a play card.</div>`}
@@ -5100,6 +5127,10 @@ function renderTracker(pf){
   }));
   const allDet = $('#view').querySelector('details.trk-allbets');
   if (allDet) allDet.addEventListener('toggle', ()=>{ trackerUI.allOpen = !!allDet.open; });
+  const sportDet = $('#view').querySelector('details[data-trk="sport"]');
+  if (sportDet) sportDet.addEventListener('toggle', ()=>{ trackerUI.sportOpen = !!sportDet.open; });
+  const oddsDet = $('#view').querySelector('details[data-trk="odds"]');
+  if (oddsDet) oddsDet.addEventListener('toggle', ()=>{ trackerUI.oddsOpen = !!oddsDet.open; });
 }
 
 const CSV_COLS = ['date','sport','market','pick','odds','stake','result'];
