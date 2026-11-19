@@ -1410,7 +1410,7 @@ function randomNtfyTopic(){
 }
 function hostedPage(){ return location.protocol==='http:' || location.protocol==='https:'; }
 if (!S.ntfyTopic){ S.ntfyTopic = randomNtfyTopic(); try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
-if (S.ntfyOn==null){ S.ntfyOn = !hostedPage(); try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
+if (S.ntfyOn==null){ const isMob = typeof navigator!=='undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent||''); S.ntfyOn = !isMob; try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
 let firstSeen = loadJSON(LS.firstSeen, {});
 let bets = loadJSON(LS.bets, []);
 let oddsCache = loadJSON(LS.oddsCache, null);
@@ -3050,13 +3050,22 @@ function normalizeNtfyTopic(raw){
 }
 function ntfyTopicOk(t){ return /^[A-Za-z0-9_-]{8,64}$/.test(t||''); }
 function ntfyEnabled(){ return !!S.ntfyOn && ntfyTopicOk(normalizeNtfyTopic(S.ntfyTopic)); }
+const NTFY_PRIO = {min:1, low:2, default:3, high:4, urgent:5};
 function ntfyPush(title, body, opts, topicOverride){
   const topic = normalizeNtfyTopic(topicOverride!=null ? topicOverride : S.ntfyTopic);
   if (!ntfyTopicOk(topic)) return Promise.resolve(false);
-  const headers = { 'Title': String(title||'Verdict'), 'Priority': String((opts&&opts.priority)||'default'), 'Click': NTFY_CLICK };
-  if (opts && opts.tags) headers['Tags'] = String(opts.tags);
-  return fetch('https://ntfy.sh/'+encodeURIComponent(topic), { method:'POST', body:String(body||''), headers })
-    .then(r=>r.ok).catch(()=>false);
+  const rawP = opts && opts.priority;
+  const priority = typeof rawP==='number' ? rawP : (NTFY_PRIO[String(rawP||'default').toLowerCase()] || 3);
+  const tags = opts && opts.tags ? (Array.isArray(opts.tags) ? opts.tags : String(opts.tags).split(',').map(x=>x.trim()).filter(Boolean)) : [];
+  const payload = { topic, title: String(title||'Verdict'), message: String(body||''), priority, click: NTFY_CLICK };
+  if (tags.length) payload.tags = tags;
+  const sendOnce = () => fetch('https://ntfy.sh', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(payload),
+    keepalive: true
+  }).then(r=>r.ok).catch(()=>false);
+  return sendOnce().then(ok => ok ? true : new Promise(res => setTimeout(()=>sendOnce().then(res), 2500)));
 }
 function canAlert(kind){ return alertOn(kind) && (canNotify() || ntfyEnabled()); }
 function postNotification(title, opts){
@@ -3094,46 +3103,184 @@ function playAlertLine(p){
   const when = p.g && p.g.start ? alertWhen(p.g.start) : '';
   return `${p.label} ${fmtAm(price)}${book?` (${book})`:''}${when?` · ${when}`:''}`;
 }
-function notifyNewPlayBatch(list){
-  if (!list || !list.length || !canAlert('new')) return;
-  const pending = list.filter(p=>{
-    if (!p || !p.g || p.g.state!=='pre' || !p.g.eventId) return false;
-    const k = playResultKey(p);
-    return !newPlayNotified[k];
-  });
-  if (!pending.length) return;
-  try{
-    const now = Date.now();
-    for (const p of pending) newPlayNotified[playResultKey(p)] = now;
-    pruneNewPlayNotified();
-    saveJSON(LS.newPlayNotified, newPlayNotified);
-    if (pending.length===1){
-      const line = playAlertLine(pending[0]);
-      if (canNotify()) postNotification('New play', {body:'New play: '+line, tag:'bl-new-'+playResultKey(pending[0])});
-      if (ntfyEnabled()) ntfyPush('New play', line, {priority:'high', tags:'moneybag'});
-    } else {
-      const lines = pending.map(playAlertLine).join('\n');
-      if (canNotify()) postNotification('New plays', {body:pending.length+' new plays', tag:'bl-new-batch'});
-      if (ntfyEnabled()) ntfyPush('New plays', lines, {priority:'high', tags:'moneybag'});
-    }
-  }catch(e){}
+const _lockPushInFlight = new Set();
+function propAlertLine(p){
+  const price = p.price!=null ? fmtAm(p.price) : '';
+  const when = p.g && p.g.start ? alertWhen(p.g.start) : '';
+  return `${p.label || ((p.playerName||'')+' '+(p.side==='under'?'Under':'Over')+' '+(p.line!=null?p.line:''))} ${price}${when?` · ${when}`:''}`.trim();
 }
+function parlayAlertLine(pl){
+  const pay = (typeof fmtDecX==='function' && pl.dec!=null ? fmtDecX(pl.dec)+' / ' : '') + (pl.am!=null ? fmtAm(pl.am) : '');
+  const legs = (pl.legs||[]).map(l=>l.label||l.playerName||'').filter(Boolean).join(' + ');
+  const when = isFinite(pl.start) && pl.start!==Infinity ? alertWhen(new Date(pl.start)) : '';
+  return `${pl.n||((pl.legs||[]).length)}-leg (${pay}): ${legs}${when?` · ${when}`:''}`;
+}
+function lockItemKey(board, item){
+  if (!item) return '';
+  if (board==='games') return 'lock:games|' + playResultKey(item);
+  return `lock:${board}|${item.id||''}`;
+}
+function checkLockAlerts(board){
+  if (!canAlert('new')) return;
+  const boards = board ? [board] : ['games','props','parlay'];
+  for (const b of boards){
+    const lm = typeof boardLockMins==='function' ? boardLockMins(b) : (b==='parlay'?null:b==='props'?120:60);
+    let src = [];
+    if (b==='games'){
+      src = (typeof plays!=='undefined' ? plays : []).filter(p =>
+        p && p.verdict==='good' && p.g && p.g.state==='pre' && p.g.eventId && !p.g.pickOnly
+        && (typeof selectedBooksAllowPlay!=='function' || selectedBooksAllowPlay(p))
+      );
+    } else if (b==='props'){
+      src = (typeof props!=='undefined' ? props : []).filter(p =>
+        p && p.verdict==='good' && p.id && (!p.g || p.g.state==='pre')
+        && (typeof selectedBooksAllowProp!=='function' || selectedBooksAllowProp(p))
+      );
+    } else if (b==='parlay'){
+      src = (typeof parlays!=='undefined' ? parlays : []).filter(pl =>
+        pl && pl.verdict==='good' && pl.id
+        && !(pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')
+        && (typeof selectedBooksAllowParlay!=='function' || selectedBooksAllowParlay(pl))
+      );
+    }
+    const pending = src.filter(item => {
+      const startMs = typeof itemStartMs==='function' ? itemStartMs(item) : 0;
+      if (typeof isOfficialLock==='function' && !isOfficialLock(startMs, lm)) return false;
+      const lk = lockItemKey(b, item);
+      if (!lk || newPlayNotified[lk] || _lockPushInFlight.has(lk)) return false;
+      if (b==='games' && newPlayNotified[playResultKey(item)]) return false;
+      return true;
+    });
+    if (!pending.length) continue;
+    const keys = pending.map(x => lockItemKey(b, x));
+    const lineFn = b==='props' ? propAlertLine : b==='parlay' ? parlayAlertLine : playAlertLine;
+    const singular = b==='props' ? 'Prop Lock' : b==='parlay' ? 'Parlay Lock' : 'Game Lock';
+    const plural = b==='props' ? 'Prop Locks' : b==='parlay' ? 'Parlay Locks' : 'Game Locks';
+    const tagIcon = b==='props' ? 'lock,dart' : b==='parlay' ? 'lock,tickets' : 'lock,moneybag';
+    const title = pending.length===1 ? `🔒 ${singular}` : `🔒 ${pending.length} ${plural}`;
+    const body = pending.map(lineFn).join('\n');
+    const markSent = () => {
+      const now = Date.now();
+      for (const lk of keys){ newPlayNotified[lk] = now; _lockPushInFlight.delete(lk); }
+      pruneNewPlayNotified();
+      saveJSON(LS.newPlayNotified, newPlayNotified);
+    };
+    for (const lk of keys) _lockPushInFlight.add(lk);
+    const localOk = canNotify();
+    if (localOk){
+      postNotification(title, {body: pending.length===1 ? body : `${pending.length} new ${plural.toLowerCase()}:
+${body}`, tag: pending.length===1 ? 'bl-'+keys[0] : 'bl-lock-'+b});
+    }
+    if (ntfyEnabled()){
+      ntfyPush(title, body, {priority:'high', tags:tagIcon}).then(ok => {
+        if (ok || localOk) markSent();
+        else for (const lk of keys) _lockPushInFlight.delete(lk);
+      });
+    } else if (localOk){
+      markSent();
+    } else {
+      for (const lk of keys) _lockPushInFlight.delete(lk);
+    }
+  }
+}
+function notifyNewPlayBatch(list){
+  // Legacy entrypoint now routes through lock-gated checkLockAlerts so early previews never fire before lock.
+  checkLockAlerts('games');
+}
+const _pullPushInFlight = new Set();
 function notifyPulled(r){
   if (!r || r.pullNotified || r.legacyPull) return;
   if ((r.from||r.pulledFrom||'good')!=='good') return;
   const tailed = typeof isTailedPullKey==='function' ? isTailedPullKey(r.k) : (typeof isLoggedKey==='function' && isLoggedKey(r.k));
   if (!tailed) return;
   if (!canAlert('pulled')) return;
+  const pk = r.k || r.label || '';
+  if (pk && _pullPushInFlight.has(pk)) return;
   try{
-    const why = r.pullReason||r.reason||'no longer passes the filters';
-    const base = `${r.label} (${r.game}): pulled from Picks — ${why}`;
-    const logged = typeof isLoggedKey==='function' && isLoggedKey(r.k);
-    const title = logged ? '⚠ Pulled — you tailed this bet' : 'Play pulled';
-    const body = logged ? `⚠ Pulled — you tailed this bet: ${base}` : base;
-    r.pullNotified = true;
-    if (canNotify()) postNotification(title, {body, tag:'bl-pull-'+(r.k||'')});
-    if (ntfyEnabled()) ntfyPush(title, body, {priority: logged ? 'urgent' : 'default', tags: logged ? 'rotating_light,warning' : 'warning'});
-  }catch(e){}
+    const why = r.pullReason||r.reason||'flipped to Avoid';
+    const boardTag = r.board==='props' ? 'Prop' : r.board==='parlay' ? 'Parlay' : 'Game';
+    const where = r.game ? ` (${r.game})` : '';
+    const title = '⚠️ Pulled — you tailed this bet';
+    const body = `${boardTag}: ${r.label}${where} flipped to Avoid — ${why}`;
+    const markSent = () => {
+      r.pullNotified = true;
+      if (pk) _pullPushInFlight.delete(pk);
+      try{ saveJSON(LS.pullNotes, pullNotes); saveJSON(LS.results, results); }catch(e){}
+    };
+    if (pk) _pullPushInFlight.add(pk);
+    const localOk = canNotify();
+    if (localOk) postNotification(title, {body, tag:'bl-pull-'+pk});
+    if (ntfyEnabled()){
+      ntfyPush(title, body, {priority:'urgent', tags:'rotating_light,warning'}).then(ok => {
+        if (ok || localOk) markSent();
+        else if (pk) _pullPushInFlight.delete(pk);
+      });
+    } else if (localOk){
+      markSent();
+    } else if (pk){
+      _pullPushInFlight.delete(pk);
+    }
+  }catch(e){ if (pk) _pullPushInFlight.delete(pk); }
+}
+function checkTailedBoardPulls(board){
+  const listBets = (typeof bets!=='undefined' && Array.isArray(bets)) ? bets : [];
+  if (!listBets.length) return;
+  const now = Date.now();
+  const boards = board ? [board] : ['games','props','parlay'];
+  let dirty = false;
+  const ensureNote = (k, brd, label, gameTxt, startMs, reason) => {
+    const existing = (pullNotes||[]).find(n=>n.k===k && !n.resolved && !n.readded);
+    if (existing){
+      if (!existing.pullNotified) notifyPulled(existing);
+      return;
+    }
+    const note = {k, board:brd, from:'good', to:'avoid', at:now, reason, label, game:gameTxt||'', start:startMs||now+3600000, pullNotified:false, pulledTo:'avoid'};
+    pullNotes.unshift(note);
+    dirty = true;
+    notifyPulled(note);
+  };
+  for (const b of listBets){
+    if (b.result && b.result!=='pending') continue;
+    const k = typeof betPlayKey==='function' ? betPlayKey(b) : null;
+    if (!k) continue;
+    if (boards.includes('games')){
+      const p = (typeof plays!=='undefined' ? plays : []).find(x=>x && x.g && x.g.eventId && (playResultKey(x)===k || x.id===k));
+      if (p && p.g && p.g.state==='pre'){
+        if (p.verdict==='avoid'){
+          ensureNote(k, 'games', p.label||b.label||k, `${p.g.away.short} @ ${p.g.home.short}`, p.g.start&&p.g.start.getTime?p.g.start.getTime():+p.g.start, pullReasonFor({k}));
+        } else if (p.verdict==='good'){
+          markReadded(k, now, 'avoid');
+        }
+      }
+    }
+    if (boards.includes('props')){
+      const pr = (typeof props!=='undefined' ? props : []).find(x=>x && x.id===k);
+      if (pr && (!pr.g || pr.g.state==='pre')){
+        if (pr.verdict==='avoid'){
+          const why = (pr.reasons && pr.reasons[0]) || (pr.j && pr.j.judge && pr.j.judge.why) || 'no longer passes prop gates';
+          const gm = pr.g && pr.g.away && pr.g.home ? `${pr.g.away.short} @ ${pr.g.home.short}` : (b.game||'');
+          ensureNote(k, 'props', pr.label||b.label||k, gm, typeof itemStartMs==='function'?itemStartMs(pr):0, why);
+        } else if (pr.verdict==='good'){
+          markReadded(k, now, 'avoid');
+        }
+      }
+    }
+    if (boards.includes('parlay')){
+      const pl = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===k);
+      if (pl && !(pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')){
+        if (pl.verdict==='avoid'){
+          const why = (pl.reasons && pl.reasons[0]) || 'no longer passes parlay gates';
+          ensureNote(k, 'parlay', pl.label||b.label||k, `${pl.n||((pl.legs||[]).length)}-leg parlay`, typeof itemStartMs==='function'?itemStartMs(pl):0, why);
+        } else if (pl.verdict==='good'){
+          markReadded(k, now, 'avoid');
+        }
+      }
+    }
+  }
+  if (dirty){
+    saveJSON(LS.pullNotes, pullNotes);
+    if (typeof updatePullDots==='function') updatePullDots();
+  }
 }
 function sendNtfyTest(){
   const field = document.querySelector('input[name="ntfyTopic"]');
@@ -3153,7 +3300,7 @@ function requestPullAlerts(){
         saveJSON(LS.results, results); saveJSON(LS.pullNotes, pullNotes);
       }
       if (alertOn('new')){
-        notifyNewPlayBatch(plays.filter(p=>p.verdict==='good' && p.g && p.g.state==='pre' && p.g.eventId));
+        checkLockAlerts();
       }
       const bits = [];
       if (alertOn('new')) bits.push('new Picks');
@@ -3183,8 +3330,13 @@ function noteVisible(n, now, dismissed){
 }
 function currentTabOf(k){
   if (playTabs[k] && playTabs[k].tab) return playTabs[k].tab;
-  const p = plays.find(x=>x.g && x.g.eventId && playResultKey(x)===k);
-  return (p && TAB_RANK[p.verdict]) ? p.verdict : null;
+  const p = (typeof plays!=='undefined'?plays:[]).find(x=>x.g && x.g.eventId && (playResultKey(x)===k || x.id===k));
+  if (p && TAB_RANK[p.verdict]) return p.verdict;
+  const pr = (typeof props!=='undefined'?props:[]).find(x=>x && x.id===k);
+  if (pr && TAB_RANK[pr.verdict]) return pr.verdict;
+  const pl = (typeof parlays!=='undefined'?parlays:[]).find(x=>x && x.id===k);
+  if (pl && TAB_RANK[pl.verdict]) return pl.verdict;
+  return null;
 }
 function visiblePulled(fromTab){
   const now = Date.now();
@@ -3329,7 +3481,8 @@ function trackPlayTabs(){
     }
     playTabs[k] = meta;
   }
-  notifyNewPlayBatch(newcomers);
+  checkLockAlerts('games');
+  try{ checkTailedBoardPulls('games'); }catch(e){}
   const cut = now - 7*86400000;
   for (const k of Object.keys(playTabs)){
     const t = playTabs[k];
@@ -3391,13 +3544,7 @@ function checkLoggedKeyOutPulls(){
     const note = {k, from, to:'avoid', at:now, reason, label:p.label, game:`${p.g.away.short} @ ${p.g.home.short}`, start:p.g.start.getTime(), pulledTo:'avoid'};
     pullNotes.unshift(note);
     saveJSON(LS.pullNotes, pullNotes);
-    if (from==='good') notifyPulled(note);
-    else if (typeof canAlert==='function' && canAlert('pulled')){
-      const body = '⚠ Pulled — you tailed this bet: '+note.label+' ('+note.game+'): '+reason;
-      if (canNotify()) postNotification('⚠ Pulled — you tailed this bet', {body, tag:'bl-pull-'+k});
-      if (ntfyEnabled()) ntfyPush('⚠ Pulled — you tailed this bet', body, {priority:'urgent', tags:'rotating_light,warning'});
-      note.pullNotified = true;
-    }
+    notifyPulled(note);
   }
 }
 
@@ -5073,6 +5220,11 @@ function tick(){
     const cd = busy ? 'now' : (nextAt ? `${Math.floor(ms/60000)}:${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}` : '—');
     const c=$('#countdown'); if (c) c.textContent = cd;
     const sc=$('#sideCountdown'); if (sc) sc.textContent = cd;
+    const nowMs = Date.now();
+    if (!window._blLockTick || nowMs - window._blLockTick >= 30000){
+      window._blLockTick = nowMs;
+      if (typeof checkLockAlerts==='function') checkLockAlerts();
+    }
   }catch(e){}
 }
 function startRefreshWatch(ms){
@@ -8523,6 +8675,8 @@ async function loadLiveProps(opts){
         ? `Live lines from ESPN’s DraftKings prop feed on ${espnGames} game${espnGames===1?'':'s'} (${espnN} player-stat lines). Over is listed first, Under second — the feed does not label the side. ${S.oddsKey?'Odds API player markets are merged when a cached fetch is available.':'Add an Odds API key in Settings for more books.'}`
         : (espnErr ? 'Could not reach ESPN prop lines just now.' : 'No live prop lines posted for the upcoming games in this window. You can still type a prop in Verdict and we will research the player’s real game log.')
     };
+    if (typeof checkLockAlerts==='function') checkLockAlerts('props');
+    if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props');
     if (typeof softRender==='function') softRender();
     runPropEnrichment();
   }catch(e){
@@ -8622,6 +8776,8 @@ async function runPropEnrichment(){
     flush(false);
   }), 5);
   propEnrich.running = false;
+  try{ if (typeof checkLockAlerts==='function') checkLockAlerts('props'); }catch(e){}
+  try{ if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props'); }catch(e){}
   flush(true);
   try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
 }
@@ -9205,6 +9361,8 @@ function buildParlays(){
   parlays = kept;
   if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
   try{ if (typeof parlayLearnCapture==='function') parlayLearnCapture(); }catch(e){}
+  try{ if (typeof checkLockAlerts==='function') checkLockAlerts('parlay'); }catch(e){}
+  try{ if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('parlay'); }catch(e){}
   return parlays;
 }
 
@@ -10496,8 +10654,8 @@ function renderSettings(){
 
     <div class="s-row"><div class="s-h">Alerts</div>
       ${(()=>{ const perm = typeof alertsPerm==='function' ? alertsPerm() : 'unsupported';
-        const checks = `<label class="chk"><input type="checkbox" name="alertNewPlays" ${S.alertNewPlays!==false?'checked':''}> Alert me on new plays</label>
-      <label class="chk"><input type="checkbox" name="alertPulledPlays" ${S.alertPulledPlays!==false?'checked':''}> Alert me on pulled plays</label>`;
+        const checks = `<label class="chk"><input type="checkbox" name="alertNewPlays" ${S.alertNewPlays!==false?'checked':''}> Alert me when a pick becomes a Lock (Games, Props, Parlays)</label>
+      <label class="chk"><input type="checkbox" name="alertPulledPlays" ${S.alertPulledPlays!==false?'checked':''}> Alert me when a tailed pick is Pulled</label>`;
         if (perm==='granted') return checks + '<div class="s-note">Alerts are on. New Picks and pulls from Picks can each send a pop-up, but only while the app is open. On iPhone, alerts only work after you add Verdict to your Home Screen. A Pick is pulled only if it flips all the way to Avoid. A drop to Watchlist is held.</div>';
         if (perm==='denied') return checks + '<div class="s-note">Alerts are blocked in this browser. You can allow them in the browser settings for this page. Alerts only fire while the app is open.</div>';
         if (perm==='unsupported') return checks + '<div class="s-note">This browser does not support alerts here. On iPhone, add Verdict to your Home Screen (Share → Add to Home Screen), then turn on alerts from inside the installed app. Alerts only fire while the app is open. Pulled plays will still show in the Pulled list.</div>';
@@ -10509,7 +10667,7 @@ function renderSettings(){
       <label class="s-inline" style="margin-top:8px">Topic<input name="ntfyTopic" value="${esc(S.ntfyTopic||'')}" autocomplete="off" spellcheck="false" style="max-width:420px;font-family:ui-monospace,Menlo,Consolas,monospace"></label>
       <div style="margin-top:8px"><button type="button" class="btn sm" id="btnNtfyTest">Send test</button></div>
       <div class="s-note">Install ntfy on your iPhone, tap +, subscribe to this topic.</div>
-      <div class="s-note">This uses your PC: Verdict has to be open there (minimized is fine). Your phone can be locked or closed. Turn this off on the phone copy so it does not send twice.</div>
+      <div class="s-note">This uses your PC: Verdict has to be open there (minimized is fine). Your phone can be locked or closed. This toggle is saved per device, so turning it off on your phone will never turn it off on your PC.</div>
       <div class="s-note">Edge and Chrome can freeze a background tab and pause refresh, so phone alerts would wait until you open the window. Use Start BettingLab.bat so it opens as its own app window. In Edge: Settings → System and performance → Never put these sites to sleep, and add this page. In Chrome, turn off "Memory Saver" for this page or keep the app window open.</div></div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn primary" type="submit">Save</button></div>
@@ -11199,7 +11357,9 @@ function applyRemote(d){
     if (d.settings && (+d.settingsAt||0) > (syncMeta.settingsAt||0)){
       const rs = parseJ(d.settings, null);
       if (rs && typeof rs==='object'){
+        const keepNtfyOn = S.ntfyOn;
         Object.keys(S).forEach(k=>delete S[k]); Object.assign(S, DEFAULTS, rs);
+        if (typeof keepNtfyOn==='boolean') S.ntfyOn = keepNtfyOn;
         localStorage.setItem(LS.settings, JSON.stringify(S)); _lastSettingsStr = localStorage.getItem(LS.settings);
         syncMeta.settingsAt = +d.settingsAt; touched = needRender = true;
       }
