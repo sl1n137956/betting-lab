@@ -803,6 +803,21 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
   .auth-card{max-width:none;border-radius:22px 22px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));max-height:92vh}
 }
 @media (max-width:380px){ .acct-btn:not(.signed) svg{display:none} }
+/* Verdict+ : smart guessing chips, community learning pill, Safari redirect notice */
+.pk-assume{font-size:12.5px;color:var(--txt2);margin:6px 2px 0;display:flex;flex-wrap:wrap;align-items:center;gap:6px;line-height:1.45}
+.pk-assume b{color:#fff}
+.pk-dym-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 2px 2px}
+.pk-dym-row .lab{font-size:11px;color:var(--mut);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-right:2px}
+.chip.pk-dym{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.32);color:var(--acc-hi);padding:6px 13px;font-size:12.5px;border-radius:999px;font-family:inherit;cursor:pointer;max-width:100%;white-space:normal;text-align:left}
+.chip.pk-dym:hover{background:rgba(59,130,246,.24);color:#fff}
+.chip.pk-dym .mut{color:var(--mut);font-weight:500}
+.vc-pill{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:4px 0 12px;padding:9px 14px;border-radius:999px;background:rgba(59,130,246,.10);border:1px solid rgba(59,130,246,.28);font-size:12.5px;color:var(--txt2);line-height:1.4}
+.vc-pill b{color:#fff}
+.vc-pill .mut{color:var(--mut)}
+.auth-blocked{display:block;line-height:1.45}
+.auth-blocked a{color:var(--acc-hi);font-weight:700;white-space:nowrap}
+.acct-note a{color:var(--acc-hi);font-weight:700}
+@media (max-width:520px){ .vc-pill{border-radius:16px} }
 </style>
 </head>
 <body>
@@ -1329,6 +1344,8 @@ function teamObj(c, nm){
   return {nick: c.team ? (c.team.name||c.team.shortDisplayName||'') : '', loc: c.team ? (c.team.location||'') : '', id: c.team ? String(c.team.id) : (c.athlete ? String(c.athlete.id||c.id) : String(c.id||'')), name:nm.name, short:nm.short, logo:nm.logo,
     rec:recordOf(c), homeRec:splitOf(c,'home'), roadRec:splitOf(c,'road'), score:scoreOf(c),
     rank:c.curatedRank&&c.curatedRank.current<=25?c.curatedRank.current:null,
+    wrank:c.curatedRank&&isFinite(+c.curatedRank.current)&&+c.curatedRank.current>0?+c.curatedRank.current:null, wrec:recordOf(c),
+    ptsLeader:(()=>{ try{ const l = (c.leaders||[]).find(x=>x && (x.name==='pointsPerGame' || x.abbreviation==='PTS')); const a = l && l.leaders && l.leaders[0]; return a && a.athlete && a.athlete.displayName && isFinite(+a.value) ? {name:a.athlete.displayName, id:String(a.athlete.id||''), val:+a.value} : null; }catch(e){ return null; } })(),
     probable: pr && pr.athlete ? {kind:pr.name||'', label:pr.shortDisplayName||pr.displayName||'Starter', id:String(pr.athlete.id||pr.playerId||''), name:pr.athlete.displayName||pr.athlete.fullName||'',
       status:(pr.status&&(pr.status.name||pr.status.type))||'', stats:(pr.statistics||[]).map(x=>(x.abbreviation||x.name)+' '+(x.displayValue||'')).join(', ')} : null};
 }
@@ -5476,7 +5493,7 @@ function renderTracker(pf){
   <div class="log-card">
     <h3>📝 Tail a bet</h3>
     <form id="betForm" class="log-simple" autocomplete="off">
-      <div class="log-bet"><span>Bet</span><input name="pick" value="${esc(prePick)}" placeholder="e.g. Rockets ML, Over 225.5" required></div>
+      <div class="log-bet"><span>Bet</span><input name="pick" value="${esc(prePick)}" placeholder="e.g. Rockets ML, Lakers/Celtics Over 225.5" required></div>
       <div class="log-row">
         <label class="odds-field">Odds
           <div class="seg odds-type" id="oddsTypeSeg">${[['american','American'],['polymarket','Polymarket ¢']].map(([v,l])=>`<label class="${(pf.oddsType||'american')===v?'on':''}"><input type="radio" name="oddsType" value="${v}" ${(pf.oddsType||'american')===v?'checked':''} hidden>${l}</label>`).join('')}</div>
@@ -5708,27 +5725,70 @@ function parseLeg(raw){
     L.kind='ml'; s=s.replace(/\b(ml|moneyline|money line|to win|win|outright)\b/g,' ');
   } else if ((m = s.match(/(?:^|\s)([+-]\d{1,2}(?:\.\d)?|pk|pick'?em|pick)(?=\s|$)/))){
     L.kind='spread'; L.line = /pk|pick/.test(m[1]) ? 0 : +m[1]; s=s.replace(m[0],' ');
-  } else L.kind='ml';
+  } else { L.kind='ml'; L.assumedMl = true; }
   L.nameText = s.replace(/\b(the|vs|v|at|@|alt|alternate|spread|line|to|score|game|tonight|bet)\b/g,' ').replace(/[^a-z0-9.\- ]/g,' ').replace(/\s+/g,' ').trim();
   return L;
 }
 /* ---------- matching ---------- */
+/* Abbreviation spellings people type that differ from ESPN's short codes */
+const ABBR_FIX = {gsw:'gs', nyk:'ny', nop:'no', sas:'sa', pho:'phx', brk:'bkn', bkn:'bkn', cho:'cha', was:'wsh', njd:'nj', lak:'la', sjs:'sj', tbl:'tb', nyy:'nyy', kcc:'kc', gnb:'gb', sfo:'sf', nwe:'ne', nor:'no', tam:'tb', utah:'utah', uta:'utah'};
+function levenshtein(a, b){
+  a = String(a||''); b = String(b||''); if (a===b) return 0; if (!a.length) return b.length; if (!b.length) return a.length;
+  let prev = Array.from({length:b.length+1}, (_, i)=>i);
+  for (let i=1;i<=a.length;i++){ const cur=[i]; for (let j=1;j<=b.length;j++) cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1)); prev = cur; }
+  return prev[b.length];
+}
+function strSim(a, b){ a = String(a||''); b = String(b||''); if (!a || !b) return 0; const m = Math.max(a.length, b.length); return 1 - levenshtein(a, b)/m; }
+// best fuzzy similarity of the typed text against a name (whole name, or any word for 4+ letter words)
+function fuzzyNameSim(t, name){
+  if (!t || !name) return 0;
+  let best = strSim(t, name);
+  const tw = t.split(' ').filter(Boolean), nw = name.split(' ').filter(Boolean);
+  if (tw.length===1 && t.length>=4) for (const w of nw) if (w.length>=4) best = Math.max(best, strSim(t, w)*0.97);
+  if (tw.length>1 && nw.length>1){ let s2 = 0; for (const x of tw){ let b = 0; for (const y of nw) b = Math.max(b, strSim(x, y)); s2 += b; } best = Math.max(best, s2/tw.length*0.98); }
+  return best;
+}
+const hasWord = (hay, w) => !!w && (' '+hay+' ').includes(' '+w+' ');
 function teamCandidates(text){
-  const t = norm(text); if (!t) return [];
+  let t = norm(text); if (!t) return [];
+  if (ABBR_FIX[t]) t = ABBR_FIX[t];
+  const nickP = (typeof NICK_PLAYERS!=='undefined' && NICK_PLAYERS[t]) ? norm(NICK_PLAYERS[t]) : null;
   const alias = TEAM_ALIAS[t] ? norm(TEAM_ALIAS[t]) : null;
   const out = [];
-  const pool = games.filter(g=>!g.ind && (g.state!=='post' || Date.now()-g.start < 18*3600000));
+  // every sport and every loaded event — never limited by tab filters or auto-off sports
+  const pool = games.filter(g=>g && g.home && g.away && (g.state!=='post' || Date.now()-g.start < 18*3600000));
   for (const g of pool) for (const side of ['home','away']){
-    const T = g[side]; const nick = norm(T.nick), full = norm(T.name), abbr = norm(T.short), loc = norm(T.loc);
-    let sc = 0;
-    if (t===nick || t===full || (alias && (alias===nick || alias===full))) sc = 10;
-    else if (t===abbr) sc = 9;
-    else if (nick && (t.includes(nick) || (alias && alias.includes(nick)))) sc = 8;
-    else if (full.includes(t) && t.length>=4) sc = 6;
-    else if (loc && t===loc) sc = 5;
-    else if (alias && full.includes(alias)) sc = 7;
-    if (sc) out.push({g, side, sc: sc + (LMAP[g.league].id==='nba'?0.5:0) + (g.state==='pre'?0.3:g.state==='in'?0.35:0.2) - Math.max(0,(g.start-Date.now())/864e5)*0.2});
+    const T = g[side]; if (!T || !T.name || /^tbd$/i.test(T.name)) continue;
+    const nick = norm(T.nick), full = norm(T.name), abbr = norm(T.short), loc = norm(T.loc);
+    let sc = 0, fz = false;
+    if (g.ind){
+      // athletes (tennis players, fighters): full name, last name, or "B. Shelton"
+      const parts = full.split(' ').filter(Boolean), last = parts.length>1 ? parts.slice(1).join(' ') : full, lastW = parts[parts.length-1]||'';
+      if (t===full || (nickP && nickP===full)) sc = 10;
+      else if (full.length>=5 && t.includes(full)) sc = 9.5;
+      else if (t===last || t===lastW || t===abbr) sc = 8.5;
+      else if (lastW.length>=4 && t.split(' ').includes(lastW)) sc = 7.5;
+      else if (t.length>=4 && full.includes(t)) sc = 6;
+    } else {
+      if (t===nick || t===full || (alias && (alias===nick || alias===full))) sc = 10;
+      else if (t===abbr) sc = 9;
+      else if (nick && (hasWord(t, nick) || (alias && hasWord(alias, nick)))) sc = 8;
+      else if (full.includes(t) && t.length>=4) sc = 6;
+      else if (loc && t===loc) sc = 5;
+      else if (alias && full.includes(alias)) sc = 7;
+      else if (loc && t.length>=4 && (t.startsWith(loc+' ') || loc.startsWith(t))) sc = 4.5;
+      else if (t.includes(' ') && abbr.length>=2 && t.split(' ').map(x=>ABBR_FIX[x]||x).includes(abbr)) sc = 7.5;
+    }
+    if (!sc && t.length>=4){
+      // typo-tolerant guess (Levenshtein + token similarity)
+      const sim = Math.max(fuzzyNameSim(t, full), nick ? fuzzyNameSim(t, nick) : 0, alias ? fuzzyNameSim(alias, full) : 0, loc && loc.length>=4 ? strSim(t, loc)*0.9 : 0);
+      if (sim >= 0.78) { sc = 2 + sim*3.5; fz = true; }
+    }
+    if (sc){ const L = LMAP[g.league]||{id:g.league}; out.push({g, side, base:sc, fuzzy: fz, sc: sc + (L.id==='nba'?0.5:0) + (g.state==='pre'?0.3:g.state==='in'?0.35:-3) - Math.max(0,(g.start-Date.now())/864e5)*0.2}); }
   }
+  // a matchup ("Lakers/Celtics Over 225.5"): both teams of the same game matched → that game wins
+  const byG = {}; for (const c of out){ byG[c.g.id] = (byG[c.g.id]||0) + 1; }
+  for (const c of out) if (byG[c.g.id]>=2) c.sc += 1.5;
   return out.sort((a,b)=>b.sc-a.sc);
 }
 async function loadRoster(league, teamId){
@@ -5892,6 +5952,20 @@ function teamLegAnalysis(leg){
     } else if (!A) leg.no.push({t:'No odds for this market in the free feed (add an Odds API key)', imp:-0.0001, tag:'missing'});
     if (pBase!=null) leg.p = clamp(pBase + adjPts, 0.02, 0.98);
   }
+  if (leg.p==null && g.ind && mk==='ml'){
+    // Tennis / UFC: ESPN's free feed rarely has odds, so estimate from world ranking or record (low confidence)
+    const rT = T.wrank, rO = O.wrank; let pe = null, how = '';
+    if (rT && rO){ pe = 1/(1+Math.exp(-0.55*Math.log(rO/rT))); how = `ranking #${rT} vs #${rO}`; }
+    else if (rT && !rO){ pe = 0.6; how = `${T.short} ranked #${rT}, ${O.short} unranked`; }
+    else if (!rT && rO){ pe = 0.4; how = `${O.short} ranked #${rO}, ${T.short} unranked`; }
+    else { const a = wlPct(T.wrec), b = wlPct(O.wrec); if (a!=null && b!=null){ pe = 0.5+(a-b)*0.5; how = `records ${T.wrec} vs ${O.wrec}`; } }
+    if (pe!=null){
+      leg.p = clamp(pe, 0.12, 0.88); leg.rankOnly = true; leg.conf = 30;
+      formula.push(`no odds in the free feed → estimate from ${how}`);
+      (leg.p>=0.5?leg.yes:leg.no).push({t:`${leg.p>=0.5?T.name:O.name} has the better ${rT||rO?'ranking':'record'} (${how})`, imp:leg.p-0.5, tag:'ranking-only estimate'});
+    }
+    if (!leg.no.some(x=>x && /free feed/.test(x.t||''))) leg.no.push({t:`No betting odds in ESPN's free feed for this ${g.league==='ufc'?'fight':'match'} — type your odds (e.g. "${T.name} ML -150") to compare the price`, imp:-0.0001, tag:'missing'});
+  }
   leg.formula = formula.join(' ') + (leg.p!=null ? ` → ${fmtPct(leg.p)}` : '');
   if (L.odds!=null){ implied = imp(L.odds); leg.userOdds = L.odds; }
   leg.implied = implied; leg.price = L.odds!=null ? L.odds : leg.bookPrice;
@@ -6019,6 +6093,7 @@ function judgeLeg(leg){
     else { leg.verdict='PASS'; leg.why=`Est. only ${fmtPct(p)}`; }
   }
   if (leg.live && leg.verdict==='BET'){ leg.verdict='WATCHLIST'; leg.why += ' (game already live)'; }
+  if (leg.rankOnly && leg.implied==null && leg.verdict==='BET'){ leg.verdict='WATCHLIST'; leg.why += ' (ranking-only estimate, no odds to compare)'; }
   leg.outRange = leg.price!=null && (leg.price < S.sFavMin || leg.price > S.sDogMax);
   if (leg.outRange && !leg.final){ leg.no.unshift({t:`Outside your range: ${fmtAm(leg.price)} is ${leg.price < S.sFavMin ? `more expensive than ${fmtAm(S.sFavMin)}` : `longer than ${fmtAm(S.sDogMax)}`}`, imp:-1, tag:'your rule for singles'}); if (leg.verdict==='BET'||leg.verdict==='WATCHLIST'){ leg.verdict='PASS'; leg.why='Outside your '+fmtAm(S.sFavMin)+' to '+fmtAm(S.sDogMax)+' range'; } }
   if (p!=null && !leg.final){ const need = leg.implied;
@@ -6138,12 +6213,25 @@ async function resolveLeg(raw, override){
   const L = parseLeg(raw);
   const leg = {raw, L, yes:[], no:[], info:[], cands:[], p:null};
   try{
+    // "SGA over 30.5" / "Jokic o25.5": a player with a number and no stat → assume points
+    if (L.kind==='total' && L.nameText && !teamCandidates(L.nameText).length){
+      try{ const pc = await playerCandidates(L.nameText); const top = pc[0];
+        if (top && top.sc>=7 && top.g && ['nba','wnba','ncaab'].includes(top.g.league)){ L.kind='prop'; L.stat='pts'; L.assumedStat = true; leg.assumeNote = `No stat typed — reading this as ${top.a.name} points`; }
+      }catch(e){}
+    }
     if (L.kind==='prop'){
       const cands = await playerCandidates(L.nameText);
       leg.cands = cands.slice(0,10).map(c=>({key:`p:${c.a.id}:${c.g?c.g.id:''}`, label:`${c.a.name}${c.g?` · ${c.g[c.side].short} (${c.g.away.short} @ ${c.g.home.short}, ${fmtTime(c.g.start)})`:' · no game loaded'}`, c}));
       let pick = override ? leg.cands.find(x=>x.key===override) : leg.cands[0];
-      if (!pick){ leg.err = `Could not find a player matching "${L.nameText}"`; return leg; }
+      if (!pick){ leg.err = `Couldn't find a player matching “${L.nameText}” on today's schedule. Try the full name, like “Nikola Jokic Over 25.5 pts”.`; leg.hint = 'nomatch'; return leg; }
       leg.matchKey = pick.key; leg.player = pick.c.a; leg.g = pick.c.g; leg.side = pick.c.side;
+      if (!override && leg.g && leg.g.state==='post' && pick.c.side){
+        // his game tonight is over → look up his team's next game
+        try{ const ng = await importNextGameForTeam(leg.g.league, leg.g[pick.c.side].id);
+          if (ng && ng.state!=='post' && ng.id!==leg.g.id){ evaluateAll(); const again = await playerCandidates(L.nameText); const retry = again.find(x=>x.a && String(x.a.id)===String(pick.c.a.id) && x.g && x.g.state!=='post');
+            if (retry){ pick = {key:`p:${retry.a.id}:${retry.g.id}`, label:`${retry.a.name} · ${retry.g[retry.side].short} (${retry.g.away.short} @ ${retry.g.home.short}, ${fmtTime(retry.g.start)})`, c:retry}; leg.cands.unshift(pick); leg.matchKey = pick.key; leg.player = retry.a; leg.g = retry.g; leg.side = retry.side; } }
+        }catch(e){}
+      }
       if (!leg.g && pick.c && pick.c.a){
         try{
           const tid = pick.c.teamId || (pick.c.noGame && pick.c.tid);
@@ -6157,28 +6245,61 @@ async function resolveLeg(raw, override){
           }
         }catch(e){ console.warn('import player game', e); }
       }
-      if (!leg.g){ leg.err = `${leg.player.name} has no game in the loaded schedule`; return leg; }
+      if (!leg.g){ leg.err = `Matched ${leg.player.name}, but there's no game for them on today's ESPN schedule right now.`; leg.hint = 'nomatch'; return leg; }
       await ensureFx(leg.g); evaluateAll();
       await propLegAnalysis(leg);
       if (typeof loadOddsHistory==='function') loadOddsHistory().catch(()=>{});
     } else {
+      // A total needs a team or matchup ("Over 225.5" alone is not a real bet)
+      if (L.kind==='total' && !L.nameText){ leg.err = 'Add a team or matchup for a total, like “Lakers/Celtics Over 225.5”.'; leg.hint = 'teamless'; return leg; }
+      if (!L.nameText){ leg.err = 'Type a team, player, or matchup, like “Celtics ML” or “Ben Shelton ML”.'; return leg; }
+      const candLabel = c => `${c.g[c.side].name} (${c.g.away.short} @ ${c.g.home.short}, ${LMAP[c.g.league].label}, ${fmtTime(c.g.start)})`;
       let cands = teamCandidates(L.nameText);
-      leg.cands = cands.slice(0,12).map(c=>({key:`t:${c.g.id}:${c.side}`, label:`${c.g[c.side].name} (${c.g.away.short} @ ${c.g.home.short}, ${LMAP[c.g.league].label}, ${fmtTime(c.g.start)})`, c}));
-      // also offer every loaded team so a wrong match can be fixed
-      const extra = games.filter(g=>!g.ind && g.state!=='post').slice(0,400).flatMap(g=>['away','home'].map(s=>({key:`t:${g.id}:${s}`, label:`${g[s].name} (${g.away.short} @ ${g.home.short}, ${LMAP[g.league].label}, ${fmtTime(g.start)})`, c:{g, side:s}})));
-      const seen = new Set(leg.cands.map(x=>x.key)); for (const x of extra.sort((a,b)=>a.label.localeCompare(b.label))) if (!seen.has(x.key)){ leg.cands.push(x); seen.add(x.key); }
-      let pick = override ? leg.cands.find(x=>x.key===override) : (cands.length ? leg.cands[0] : null);
+      const mkCands = list => list.slice(0,12).map(c=>({key:`t:${c.g.id}:${c.side}`, label:candLabel(c), c, sc:c.sc, fuzzy:c.fuzzy}));
+      leg.cands = mkCands(cands);
+      if (!cands.length && (L.kind==='ml' || L.kind==='spread')){
+        // "LeBron ML" / "Jokic -4": a player on a loaded team → that team's line
+        try{ const pc = await playerCandidates(L.nameText); const top = pc[0];
+          if (top && top.sc>=7 && top.g && top.side){ cands = [{g:top.g, side:top.side, sc:top.sc, base:top.sc, fuzzy:false}]; leg.cands = mkCands(cands); leg.viaPlayer = top.a.name; }
+        }catch(e){}
+      }
       if (!cands.length){
+        // not on the loaded board: ask ESPN (teams + athletes, incl. ATP/WTA tennis and UFC) and pull the match in
         try{
           const imported = await importGamesForTeamQuery(L.nameText);
           if (imported && imported.length){ evaluateAll(); }
         }catch(e){ console.warn('import team game', e); }
         cands = teamCandidates(L.nameText);
-        leg.cands = cands.slice(0,12).map(c=>({key:`t:${c.g.id}:${c.side}`, label:`${c.g[c.side].name} (${c.g.away.short} @ ${c.g.home.short}, ${LMAP[c.g.league].label}, ${fmtTime(c.g.start)})`, c}));
+        if (!cands.length && typeof verdictEspnLookup==='function'){
+          try{
+            const look = await verdictEspnLookup(L.nameText);
+            if (look && look.games && look.games.length){ evaluateAll(); cands = teamCandidates(look.name || L.nameText); if (!cands.length) cands = teamCandidates(L.nameText); }
+            if (!cands.length && look && look.name){ leg.matchedName = look.name; leg.matchedLeague = look.leagueLabel; leg.err = look.message; leg.hint = 'nomatch'; return leg; }
+          }catch(e){ console.warn('espn lookup', e); }
+        }
+        leg.cands = mkCands(cands);
       }
-      pick = override ? leg.cands.find(x=>x.key===override) : (cands.length ? leg.cands[0] : null);
-      if (!pick){ leg.err = `Could not find a team matching "${L.nameText}"`; return leg; }
+      // matched team's game already ended → pull in their NEXT game so the verdict is bettable
+      if (!override && cands.length && cands[0].g.state==='post' && !cands[0].g.ind){
+        try{ const top = cands[0]; const ng = await importNextGameForTeam(top.g.league, top.g[top.side].id);
+          if (ng && ng.state!=='post' && ng.id!==top.g.id){ evaluateAll(); const again = teamCandidates(L.nameText); if (again.length){ cands = again; leg.cands = mkCands(cands); } }
+        }catch(e){}
+      }
+      leg.scoredN = leg.cands.length;
+      // also offer every loaded team so a wrong match can be fixed
+      const extra = games.filter(g=>g && g.state!=='post' && g.home && g.away && !/^tbd$/i.test(g.home.name||'')).slice(0,400).flatMap(g=>['away','home'].map(s=>({key:`t:${g.id}:${s}`, label:`${g[s].name} (${g.away.short} @ ${g.home.short}, ${LMAP[g.league].label}, ${fmtTime(g.start)})`, c:{g, side:s}})));
+      const seen = new Set(leg.cands.map(x=>x.key)); for (const x of extra.sort((a,b)=>a.label.localeCompare(b.label))) if (!seen.has(x.key)){ leg.cands.push(x); seen.add(x.key); }
+      const pick = override ? leg.cands.find(x=>x.key===override) : (cands.length ? leg.cands[0] : null);
+      if (!pick){ leg.err = `Couldn't find a team or player matching “${L.nameText}” on today's ESPN schedule. Try the full name, like “Boston Celtics ML” or “Ben Shelton ML”.`; leg.hint = 'nomatch'; return leg; }
       leg.matchKey = pick.key; leg.g = pick.c.g; leg.side = pick.c.side;
+      leg.guessed = !override && !!(pick.fuzzy);
+      // "Did you mean": close runner-ups (different team/player) for one-tap switching
+      if (!override){
+        const top = leg.cands[0];
+        const okAlt = x => x && x.c && x.c.g && x.c.g.id!==top.c.g.id && x.c.g.state!=='post';
+        leg.dym = leg.cands.slice(1, leg.scoredN).filter(x=>okAlt(x) && x.sc!=null && top && top.sc!=null && top.sc - x.sc < 2.6 && (top.fuzzy || (x.c.base||0) >= (top.c.base||0) - 1.5)).slice(0,3);
+        if (top && top.fuzzy && !leg.dym.length) leg.dym = leg.cands.slice(1, leg.scoredN).filter(okAlt).slice(0,2);
+      }
       await ensureFx(leg.g); evaluateAll();
       teamLegAnalysis(leg);
       if (typeof loadOddsHistory==='function') loadOddsHistory().catch(()=>{});
@@ -6196,19 +6317,72 @@ async function runPicks(){
   const legs = [];
   for (const raw of lines){ const leg = await resolveLeg(raw, old.get(raw)); leg.override = old.get(raw); judgeLeg(leg); legs.push(leg); }
   PK.legs = legs; PK.busy = false; PK.ran = true; renderPicks();
+  try{ if (typeof verdictRecordChecks==='function') verdictRecordChecks(legs); }catch(e){ console.warn('verdict ledger', e); }
+}
+// Replace one leg's text (Assuming-ML switch, teamless-total fix) and re-check
+function swapLegText(i, text){
+  if (!text) return;
+  const lines = PK.text.split(/\n|;/).map(s=>s.trim()).filter(Boolean);
+  const old = PK.legs[i] && PK.legs[i].raw;
+  const k = old!=null ? lines.indexOf(old) : -1;
+  if (k>=0) lines[k] = text; else lines.push(text);
+  PK.text = lines.join('\n'); const ta = $('#pkText'); if (ta) ta.value = PK.text;
+  runPicks();
 }
 async function rerunLeg(i, key){
   const l = PK.legs[i]; PK.busy = true; renderPicks();
   const n = await resolveLeg(l.raw, key); n.override = key; judgeLeg(n); PK.legs[i] = n; PK.busy = false; renderPicks();
+  try{ if (typeof verdictRecordChecks==='function') verdictRecordChecks([n]); }catch(e){}
 }
 /* ---------- render ---------- */
 function verdictBadge(v){ const c = v==='BET'?'b-good':v==='WATCHLIST'?'b-watch':v==='FINAL'?'b-none':'b-avoid'; return `<span class="badge ${c}">${v==='WATCHLIST'?'MAYBE LATER':v==='PASS'?'SKIP':v}</span>`; }
 function legItem(x){ if (typeof x==='string') return `<li>${esc(x)}</li>`; return `<li><span>${esc(x.t)}</span>${x.tag?` <em>(${esc(x.tag)})</em>`:''}</li>`; }
 function legSort(arr, dir){ return arr.slice().sort((a,b)=>{ const ia=typeof a==='string'?0:a.imp||0, ib=typeof b==='string'?0:b.imp||0; return dir>0? ib-ia : ia-ib; }); }
+/* Verdict cards reuse the board's card builders, so their <details> keys and lazy ids are scoped
+   with a "verdict" prefix: the Courtroom always opens on THIS card (never a hidden twin on another tab),
+   and lazy bodies find the exact play object (incl. the non-best side, props and pulled-in matches). */
+const VERDICT_LAZY = new Map();
+function scopeVerdictCard(html, i, pl){
+  const pre = `verdict:${i}:`;
+  if (pl && pl.id) VERDICT_LAZY.set(pre+pl.id, pl);
+  return String(html||'')
+    .replace(/(<details\b[^>]*?)\sopen(?=[\s>])/g, '$1')
+    .replace(/data-dd="([^"]*)"/g, (m, k)=>`data-dd="verdict|${i}|${k}"`)
+    .replace(/data-lazy-id="([^"]*)"/g, (m, k)=>`data-lazy-id="${pre}${k}"`);
+}
+function legAssistHTML(leg, i){
+  const bits = [];
+  const g = leg.g;
+  if (leg.viaPlayer && g) bits.push(`<div class="pk-assume">🔎 ${esc(leg.viaPlayer)} plays for <b>${esc(g[leg.side].name)}</b> — checking their ${leg.L.kind==='spread'?'spread':'moneyline'}.</div>`);
+  if (leg.assumeNote) bits.push(`<div class="pk-assume">🔎 ${esc(leg.assumeNote)}</div>`);
+  if (!leg.err && g && leg.L && leg.L.assumedMl && !leg.player){
+    const T = g[leg.side];
+    const alts = [];
+    const sp = g.analysis && g.analysis.spread && g.analysis.spread.sides && g.analysis.spread.sides[leg.side];
+    if (sp && sp.point!=null) alts.push(`${verdictShortName(T, g)} ${fmtPt(sp.point)}`);
+    const tot = g.analysis && g.analysis.total && g.analysis.total.sides && g.analysis.total.sides.over;
+    if (tot && tot.point!=null) alts.push(`${verdictShortName(g.away, g)}/${verdictShortName(g.home, g)} Over ${tot.point}`);
+    bits.push(alts.length
+      ? `<div class="pk-assume">Assuming <b>Moneyline</b> — tap to switch: ${alts.map(a=>`<button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(a)}">${esc(a)}</button>`).join(' ')}</div>`
+      : `<div class="pk-assume">Assuming <b>Moneyline</b> — add a line (like “${esc(verdictShortName(T, g))} -4.5”) to check a spread instead.</div>`);
+  }
+  if (leg.guessed && g) bits.push(`<div class="pk-assume">Best guess: <b>${esc(g[leg.side].name)}</b> (closest name on today's board)</div>`);
+  if (leg.dym && leg.dym.length) bits.push(`<div class="pk-dym-row"><span class="lab">Did you mean</span>${leg.dym.map(x=>`<button type="button" class="chip pk-dym" data-dym="${i}" data-dym-key="${esc(x.key)}">${esc(x.c.g[x.c.side].name)} <span class="mut">· ${esc(LMAP[x.c.g.league].label)}</span></button>`).join('')}</div>`);
+  if (leg.err && leg.hint==='teamless'){
+    const ex = (typeof pickExampleChips==='function' ? pickExampleChips() : []).find(x=>/\bover\b/i.test(x) && /\//.test(x)) || 'Lakers/Celtics Over 225.5';
+    bits.push(`<div class="pk-dym-row"><span class="lab">Try</span><button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(ex)}">${esc(ex)}</button></div>`);
+  }
+  return bits.join('');
+}
+function verdictShortName(T, g){
+  if (!T) return '';
+  if (g && g.ind){ const parts = String(T.name||'').split(' '); return parts[parts.length-1]||T.name; }
+  return T.nick || (typeof shortTeamToken==='function' ? shortTeamToken(T.short||T.name) : (T.short||T.name));
+}
 function legCard(leg, i, weakest){
   const g = leg.g;
   const sel = leg.cands.length ? `<div class="pk-match"><label><span class="lab">Matched to</span><select data-fix="${i}">${leg.cands.map(c=>`<option value="${esc(c.key)}" ${c.key===leg.matchKey?'selected':''}>${esc(c.label)}</option>`).join('')}</select></label></div>` : '';
-  const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}</div>`;
+  const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}</div>` + legAssistHTML(leg, i);
   const resultBan = leg.result?`<div class="banner" style="margin:6px 0">Result: <b class="${leg.result==='HIT'?'pos':leg.result==='MISS'?'neg':''}">${leg.result}</b>${leg.actual!=null?` (actual ${leg.actual})`:''}</div>`:'';
   const pl = (!leg.err && !leg.player) ? playFromLeg(leg) : null;
   const propPl = (!leg.err && leg.player && typeof playFromPropLeg==='function') ? playFromPropLeg(leg) : null;
@@ -6216,7 +6390,7 @@ function legCard(leg, i, weakest){
     return `<div class="pk-leg${weakest?' weak':''}">
       ${typed}${sel}
 ${resultBan}
-      ${propCard(propPl)}
+      ${scopeVerdictCard(propCard(propPl), i, propPl)}
       <div class="pk-log"><button class="btn sm" data-logleg="${i}">Tail as single</button></div>
     </div>`;
   }
@@ -6224,20 +6398,20 @@ ${resultBan}
     return `<div class="pk-leg${weakest?' weak':''}">
       ${typed}${sel}
 ${resultBan}
-      ${playCard(pl)}
+      ${scopeVerdictCard(playCard(pl), i, pl)}
       <div class="pk-log"><button class="btn sm" data-logleg="${i}">Tail as single</button></div>
     </div>`;
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
   const price = leg.price!=null ? `${fmtAm(leg.price)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}` : 'no price';
   const gamePl = (!leg.err && g) ? gamePlayFor(g, leg.side) : null;
-  const research = gamePl ? sharedGameResearchHTML(gamePl, 'picks|'+i+'|game') : '';
+  const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
   return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
     ${head}
     <div class="pick"><div><div class="mk">Leg ${i+1}${weakest?' · <span class="neg">WEAKEST LEG</span>':''} · ${esc(leg.market||'')}${leg.outRange?' · <span class="neg">OUTSIDE YOUR RANGE</span>':''}</div><div class="what">${esc(leg.desc||leg.raw)}</div></div>
       <div class="price">${leg.p!=null?fmtPct(leg.p,0):'—'}<small>est. probability</small></div></div>
     ${typed}${sel}
-    ${leg.err ? `<div class="err-list">${esc(leg.err)}</div>` : `
+    ${leg.err ? `<div class="err-list">${leg.matchedName ? esc(leg.err).replace(esc(leg.matchedName), '<b>'+esc(leg.matchedName)+'</b>') : esc(leg.err)}</div>` : `
     <div class="stats">
       <div class="stat"><div class="k">Price</div><div class="v">${price}</div></div>
       <div class="stat"><div class="k">Implied</div><div class="v">${fmtPct(leg.implied)}</div></div>
@@ -6245,7 +6419,7 @@ ${resultBan}
       <div class="stat"><div class="k">Fair odds</div><div class="v">${leg.p!=null?fmtAm(probToAm(leg.p)):'—'}</div></div>
     </div>
     ${resultBan}
-    ${research || `<details class="dd court-dd" data-dd="picks|${i}|court" ${ui.open.has('picks|'+i+'|court')?'open':''}><summary>⚖️ Courtroom</summary>
+    ${research || `<details class="dd court-dd" data-dd="verdict|${i}|court" ${ui.open.has('verdict|'+i+'|court')?'open':''}><summary>⚖️ Courtroom</summary>
     <div class="court2">
       <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${leg.yes.length?legSort(leg.yes,1).slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul></div>
       <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${legSort(leg.no,-1).slice(0,4).map(legItem).join('')}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul></div>
@@ -6253,7 +6427,7 @@ ${resultBan}
         <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>
         ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: (leg.p!=null&&leg.implied!=null?`<div class="wr-inline">These odds break even at about ${outOf10(leg.implied)} of 10; we estimate ${outOf10(leg.p)}.</div>`:'')}</div>
     </div></details>`}
-    ${!research ? `<details class="dd" data-dd="picks|${i}|math" ${ui.open.has('picks|'+i+'|math')?'open':''}><summary>📐 Nerd stats / Show the math</summary><div style="margin-top:6px">
+    ${!research ? `<details class="dd" data-dd="verdict|${i}|math" ${ui.open.has('verdict|'+i+'|math')?'open':''}><summary>📐 Nerd stats / Show the math</summary><div style="margin-top:6px">
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
       <div class="hint">${esc(leg.formula||'—')}</div>
       ${leg.info.length?`<ul class="why">${leg.info.map(x=>`<li class="mut">${esc(x)}</li>`).join('')}</ul>`:''}</div></details>`:''}
@@ -6299,23 +6473,34 @@ function parlaySummary(){
     <div style="margin-top:10px"><button class="btn primary sm" id="btnLogParlay">Tail whole ticket as parlay</button></div>
   </div>`;
 }
+/* TRY chips: 4 always-valid bets. Built from today's real slate (1 ML, 1 spread, 1 matchup total with BOTH teams,
+   1 player prop); static fallbacks also name teams — never a teamless "Over 225.5". */
+const PICK_EX_FALLBACK = ['Lakers ML', 'Celtics -4.5', 'Lakers/Celtics Over 225.5', 'LeBron Over 24.5 pts'];
 function pickExampleChips(){
-  const out=[];
-  const token = t => typeof shortTeamToken==='function' ? shortTeamToken(t) : String(t||'').split(/\s+/).pop();
-  const pre=(games||[]).filter(g=>g&&g.state==='pre');
-  const nba=pre.find(g=>g.league==='nba')||pre[0];
-  if (nba && nba.away && nba.home){
-    const a=token(nba.away.short||nba.away.name);
-    const h=token(nba.home.short||nba.home.name);
-    if (a) out.push(a+' ML');
-    if (h) out.push(h+' -3.5');
-  }
-  out.push('Over 225.5');
-  const propEx = (typeof props!=='undefined' && (props||[]).find(p=>p.playerName && p.line!=null));
-  if (propEx) out.push(propEx.playerName+' Over '+propEx.line+' '+(propEx.kind==='pts'?'pts':(PROP_KIND_SHORT&&PROP_KIND_SHORT[propEx.kind])||propEx.kind||'pts'));
-  else out.push('LeBron Over 24.5 pts');
-  ['Celtics ML','Lakers -4.5','LeBron Over 24.5 pts'].forEach(x=>{ if(!out.includes(x) && out.length<4) out.push(x); });
-  return [...new Set(out)].slice(0,4);
+  const out = [null, null, null, null];
+  try{
+    const now = Date.now();
+    const pre = (games||[]).filter(g=>g && g.state==='pre' && !g.ind && g.home && g.away && g.analysis && g.start && g.start.getTime() > now && g.start.getTime() < now + 3*86400000)
+      .sort((a,b)=>(a.league==='nba'?0:1)-(b.league==='nba'?0:1) || a.start-b.start);
+    const nm = (T, g) => verdictShortName(T, g);
+    const used = new Set();
+    const mlG = pre.find(g=>g.analysis.ml && g.analysis.ml.sides && (g.analysis.ml.sides.home || g.analysis.ml.sides.away) && !(g.analysis.ml.sides.draw));
+    if (mlG){ const side = (mlG.analysis.ml.sides.away ? 'away' : 'home'); out[0] = `${nm(mlG[side], mlG)} ML`; used.add(mlG.id); }
+    const spG = pre.find(g=>!used.has(g.id) && g.analysis.spread && g.analysis.spread.sides && g.analysis.spread.sides.home && g.analysis.spread.sides.home.point!=null) || pre.find(g=>g.analysis.spread && g.analysis.spread.sides && g.analysis.spread.sides.home && g.analysis.spread.sides.home.point!=null);
+    if (spG){ const pt = spG.analysis.spread.sides.home.point; out[1] = `${nm(spG.home, spG)} ${pt===0?'PK':fmtPt(pt)}`; used.add(spG.id); }
+    const toG = pre.find(g=>!used.has(g.id) && g.analysis.total && g.analysis.total.sides && g.analysis.total.sides.over && g.analysis.total.sides.over.point!=null) || pre.find(g=>g.analysis.total && g.analysis.total.sides && g.analysis.total.sides.over && g.analysis.total.sides.over.point!=null);
+    if (toG) out[2] = `${nm(toG.away, toG)}/${nm(toG.home, toG)} Over ${toG.analysis.total.sides.over.point}`;
+    const okKind = {pts:'pts', reb:'reb', ast:'ast', threes:'3PM', pra:'PRA'};
+    const pr = (typeof props!=='undefined' ? (props||[]) : []).filter(p=>p && p.playerName && p.line!=null && okKind[p.kind] && p.g && p.g.state==='pre')
+      .sort((a,b)=>(a.kind==='pts'?0:1)-(b.kind==='pts'?0:1) || (a.league==='nba'?0:1)-(b.league==='nba'?0:1))[0];
+    if (pr) out[3] = `${pr.playerName} Over ${pr.line} ${okKind[pr.kind]}`;
+    if (!out[3]){
+      // no live prop board (needs an odds key): use a real scorer from today's slate, line ≈ his scoring average
+      const lg = pre.filter(g=>['nba','wnba'].includes(g.league)).flatMap(g=>['home','away'].map(sd=>g[sd] && g[sd].ptsLeader)).filter(x=>x && x.val>=8).sort((a,b)=>b.val-a.val)[0];
+      if (lg) out[3] = `${lg.name} Over ${Math.floor(lg.val)+0.5} pts`;
+    }
+  }catch(e){ console.warn('try chips', e); }
+  return out.map((x, k)=>x || PICK_EX_FALLBACK[k]);
 }
 function renderPicks(){
   const v = $('#view');
@@ -6345,6 +6530,10 @@ function renderPicks(){
     PK.text=next; if($('#pkText')) $('#pkText').value=next;
   });
   v.querySelectorAll('[data-fix]').forEach(s=>s.onchange=()=>rerunLeg(+s.dataset.fix, s.value));
+  v.querySelectorAll('[data-dym]').forEach(b=>b.onclick=()=>rerunLeg(+b.dataset.dym, b.dataset.dymKey));
+  v.querySelectorAll('[data-swap]').forEach(b=>b.onclick=()=>swapLegText(+b.dataset.swap, b.dataset.swapText||''));
+  // keep Verdict drawers the user opened open across re-renders (scoped keys) and fill lazy bodies
+  v.querySelectorAll('.pk-grid details[data-dd^="verdict|"]').forEach(d=>{ if (ui.open.has(d.dataset.dd) && !d.open) d.open = true; if (d.open && typeof fillLazyDetails==='function') fillLazyDetails(d); });
   v.querySelectorAll('[data-logleg]').forEach(b=>b.onclick=()=>{ const l = PK.legs[+b.dataset.logleg];
     setTab('tracker'); renderTracker({date:isoDate(l.g?l.g.start:new Date()), sport:l.g?LMAP[l.g.league].label:'Other', market:l.market, pick:l.desc||l.raw, odds:l.price!=null?fmtAm(l.price):'', stake:S.unit, link:legLink(l)});
     if (typeof updateFilterChrome==='function') updateFilterChrome(); window.scrollTo({top:0}); toast('Pre-filled. Check the odds, then Add bet.'); });
@@ -6610,25 +6799,38 @@ async function learnInit(){
 }
 
 /* ---------- 1. live pregame snapshots ---------- */
+// One pregame snapshot for a game. src 'verdict_check' = a game a user checked in Verdict (kept even beyond 36h).
+function learnSnapGame(g, now, src){
+  if (!g || g.state!=='pre' || !g.eventId || !g.fx || !BT_LEAGUES.includes(g.league)) return null;
+  if (src!=='verdict_check' && g.start.getTime() - now > 36*3600000) return null;
+  const A = g.analysis && g.analysis.ml; if (!A || !A.sides.home || !A.sides.away || A.sides.draw) return null;
+  const id = String(g.eventId), old = SNAPS.get(id); if (old && old.y!=null) return null;
+  if (old && src==='verdict_check'){ if (old.src==='verdict_check') return null; old.src = 'verdict_check'; old.vcAt = now; return old; }
+  if (old && old.src==='verdict_check') src = 'verdict_check';
+  const p = g.verdicts && g.verdicts.ml, mb = p && p.my && p.my.best;
+  const conf = x => !!(x && /confirm/i.test(x.status||''));
+  return {i:id, l:g.league, t:g.start.getTime(), first: old ? old.first : now, cap:now, mv:LEARN.cur,
+    game:`${g.away.short} @ ${g.home.short}`, nvH:A.sides.home.nv, dkH:A.sides.home.best.price, dkA:A.sides.away.best.price,
+    X:featVals(g, 'home'), inj:injNet(g, 'home'), pred: g.fx.pred && g.fx.pred.home!=null ? g.fx.pred.home : null,
+    starters: (sportOf(g).goalie || sportOf(g).pitcher) ? (conf(g.home.probable) && conf(g.away.probable)) : null,
+    pick: p ? {side:p.side, verdict:p.verdict, pass: !!(p.strictFails && p.strictFails.length===0), est:p.est, price:p.sd.best.price, book:mb?mb.book:p.sd.best.book, my:mb?mb.price:null, cents:mb&&mb.cents!=null?mb.cents:null} : null,
+    y:null, src: src||'board'};
+}
 function learnCapture(){
   const now = Date.now(), changed = [];
   for (const g of games){
-    if (g.state!=='pre' || !g.eventId || !g.fx || !BT_LEAGUES.includes(g.league)) continue;
-    if (g.start.getTime() - now > 36*3600000) continue;
-    const A = g.analysis && g.analysis.ml; if (!A || !A.sides.home || !A.sides.away || A.sides.draw) continue;
-    const id = String(g.eventId), old = SNAPS.get(id); if (old && old.y!=null) continue;
-    const p = g.verdicts && g.verdicts.ml, mb = p && p.my && p.my.best;
-    const conf = x => !!(x && /confirm/i.test(x.status||''));
-    const x = {i:id, l:g.league, t:g.start.getTime(), first: old ? old.first : now, cap:now, mv:LEARN.cur,
-      game:`${g.away.short} @ ${g.home.short}`, nvH:A.sides.home.nv, dkH:A.sides.home.best.price, dkA:A.sides.away.best.price,
-      X:featVals(g, 'home'), inj:injNet(g, 'home'), pred: g.fx.pred && g.fx.pred.home!=null ? g.fx.pred.home : null,
-      starters: (sportOf(g).goalie || sportOf(g).pitcher) ? (conf(g.home.probable) && conf(g.away.probable)) : null,
-      pick: p ? {side:p.side, verdict:p.verdict, pass: !!(p.strictFails && p.strictFails.length===0), est:p.est, price:p.sd.best.price, book:mb?mb.book:p.sd.best.book, my:mb?mb.price:null, cents:mb&&mb.cents!=null?mb.cents:null} : null,
-      y:null};
-    SNAPS.set(id, x); changed.push(x);
+    const x = learnSnapGame(g, now, null); if (!x) continue;
+    SNAPS.set(x.i, x); changed.push(x);
   }
   snapsWrite(changed).catch(e=>console.warn('snapshot save', e));
   return changed.length;
+}
+// Called by Verdict when a user checks a game: make sure it is snapshotted for learning (tagged verdict_check)
+function learnCaptureVerdictGame(g){
+  if (!LEARN) return false;
+  const x = learnSnapGame(g, Date.now(), 'verdict_check'); if (!x) return false;
+  SNAPS.set(x.i, x); snapsWrite([x]).catch(()=>{});
+  return true;
 }
 /* ---------- 2. grade snapshots from downloaded finals ---------- */
 function learnGrade(){
@@ -6698,7 +6900,7 @@ function lnRows(rows, now, useInj){
     const A = g.analysis && g.analysis.ml;
     if (A && A.sides.home && A.sides.away && !A.sides.draw && hs!==as){
       const sn = SNAPS.get(String(r.i));
-      if (sn && sn.y!=null && sn.y>=0 && sn.nvH) ml.push({t:r.t, y:sn.y, off:logit(clamp(sn.nvH,0.02,0.98)), X:Object.assign({}, sn.X, useInj ? {inj:sn.inj} : {}), w:wt*1.5, live:1});
+      if (sn && sn.y!=null && sn.y>=0 && sn.nvH) ml.push({t:r.t, y:sn.y, off:logit(clamp(sn.nvH,0.02,0.98)), X:Object.assign({}, sn.X, useInj ? {inj:sn.inj} : {}), w:wt*(sn.src==='verdict_check'?1.75:1.5), live:1, vc:sn.src==='verdict_check'?1:0});
       else ml.push({t:r.t, y:hs>as?1:0, off:logit(clamp(A.sides.home.nv,0.02,0.98)), X:featVals(g, 'home'), w:wt});
     }
     const T = g.analysis && g.analysis.total, o = T && T.sides.over;
@@ -7729,7 +7931,10 @@ function fillLazyDetails(d){
   if (!d || !d.dataset || !d.dataset.lazy || !d.open) return;
   if (d.childElementCount>1 && d.dataset.filled==='1') return;
   const kind = d.dataset.lazy, id = d.dataset.lazyId;
-  const p = (typeof parlays!=='undefined' && (parlays||[]).find(x=>x.id===id))
+  const vId = /^verdict:\d+:/.test(id||'') ? id.replace(/^verdict:\d+:/, '') : null;
+  const p = (typeof VERDICT_LAZY!=='undefined' && VERDICT_LAZY.get(id))
+    || (vId && (typeof props!=='undefined' && (props||[]).find(x=>x.id===vId) || (plays||[]).find(x=>x.id===vId)))
+    || (typeof parlays!=='undefined' && (parlays||[]).find(x=>x.id===id))
     || (typeof props!=='undefined' && (props||[]).find(x=>x.id===id))
     || (plays||[]).find(x=>x.id===id);
   if (!p) return;
@@ -9435,7 +9640,9 @@ learnInit().catch(e=>console.warn('learning', e)).then(()=>{ render(); refresh()
    Synced per account at users/{uid}: settings, filters, bets, profitPeriod, profile, updatedAt. */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAWla-MkoPfB9pZ0I43DgQ__XYqb5yLRFc",
-  authDomain: "verdict-sl1n1.firebaseapp.com",
+  // On Firebase Hosting (verdict-sl1n1.web.app) sign-in runs first-party on the same origin (no Safari ITP issues);
+  // everywhere else (github.io, localhost) it uses the default auth domain.
+  authDomain: (typeof location!=='undefined' && /^verdict-sl1n1\.(web\.app|firebaseapp\.com)$/.test(location.hostname)) ? location.hostname : "verdict-sl1n1.firebaseapp.com",
   projectId: "verdict-sl1n1",
   storageBucket: "verdict-sl1n1.firebasestorage.app",
   messagingSenderId: "373139235584",
@@ -9445,6 +9652,9 @@ const ADMIN_EMAILS = ['sl1n137956@gmail.com'];
 const FB_VER = '10.14.1';
 const SYNC_META_LS = 'bl_sync_meta';
 const ONLINE_URL = 'https://sl1n137956.github.io/betting-lab/';
+const FIRST_PARTY_URL = 'https://verdict-sl1n1.web.app';
+const REDIRECT_PENDING_KEY = 'verdict_google_redirect_pending';
+const SAFARI_REDIRECT_MSG = "Safari blocked Google's cross-site redirect on this shortcut. Sign in with Email & Password below (same account & sync), or open Verdict on verdict-sl1n1.web.app for 1-tap Google sign-in.";
 const AUTH = {ready:false, loading:false, failed:false, user:null, unsub:null, pushT:0, applying:false, lastSync:0, status:'idle', err:'', deviceId:'', lastPushAt:0};
 let syncMeta = (function(){ const m = loadJSON(SYNC_META_LS, null); return (m && typeof m==='object') ? m : {}; })();
 syncMeta.settingsAt = +syncMeta.settingsAt||0; syncMeta.filtersAt = +syncMeta.filtersAt||0; syncMeta.periodAt = +syncMeta.periodAt||0;
@@ -9510,14 +9720,29 @@ async function authBoot(){
     await loadScriptOnce(base+'firebase-app-compat.js');
     await Promise.all([loadScriptOnce(base+'firebase-auth-compat.js'), loadScriptOnce(base+'firebase-firestore-compat.js')]);
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    try{ if (firebase.firestore && firebase.firestore.setLogLevel) firebase.firestore.setLogLevel('silent'); }catch(e){}
     try{ await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
     AUTH.ready = true; AUTH.loading = false;
-    firebase.auth().getRedirectResult().then(r=>{ if (r && r.user) toast('Signed in as '+(r.user.displayName||r.user.email)); }).catch(err=>{ authToastErr(err); });
+    // Finish a full-page Google sign-in first. If Safari/iOS dropped the cross-site redirect state, say so clearly.
+    let pendingAt = 0; try{ pendingAt = +sessionStorage.getItem(REDIRECT_PENDING_KEY)||0; sessionStorage.removeItem(REDIRECT_PENDING_KEY); }catch(e){}
+    let redirUser = null;
+    try{ const r = await withTimeoutAuth(firebase.auth().getRedirectResult(), 12000); redirUser = r && r.user; if (redirUser) toast('Signed in as '+(redirUser.displayName||redirUser.email)); }
+    catch(err){ if (err && err.code) authToastErr(err); }
     firebase.auth().onAuthStateChanged(u=>onAuthUser(u));
+    if (pendingAt && Date.now()-pendingAt < 120000 && !redirUser){
+      setTimeout(()=>{ if (!firebase.auth().currentUser) showRedirectBlocked(); }, 1500);
+    }
+    try{ flushVerdictCloudQueue(); }catch(e){}
   }catch(e){
     AUTH.loading = false; AUTH.failed = true;
   }
   renderAuthChrome();
+}
+function withTimeoutAuth(p, ms){ return Promise.race([p, new Promise(res=>setTimeout(()=>res(null), ms))]); }
+function showRedirectBlocked(){
+  AUTH.redirectBlocked = true;
+  openAuthModal('signin');
+  toast(SAFARI_REDIRECT_MSG);
 }
 function fs(){ return firebase.firestore(); }
 function userDoc(){ return AUTH.user ? fs().collection('users').doc(AUTH.user.uid) : null; }
@@ -9532,6 +9757,7 @@ async function onAuthUser(u){
   renderAuthChrome();
   if (was!==u.uid) await initialSync();
   startLiveSync();
+  if (isAdminUser() && typeof verdictAdminSync==='function') verdictAdminSync().catch(()=>{});
 }
 function authErrMsg(err){
   const c = (err && err.code) || '';
@@ -9562,21 +9788,30 @@ function authErrMsg(err){
 function authToastErr(err){ const m = authErrMsg(err); setAuthErr(m); toast(m); }
 function setAuthErr(m){ const el = $('#authErr'); if (el){ el.textContent = m||''; el.hidden = !m; } }
 function setAuthBusy(on){ document.querySelectorAll('#authModal button, #authModal input').forEach(x=>{ if (!x.matches('[data-auth-close]')) x.disabled = !!on; }); }
-async function signInGoogle(){
+// Popup FIRST on every device (phones too). signInWithPopup is called synchronously inside the tap handler
+// (nothing awaited before it) so Safari keeps the user gesture and doesn't block the window.
+// Persistence is set to LOCAL at boot (awaited) and again before any redirect fallback.
+function signInGoogle(){
   if (!AUTH.ready){ toast('Sign-in is still loading. Try again in a moment.'); return; }
+  const auth = firebase.auth();
   const prov = new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt:'select_account'});
-  const standalone = (typeof isStandaloneApp==='function' && isStandaloneApp()) || window.navigator.standalone===true;
-  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent||'');
-  setAuthErr(''); setAuthBusy(true);
+  setAuthErr(''); AUTH.redirectBlocked = false;
+  let p;
+  try{ p = auth.signInWithPopup(prov); }catch(err){ p = Promise.reject(err); }
+  setAuthBusy(true);
+  return p.then(()=>{ closeAuthModal(); toast('Signed in with Google'); })
+    .catch(err=>{
+      if (err && (err.code==='auth/popup-blocked' || err.code==='auth/operation-not-supported-in-this-environment')) return googleRedirectFallback(prov);
+      authToastErr(err);
+    })
+    .finally(()=>setAuthBusy(false));
+}
+async function googleRedirectFallback(prov){
   try{
-    if (standalone && ios){ await firebase.auth().signInWithRedirect(prov); return; }
-    await firebase.auth().signInWithPopup(prov);
-    closeAuthModal(); toast('Signed in with Google');
-  }catch(err){
-    if (err && (err.code==='auth/popup-blocked' || err.code==='auth/operation-not-supported-in-this-environment')){
-      try{ await firebase.auth().signInWithRedirect(prov); return; }catch(e2){ authToastErr(e2); }
-    } else authToastErr(err);
-  }finally{ setAuthBusy(false); }
+    try{ sessionStorage.setItem(REDIRECT_PENDING_KEY, String(Date.now())); }catch(e){}
+    try{ await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
+    await firebase.auth().signInWithRedirect(prov);
+  }catch(e2){ try{ sessionStorage.removeItem(REDIRECT_PENDING_KEY); }catch(e){} authToastErr(e2); }
 }
 async function signInEmail(email, pw){
   setAuthErr(''); setAuthBusy(true);
@@ -9839,6 +10074,7 @@ function openAuthModal(mode){
     const up = mode==='create';
     body = `<div class="auth-title"><span class="h-emo" aria-hidden="true">⚖️</span>${up?'Create your Verdict account':'Sign in to Verdict'}</div>
       <div class="auth-sub">Sync your settings, filters, and tailed bets between PC and phone.</div>
+      ${AUTH.redirectBlocked?`<div class="auth-err auth-blocked">${esc(SAFARI_REDIRECT_MSG)} <a href="${FIRST_PARTY_URL}" target="_blank" rel="noopener">Open verdict-sl1n1.web.app</a></div>`:''}
       <div class="board-seg auth-seg"><button type="button" data-auth-mode="signin" class="${up?'':'on'}">Sign in</button><button type="button" data-auth-mode="create" class="${up?'on':''}">Create account</button></div>
       <button type="button" class="btn auth-google" id="btnGoogle">${GOOGLE_G}<span>Continue with Google</span></button>
       <div class="auth-or"><span>or use email</span></div>
@@ -9851,6 +10087,7 @@ function openAuthModal(mode){
         <button type="submit" class="btn primary auth-submit">${up?'Create account':'Sign in'}</button>
         ${up?'':'<button type="button" class="auth-link" id="btnForgot">Forgot password?</button>'}
       </form>
+      ${(!/web\.app$/.test(location.hostname) && (typeof isIOSDevice==='function' ? isIOSDevice() : /iPhone|iPad/.test(navigator.userAgent||''))) ? `<div class="acct-note">Google sign-in trouble on iPhone? Use email &amp; password, or open <a href="${FIRST_PARTY_URL}" target="_blank" rel="noopener">verdict-sl1n1.web.app</a> for 1-tap Google.</div>` : ''}
       ${AUTH.ready?'':`<div class="acct-note">${AUTH.failed?'Can\'t reach the sign-in service. Check your connection.':'Loading sign-in…'}</div>`}`;
   }
   m.innerHTML = `<div class="auth-card">${head}${body}</div>`;
@@ -9872,6 +10109,30 @@ function openAuthModal(mode){
 }
 function closeAuthModal(){ const m = $('#authModal'); if (!m) return; m.classList.remove('open'); m.hidden = true; }
 
+/* ---- Verdict community pool: anonymized checked picks at verdict_checks/{id} ----
+   Any visitor (signed in or not) adds one write-only record per checked pick: no email, no UID, no name.
+   Only the admin account can read them (see firestore.rules) to grade and learn from them. */
+const VC_CLOUD_FIELDS = ['id','kind','sport','market','pickText','eventId','team','opp','player','stat','line','side','verdict','winProb','odds','gameDate','createdAt'];
+const _vcQueue = [];
+function vcCloudRecord(r){
+  const str = (v, n) => (v==null || v==='') ? null : String(v).slice(0, n);
+  const num = v => (v==null || v==='' || !isFinite(+v)) ? null : Math.round(+v*10000)/10000;
+  return {id:String(r.cloudId), kind:r.kind==='prop'?'prop':'game', sport:str(r.sport,16), market:str(r.market,16), pickText:str(r.pickText,120),
+    eventId:str(r.eventId,64), team:str(r.team,80), opp:str(r.opp,80), player:str(r.player,80), stat:str(r.stat,16), line:num(r.line), side:str(r.side,8),
+    verdict:String(r.verdict), winProb:num(r.winProb), odds:num(r.odds), gameDate:str(r.gameDate,10), createdAt:Math.round(+r.createdAt||Date.now())};
+}
+function verdictCloudWrite(r){
+  if (!r || !r.cloudId || !authHttp()) return;
+  if (!AUTH.ready || typeof firebase==='undefined' || !firebase.firestore){ if (_vcQueue.length<50 && !AUTH.failed) _vcQueue.push(r); return; }
+  try{ fs().collection('verdict_checks').doc(String(r.cloudId)).set(vcCloudRecord(r)).then(()=>{ r.cloudAt = Date.now(); }).catch(()=>{}); }catch(e){}
+}
+function flushVerdictCloudQueue(){ while (_vcQueue.length) verdictCloudWrite(_vcQueue.shift()); }
+async function verdictCloudPull(){
+  if (!isAdminUser() || !AUTH.ready) return null;
+  try{ const snap = await fs().collection('verdict_checks').orderBy('createdAt','desc').limit(400).get(); return snap.docs.map(d=>d.data()); }
+  catch(e){ AUTH.vcErr = (e && e.code) || 'read failed'; return null; }
+}
+
 /* Settings: Account & sync card on top */
 const _renderSettingsNoAuth = renderSettings;
 renderSettings = function(){
@@ -9887,6 +10148,261 @@ if ($('#btnAccount')) $('#btnAccount').onclick = ()=>openAuthModal(AUTH.user?'ac
 applyAdminGate();
 renderAuthChrome();
 authBoot();
+/* ================= VERDICT+ : remembers every checked pick, grades it, and learns from it =================
+   - Local ledger (localStorage "verdict_checks"): one record per pick (event + market + side + line),
+     re-checking updates it instead of duplicating.
+   - Games: checked games are snapshotted into the Games learning set (src "verdict_check", weighted 1.75×).
+   - Props: checked props join the Props learning set (PROP_SNAPS, src "verdict_check").
+   - Daily auto-grade: ESPN finals, tennis/UFC results and player box scores (same real data the board grader uses).
+   - Community pool: anonymized copy to Firestore verdict_checks/{id}; the admin pulls, merges, and grades them. */
+const VC_LS = 'verdict_checks';
+const VC_MAX = 1500;
+let VCHECKS = (function(){ const a = loadJSON(VC_LS, []); return Array.isArray(a) ? a.filter(x=>x && x.id) : []; })();
+const vcState = {busy:false, lastGrade:0, lastPull:0, pulled:0, err:''};
+function vcSave(){
+  const cut = Date.now() - 150*86400000;
+  VCHECKS = VCHECKS.filter(x=>(x.startMs||x.createdAt||0) > cut).sort((a,b)=>(b.lastChecked||b.createdAt||0)-(a.lastChecked||a.createdAt||0)).slice(0, VC_MAX);
+  try{ saveJSON(VC_LS, VCHECKS); }catch(e){}
+}
+function vcHash(str){ let h1 = 5381, h2 = 52711; for (let i=0;i<str.length;i++){ const c = str.charCodeAt(i); h1 = (h1*33) ^ c; h2 = (h2*31) ^ c; } return (h1>>>0).toString(36) + (h2>>>0).toString(36); }
+function vcKey(r){ return [r.sport||'', r.eventId||'', r.market||'', r.side||'', r.line==null?'':(+r.line), norm(r.player||''), r.stat||''].join('|'); }
+const VC_IND = new Set(['atp','wta','ufc']);
+function vcFromLeg(leg){
+  if (!leg || leg.err || !leg.g || !leg.L || leg.final) return null;
+  if (!['BET','WATCHLIST','PASS'].includes(leg.verdict)) return null;
+  const g = leg.g, L = leg.L, isProp = !!leg.player;
+  if (!g.home || !g.away || !g.start) return null;
+  const compId = String(g.id||'').split(':').pop();
+  const eventId = String(g.eventId || compId || '');
+  if (!eventId) return null;
+  const market = isProp ? 'prop' : L.kind;
+  if (!isProp && !['ml','spread','total'].includes(market)) return null;
+  const side = isProp ? (L.dir==='under'?'under':'over') : (market==='total' ? (L.dir==='under'?'under':'over') : leg.side);
+  const line = isProp ? L.line : (market==='ml' ? null : L.line);
+  if ((isProp || market!=='ml') && (line==null || !isFinite(+line))) return null;
+  const T = market==='total' ? g.away : g[leg.side], O = market==='total' ? g.home : g[leg.side==='home'?'away':'home'];
+  const r = {
+    kind: isProp ? 'prop' : 'game', sport: g.league, market, pickText: String(leg.desc||leg.raw||'').slice(0,120), eventId,
+    team: T && T.name || null, opp: O && O.name || null, player: isProp ? leg.player.name : null, playerId: isProp ? String(leg.player.id||'') : null,
+    stat: isProp ? (L.stat==='3pm'?'threes':L.stat) : null, line: line==null?null:+line, side, homeSide: market==='total'?null:leg.side,
+    verdict: leg.verdict, winProb: leg.p!=null ? +leg.p : null, odds: leg.price!=null ? +leg.price : null, implied: leg.implied!=null ? +leg.implied : null,
+    gameDate: isoDate(g.start), startMs: g.start.getTime(), ind: VC_IND.has(g.league), compId,
+  };
+  r.id = vcKey(r);
+  return r;
+}
+// Called after every Verdict run (and after a "Did you mean"/switch re-check)
+function verdictRecordChecks(legs){
+  const now = Date.now(); let n = 0;
+  for (const leg of (legs||[])){
+    let r; try{ r = vcFromLeg(leg); }catch(e){ r = null; }
+    if (!r) continue;
+    let cur = VCHECKS.find(x=>x.id===r.id);
+    if (cur){
+      if (cur.y==null){ Object.assign(cur, {verdict:r.verdict, winProb:r.winProb, odds:r.odds, implied:r.implied, pickText:r.pickText, startMs:r.startMs, gameDate:r.gameDate}); }
+      cur.count = (cur.count||1) + 1; cur.lastChecked = now; cur.mine = true;
+    } else {
+      cur = Object.assign(r, {createdAt:now, lastChecked:now, count:1, y:null, res:null, src:'verdict_check', from:'me', mine:true,
+        cloudId: 'vc_' + vcHash(r.id) + '_' + String((typeof AUTH!=='undefined' && AUTH.deviceId)||'d').slice(-6).replace(/[^a-z0-9]/gi,'')});
+      VCHECKS.unshift(cur);
+      try{ if (typeof verdictCloudWrite==='function') verdictCloudWrite(cur); }catch(e){}
+    }
+    try{ vcFeedLearning(cur, leg.g); }catch(e){ console.warn('verdict learn feed', e); }
+    n++;
+  }
+  if (n) vcSave();
+  return n;
+}
+// Push a checked pick into the Games / Props learning sets so weekly retunes use it
+function vcFeedLearning(r, g){
+  if (!r) return;
+  if (r.kind==='game' && !r.ind){
+    g = g || (games||[]).find(x=>String(x.eventId)===String(r.eventId));
+    if (g && typeof learnCaptureVerdictGame==='function') learnCaptureVerdictGame(g);
+  } else if (r.kind==='prop' && typeof PROP_SNAPS!=='undefined' && r.winProb!=null){
+    const twin = [...PROP_SNAPS.values()].find(x=>String(x.eventId)===String(r.eventId) && ((r.playerId && String(x.playerId)===r.playerId) || norm(x.playerName||'')===norm(r.player||'')) && x.kind===r.stat && x.side===r.side && +x.line===+r.line);
+    if (twin){ if (twin.src!=='verdict_check'){ twin.src = 'verdict_check'; boardSnapsSave('props'); } return; }
+    const id = 'vc|' + r.id;
+    if (PROP_SNAPS.has(id)) return;
+    PROP_SNAPS.set(id, {i:id, t:r.startMs, eventId:r.eventId, league:r.sport, playerId:r.playerId||null, playerName:r.player, kind:r.stat, side:r.side, line:r.line,
+      price:r.odds, p:r.winProb, implied:r.implied, verdict:r.verdict, y:null, src:'verdict_check'});
+    if (typeof boardSnapsSave==='function') boardSnapsSave('props');
+  }
+}
+
+/* ---------- grading (real ESPN data) ---------- */
+const VC_PROP_STATS = new Set(['pts','reb','ast','threes','pra','pr','pa','ra']);
+async function vcIndResult(r){
+  const L = LMAP[r.sport]; if (!L) return null;
+  const d = new Date(r.startMs||Date.now());
+  for (const dt of [ymd(d), ymd(new Date(d.getTime()+86400000))]){
+    const sb = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${dt}`, 20000);
+    if (!sb.ok || !sb.data) continue;
+    for (const ev of (sb.data.events||[])){
+      const comps = (ev.competitions||[]).slice(); for (const gr of (ev.groupings||[])) for (const c of (gr.competitions||[])) comps.push(c);
+      const c = comps.find(x=>String(x.id)===String(r.compId||r.eventId)); if (!c) continue;
+      const st = (c.status && c.status.type) || {};
+      if (/postpon|cancel|walkover/i.test(st.name||st.description||'')) return {void:true};
+      if (!st.completed) return {pending:true};
+      const w = (c.competitors||[]).find(x=>x.winner===true); if (!w) return {pending:true};
+      const wn = norm((w.athlete && w.athlete.displayName) || (w.team && w.team.displayName) || '');
+      return {winnerIsTeam: wn===norm(r.team||''), winner: wn};
+    }
+  }
+  return null;
+}
+async function vcGradeOne(r){
+  if (r.kind==='prop'){
+    if (!VC_PROP_STATS.has(r.stat)) return {void:true, why:'stat not in box scores'};
+    const data = await fetchEventBox(r.sport, r.eventId); if (!data) return null;
+    const comp = data.header && data.header.competitions && data.header.competitions[0];
+    const st = comp && comp.status && comp.status.type || {};
+    if (!st.completed) return {pending:true};
+    const aths = athletesFromSummary(data);
+    const ath = aths.find(a=>r.playerId && a.id===String(r.playerId)) || aths.find(a=>a.name && norm(a.name)===norm(r.player||''));
+    if (!ath) return {void:true, why:'did not play'};
+    const val = boxStat(ath, r.stat); if (val==null) return null;
+    const res = val===r.line ? 'push' : (r.side==='over' ? (val>r.line?'win':'loss') : (val<r.line?'win':'loss'));
+    return {res, actual:val};
+  }
+  if (r.ind || VC_IND.has(r.sport)){
+    const x = await vcIndResult(r); if (!x || x.pending) return x && x.pending ? {pending:true} : null;
+    if (x.void) return {void:true};
+    const won = r.homeSide ? x.winnerIsTeam : null; if (won==null) return null;
+    return {res: won?'win':'loss', actual: x.winner};
+  }
+  const fin = await eventFinal(r.sport, r.eventId, r.startMs||Date.now()); if (!fin) return null;
+  if (fin.canceled) return {void:true};
+  if (!fin.done) return {pending:true};
+  let side = r.side;
+  if (r.market!=='total' && !['home','away'].includes(side)){
+    const hn = norm((fin.H && fin.H.team && fin.H.team.displayName)||''); side = hn===norm(r.team||'') ? 'home' : 'away';
+  }
+  const res = btResult({l:r.sport, h:{s:fin.hs}, a:{s:fin.as}}, r.market, side, r.market==='ml'?null:+r.line);
+  return res ? {res, actual:`${fin.as}-${fin.hs}`} : null;
+}
+async function verdictChecksGrade(opts){
+  if (vcState.busy) return 0;
+  vcState.busy = true; let n = 0, tried = 0;
+  try{
+    const now = Date.now();
+    const due = VCHECKS.filter(x=>x.y==null && (x.startMs||0) < now - 3*3600000).sort((a,b)=>a.startMs-b.startMs);
+    for (const r of due){
+      if (tried >= ((opts&&opts.max)||30)) break; tried++;
+      let g = null; try{ g = await vcGradeOne(r); }catch(e){ g = null; }
+      if (g && (g.res || g.void)){
+        r.res = g.void ? 'void' : g.res; r.y = g.void ? -1 : g.res==='win' ? 1 : g.res==='loss' ? 0 : -1; r.actual = g.actual!=null ? g.actual : null; r.graded = now; r.src = 'verdict_check'; n++;
+      } else if (now - (r.startMs||0) > 7*86400000){ r.res = 'void'; r.y = -1; r.graded = now; r.src = 'verdict_check'; }
+      if (tried % 5===0) await new Promise(res=>setTimeout(res, 0));
+    }
+    vcState.lastGrade = now;
+    if (n || due.length) vcSave();
+  }finally{ vcState.busy = false; }
+  return n;
+}
+function vcStats(kind){
+  const list = VCHECKS.filter(x=>x.kind===kind);
+  const graded = list.filter(x=>x.res==='win'||x.res==='loss'||x.res==='push');
+  const w = graded.filter(x=>x.res==='win').length, l = graded.filter(x=>x.res==='loss').length;
+  const pending = list.filter(x=>x.y==null).length;
+  const bet = graded.filter(x=>x.verdict==='BET'), bw = bet.filter(x=>x.res==='win').length, bl = bet.filter(x=>x.res==='loss').length;
+  const pass = graded.filter(x=>x.verdict==='PASS'), pw = pass.filter(x=>x.res==='win').length, pl = pass.filter(x=>x.res==='loss').length;
+  return {n:list.length, graded:graded.length, pending, w, l, bw, bl, pw, pl, community: list.filter(x=>x.from==='community' || (x.seen||0)>0).length};
+}
+function vcPillHTML(kind){
+  const s = vcStats(kind);
+  const rec = (w, l) => (w+l) ? `${w}–${l}` : '—';
+  return `<div class="vc-pill" data-vc-pill="${kind}"><span class="vc-dot" aria-hidden="true">⚖️</span><span><b>Verdict checks learned: ${s.graded} graded</b> (${s.pending} pending)</span>
+    <span class="mut">${s.graded ? `· record ${rec(s.w, s.l)} · BET calls ${rec(s.bw, s.bl)} · PASS calls ${rec(s.pw, s.pl)}` : '· graded from ESPN finals once games end'}${s.community ? ` · ${s.community} from the community` : ''}</span></div>`;
+}
+(function hookLearnPanels(){
+  const inject = (html, kind) => { const k = html.indexOf('<div class="kpis">'); return k<0 ? html : html.slice(0,k) + vcPillHTML(kind) + html.slice(k); };
+  if (typeof learnPanelHTML==='function'){ const o = learnPanelHTML; learnPanelHTML = function(){ return inject(o.apply(this, arguments)||'', 'game'); }; }
+  if (typeof propsLearnPanelHTML==='function'){ const o = propsLearnPanelHTML; propsLearnPanelHTML = function(){ return inject(o.apply(this, arguments)||'', 'prop'); }; }
+})();
+(function hookVerdictGradeTick(){
+  if (typeof learnTick!=='function') return;
+  const orig = learnTick;
+  learnTick = async function(){
+    const r = await orig.apply(this, arguments);
+    try{ if (Date.now() - vcState.lastGrade > 6*3600000) await verdictChecksGrade(); }catch(e){ console.warn('verdict grade', e); }
+    return r;
+  };
+})();
+
+/* ---------- admin: pull the anonymized community pool, merge, grade ---------- */
+async function verdictAdminSync(){
+  if (typeof verdictCloudPull!=='function' || !isAdminUser()) return 0;
+  if (Date.now() - vcState.lastPull < 60000) return 0;
+  vcState.lastPull = Date.now();
+  const rows = await verdictCloudPull(); if (!rows) return 0;
+  let added = 0;
+  for (const d of rows){
+    if (!d || !d.eventId || !d.market || !d.verdict) continue;
+    const r = {kind:d.kind==='prop'?'prop':'game', sport:d.sport, market:d.market, pickText:d.pickText, eventId:String(d.eventId), team:d.team, opp:d.opp,
+      player:d.player, stat:d.stat, line:d.line, side:d.side, verdict:d.verdict, winProb:d.winProb, odds:d.odds, gameDate:d.gameDate};
+    r.id = vcKey(r);
+    let cur = VCHECKS.find(x=>x.id===r.id);
+    if (cur){ cur.seenIds = cur.seenIds || []; if (!cur.seenIds.includes(d.id) && d.id!==cur.cloudId){ cur.seenIds.push(d.id); cur.seenIds = cur.seenIds.slice(-50); cur.seen = cur.seenIds.length; } continue; }
+    const startMs = (()=>{ const g = (games||[]).find(x=>String(x.eventId)===r.eventId || String(x.id||'').endsWith(':'+r.eventId)); if (g && g.start) return g.start.getTime(); const t = Date.parse((d.gameDate||'')+'T12:00:00'); return isFinite(t) ? t : (+d.createdAt||Date.now()); })();
+    Object.assign(r, {startMs, ind:VC_IND.has(d.sport), compId:String(d.eventId), homeSide: d.market==='total'?null:(d.side==='home'||d.side==='away'?d.side:null),
+      createdAt:+d.createdAt||Date.now(), lastChecked:+d.createdAt||Date.now(), count:1, y:null, res:null, src:'verdict_check', from:'community', seenIds:[d.id], seen:1, cloudId:d.id});
+    VCHECKS.push(r); added++;
+    try{ vcFeedLearning(r, null); }catch(e){}
+  }
+  vcState.pulled = rows.length;
+  if (added) vcSave();
+  try{ await verdictChecksGrade({max:40}); }catch(e){}
+  try{ if (ui.tab==='results' && typeof renderResults==='function') renderResults(); }catch(e){}
+  return added;
+}
+
+/* ---------- live ESPN fallback: teams + athletes (ATP/WTA tennis, UFC) not on today's loaded board ---------- */
+const VC_SEARCH_LEAGUE = {atp:'atp', wta:'wta', ufc:'ufc', mma:'ufc'};
+const VC_LEAGUE_LABEL = {atp:'ATP Tennis', wta:'WTA Tennis', ufc:'UFC / MMA'};
+async function verdictEspnLookup(q){
+  q = String(q||'').trim(); if (!q) return null;
+  const nk = norm(q), nickFull = (typeof NICK_PLAYERS!=='undefined' && NICK_PLAYERS[nk]) || null;
+  const r = await fetchJSON(`https://site.web.api.espn.com/apis/common/v3/search?query=${encodeURIComponent(nickFull||q)}&limit=6&type=player,team`, 15000);
+  const items = ((r && r.ok && r.data && r.data.items) || []).filter(it=>it && it.displayName);
+  if (!items.length) return null;
+  const scored = items.map((it, k)=>({it, sc: nameScore(nickFull||q, it.displayName) + (VC_SEARCH_LEAGUE[String(it.league||it.defaultLeagueSlug||'').toLowerCase()] || it.sport==='mma' ? 0.5 : 0) - k*0.05}))
+    .sort((a,b)=>b.sc-a.sc);
+  const best = scored[0]; if (!best || best.sc < 4) return null;
+  const it = best.it, slug = String(it.league||it.defaultLeagueSlug||'').toLowerCase();
+  const indLg = VC_SEARCH_LEAGUE[slug] || (it.sport==='mma' ? 'ufc' : null);
+  const teamLg = !indLg && typeof leagueIdFromSearch==='function' ? leagueIdFromSearch(it) : null;
+  const leagueLabel = indLg ? VC_LEAGUE_LABEL[indLg] : teamLg && LMAP[teamLg] ? LMAP[teamLg].label : String(it.sport||'').replace(/^\w/, c=>c.toUpperCase());
+  const out = {name:it.displayName, league:indLg||teamLg, leagueLabel, type:it.type, games:[]};
+  if (indLg && LMAP[indLg]){
+    const L = LMAP[indLg];
+    const urls = [`https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard`];
+    if (indLg!=='ufc'){ const d0 = new Date(); for (let i=1;i<=3;i++){ const d = new Date(d0.getTime()+i*86400000); urls.push(`https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${ymd(d)}`); } }
+    const aid = String(it.id), nm = norm(it.displayName);
+    for (const url of urls){
+      const sb = await fetchJSON(url, 20000); if (!sb || !sb.ok || !sb.data) continue;
+      let parsed = []; try{ parsed = parseEspnGames([{L, data:sb.data}], {ignoreHorizon:true}) || []; }catch(e){ parsed = []; }
+      for (const g of parsed){
+        if (g.state==='post') continue;
+        const hit = ['home','away'].find(s=>g[s] && (String(g[s].id)===aid || norm(g[s].name)===nm)); if (!hit) continue;
+        let ex = (games||[]).find(x=>x.id===g.id);
+        if (!ex){ g.pickOnly = true; games.push(g); ex = g; }
+        if (!out.games.includes(ex)) out.games.push(ex);
+      }
+      if (out.games.length) break;
+    }
+    out.games.sort((a,b)=>a.start-b.start);
+  } else if (teamLg && it.type==='team' && typeof importNextGameForTeam==='function'){
+    try{ const g = await importNextGameForTeam(teamLg, it.id); if (g) out.games.push(g); }catch(e){}
+  }
+  if (!out.games.length){
+    const pron = indLg==='atp' ? ['he','doesn\'t'] : indLg==='wta' ? ['she','doesn\'t'] : ['they','don\'t'];
+    if (indLg) out.message = `Matched ${out.name} (${leagueLabel}), but ${pron[0]} ${pron[1]} have an active ${indLg==='ufc'?'fight':'match'} on today's ESPN schedule right now.`;
+    else if (it.type==='player'){ const last = String(out.name).split(' ').pop(); out.message = `Matched ${out.name} (${leagueLabel}). Moneylines are for teams — try their team's ML, or a prop like “${last} Over 20.5 pts”.`; }
+    else out.message = `Matched ${out.name} (${leagueLabel}), but they don't have a game on today's ESPN schedule right now.`;
+  }
+  return out;
+}
 </script>
 </body>
 </html>
