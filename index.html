@@ -666,7 +666,10 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .bet-card.pulled{background:linear-gradient(180deg,#3a1520,#1a1020);border-color:rgba(180,40,40,.35)}
 .bet-card.won:after,.bet-card.lost:after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:20px}
 .bet-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.bet-name{font-size:16.5px;font-weight:750;letter-spacing:-.02em;line-height:1.25}
+.bet-name{font-size:16.5px;font-weight:750;letter-spacing:-.02em;line-height:1.25;overflow-wrap:anywhere}
+.bet-par-tag{display:inline-block;vertical-align:2px;margin-right:4px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#c7d2fe;background:rgba(99,102,241,.2);border:1px solid rgba(129,140,248,.35)}
+.bet-legs{margin:4px 0 2px;font-size:13px;line-height:1.4;color:var(--txt2)}
+.kept-note{margin:8px 2px 0;color:#fde68a}
 .bet-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
 .sport-pill,.res-pill,.meta-pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11.5px;font-weight:700;letter-spacing:.02em}
 .sport-pill{background:var(--acc-dim);color:var(--acc-hi);border:1px solid rgba(59,130,246,.3)}
@@ -2033,6 +2036,8 @@ function primaryLoggedBet(pOrKey){
   const pool = pending.length ? pending : list;
   return pool.slice().sort((a,b)=>(b.created||0)-(a.created||0))[0];
 }
+// v37: a pending tailed bet is never hidden by the book filter (it must stay on its board)
+function isTailedPending(item){ try{ const b = primaryLoggedBet(item); return !!(b && (!b.result || b.result==='pending')); }catch(e){ return false; } }
 function isLoggedKey(k){ return betsForKey(k).length>0; }
 function isPlayLogged(p){ return betsForPlay(p).length>0; }
 function pulledNoteForKey(k){
@@ -3702,7 +3707,17 @@ function checkTailedBoardPulls(board){
       }
     }
     if (boards.includes('props')){
-      const pr = (typeof props!=='undefined' ? props : []).find(x=>x && x.id===k);
+      // v37: match the tailed prop by its saved key, or by game + player + stat + side + line for older bets
+      const PI = typeof propBetInfo==='function' ? propBetInfo(b) : null;
+      const PP = (typeof props!=='undefined' ? props : []);
+      const pr = PP.find(x=>x && x.id===k) || (PI ? PP.find(x=>propMatchesInfo(x, PI)) : null);
+      if (!pr && PI){
+        const other = PP.find(x=>propMatchesInfo(x, PI, true));
+        if (other && (!other.g || other.g.state==='pre') && String(other.side)!==String(PI.side)){
+          const gm = other.g && other.g.away && other.g.home ? `${other.g.away.short} @ ${other.g.home.short}` : (b.game||'');
+          ensureNote(k, 'props', b.pick||k, gm, typeof itemStartMs==='function'?itemStartMs(other):0, `the props model now leans ${other.side==='under'?'Under':'Over'} ${other.line} instead`);
+        }
+      }
       if (pr && (!pr.g || pr.g.state==='pre')){
         if (pr.verdict==='avoid'){
           const why = (pr.reasons && pr.reasons[0]) || (pr.j && pr.j.judge && pr.j.judge.why) || 'no longer passes prop gates';
@@ -3743,13 +3758,15 @@ function checkTailedBoardPulls(board){
               pullWhy = `Games Picks flipped to the opposite side of ${legName}`;
               break;
             }
-            if (sd && sd.best && sd.best.price!=null && sd.best.price > -110){
+            // v37: "no longer a favorite" only makes sense for moneylines (a +1.5 puck line or a spread is not a favorite bet)
+            if (mk==='ml' && sd && sd.best && sd.best.price!=null && sd.best.price > -110){
               pullWhy = `${legName} is no longer a favorite (${fmtAm(sd.best.price)})`;
               break;
             }
           } else if (tok.startsWith('prop:')){
-            const parts = tok.split(':');
-            const ev = parts[1], pid = parts[2], kind = parts[3], side = parts[4], line = parts[5];
+            // v37: read from the right — Odds API player ids look like "oa:Name" and contain ":"
+            const parts = tok.split(':'); const n = parts.length;
+            const ev = parts[1], pid = parts.slice(2, n-3).join(':'), kind = parts[n-3], side = parts[n-2], line = parts[n-1];
             const g = (typeof games!=='undefined' ? games : []).find(x=>x && String(x.eventId)===String(ev));
             if (g && g.state && g.state!=='pre'){ anyStarted = true; break; }
             if (g && g.start && +g.start < minStart) minStart = +g.start;
@@ -5989,7 +6006,7 @@ function filtered(list, isPlay){
   return list.filter(x=>{
     const g = isPlay ? x.g : x;
     if (g && g.pickOnly) return false;
-    if (isPlay){ if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(x)) return false; }
+    if (isPlay){ if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(x) && !isTailedPending(x)) return false; }
     else { if (typeof selectedBooksAllowGame==='function' && !selectedBooksAllowGame(g)) return false; }
     if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)) return false;
     if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt) return false;
@@ -6664,6 +6681,9 @@ function shortBetName(b){
   const pick=String((b&&b.pick)||'').trim();
   const mkt=String((b&&b.market)||'');
   if (/^parlay/i.test(mkt) || /^parlay\b/i.test(pick)){
+    // v37: name the legs ("Stephon Castle Under 7.5 Assists + Anaheim Ducks +1.5"), not just "Parlay"
+    const names = typeof parlayBetLegNames==='function' ? parlayBetLegNames(b) : [];
+    if (names.length) return names.length<=2 ? names.join(' + ') : `${names.slice(0,2).join(' + ')} + ${names.length-2} more`;
     const n = Array.isArray(b&&b.legs) ? b.legs.length : (pick.split(/\s+\+\s+/).filter(Boolean).length||0);
     return n>1 ? `Parlay (${n})` : 'Parlay';
   }
@@ -6761,9 +6781,12 @@ function renderTracker(pf){
     const cls = `bet-card bet-row ${res} ${pulled?'pulled':''}`;
     const pill = pulled && res==='pending' ? 'pulled' : (res==='win'?'won':res==='loss'?'lost':res);
     const pillTxt = pulled && res==='pending' ? 'Pulled' : resultLabel(res);
+    const isPar = typeof isParlayBet==='function' && isParlayBet(b);
+    const parNames = isPar && typeof parlayBetLegNames==='function' ? parlayBetLegNames(b) : [];
     const segBtn = (r, lab) => `<button type="button" class="res-seg-btn r-${r}${res===r?' on':''}" data-setres="${esc(b.id)}" data-r="${r}" aria-pressed="${res===r?'true':'false'}">${lab}</button>`;
     return `<article class="${cls}" data-bet="${esc(b.id)}">
-      <div class="bet-top"><div class="bet-name" title="${esc(b.pick||'')}">${esc(shortBetName(b))}</div><span class="res-pill ${pill}">${esc(pillTxt)}</span></div>
+      <div class="bet-top"><div class="bet-name" title="${esc(b.pick||'')}">${isPar?'<span class="bet-par-tag">Parlay</span> ':''}${esc(shortBetName(b))}</div><span class="res-pill ${pill}">${esc(pillTxt)}</span></div>
+      ${isPar && parNames.length>2 ? `<div class="bet-legs">${parNames.map(x=>`<div>• ${esc(x)}</div>`).join('')}</div>` : ''}
       <div class="bet-meta">
         <span class="sport-pill">${esc(b.sport||'Other')}</span>
         <span class="meta-pill">${esc(typeof fmtBetOdds==='function'?fmtBetOdds(b):fmtAm(+b.odds))}</span>
@@ -9461,7 +9484,7 @@ function filteredProps(list){
   const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   return (list||[]).filter(p=>{
     const g = p.g;
-    if (typeof selectedBooksAllowProp==='function' ? !selectedBooksAllowProp(p) : (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p))) return false;
+    if ((typeof selectedBooksAllowProp==='function' ? !selectedBooksAllowProp(p) : (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p))) && !isTailedPending(p)) return false;
     if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
     if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
     if (ui.hideStarted && g && g.state!=='pre') return false;
@@ -9618,6 +9641,7 @@ function propCard(p){
     <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.price==null||propSourceLabel(p)==='line'?'Research':(rec&&!rec.none)?rec.book:'Not at your books yet')}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${price}</div></div>
     ${recLine}
+    ${p.tailedKeep?`<div class="hint kept-note">📌 Kept on your board because you tailed it. It is no longer in today's Prop Picks, but nothing says to pull it. Your bet is unchanged.</div>`:''}
     ${bo}
     ${p.strictFails && p.strictFails.length && p.verdict!=='good' ? `<div class="hint" style="margin:6px 2px 0">Missed: ${esc(p.strictFails[0])}${p.strictFails.length>1?` (+${p.strictFails.length-1} more)`:''}</div>`:''}
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
@@ -9687,9 +9711,10 @@ function sectionProps(title, sub, list, emptyMsg){
 
 function renderPropsBoard(tab, errs){
   const vis = v => filteredProps((props||[]).filter(p=>p.verdict===v));
-  const good = vis('good').sort((a,b)=>(b.p||0)-(a.p||0));
+  let good = vis('good').sort((a,b)=>(b.p||0)-(a.p||0));
   const watch = vis('watch').sort((a,b)=>(b.p||0)-(a.p||0));
   const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
+  try{ good = good.concat(tailedPropsToKeep([...good, ...watch, ...avoid])); }catch(e){ console.warn('tailed props keep', e); }
   const counts = {good:good.length, watch:watch.length, avoid:avoid.length};
   const st = propStatusHTML();
   const bookNote = propsUnsupportedNote();
@@ -9790,6 +9815,47 @@ function propsBacktestHTML(){
 }
 
 const PROP_BACKTEST = {"generatedAt":"2026-11-19T03:15:48Z","sport":"NBA","methodology":"Real ESPN NBA athlete gamelogs. The line is a rolling median of that player's prior games in the same season, rounded to a half-point (a proxy, NOT a historical sportsbook line). v1 bet whenever estimated Over probability was \u226558% (or \u226442% for Under), including Points and PRA, on 90 recent players. A chronological walk-forward (earlier 65% of bet dates train, later 35% unseen test) found a genuine improvement: keep only 3-pointers, rebounds, and assists, and require 60%+ (the live Pick bar already used 60%). On the unseen test that rule went 51\u201320 (71.83%, +37.13% ROI) vs v1 88\u201346 (65.67%, +25.37% ROI). Minutes filters and L5/L10-agreement rules did not beat v1 on the training window, so they were not adopted. Settled at $100 flat with -110 juice; pushes excluded. Because lines are a statistical proxy, this is a feature-check, not a claim about beating real books.","playersN":47,"gamesSampled":668,"betsN":134,"hits":75,"hitRate":0.5597,"net":918.25,"roi":0.0685,"byKind":{"pts":{"label":"Points","n":11,"hits":4,"hitRate":0.364,"net":-336.36,"roi":-0.306},"reb":{"label":"Rebounds","n":41,"hits":22,"hitRate":0.537,"net":100.02,"roi":0.024},"ast":{"label":"Assists","n":23,"hits":13,"hitRate":0.565,"net":181.83,"roi":0.079},"threes":{"label":"3-Pointers","n":46,"hits":30,"hitRate":0.652,"net":1127.3,"roi":0.245},"pra":{"label":"Pts+Reb+Ast","n":13,"hits":6,"hitRate":0.462,"net":-154.54,"roi":-0.119}},"calibration":[{"bin":"57\u201362%","n":97,"hit":0.546,"roi":0.043},{"bin":"62\u201366%","n":37,"hit":0.595,"roi":0.135},{"bin":"66\u201372%","n":0,"hit":null,"roi":null}],"v1":{"betsN":134,"hits":75,"hitRate":0.5597,"net":918.25,"roi":0.0685,"label":"Original 47-player v1 sample (58% bar, all five stats)"},"v2":{"label":"3s / rebounds / assists at 60%+","betsN":145,"hits":102,"hitRate":0.7034,"net":4972.72,"roi":0.3429,"byKind":{"threes":"see oos","reb":"see oos","ast":"see oos"}},"oos":{"cut":"2026-11-14","playersN":90,"v1":{"train":{"n":141,"w":88,"l":53,"wr":0.6241,"net":2700.0,"roi":0.1915},"test":{"n":134,"w":88,"l":46,"wr":0.6567,"net":3400.0,"roi":0.2537}},"v2":{"train":{"n":74,"w":51,"l":23,"wr":0.6892,"net":2336.36,"roi":0.3157},"test":{"n":71,"w":51,"l":20,"wr":0.7183,"net":2636.36,"roi":0.3713}}}};
+
+/* v37: tailed single props never silently disappear */
+function propBetInfo(b){
+  if (!b || isParlayBet(b)) return null;
+  const k = betPlayKey(b) || '';
+  if (k.startsWith('prop:')){ const p = k.split(':'); const n = p.length; if (n>=6) return {k, ev:p[1], pid:p.slice(2,n-3).join(':'), kind:p[n-3], side:p[n-2], line:+p[n-1]}; }
+  const L = b.link || {};
+  if (L.ev && L.mk && L.side && typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[L.mk]){
+    const who = String(b.pick||'').replace(/\s*\(.*$/,'').replace(/\s+(over|under)\b.*$/i,'').trim();
+    return {k, ev:String(L.ev), pid:L.pid||'', name:who, kind:L.mk, side:L.side, line:L.point!=null?+L.point:null};
+  }
+  return null;
+}
+function propMatchesInfo(p, I, anySide){
+  if (!p || !I) return false;
+  if (!anySide && p.id===I.k) return true;
+  if (String((p.g&&p.g.eventId)||p.eventId||'')!==String(I.ev) || p.kind!==I.kind) return false;
+  if (!anySide && String(p.side)!==String(I.side)) return false;
+  if (I.line!=null && isFinite(I.line) && Math.abs(+p.line - I.line)>1e-9) return false;
+  if (I.pid) return String(p.playerId)===String(I.pid);
+  return !!(I.name && typeof nameScore==='function' && nameScore(I.name, p.playerName||'')>=7);
+}
+function tailedPropsToKeep(shown){
+  const out = [], seen = new Set(), now = Date.now();
+  if (ui && ui.hideLogged) return out;
+  for (const b of (Array.isArray(bets) ? bets : [])){
+    if (b.result && b.result!=='pending') continue;
+    const I = propBetInfo(b); if (!I) continue;
+    const sk = I.k+'|'+(I.name||I.pid); if (seen.has(sk)) continue; seen.add(sk);
+    if (shown.some(p=>propMatchesInfo(p, I))) continue;
+    if (typeof pulledNoteForKey==='function' && pulledNoteForKey(I.k)) continue;
+    const P = props||[];
+    let pr = P.find(p=>propMatchesInfo(p, I));
+    if (!pr){ const other = P.find(p=>propMatchesInfo(p, I, true)); if (other && other.raw){ try{ pr = buildPropPlay(other.raw, I.side, other.feat, other.est); pr.raw = other.raw; }catch(e){ pr = null; } } }
+    if (!pr) continue;   // line moved or the prop is gone: the Tracker still has the bet
+    if (pr.g && pr.g.state && pr.g.state!=='pre') continue;
+    if (typeof itemStartMs==='function' && itemStartMs(pr) && itemStartMs(pr) < now) continue;
+    out.push(Object.assign({}, pr, {tailedKeep:true, verdict:'good'}));
+  }
+  return out;
+}
 /* ================= PARLAYS (2–3 leg, low-odds, 2.0x–3.0x target) ================= */
 let parlays = [];
 const PARLAY_BOARDS = ['games','props','parlay'];
@@ -9932,6 +9998,25 @@ function parlayLegProb(p){
   return p.est!=null ? p.est : (p.sd && p.sd.nv);
 }
 
+// one game side as a parlay leg (also used to rebuild a tailed parlay that dropped off the generated list)
+function gameParlayLeg(g, mk, side){
+  const A = g && g.analysis && g.analysis[mk]; const sd = A && A.sides && A.sides[side];
+  if (!sd || !sd.best || sd.best.price==null) return null;
+  const p = {
+    id:`${g.id}|${mk}|${side}|parlay`, g, mk, A, sd, side, isProp:false, isParlayLeg:true,
+    label: typeof sideLabel==='function' ? sideLabel(g,mk,side,sd.point) : `${mk} ${side}`,
+    j: sd.judge || {factors:[], score:0, conf:{v:60,label:'Med'}, verdict:'watch'},
+    verdict:'watch', team: g[side==='home'?'home':side==='away'?'away':null] || null
+  };
+  try{ p.my = typeof myBooks==='function' ? myBooks(p) : null; }catch(e){ p.my=null; }
+  p.price = parlayLegPrice(p);
+  p.implied = p.price!=null ? imp(p.price) : (sd.nv||null);
+  try{ p.E = typeof estimate==='function' ? estimate(p,{noBonus:true}) : null; }catch(e){ p.E=null; }
+  p.p = (p.E && p.E.final!=null) ? p.E.final : (p.est!=null?p.est:(sd.nv||p.implied));
+  p.edge = (p.p!=null && p.implied!=null) ? p.p-p.implied : null;
+  p.league = g.league;
+  return p;
+}
 function gameParlaySides(){
   const out = [];
   const cfg = boardS('parlay');
@@ -9944,19 +10029,7 @@ function gameParlaySides(){
       for (const side of Object.keys(A.sides)){
         if (side==='draw') continue;
         const sd = A.sides[side]; if (!sd || !sd.best || sd.best.price==null) continue;
-        const p = {
-          id:`${g.id}|${mk}|${side}|parlay`, g, mk, A, sd, side, isProp:false, isParlayLeg:true,
-          label: typeof sideLabel==='function' ? sideLabel(g,mk,side,sd.point) : `${mk} ${side}`,
-          j: sd.judge || {factors:[], score:0, conf:{v:60,label:'Med'}, verdict:'watch'},
-          verdict:'watch', team: g[side==='home'?'home':side==='away'?'away':null] || null
-        };
-        try{ p.my = typeof myBooks==='function' ? myBooks(p) : null; }catch(e){ p.my=null; }
-        p.price = parlayLegPrice(p);
-        p.implied = p.price!=null ? imp(p.price) : (sd.nv||null);
-        try{ p.E = typeof estimate==='function' ? estimate(p,{noBonus:true}) : null; }catch(e){ p.E=null; }
-        p.p = (p.E && p.E.final!=null) ? p.E.final : (p.est!=null?p.est:(sd.nv||p.implied));
-        p.edge = (p.p!=null && p.implied!=null) ? p.p-p.implied : null;
-        p.league = g.league;
+        const p = gameParlayLeg(g, mk, side); if (!p) continue;
         if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(p)) continue;
         if (contradictsBoardPick(p)) continue;
         out.push(p);
@@ -10242,6 +10315,17 @@ function parlayNumbersHTML(pl){
     <div class="hint" style="margin-top:8px">Combined probability is the product of independent legs (different games). Same-game combinations are blocked so this math holds. Parlay juice compounds, so a "fair" favorite ticket can still be slightly negative EV.</div>`;
 }
 function parlayCard(pl){
+  if (pl && pl.tailedKeep){ try{ return parlayCardInner(pl); }catch(e){ console.warn('kept parlay card', e); return keptParlayFallbackCard(pl); } }
+  return parlayCardInner(pl);
+}
+function keptParlayFallbackCard(pl){
+  const b = typeof primaryLoggedBet==='function' ? primaryLoggedBet(pl.id) : null;
+  return `<div class="card parlay-card v-good logged"><div class="logged-badge">${esc(b && typeof loggedBadgeText==='function' ? loggedBadgeText(b) : '✓ Tailed')}</div>
+    <div class="chead"><span><span class="pill pl-n">${pl.n}-LEG PARLAY</span></span></div>
+    <div class="pl-legs">${(pl.legs||[]).map(l=>`<div class="pl-leg"><div class="pl-pic"></div><div class="who"><div class="what">${esc(parlayLegLabel(l)||l.label||'Leg')}</div></div><div class="pr">${l.price!=null?fmtAm(l.price):'—'}</div><div class="pp">${l.p!=null?fmtPct(l.p,0):'—'}</div></div>`).join('')}</div>
+    <div class="hint kept-note">${esc(TAILED_KEEP_NOTE)}</div></div>`;
+}
+function parlayCardInner(pl){
   const loggedBet = typeof primaryLoggedBet==='function' ? primaryLoggedBet(pl) : null;
   const early = pl.verdict==='good' && typeof isEarlyPreview==='function' && isEarlyPreview(pl, 'parlay');
   const cardCls = `card parlay-card v-${pl.verdict||'none'}${early?' early-card':''}${loggedBet?' logged':''}`;
@@ -10267,6 +10351,7 @@ function parlayCard(pl){
       ${pl.verdict?`<div class="verdict-slot">${typeof verdictPill==='function'?verdictPill(pl.verdict):''}</div>`:''}
     </div>
     <div class="pl-legs">${pl.legs.map(parlayLegRow).join('')}</div>
+    ${pl.tailedKeep?`<div class="hint kept-note">${esc(TAILED_KEEP_NOTE)}</div>`:''}
     ${bo}
     ${lazy(cid,'⚖️ Courtroom','court',parlayCourtroomHTML(pl))}
     ${lazy(nid,'🩺 Injuries, lineups &amp; news','inj',parlayInjBody(pl))}
@@ -10278,7 +10363,7 @@ function parlayCard(pl){
 function filteredParlays(list){
   const q = typeof norm==='function' ? norm(ui.q) : String(ui.q||'').toLowerCase();
   return (list||[]).filter(pl=>{
-    if (typeof selectedBooksAllowParlay==='function' && !selectedBooksAllowParlay(pl)) return false;
+    if (typeof selectedBooksAllowParlay==='function' && !selectedBooksAllowParlay(pl) && !isTailedPending(pl)) return false;
     if (typeof sportOnFilter==='function'){
       const sports = (pl.sports && pl.sports.length) ? pl.sports : [pl.league];
       if (sports.filter(Boolean).some(lg=>!sportOnFilter(lg))) return false;
@@ -10326,7 +10411,9 @@ function updateParlayTabCounts(){
 }
 function renderParlayBoard(tab, errs){
   const vis = v => filteredParlays((parlays||[]).filter(p=>p.verdict===v)).sort((a,b)=>(b.edge-a.edge)||(b.p-a.p));
-  const good=vis('good'), watch=vis('watch'), avoid=vis('avoid');
+  let good=vis('good'); const watch=vis('watch'), avoid=vis('avoid');
+  // v37: a pending tailed parlay never vanishes — if it isn't on any tab (and wasn't pulled), keep it under Picks
+  try{ const shown = new Set([...good, ...watch, ...avoid].map(x=>x.id)); good = good.concat(tailedParlaysToKeep(shown)); }catch(e){ console.warn('tailed keep', e); }
   const counts={good:good.length, watch:watch.length, avoid:avoid.length};
   const st = '';
   const section = (title, sub, list, empty) => `<div class="section-title"><h2>${title}</h2>${sub?`<span class="hint">${sub}</span>`:''}</div>` + (list.length?`<div class="grid">${list.map(parlayCard).join('')}</div>`:`<div class="empty-state">${empty}</div>`);
@@ -10386,6 +10473,116 @@ function parlayBacktestHTML(){
 
 
 const PARLAY_BACKTEST = {"generatedAt":"2026-11-19T05:03:17Z","methodology":"Real ESPN finals + DraftKings closing moneylines, 75-day window (NBA, WNBA, NHL, NFL, NCAAF). v1 used favorite legs from -650 to -140 targeting 2.0x\u20133.0x (allowed 1.85x\u20133.25x), no same-game legs, Picky 62%+ per-leg with no negative ESPN-model edge. A later chronological walk-forward (earlier 65% of slates to train, later 35% unseen to test) found that capping legs at -300 to -150 improved both the training window and the unseen holdout versus v1 (unseen: 27\u201325, 51.92%, +13.64% ROI vs v1 unseen 27\u201327, 50.00%, +8.86% ROI). Other ideas (banning NHL, requiring home favorites, dropping faded legs, 2-leg-only) looked better on train or on test, but not both, so they were not adopted. Live Parlays v2 keeps Picky 62%+ / no negative model edge and uses leg odds -300 to -150. Settled at $100 flat.","days":75,"sports":["nba","wnba","nhl","nfl","ncaaf"],"gamesWithCloseML":1493,"eligibleLegs":972,"legsWithEspnWp":771,"legOdds":[-650,-140],"payoutWindow":[1.85,3.25],"sweetSpot":[2.0,3.0],"stake":100.0,"v1":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"byPreset":{"super":{"label":"Super picky (68%+ per leg, no negative model edge)","minLegP":0.68,"requireModelEdge":true,"betsN":101,"hits":40,"losses":61,"pushes":2,"hitRate":0.396,"net":-1560.1,"roi":-0.1545,"avgPayout":2.133,"avgCombinedP":0.5602,"sweetN":93,"byLegs":{"2":{"n":72,"hits":28,"hitRate":0.3889,"net":-1312.47,"roi":-0.1823,"avgPayout":2.099},"3":{"n":29,"hits":12,"hitRate":0.4138,"net":-247.63,"roi":-0.0854,"avgPayout":2.218}},"bySport":{"nba+ncaaf+nhl":{"n":2,"hits":1,"net":26.48,"hitRate":0.5,"roi":0.1324},"nba":{"n":9,"hits":2,"net":-456.29,"hitRate":0.2222,"roi":-0.507},"nba+nhl":{"n":10,"hits":5,"net":20.48,"hitRate":0.5,"roi":0.0205},"nba+ncaaf":{"n":12,"hits":6,"net":97.55,"hitRate":0.5,"roi":0.0813},"nfl":{"n":9,"hits":5,"net":237.1,"hitRate":0.5556,"roi":0.2634},"nba+nfl":{"n":3,"hits":1,"net":-88.29,"hitRate":0.3333,"roi":-0.2943},"ncaaf":{"n":34,"hits":9,"net":-1537.85,"hitRate":0.2647,"roi":-0.4523},"ncaaf+nhl":{"n":7,"hits":2,"net":-310.14,"hitRate":0.2857,"roi":-0.4431},"nhl":{"n":8,"hits":5,"net":274.99,"hitRate":0.625,"roi":0.3437},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804},"nfl+nhl":{"n":4,"hits":3,"net":259.99,"hitRate":0.75,"roi":0.65}}},"picky":{"label":"Picky (62%+ per leg, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"betsN":139,"hits":60,"losses":79,"pushes":2,"hitRate":0.4317,"net":-1002.33,"roi":-0.0721,"avgPayout":2.14,"avgCombinedP":0.5358,"sweetN":136,"byLegs":{"2":{"n":121,"hits":51,"hitRate":0.4215,"net":-1123.34,"roi":-0.0928,"avgPayout":2.142},"3":{"n":18,"hits":9,"hitRate":0.5,"net":121.01,"roi":0.0672,"avgPayout":2.129}},"bySport":{"nba+ncaaf+nhl":{"n":1,"hits":1,"net":126.48,"hitRate":1.0,"roi":1.2648},"nba":{"n":12,"hits":5,"net":-68.14,"hitRate":0.4167,"roi":-0.0568},"nba+nhl":{"n":20,"hits":10,"net":141.76,"hitRate":0.5,"roi":0.0709},"nba+ncaaf":{"n":12,"hits":7,"net":340.01,"hitRate":0.5833,"roi":0.2833},"ncaaf+nhl":{"n":12,"hits":4,"net":-389.8,"hitRate":0.3333,"roi":-0.3248},"nfl":{"n":8,"hits":5,"net":300.11,"hitRate":0.625,"roi":0.3751},"nba+nfl":{"n":6,"hits":4,"net":279.99,"hitRate":0.6667,"roi":0.4667},"ncaaf":{"n":33,"hits":9,"net":-1437.85,"hitRate":0.2727,"roi":-0.4357},"nhl":{"n":26,"hits":10,"net":-432.14,"hitRate":0.3846,"roi":-0.1662},"nfl+nhl":{"n":6,"hits":4,"net":221.37,"hitRate":0.6667,"roi":0.369},"nfl+wnba":{"n":3,"hits":1,"net":-84.12,"hitRate":0.3333,"roi":-0.2804}}},"relaxed":{"label":"Relaxed (58%+ per leg)","minLegP":0.58,"requireModelEdge":false,"betsN":169,"hits":69,"losses":100,"pushes":2,"hitRate":0.4083,"net":-2199.47,"roi":-0.1301,"avgPayout":2.137,"avgCombinedP":0.5196,"sweetN":167,"byLegs":{"2":{"n":147,"hits":58,"hitRate":0.3946,"net":-2311.03,"roi":-0.1572,"avgPayout":2.143},"3":{"n":22,"hits":11,"hitRate":0.5,"net":111.56,"roi":0.0507,"avgPayout":2.095}},"bySport":{"ncaaf+nhl":{"n":25,"hits":8,"net":-835.83,"hitRate":0.32,"roi":-0.3343},"nba":{"n":15,"hits":6,"net":-185.14,"hitRate":0.4,"roi":-0.1234},"ncaaf":{"n":37,"hits":10,"net":-1600.39,"hitRate":0.2703,"roi":-0.4325},"nba+ncaaf":{"n":14,"hits":8,"net":341.94,"hitRate":0.5714,"roi":0.2442},"nba+nhl":{"n":17,"hits":6,"net":-432.6,"hitRate":0.3529,"roi":-0.2545},"nfl":{"n":11,"hits":8,"net":573.2,"hitRate":0.7273,"roi":0.5211},"nba+nfl":{"n":6,"hits":4,"net":254.84,"hitRate":0.6667,"roi":0.4247},"nfl+nhl":{"n":10,"hits":5,"net":42.82,"hitRate":0.5,"roi":0.0428},"nhl":{"n":23,"hits":10,"net":-148.8,"hitRate":0.4348,"roi":-0.0647},"nhl+wnba":{"n":3,"hits":1,"net":-55.23,"hitRate":0.3333,"roi":-0.1841},"nfl+wnba":{"n":6,"hits":2,"net":-181.75,"hitRate":0.3333,"roi":-0.3029},"ncaaf+wnba":{"n":1,"hits":0,"net":-100.0,"hitRate":0.0,"roi":-1.0},"ncaaf+nfl+wnba":{"n":1,"hits":1,"net":127.47,"hitRate":1.0,"roi":1.2747}}}},"v2":{"label":"Picky v2 (62%+ per leg, legs \u2212300 to \u2212150, no negative model edge)","minLegP":0.62,"requireModelEdge":true,"legOdds":[-300,-150],"betsN":133,"hits":60,"losses":73,"pushes":0,"hitRate":0.4511,"net":-288.81,"roi":-0.0217,"avgPayout":2.159,"byLegs":{"2":{"n":133,"hits":60,"hitRate":0.4511,"net":-288.81,"roi":-0.0217,"avgPayout":2.159},"3":{"n":0,"hits":0,"hitRate":null,"net":0,"roi":null,"avgPayout":null}}},"oos":{"cut":"20261101","split":"earlier 65% of parlay slates train, later 35% unseen test","v1":{"train":{"n":85,"w":33,"l":52,"wr":0.3882,"net":-1480.6,"roi":-0.1742},"test":{"n":54,"w":27,"l":27,"wr":0.5,"net":478.27,"roi":0.0886}},"v2":{"train":{"n":81,"w":33,"l":48,"wr":0.4074,"net":-998.05,"roi":-0.1232},"test":{"n":52,"w":27,"l":25,"wr":0.5192,"net":709.24,"roi":0.1364}}}};
+
+/* ================= v37: tailed bets never silently disappear ================= */
+// Parse a parlay key back into its legs. Game tokens: `${gid}|${mk}|${side}|parlay`.
+// Prop tokens: `prop:${ev}:${playerId}:${kind}:${side}:${line}` (player ids can contain ":" e.g. "oa:Name", so read from the right).
+function parseParlayKey(k){
+  const s = String(k||''); if (!s.startsWith('parlay:')) return [];
+  return s.slice(7).split('+').filter(Boolean).map(tok=>{
+    if (tok.endsWith('|parlay')){ const p = tok.split('|'); return {tok, isProp:false, gid:p[0], mk:p[1], side:p[2]}; }
+    if (tok.startsWith('prop:')){
+      const p = tok.split(':'); const n = p.length;
+      if (n>=6) return {tok, isProp:true, ev:p[1], pid:p.slice(2, n-3).join(':'), kind:p[n-3], side:p[n-2], line:+p[n-1]};
+    }
+    return {tok, unknown:true};
+  });
+}
+function legMetaFor(b, tok){ return (Array.isArray(b && b.legs) ? b.legs : []).find(m=>m && m.id===tok) || null; }
+// Readable name for one token, from live data when loaded, else from the token itself
+function parlayTokLabel(t, meta){
+  if (meta && meta.label) return meta.label;
+  if (t.unknown) return '';
+  if (!t.isProp){
+    const g = (typeof games!=='undefined' ? games : []).find(x=>x && x.id===t.gid);
+    if (g){ const sd = g.analysis && g.analysis[t.mk] && g.analysis[t.mk].sides && g.analysis[t.mk].sides[t.side];
+      try{ return typeof sideLabel==='function' ? sideLabel(g, t.mk, t.side, sd && sd.point) : ''; }catch(e){} }
+    const side = t.side==='over'?'Over':t.side==='under'?'Under':t.side==='home'?'Home':t.side==='away'?'Away':t.side;
+    return `${side} ${t.mk==='ml'?'ML':t.mk==='spread'?'spread':t.mk==='total'?'total':t.mk||''}`.trim();
+  }
+  const pr = (typeof props!=='undefined' ? props : []).find(x=>x && String((x.g&&x.g.eventId)||x.eventId||'')===String(t.ev) && String(x.playerId||'')===String(t.pid));
+  const stat = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[t.kind]) || t.kind || '';
+  const who = (meta && meta.playerName) || (pr && pr.playerName) || (String(t.pid).startsWith('oa:') ? String(t.pid).slice(3) : 'Player');
+  return `${who} ${t.side==='under'?'Under':'Over'} ${t.line} ${stat}`.trim();
+}
+// Leg names for a saved parlay bet: saved labels → the pick text → the key tokens
+function parlayBetLegNames(b){
+  if (Array.isArray(b && b.legs) && b.legs.length && b.legs.every(l=>l && l.label)) return b.legs.map(l=>l.label);
+  const pick = String((b && b.pick) || '');
+  const m = pick.match(/·\s*(.+)$/);
+  if (m && m[1].includes(' / ')) return m[1].split(' / ').map(x=>x.trim()).filter(Boolean);
+  const v = pick.match(/^parlay:\s*(.+)$/i);
+  if (v && v[1].includes(' + ')) return v[1].split(' + ').map(x=>x.trim()).filter(Boolean);
+  const k = typeof betPlayKey==='function' ? betPlayKey(b) : null;
+  const toks = parseParlayKey(k || (b && b.link && b.link.id));
+  if (toks.length) return toks.map(t=>parlayTokLabel(t, legMetaFor(b, t.tok))).filter(Boolean);
+  return [];
+}
+function isParlayBet(b){ return !!(b && (/^parlay/i.test(String(b.market||'')) || (b.link && b.link.mk==='parlay') || String(b.playKey||'').startsWith('parlay:'))); }
+
+function propLegFromTok(t, meta){
+  const P = (typeof props!=='undefined' ? props : []);
+  const exact = P.find(x=>x && x.id===t.tok); if (exact) return exact;
+  const g = (typeof games!=='undefined' ? games : []).find(x=>x && String(x.eventId)===String(t.ev)) || null;
+  const same = P.find(x=>x && String((x.g&&x.g.eventId)||'')===String(t.ev) && String(x.playerId||'')===String(t.pid) && x.kind===t.kind && Math.abs(+x.line - t.line)<1e-9);
+  if (same && same.raw && typeof buildPropPlay==='function'){ try{ const pl = buildPropPlay(same.raw, t.side, same.feat, same.est); pl.raw = same.raw; return pl; }catch(e){} }
+  return {id:t.tok, isProp:true, kind:t.kind, side:t.side, line:t.line, playerId:t.pid, eventId:t.ev,
+    playerName:(meta && meta.playerName) || (same && same.playerName) || (String(t.pid).startsWith('oa:') ? String(t.pid).slice(3) : 'Player'),
+    g, league:(g && g.league) || (meta && meta.league) || '', price:meta && meta.price!=null ? meta.price : null, p:meta && meta.p!=null ? meta.p : null,
+    label:(meta && meta.label) || parlayTokLabel(t, meta), team:null};
+}
+// Rebuild a tailed parlay from the saved bet when it is no longer in the generated list
+function tailedParlayFromBet(b){
+  const k = betPlayKey(b); const toks = parseParlayKey(k); if (!toks.length) return null;
+  const legs = [];
+  for (const t of toks){
+    const meta = legMetaFor(b, t.tok);
+    if (t.unknown) continue;
+    if (t.isProp){ legs.push(propLegFromTok(t, meta)); continue; }
+    const g = (typeof games!=='undefined' ? games : []).find(x=>x && x.id===t.gid);
+    const leg = g ? gameParlayLeg(g, t.mk, t.side) : null;
+    legs.push(leg || {id:t.tok, isProp:false, g:g||null, mk:t.mk, side:t.side, label:parlayTokLabel(t, meta), league:(g&&g.league)||(meta&&meta.league)||'', price:meta&&meta.price!=null?meta.price:null, p:meta&&meta.p!=null?meta.p:null});
+  }
+  if (!legs.length) return null;
+  const decs = legs.map(l=>l.price!=null ? amToDec(l.price) : null);
+  const dec = (b.link && +b.link.dec) || (decs.every(Boolean) ? decs.reduce((a,d)=>a*d,1) : null);
+  const p = legs.every(l=>l.p!=null) ? legs.reduce((a,l)=>a*l.p,1) : null;
+  const starts = legs.map(l=>l.g && l.g.start ? +l.g.start : Infinity);
+  const start = Math.min(...starts, (b.link && +b.link.start) || Infinity);
+  const sports = [...new Set(legs.map(l=>l.league||(l.g&&l.g.league)).filter(Boolean))];
+  return {id:k, isParlay:true, tailedKeep:true, n:legs.length, legs, dec, am:dec?decToAm(dec):(+b.odds||null), p,
+    implied:dec?1/dec:null, edge:(p!=null&&dec)?p-1/dec:null, ev:null, price:dec?decToAm(dec):null, verdict:'good', C:{J:'BET'},
+    sports, mix: legs.every(l=>l.isProp)?'props':legs.every(l=>!l.isProp)?'games':'mixed', league:sports[0],
+    label:`${legs.length}-leg parlay${dec?' · '+fmtDecX(dec):''}`, g:legs[0]&&legs[0].g, start, score:0, reasons:['Kept on your board because you tailed it']};
+}
+// Pending tailed parlays that are not already visible on any parlay tab (and not moved to Pulled)
+function tailedParlaysToKeep(shownIds){
+  const out = [], seen = new Set(); const now = Date.now();
+  if (ui && ui.hideLogged) return out;               // "Hide tailed" is an explicit choice
+  for (const b of (typeof bets!=='undefined' && Array.isArray(bets) ? bets : [])){
+    if (b.result && b.result!=='pending') continue;
+    const k = betPlayKey(b); if (!k || !String(k).startsWith('parlay:') || seen.has(k)) continue; seen.add(k);
+    if (shownIds.has(k)) continue;
+    if (typeof pulledNoteForKey==='function' && pulledNoteForKey(k)) continue;
+    const live = (parlays||[]).find(x=>x && x.id===k);
+    const pl = live ? Object.assign(Object.create(Object.getPrototypeOf(live)), live, {tailedKeep:true, verdict:'good'}) : tailedParlayFromBet(b);
+    if (!pl) continue;
+    if ((pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')) continue;   // started → it lives in the Tracker
+    if (isFinite(pl.start) && pl.start < now) continue;
+    out.push(pl);
+  }
+  return out;
+}
+const TAILED_KEEP_NOTE = '📌 Kept on your board because you tailed it. It dropped out of today’s generated parlays (a leg’s price or line moved, or your book filter hides a leg), but nothing says to pull it. Your bet is unchanged.';
+
+// v37: what we save for each leg of a tailed parlay: a readable label + the same fields auto-grading uses
+function parlayLegSaveMeta(l){
+  const g = l && l.g; const isProp = !!(l && (l.isProp || (l.kind && l.playerName)));
+  const m = {id:l.id, label:parlayLegLabel(l), ev:g?g.eventId:(l.eventId||null), lg:(g&&g.league)||l.league||'', start:g&&g.start?+g.start:null, price:l.price!=null?l.price:null, p:l.p!=null?l.p:null, league:(g&&g.league)||l.league||''};
+  if (isProp) Object.assign(m, {kind:'prop', stat:l.kind, side:l.side, line:l.line, point:l.line, playerName:l.playerName||'', playerId:l.playerId||''});
+  else Object.assign(m, {mk:l.mk, side:l.side, point:l.sd && l.sd.point!=null ? l.sd.point : null});
+  return m;
+}
 /* ================= PER-BOARD AUTO-LEARN (props + parlays; games stays in 12_learn.js) ================= */
 const PROP_STAT_KEYS = {pts:['points'], reb:['rebounds','totalRebounds'], ast:['assists'], threes:['threePointFieldGoalsMade','threes'], pra:null, pr:null, ra:null, pa:null};
 const BOARD_LEARN_RELEASE = new Date(2026,10,18,21,0).getTime(); // Nov 18, 2026 9:00 PM PT — first ship of Props/Parlay tracks
@@ -11813,7 +12010,7 @@ $('#view').addEventListener('click', e=>{
     }
     setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
     const summary = (p.legs||[]).map(l=>typeof parlayLegLabel==='function'?parlayLegLabel(l):(l.label||l.playerName)).join(' / ');
-    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id, start:isFinite(p.start)?p.start:null}};
+    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id, start:isFinite(p.start)?p.start:null}, legs:(typeof parlayLegSaveMeta==='function' ? (p.legs||[]).map(parlayLegSaveMeta) : null)};
     renderTracker(pf);
     window.scrollTo({top:0}); toast('Pre-filled this parlay. Confirm the combined odds at your book, then add the tailed bet.');
     return;
@@ -11827,7 +12024,7 @@ $('#view').addEventListener('click', e=>{
   const mb = rb.none ? null : Object.assign({}, rb, {kind: rb.pm ? 'pm' : 'book'});
   const usePm = !!(mb && mb.kind==='pm' && mb.cents!=null);
   const fee = typeof defaultPmFeeRate==='function' ? defaultPmFeeRate(p) : +S.pmFeeRate;
-  const pf = {date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime()}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
+  const pf = {date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime(), pid:p.isProp?(p.playerId||''):undefined}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
   pf.odds = usePm ? String(Math.round(mb.cents*100)) : fmtAm(mb ? mb.price : (p.isProp ? p.price : (p.sd && p.sd.best && p.sd.best.price)));
   if (mb && mb.book) pf.book = mb.book;
   renderTracker(pf);
