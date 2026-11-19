@@ -735,6 +735,14 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 .early-preview-sec{margin-top:18px;padding-top:4px}
 .early-preview-sec .section-title h2{font-size:16.5px;color:var(--txt2)}
 .card.early-card{border-style:dashed;border-color:rgba(148,163,184,.32)}
+/* v36: Locked view = 🔒 Locked section + amber Early Bird section */
+.lk-tag,.eb-tag{display:inline-flex;align-items:center;gap:5px;margin:0 0 8px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:750;letter-spacing:.01em;white-space:nowrap}
+.lk-tag{color:#bbf7d0;background:rgba(34,197,94,.16);border:1px solid rgba(34,197,94,.35)}
+.eb-tag{color:#fde68a;background:rgba(245,158,11,.16);border:1px solid rgba(245,158,11,.45)}
+.early-bird-sec{margin-top:20px;padding-top:4px}
+.early-bird-sec .section-title h2{color:#fcd34d}
+.card.early-bird,.card.early-bird.early-card{border:1.5px solid rgba(245,158,11,.6) !important;border-style:solid !important;background:linear-gradient(180deg,rgba(245,158,11,.10),rgba(245,158,11,.03)),var(--card,#111a2e);box-shadow:0 0 0 1px rgba(245,158,11,.12),0 10px 26px -14px rgba(245,158,11,.35)}
+.card.early-bird .lock-badge-row{display:none}
 .tab-subbar{display:none;padding:0 0 10px}
 .tab-subbar:not([hidden]){display:flex;align-items:center}
 .tab-subs{display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
@@ -1030,7 +1038,7 @@ main.wrap{padding-top:16px}
     <div class="filters horizon-filter" id="horizonRow">
       <span class="mut horizon-lab">When</span>
       <div class="seg" id="horizonSeg" role="group" aria-label="Kickoff window">
-        <label><input type="radio" name="horizon" value="locked" hidden>Locked only</label>
+        <label><input type="radio" name="horizon" value="locked" hidden>Locked</label>
         <label class="on"><input type="radio" name="horizon" value="24h" checked hidden>Next 24h</label>
         <label><input type="radio" name="horizon" value="48h" hidden>Next 48h</label>
         <label><input type="radio" name="horizon" value="all" hidden>All</label>
@@ -1453,8 +1461,12 @@ function openInBookHTML(item, kind){
   if (!books.length) books = DEFAULT_ALL_BOOKS.split(',');
   const label = (k)=> (typeof bookLabelOf==='function'?bookLabelOf(k):k);
   const rows = books.map(b=>({b, url:bookOpenUrl(b,item,kind), price:bookPriceFor(item, kind, b)}));
-  // books that price this bet first, then the rest in your order
-  rows.sort((x,y)=>(y.price?1:0)-(x.price?1:0));
+  // v36: your books only; the best price first (lowest break-even), then unpriced books in your order
+  const be = str => { if (!str) return null; const t = String(str).trim().split(' ').pop();
+    if (/¢$/.test(t)) return (+t.replace('¢',''))/100;
+    const a = +t.replace('+',''); return isFinite(a) && a!==0 ? (a<0 ? -a/(-a+100) : 100/(a+100)) : null; };
+  rows.forEach((r,i)=>{ r.i = i; r.be = be(r.price); });
+  rows.sort((x,y)=> (x.be==null)-(y.be==null) || (x.be!=null && y.be!=null ? x.be-y.be : 0) || x.i-y.i);
   const items = rows.map(r=>`<a class="open-book-item" href="${esc(r.url)}" target="_blank" rel="noopener"><span class="ob-name">${esc(label(r.b))}</span><span class="ob-price${r.price?'':' mut'}">${r.price?esc(r.price):'—'}</span><span class="mut ob-go" aria-hidden="true">↗</span></a>`).join('');
   const id = 'ob'+(++_obSeq);
   return `<span class="open-book-wrap"><button type="button" class="btn sm btn-book" data-open-book-toggle="${id}" aria-haspopup="menu" aria-expanded="false">Open book ▾</button><template class="open-book-tpl">${items}</template></span>`;
@@ -1667,6 +1679,16 @@ function inHorizon(startMs, state, hOverride, boardOverride){
   if (!start) return true;
   return start <= now + (h==='48h' ? 48 : 24)*3600e3;
 }
+/* v36: "Locked" filter on the Picks tab = two sections (🔒 Locked, then Early Bird not-locked-yet picks).
+   Only the board view widens to the next 24h; alerts / lock logic still use the plain locked window. */
+function lockedSplitView(board){
+  return !(typeof ui==='undefined' || normalizeHorizon(ui.horizon)!=='locked' || ui.tab!=='good');
+}
+function boardHorizonOverride(board){
+  if (!lockedSplitView(board)) return null;
+  const lock = boardLockMins(board || ui.board || 'games');
+  return (lock!=null && +lock>0) ? '24h' : null;   // no lock window (parlays lock right away) = nothing to widen
+}
 function defaultLockMins(board){
   if (board==='props') return 120;
   if (board==='parlay') return null;
@@ -1762,6 +1784,18 @@ function picksBoardHTML(title, lockedSub, emptyMsg, list, board, cardFn){
   const {locked, early, lockMins:lock} = splitLockedEarly(list, board);
   const grid = arr => arr.length ? `<div class="grid">${arr.map(cardFn).join('')}</div>` : '';
   let html = '';
+  if (lockedSplitView(board)){
+    const tagCard = (html, cls, tag) => String(html).replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} ${cls}">${tag}`);
+    const lockedCards = locked.map(x=>tagCard(cardFn(x), 'locked-pick', '<div class="lk-tag"><span aria-hidden="true">🔒</span> Locked</div>')).join('');
+    const earlyCards = early.map(x=>tagCard(cardFn(x), 'early-bird', `<div class="eb-tag">Not locked yet · ${esc(fmtLocksIn(itemStartMs(x), lock))}</div>`)).join('');
+    const hasWin = lock!=null && +lock>0;
+    html += `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🔒</span>Locked</h2><span class="hint">${hasWin?`Final picks, locked ${esc(fmtLockWindow(lock))} before start.`:'These lock as soon as they qualify.'}</span></div>`;
+    html += locked.length ? `<div class="grid">${lockedCards}</div>` : `<div class="empty-state">No locked picks right now.</div>`;
+    html += `<div class="early-bird-sec"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">🐣</span>Early Bird</h2><span class="hint">These qualify right now but aren't locked yet. They can still change or drop off before they lock.</span></div>`;
+    html += early.length ? `<div class="grid">${earlyCards}</div>` : `<div class="empty-state">${hasWin?'No early bird picks in the next 24 hours.':'Nothing waiting here: these lock as soon as they qualify, so they show up under Locked.'}</div>`;
+    html += `</div>`;
+    return html;
+  }
   if (!locked.length && early.length && lock>0){
     html += `<div class="early-note">${esc(earlyEmptyNote(early.length, lock))}</div>`;
   }
@@ -3152,16 +3186,65 @@ function missingBovadaHint(my){
   if (has) return '';
   return ' — add an Odds API key in Settings for Bovada prices';
 }
+/* v36: where to bet = ALWAYS one of your picked books (sportsbooks + prediction markets).
+   Pinnacle / DraftKings may set the fair line, but are never named as the place to bet unless you picked them.
+   No books picked at all = "all books". */
+function bookIsPicked(k){ const l = myBookList(); return !l.length || l.includes(String(k||'').toLowerCase()); }
+function bookKeyFromLabel(name){
+  const n = String(name||'').toLowerCase().trim(); if (!n) return '';
+  if (BOOK_NAMES[n]) return n;
+  for (const k in BOOK_NAMES) if (BOOK_NAMES[k].toLowerCase()===n) return k;
+  for (const k in BOOK_NAMES) if (n.indexOf(BOOK_NAMES[k].toLowerCase())===0) return k;
+  return '';
+}
+function propRecBook(p){
+  const side = p.side==='under' || (p.L && p.L.dir==='under') ? 'under' : 'over';
+  let best = null;
+  const consider = (k, price) => {
+    if (price==null || !isFinite(+price) || !k || !bookIsPicked(k)) return;
+    if (!best || imp(+price) < imp(best.price)) best = {book:BOOK_LABEL(k), bk:k, price:+price, cost:imp(+price)};
+  };
+  const bp = p.bookPrices || {};
+  for (const k in bp) consider(String(k).toLowerCase(), bp[k] && bp[k][side]);
+  const main = p.price!=null && p.side ? p.price : (side==='over' ? p.overPrice : p.underPrice);
+  const src = String(p.source||'') + ' ' + String(p.bookName||'');
+  if (/draftkings|espn/i.test(src)) consider('draftkings', side==='over' ? (p.overPrice!=null?p.overPrice:main) : (p.underPrice!=null?p.underPrice:main));
+  else if (p.bookName){ const k = bookKeyFromLabel(p.bookName); if (k) consider(k, main); }
+  if (p.pmProp && p.pmProp.ask!=null && bookIsPicked(p.pmProp.book)){
+    const c = pmCost(+p.pmProp.ask, p.pmProp.fee); if (!best || c < best.cost) best = {book:BOOK_LABEL(p.pmProp.book), bk:p.pmProp.book, price:probToAm(c), cents:+p.pmProp.ask, cost:c, pm:true, fee:p.pmProp.fee};
+  }
+  if (!best && !myBookList().length && main!=null) best = {book:(typeof propSourceLabel==='function'?propSourceLabel(p):'Sportsbook'), price:+main, cost:imp(+main)};
+  return best || {none:true};
+}
+function recBookFor(p){
+  if (!p) return {none:true};
+  if (p.isProp || (!p.sd && p.kind)) return propRecBook(p);
+  const mb = p.my && p.my.best;
+  if (mb) return mb.kind==='pm'
+    ? {book:mb.book, bk:mb.bk, price:mb.price, cents:mb.cents, cost:mb.cost, pm:true, fee:mb.pm&&mb.pm.fee, thin:mb.thin}
+    : {book:mb.book, price:mb.price, cost:imp(mb.price)};
+  if (!myBookList().length && p.sd && p.sd.best) return {book:p.sd.best.book, price:p.sd.best.price, cost:imp(p.sd.best.price)};
+  return {none:true};
+}
+const NO_BOOK_LINE = 'None of your books has this line yet';
+// "Don't pay more than" in the recommended book's own format (¢ for prediction markets, American for sportsbooks)
+function maxPayText(estP, r){
+  if (estP==null || !(estP>0 && estP<1)) return '';
+  if (r && r.pm) return `Don't pay more than ${Math.max(1, Math.floor(pmMaxCents(estP, r.fee)*100))}¢ on ${r.book}`;
+  const am = probToAm(estP); if (am==null) return '';
+  return `Don't pay more than ${fmtAm(Math.round(am))}${r && r.book ? ' on '+r.book : ''}`;
+}
 function betOnText(p){
   const my = p.my, sd = p.sd; const estP = (p.E && p.E.final) || (typeof estimate==='function' ? estimate(p).final : sd.nv); const fair = probToAm(estP);
   const sideName = p.mk==='total' ? (p.side==='over'?'Over':'Under')+' '+sd.point : p.side==='draw' ? 'Draw' : (p.g[p.side].nick||p.g[p.side].short||p.g[p.side].name);
-  const ref = `${sd.best.book} ${fmtAm(sd.best.price)}`;
-  const bovadaHint = missingBovadaHint(my);
-  if (!my || !my.best) return {line:`Bet on: ${ref}${my?` (${my.names} not in the data${!S.oddsKey&&my.required?': add an Odds API key to see your other sportsbooks':''})`:''}`, max:`Don't pay more than ${fmtAm(fair)} · fair line from ${fairRefLabel(p.A, sd)}`};
-  const b = my.best;
-  const line = (b.kind==='pm' ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${b.book} at ${Math.round(b.cents*100)}¢ (≈ ${fmtAm(b.price)} after fee)` : `Bet on: ${b.book} at ${fmtAm(b.price)}`) + bovadaHint;
-  const pmMax = (my.quotes.some(q=>q.kind==='pm') || myBookList().some(x=>PREDICTION_BOOKS.includes(x))) ? ` · Prediction-market max ${Math.floor(pmMaxCents(estP)*100)}¢` : '';
-  return {line, max:`Don't pay more than ${fmtAm(fair)}${pmMax} · fair line from ${fairRefLabel(p.A, sd)}`, ok: (b.cost!=null?estP-b.cost:estP-imp(b.price))>=0, thin:b.thin};
+  const refTxt = `fair line from ${fairRefLabel(p.A, sd)}`;
+  const r = recBookFor(p);
+  if (r.none){
+    const hint = (!S.oddsKey && my && my.required) ? ' (add an Odds API key in Settings to see your sportsbooks)' : '';
+    return {line:NO_BOOK_LINE+hint, max:`Fair price ${fmtAm(Math.round(fair))} · ${refTxt}`, ok:false, none:true};
+  }
+  const line = (r.pm ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${r.book} at ${Math.round(r.cents*100)}¢ (≈ ${fmtAm(r.price)} after fee)` : `Bet on: ${r.book} at ${fmtAm(r.price)}`) + missingBovadaHint(my);
+  return {line, max:`${maxPayText(estP, r)} · ${refTxt}`, ok:(estP - r.cost)>=0, thin:r.thin, rec:r};
 }
 
 /* ================= POLYMARKET (public API, no key) ================= */
@@ -3449,14 +3532,15 @@ function alertWhen(d){
   return dt.toLocaleDateString([], {weekday:'short'})+' '+dt.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
 }
 function playAlertLine(p){
-  const price = (p.my && p.my.best) ? p.my.best.price : (p.sd && p.sd.best && p.sd.best.price);
-  const book = (p.my && p.my.best) ? p.my.best.book : (p.sd && p.sd.best && p.sd.best.book) || '';
+  const r = recBookFor(p);
   const when = p.g && p.g.start ? alertWhen(p.g.start) : '';
-  return `${p.label} ${fmtAm(price)}${book?` (${book})`:''}${when?` · ${when}`:''}`;
+  const at = r.none ? ' (none of your books has it yet)' : r.pm ? ` ${Math.round(r.cents*100)}¢ (${r.book})` : ` ${fmtAm(r.price)} (${r.book})`;
+  return `${p.label}${at}${when?` · ${when}`:''}`;
 }
 const _lockPushInFlight = new Set();
 function propAlertLine(p){
-  const price = p.price!=null ? fmtAm(p.price) : '';
+  const r = propRecBook(p);
+  const price = r.none ? '(none of your books has it yet)' : r.pm ? `${Math.round(r.cents*100)}¢ (${r.book})` : `${fmtAm(r.price)} (${r.book})`;
   const when = p.g && p.g.start ? alertWhen(p.g.start) : '';
   return `${p.label || ((p.playerName||'')+' '+(p.side==='under'?'Under':'Over')+' '+(p.line!=null?p.line:''))} ${price}${when?` · ${when}`:''}`.trim();
 }
@@ -4843,9 +4927,10 @@ function estimate(p, o){
 }
 /* ---------- price math at your book ---------- */
 function priceMath(p, E){
-  const my = p.my; let src = null;
-  if (my && my.best) src = my.best.kind==='pm' ? {book:my.best.book||'Polymarket', cost:my.best.cost, cents:my.best.cents, am:my.best.price, pm:true, thin:my.best.thin} : {book:my.best.book, cost:imp(my.best.price), am:my.best.price};
-  else src = {book:p.sd.best.book, cost:imp(p.sd.best.price), am:p.sd.best.price, ref:true};
+  // v36: price = the best of YOUR books; if none of them has it, use the market reference only for the math (never as a place to bet)
+  const r = typeof recBookFor==='function' ? recBookFor(p) : {none:true}; let src = null;
+  if (!r.none) src = r.pm ? {book:r.book||'Polymarket', cost:r.cost, cents:r.cents, am:r.price, pm:true, thin:r.thin} : {book:r.book, cost:imp(r.price), am:r.price};
+  else src = {book:`the market (${p.sd.best.book})`, cost:imp(p.sd.best.price), am:p.sd.best.price, ref:true};
   const dec = 1/src.cost; const ev = E.final*(dec-1) - (1-E.final); // per $1
   return Object.assign(src, {need:src.cost, edge:E.final-src.cost, ev, ev25: ev*(+S.unit||25)});
 }
@@ -5156,7 +5241,7 @@ function contextBullets(p){
 
 function pricePlain(P, E, who, tone){
   const est = outOf10(E.final), need = outOf10(P.need);
-  const odds = P.pm ? `${Math.round(P.cents*100)}¢ on Polymarket` : `${fmtAm(P.am)} at ${P.book}`;
+  const odds = P.pm ? `${Math.round(P.cents*100)}¢ on ${P.book||'Polymarket'}` : `${fmtAm(P.am)} at ${P.book}`;
   if (P.edge>=0){
     const opts = [
       `The price is fair: ${who} should win about ${est} of 10, and the odds pay like it wins ${need}`,
@@ -5240,7 +5325,7 @@ function courtModel(p){
     pushU(s.dp>0?win:lose, {txt:s.plain, imp:s.dp, tag:'', kind:s.key});
   }
   for (const n of (p.j && p.j.conf && p.j.conf.notes) || []){ const t = plainNote(n); if (t) pushU(lose, {txt:t, imp:-0.0001, tag:"", unk:true}); }
-  if (P.thin) pushU(lose, {txt:'Not many people are trading this on Polymarket, so the price can jump around', imp:-0.003, tag:''});
+  if (P.thin) pushU(lose, {txt:`Not many people are trading this on ${P.book||'Polymarket'}, so the price can jump around`, imp:-0.003, tag:''});
   // price last, in simple terms
   const tone = (String(p.id||who).length) % 3;
   const ptxt = pricePlain(P, E, who, tone);
@@ -5527,7 +5612,7 @@ function numbersHTML(p, C){
   let run = E.start;
   for (const s of E.steps){ run += s.dp; rows.push(`<tr><td>${esc((CAL[s.key]&&CAL[s.key].what)||s.plain||s.key)}</td><td class="${s.dp>0.0005?'pos':s.dp<-0.0005?'neg':'mut'}">${s.dp>=0?'+':''}${(s.dp*100).toFixed(1)} pts</td><td class="mut">${fmtPct(run)}</td></tr>`); }
   rows.push(`<tr><td><b>Estimated win chance</b></td><td><b>${fmtPct(E.final)}</b></td><td class="mut">about ${outOf10(E.final)} of 10</td></tr>`);
-  rows.push(`<tr><td>Break-even at this price</td><td>${fmtPct(P.need)}</td><td class="mut">${P.pm?`${Math.round(P.cents*100)}¢ on Polymarket`:`${fmtAm(P.am)} at ${P.book}`} · about ${outOf10(P.need)} of 10</td></tr>`);
+  rows.push(`<tr><td>Break-even at this price</td><td>${fmtPct(P.need)}</td><td class="mut">${P.pm?`${Math.round(P.cents*100)}¢ on ${P.book||'Polymarket'}`:`${fmtAm(P.am)} at ${P.book}`} · about ${outOf10(P.need)} of 10</td></tr>`);
   rows.push(`<tr><td>Edge</td><td class="${P.edge>=0?'pos':'neg'}">${fmtEdge(P.edge)}</td><td class="mut">EV per $${(+S.unit||25).toFixed(0)}: ${P.ev25>=0?'+':'-'}$${Math.abs(P.ev25).toFixed(2)}</td></tr>`);
   return `<table class="ftab ntab">${rows.join('')}</table>
     <div class="mut" style="margin-top:6px">No-vig (fair) ${fmtPct(p.sd.nv)} · raw implied ${fmtPct(p.sd.impBest)} · hold ${p.A&&p.A.hold!=null?fmtPct(p.A.hold):'—'}</div>`;
@@ -5544,7 +5629,7 @@ function mathHTML(p, C){
     <div class="hint" style="margin-top:6px">Weights come from a logistic regression on ${CAL.games} past games (DraftKings closing odds as the start, ${CAL.fitDate}), shrunk toward 0 when noisy. "Weight 0" = it did not beat the odds in the test.</div>
     ${inj?`<div class="ct" style="margin-top:8px">Injuries (measured worth)</div><ul class="why">${inj}</ul>`:''}
     <div class="ct" style="margin-top:8px">Your price</div>
-    <ul class="why"><li>${P.ref?'Reference (none of your books priced): ':''}${esc(P.book)} ${P.pm?`${Math.round(P.cents*100)}¢ ask + fee = ${(P.cost*100).toFixed(1)}¢ (${fmtAm(P.am)})`:fmtAm(P.am)} → break-even ${fmtPct(P.need)}</li>
+    <ul class="why"><li>${P.ref?'None of your books has this line yet — reference only, not a place to bet: ':''}${esc(P.book)} ${P.pm?`${Math.round(P.cents*100)}¢ ask + fee = ${(P.cost*100).toFixed(1)}¢ (${fmtAm(P.am)})`:fmtAm(P.am)} → break-even ${fmtPct(P.need)}</li>
       <li>Estimate ${fmtPct(E.final)} − break-even ${fmtPct(P.need)} = <b class="${P.edge>=0?'pos':'neg'}">${fmtEdge(P.edge)}</b></li>
       <li>Expected value per $${(+S.unit||25).toFixed(0)}: <b class="${P.ev>=0?'pos':'neg'}">${P.ev25>=0?'+':'-'}$${Math.abs(P.ev25).toFixed(2)}</b> · fair price ${fmtAm(probToAm(E.final))}</li></ul>
     <div class="ct" style="margin-top:8px">Strict checks</div>${gates}`;
@@ -5727,6 +5812,15 @@ function courtHTML(p){
     <div class="judge"><span class="ct">Verdict</span> <span class="badge ${verdict==='BET'?'b-good':verdict==='WATCHLIST'?'b-watch':'b-avoid'}">${verdict}</span> <span class="mut">${esc(p.reasons.find(r=>!/^[+−]/.test(r))||'')}</span></div></div>`;
 }
 function confBadge(c){ return `<span class="conf conf-${c.label.toLowerCase()}" title="${esc(c.notes.join('; ')||'all key data present')}">Confidence ${c.label} ${Math.round(c.v)}</span>`; }
+// v36: the big price on a card is always from one of your books (or the fair price when none of them has it)
+function recPriceHTML(p, bo){
+  const r = (bo && bo.rec) || (typeof recBookFor==='function' ? recBookFor(p) : {none:true});
+  if (r.none){
+    const estP = (p.E && p.E.final) || (p.sd && p.sd.nv); const am = estP!=null && typeof probToAm==='function' ? probToAm(estP) : null;
+    return `<div class="price">${am!=null?fmtAm(Math.round(am)):'—'}<small>fair price</small></div>`;
+  }
+  return `<div class="price">${r.pm?Math.round(r.cents*100)+'¢':fmtAm(r.price)}<small>${esc(r.book)}</small></div>`;
+}
 function playCard(p){
   const {g, sd, A} = p;
   const C = courtModel(p); const bo = betOnText(p);
@@ -5760,7 +5854,7 @@ function playCard(p){
     ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
     ${move?`<div class="${move.kind==='up'?'moved-up':'moved-down'}">${esc(move.text)}</div>`:''}
     <div class="pick"><div><div class="mk">${MKN[p.mk]}${p.rank?` · #${p.rank}`:''}</div><div class="what">${esc(p.label)}</div></div>
-      <div class="price">${fmtAm(sd.best.price)}<small>${esc(sd.best.book)}</small></div></div>
+      ${recPriceHTML(p, bo)}</div>
     <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div><div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
     ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return `<div class="hint" style="margin:6px 2px 0">${/^excluded/.test(f[0]) ? '<b>No picks for this sport</b> (turned off in Settings)' : `Strict mode: missed "${esc(f[0])}"${f.length>1?` (+${f.length-1} more)`:''}`}</div>`; })() : ''}
     ${typeof wrLineHTML==='function'?wrLineHTML(p, C):''}
@@ -5900,7 +5994,7 @@ function filtered(list, isPlay){
     if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)) return false;
     if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt) return false;
     if (ui.hideStarted && g.state!=='pre') return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(x):((g&&g.start&&g.start.getTime)?g.start.getTime():0), g&&g.state)) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(x):((g&&g.start&&g.start.getTime)?g.start.getTime():0), g&&g.state, (isPlay && typeof boardHorizonOverride==='function') ? boardHorizonOverride('games') : null)) return false;
     if (isPlay && ui.hideLogged && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid'||ui.tab==='pulled') && typeof isPlayLogged==='function' && isPlayLogged(x)){
       const k = x.g && x.g.eventId ? `${x.g.eventId}|${x.mk}|${x.side}` : '';
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(k))) return false;
@@ -7103,7 +7197,7 @@ async function propMarket(g, L, playerName){
   const quotes = [];
   for (const b of (c.data.bookmakers||[])) for (const m of (b.markets||[])) for (const o of (m.outcomes||[])){
     if (nameScore(playerName, o.description||'') < 7) continue;
-    quotes.push({book:BOOK_NAMES[b.key]||b.title, side:/over/i.test(o.name)?'over':'under', price:o.price, point:o.point});
+    quotes.push({book:BOOK_NAMES[b.key]||b.title, bk:String(b.key||'').toLowerCase(), side:/over/i.test(o.name)?'over':'under', price:o.price, point:o.point});
   }
   if (!quotes.length) return {err:'no prop line posted for this player yet'};
   const pts = {}; quotes.forEach(q=>pts[q.point]=(pts[q.point]||0)+1);
@@ -7112,7 +7206,8 @@ async function propMarket(g, L, playerName){
   let nvOver = null; const pairs = ov.map(o=>{ const u = un.find(x=>x.book===o.book); return u ? noVig([o.price,u.price])[0] : null; }).filter(x=>x!=null);
   if (pairs.length) nvOver = pairs.reduce((a,b)=>a+b,0)/pairs.length;
   const best = side => { const arr = side==='over'?ov:un; return arr.sort((a,b)=>imp(a.price)-imp(b.price))[0]||null; };
-  return {line, nvOver, bestOver:best('over'), bestUnder:best('under'), books:new Set(quotes.map(q=>q.book)).size};
+  const bookPrices = {}; for (const q of quotes){ if (q.point!==line || !q.bk) continue; (bookPrices[q.bk] = bookPrices[q.bk] || {})[q.side] = q.price; }
+  return {line, nvOver, bestOver:best('over'), bestUnder:best('under'), books:new Set(quotes.map(q=>q.book)).size, bookPrices, source:'The Odds API'};
 }
 /* ---------- analysis ---------- */
 function teamCtx(g, side){
@@ -7139,7 +7234,14 @@ function teamLegAnalysis(leg){
       const perPt = mk==='spread' ? ({nba:0.03,wnba:0.03,ncaab:0.03,nfl:0.03,ncaaf:0.025}[g.league] || 0.12) : ({nba:0.02,wnba:0.02,ncaab:0.02,nfl:0.025,ncaaf:0.02}[g.league] || 0.12);
       lineAdj = diff*perPt; formula.push(`line adj ${diff>0?'+':''}${diff} pts × ${(perPt*100).toFixed(1)}% = ${fmtEdge(lineAdj)}`);
       leg.no.push(`Your line ${mk==='spread'?fmtPt(L.line):L.line} differs from the book's ${mk==='spread'?fmtPt(sd.point):sd.point}; estimate adjusted, but no price shown for your exact line`);
-    } else { implied = imp(sd.best.price); leg.bookPrice = sd.best.price; leg.bookName = sd.best.book; }
+    } else {
+      implied = imp(sd.best.price); leg.bookPrice = sd.best.price; leg.bookName = sd.best.book;
+      // v36: price + book from YOUR books only (best one); the market best stays a reference for the math
+      const plR = (typeof plays!=='undefined') ? plays.find(x=>x.g===g && x.mk===mk && x.side===sideKey) : null;
+      const r = plR && typeof recBookFor==='function' ? recBookFor(plR) : null;
+      if (r && !r.none){ leg.bookPrice = r.price; leg.bookName = r.book; implied = r.cost!=null ? r.cost : imp(r.price); if (r.pm) leg.bookCents = r.cents; }
+      else if (r && r.none){ leg.bookName = ''; leg.noBook = true; }
+    }
     pBase = nv + lineAdj; formula.unshift(`market no-vig ${fmtPct(nv)}`);
   }
   const model = g.fx && g.fx.pred && (mk==='ml' || mk==='spread') ? g.fx.pred[side] : null;
@@ -7272,7 +7374,11 @@ async function propLegAnalysis(leg){
     if (userEq && mkt.nvOver==null && mkt.bestOver && mkt.bestUnder && typeof noVig==='function'){ const nv = noVig([mkt.bestOver.price, mkt.bestUnder.price]); if (nv) mkt.nvOver = nv[0]; }
     if (userEq){
       // v35: a live priced line always prices the leg (it used to need a no-vig pair, so ESPN lines showed "no price")
-      const b = L.dir==='under'?mkt.bestUnder:mkt.bestOver; if (b){ leg.bookPrice=b.price; leg.bookName=b.book; }
+      // v36: the price shown is the best of YOUR books; the market best is only a reference when none of them has it
+      const b = L.dir==='under'?mkt.bestUnder:mkt.bestOver;
+      const r = typeof propRecBook==='function' ? propRecBook({side:L.dir==='under'?'under':'over', bookPrices:mkt.bookPrices||{}, source:mkt.source||'', overPrice:mkt.overPrice, underPrice:mkt.underPrice}) : (b?{book:b.book, price:b.price}:{none:true});
+      if (!r.none){ leg.bookPrice=r.price; leg.bookName=r.book; if (r.pm) leg.bookCents=r.cents; }
+      else if (b){ leg.bookPrice=b.price; leg.bookName=''; leg.noBook=true; }
       if (mkt.nvOver!=null){ const nvSide = L.dir==='under' ? 1-mkt.nvOver : mkt.nvOver; p = 0.65*p + 0.35*nvSide; parts.push(`blend 65/35 with market no-vig ${fmtPct(nvSide)}`); }
     }
     else if (!userEq) leg.no.push(`Book line is ${bookLine}, not your ${L.line}${L.incl?'+':''}: no exact price for your line`);
@@ -7463,6 +7569,12 @@ function livePropBook(p, dir){
   const bp = (p && p.bookPrices) || {}; const want = livePropPrice(p, dir);
   for (const k in bp){ const x = bp[k] && bp[k][dir==='under'?'under':'over']; if (x!=null && +x===want) return (typeof bookLabelOf==='function'?bookLabelOf(k):k); }
   return /odds api/i.test(String(p && p.source || '')) ? 'Sportsbook' : 'DraftKings';
+}
+// v36: dropdown label names the best of YOUR books (never an unpicked book)
+function liveRecLabel(p, dir, pr){
+  if (typeof propRecBook!=='function') return livePropBook(p, dir)+' '+fmtAm(pr);
+  const r = propRecBook({side:dir==='under'?'under':'over', bookPrices:p.bookPrices||{}, source:p.source||'', overPrice:p.overPrice, underPrice:p.underPrice});
+  return r.none ? 'none of your books has it yet' : r.book+' '+fmtAm(r.price);
 }
 function livePropsForPlayer(player, g){
   if (!player || !g) return [];
@@ -7692,7 +7804,7 @@ function legMatchSelectHTML(leg, i){
   const dir = (leg.L && leg.L.dir)==='under' ? 'under' : 'over';
   if (leg.player && (leg.liveProps||[]).length){
     const kindLab = k => (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[k]) || k;
-    const live = leg.liveProps.map(p=>{ const pr = livePropPrice(p, dir); return `<option value="${esc('lp:'+p.id)}" ${leg.matchKey==='lp:'+p.id?'selected':''}>${esc(`${p.playerName} ${dir==='under'?'Under':'Over'} ${p.line} ${kindLab(p.kind)} · ${pr!=null?livePropBook(p, dir)+' '+fmtAm(pr):'no price'}`)}</option>`; }).join('');
+    const live = leg.liveProps.map(p=>{ const pr = livePropPrice(p, dir); return `<option value="${esc('lp:'+p.id)}" ${leg.matchKey==='lp:'+p.id?'selected':''}>${esc(`${p.playerName} ${dir==='under'?'Under':'Over'} ${p.line} ${kindLab(p.kind)} · ${pr==null?'no price':liveRecLabel(p, dir, pr)}`)}</option>`; }).join('');
     opts.push(`<optgroup label="Live priced lines">${live}</optgroup>`);
   }
   if (leg.cands.length){
@@ -7732,7 +7844,7 @@ ${resultBan}
     </div>`;
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
-  const price = leg.price!=null ? `${fmtAm(leg.price)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}` : 'no price';
+  const price = leg.price!=null ? (leg.userOdds==null && leg.noBook ? `${esc(NO_BOOK_LINE)} (market ${fmtAm(leg.price)}, reference only)` : `${leg.bookCents!=null&&leg.userOdds==null?Math.round(leg.bookCents*100)+'¢ ≈ ':''}${fmtAm(leg.price)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}`) : 'no price';
   const gamePl = (!leg.err && g) ? gamePlayFor(g, leg.side) : null;
   const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
   return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
@@ -9341,7 +9453,7 @@ function espnPropForPlayer(g, playerName, stat, line){
     return out;
   };
   const books = 1 + Object.keys(p.bookPrices||{}).filter(k=>k!=='draftkings').length;
-  return {line:p.line, bestOver:best('over'), bestUnder:best('under'), nvOver:null, books, source:p.source, err:null, bookPrices:p.bookPrices||null, propId:p.id};
+  return {line:p.line, bestOver:best('over'), bestUnder:best('under'), nvOver:null, books, source:p.source, err:null, bookPrices:p.bookPrices||null, propId:p.id, overPrice:p.overPrice, underPrice:p.underPrice};
 }
 
 function filteredProps(list){
@@ -9353,7 +9465,7 @@ function filteredProps(list){
     if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
     if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
     if (ui.hideStarted && g && g.state!=='pre') return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, g&&g.state, null, 'props')) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, g&&g.state, (typeof boardHorizonOverride==='function' ? boardHorizonOverride('props') : null), 'props')) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(p)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(p.id))) return false;
     }
@@ -9473,6 +9585,7 @@ function propHead(p){
     </div>`;
 }
 
+function propRefLabel(p){ return /odds api/i.test(String(p&&p.source||'')) && !/draftkings/i.test(Object.keys((p&&p.bookPrices)||{}).join(',')) ? 'the sportsbooks' : 'DraftKings'; }
 function propCard(p){
   const loggedBet = typeof primaryLoggedBet==='function' ? primaryLoggedBet(p) : null;
   const early = p.verdict==='good' && typeof isEarlyPreview==='function' && isEarlyPreview(p, 'props');
@@ -9481,10 +9594,19 @@ function propCard(p){
   const logBtn = loggedBet ? 'Tailed' : 'Tail';
   const logMarks = loggedBet ? `<div class="logged-badge">${esc(typeof loggedBadgeText==='function'?loggedBadgeText(loggedBet):'✓ Tailed')}</div>` : '';
   const cid = p.id+'|court', nid = p.id+'|news', mid = p.id+'|math';
+  // v36: price + "bet on" = the best of YOUR books; DraftKings is only the reference line unless you picked it
+  const rec = typeof propRecBook==='function' ? propRecBook(p) : null;
+  const fairAm = (p.p!=null && typeof probToAm==='function') ? probToAm(p.p) : null;
+  const price = p.price==null ? `<span class="mut">no price</span><small>typed / research</small>`
+    : (rec && rec.none) ? `${fairAm!=null?fmtAm(Math.round(fairAm)):'—'}<small>fair price</small>`
+    : rec ? `${rec.pm?Math.round(rec.cents*100)+'¢':fmtAm(rec.price)}<small>${esc(rec.book)}</small>`
+    : `${fmtAm(p.price)}<small>${esc(propSourceLabel(p))}</small>`;
   const bo = (p.implied!=null && p.p!=null)
-    ? `<div class="beton ${p.edge>=0?'ok':'bad'}"><div>These odds break even at about ${typeof outOf10==='function'?outOf10(p.implied):Math.round(p.implied*10)} wins in 10. We estimate ${typeof outOf10==='function'?outOf10(p.p):Math.round(p.p*10)} in 10.</div></div>`
+    ? `<div class="beton ${p.edge>=0?'ok':'bad'}"><div>${(rec&&rec.none)?'The market price breaks even':'These odds break even'} at about ${typeof outOf10==='function'?outOf10(p.implied):Math.round(p.implied*10)} wins in 10. We estimate ${typeof outOf10==='function'?outOf10(p.p):Math.round(p.p*10)} in 10.</div></div>`
     : (p.p==null?`<div class="beton"><div class="mut">Researching this player’s real game log…</div></div>`:'');
-  const price = p.price!=null ? `${fmtAm(p.price)}<small>${esc(propSourceLabel(p))}</small>` : `<span class="mut">no price</span><small>typed / research</small>`;
+  const recLine = (p.price==null || !rec) ? '' : rec.none
+    ? `<div class="beton bad"><div>${esc(NO_BOOK_LINE)}</div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}fair line from ${esc(propRefLabel(p))}</div></div>`
+    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(rec.pm?`Buy on ${rec.book} at ${Math.round(rec.cents*100)}¢`:`Bet on: ${rec.book} at ${fmtAm(rec.price)}`)}</div>${p.p!=null?`<div class="mut">${esc(maxPayText(p.p, rec))} · fair line from ${propRefLabel(p)}</div>`:''}</div>`;
   const lazy = (id, sum, kind, body) => {
     const open = ui.open.has(id);
     return `<details class="dd${kind==='court'?' court-dd':''}" data-dd="${esc(id)}" data-lazy="${kind}" data-lazy-id="${esc(p.id)}" ${open?'open':''}><summary>${sum}</summary>${open?body:''}</details>`;
@@ -9493,8 +9615,9 @@ function propCard(p){
     ${logMarks}
     ${propHead(p)}
     ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
-    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(propSourceLabel(p)==='line'?'Research':propSourceLabel(p))}</div><div class="what">${esc(p.label)}</div></div>
+    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.price==null||propSourceLabel(p)==='line'?'Research':(rec&&!rec.none)?rec.book:'Not at your books yet')}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${price}</div></div>
+    ${recLine}
     ${bo}
     ${p.strictFails && p.strictFails.length && p.verdict!=='good' ? `<div class="hint" style="margin:6px 2px 0">Missed: ${esc(p.strictFails[0])}${p.strictFails.length>1?` (+${p.strictFails.length-1} more)`:''}</div>`:''}
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
@@ -9626,6 +9749,8 @@ function playFromPropLeg(leg){
   const play = buildPropPlay(raw, leg.L.dir==='under'?'under':'over', feat, est);
   if (leg.price!=null) play.price = leg.price;
   if (leg.p!=null && play.p==null) play.p = leg.p;
+  if (leg.bookName) play.bookName = leg.bookName;
+  if (leg.noBook) play.noBook = true;
   return play;
 }
 
@@ -10165,7 +10290,7 @@ function filteredParlays(list){
     if (ui.mix && ui.mix!=='all' && pl.mix!==ui.mix) return false;
     const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
     if (ui.hideStarted && started) return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre', null, 'parlay')) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre', (typeof boardHorizonOverride==='function' ? boardHorizonOverride('parlay') : null), 'parlay')) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(pl)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(pl.id))) return false;
     }
@@ -11698,13 +11823,15 @@ $('#view').addEventListener('click', e=>{
     if (!confirm('You already tailed this — tail again?')) return;
   }
   setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
-  const mb = p.my && p.my.best;
+  const rb = typeof recBookFor==='function' ? recBookFor(p) : {none:true};
+  const mb = rb.none ? null : Object.assign({}, rb, {kind: rb.pm ? 'pm' : 'book'});
   const usePm = !!(mb && mb.kind==='pm' && mb.cents!=null);
   const fee = typeof defaultPmFeeRate==='function' ? defaultPmFeeRate(p) : +S.pmFeeRate;
-  const pf = {date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime()}, fee};
+  const pf = {date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime()}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
   pf.odds = usePm ? String(Math.round(mb.cents*100)) : fmtAm(mb ? mb.price : (p.isProp ? p.price : (p.sd && p.sd.best && p.sd.best.price)));
+  if (mb && mb.book) pf.book = mb.book;
   renderTracker(pf);
-  window.scrollTo({top:0}); toast('Pre-filled. Confirm the odds at your book, then add the tailed bet.');
+  window.scrollTo({top:0}); toast(mb ? `Pre-filled with ${mb.book}'s price. Confirm the odds there, then add the tailed bet.` : 'None of your books has this line yet. Type the odds you actually get, then add the tailed bet.');
 });
 document.addEventListener('toggle', e=>{ const d=e.target; if (!d.dataset || !d.dataset.dd) return; const k=d.dataset.dd; if (d.open){ ui.open.add(k); ui.closed.delete(k); if (typeof fillLazyDetails==='function') fillLazyDetails(d); } else { ui.open.delete(k); ui.closed.add(k); } }, true);
 
