@@ -1001,6 +1001,21 @@ main.wrap{padding-top:16px}
 
 .eb-tag,.lk-tag{white-space:normal;max-width:100%;line-height:1.35;overflow-wrap:anywhere}
 @media (max-width:600px){.pulled-list{gap:14px}.pulled-list .card.pulled-item{padding:16px 15px 12px}}
+
+/* v39: Untrack button, flash on the bet in All Bets, Pulled in the bottom bar */
+.pull-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pull-actions .btn{min-width:108px;min-height:40px;justify-content:center;text-align:center}
+.cfoot.pull-actions{justify-content:flex-end}
+.pulled-btns{margin:0 0 12px}
+.btn.untrack{border-color:rgba(244,63,94,.55);color:#ffe4e6;background:rgba(225,29,72,.16)}
+@media(hover:hover){.btn.untrack:hover{background:rgba(225,29,72,.3)}}
+.side-untrack{margin-top:6px;font-size:11.5px;font-weight:700;color:#fda4af;background:none;border:0;padding:2px 0;cursor:pointer;text-decoration:underline}
+@keyframes betFlash{0%,100%{box-shadow:0 0 0 0 rgba(244,63,94,0)}20%,60%{box-shadow:0 0 0 3px rgba(244,63,94,.95),0 0 24px rgba(244,63,94,.6)}40%,80%{box-shadow:0 0 0 2px rgba(244,63,94,.5)}}
+.bet-row.bet-flash{animation:betFlash 2.2s ease-in-out 1;outline:2px solid #f43f5e;outline-offset:2px}
+.bottom-nav button[data-tab=pulled] .cnt.pull-cnt,.bottom-nav button[data-tab=pulled].on .cnt.pull-cnt{background:#e11d48;color:#fff}
+.bottom-nav .cnt[hidden]{display:none}
+.res-pill{white-space:nowrap;flex:none}
+@media (max-width:600px){.pull-actions .btn{flex:1 1 0;min-height:44px}}
 </style>
 </head>
 <body>
@@ -1112,6 +1127,7 @@ main.wrap{padding-top:16px}
   <button type="button" data-board-parent="games" aria-label="Games"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7l6-3 6 3 4-2v12l-4 2-6-3-6 3z"/><path d="M10 4v12"/><path d="M16 7v12"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Games</span></button>
   <button type="button" data-board-parent="props" aria-label="Props"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/><circle cx="12" cy="10" r="7" opacity=".0"/></svg><span class="cnt" data-cnt="props-good">0</span></span><span class="tab-lab">Props</span></button>
   <button type="button" data-board-parent="parlay" aria-label="Parlay"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14.2a3.8 3.8 0 0 1 0-5.4l1.7-1.7a3.8 3.8 0 0 1 5.4 5.4l-.8.8"/><path d="M14 9.8a3.8 3.8 0 0 1 0 5.4l-1.7 1.7a3.8 3.8 0 1 1-5.4-5.4l.8-.8"/></svg><span class="cnt" data-cnt="parlay-good">0</span></span><span class="tab-lab">Parlay</span></button>
+  <button type="button" data-tab="pulled" aria-label="Pulled: bets you tailed that flipped to Avoid"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2z"/><path d="M8.5 12h7"/></svg><span class="cnt pull-cnt" data-cnt="pulled" hidden>0</span></span><span class="tab-lab">Pulled</span></button>
   <button type="button" id="btnMore" aria-haspopup="true" aria-expanded="false" aria-label="More"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg><span class="tab-dot" data-more-pull hidden></span></span><span class="tab-lab">More</span></button>
 </nav>
 <div class="nav-pop-back" id="navPopBack" hidden></div>
@@ -1120,7 +1136,6 @@ main.wrap{padding-top:16px}
 <div class="more-sheet" id="moreSheet" hidden role="menu" aria-label="More">
   <div class="more-handle" aria-hidden="true"></div>
   <button type="button" data-tab="tracker" role="menuitem" aria-label="Tracker"><span class="tab-ic tab-emo" aria-hidden="true">📊</span><span class="tab-lab">Tracker</span></button>
-  <button type="button" data-tab="pulled" role="menuitem" aria-label="Tailed picks that flipped to Avoid"><span class="tab-ic tab-emo" aria-hidden="true">🟠</span><span class="tab-lab">Pulled</span><span class="cnt" data-cnt="pulled">0</span></button>
   <button type="button" data-tab="all" role="menuitem" aria-label="All Games"><span class="tab-ic tab-emo" aria-hidden="true">🏟️</span><span class="tab-lab">All Games</span><span class="cnt" data-cnt="all">0</span></button>
   <button type="button" data-tab="settings" role="menuitem" aria-label="Settings"><span class="tab-ic tab-emo" aria-hidden="true">⚙️</span><span class="tab-lab">Settings</span></button>
 </div>
@@ -4288,7 +4303,8 @@ function withPulledTailed(list, board){
   return extra.concat(rest);
 }
 function injectPulledCard(html, n){
-  return String(html).replace(/<span class="lock-badge"[^>]*>[\s\S]*?<\/span>/g, '').replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} tailed-pulled logged-pulled"><div class="pulled-tag"><span aria-hidden="true">⛔</span> ${esc(pullTagText(n))}</div>`);
+  const acts = `<div class="pull-actions pulled-btns"><button type="button" class="btn sm untrack" data-untrack="${esc(n.k)}" aria-label="Untrack: open this bet in All Bets to delete it">Untrack</button><button type="button" class="btn sm" data-dismiss-pull="${esc(n.k)}" data-pulled-at="${n.at||0}">Dismiss</button></div>`;
+  return String(html).replace(/<span class="lock-badge"[^>]*>[\s\S]*?<\/span>/g, '').replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} tailed-pulled logged-pulled"><div class="pulled-tag"><span aria-hidden="true">⛔</span> ${esc(pullTagText(n))}</div>${acts}`);
 }
 /* ================= BACKTEST (past ESPN data, no future leakage) ================= */
 // Data used per past game (all knowable before tip-off):
@@ -6175,6 +6191,7 @@ function pulledSidebarHTML(fromTab, counts){
       ${logged?'<div class="you-bet-lab">YOU TAILED THIS</div>':''}
       <div class="what">${esc(r.legLabel ? r.legLabel+' → now Avoid' : r.label)}</div>
       <div class="hop">${esc(r.legLabel ? 'From your parlay: '+(r.betLabel||'') : hopTxt(r))}</div>
+      <button type="button" class="side-untrack" data-untrack="${esc(r.k)}">Untrack</button>
       ${b?`<div class="logged-line">${esc(loggedBadgeText(b))}</div>`:''}
       <div class="why">${esc(r.reason||r.pullReason||'no longer passes the filters')} · ${esc(r.start?fmtTime(new Date(r.start)):'')}</div>
     </div>`;
@@ -6222,14 +6239,11 @@ function updatePullDots(){
   const loggedN = list.filter(r => typeof isLoggedKey==='function' && isLoggedKey(r.k)).length;
   if (typeof setTabCount==='function') setTabCount('pulled', gN);
   const moreBtn = document.getElementById('btnMore');
-  if (moreBtn){
-    moreBtn.classList.toggle('has-pull', gN>0 && loggedN===0);
-    moreBtn.classList.toggle('has-logged-pull', loggedN>0);
-    moreBtn.querySelectorAll('[data-more-pull]').forEach(el=>{
-      el.hidden = gN===0;
-      el.title = gN ? `${gN} pulled play${gN===1?'':'s'}` : '';
-    });
+  if (moreBtn){   // v39: Pulled has its own bottom-bar button now, so More no longer carries a pull dot
+    moreBtn.classList.remove('has-pull','has-logged-pull');
+    moreBtn.querySelectorAll('[data-more-pull]').forEach(el=>{ el.hidden = true; });
   }
+  document.querySelectorAll('#bottomNav [data-cnt="pulled"]').forEach(el=>{ el.hidden = gN===0; el.title = gN ? `${gN} tailed bet${gN===1?'':'s'} pulled` : ''; });
   document.querySelectorAll('#moreSheet [data-tab="pulled"]').forEach(btn=>{
     btn.hidden = gN===0;
     btn.classList.toggle('has-pull', gN>0 && loggedN===0);
@@ -6261,7 +6275,7 @@ function pulledCard(r){
     ${sub?`<div class="pull-sub">${esc(sub)}</div>`:''}
     <div class="pull-why"><b>Why:</b> ${esc(why)}</div>
     <div class="pull-meta">${[pulledWhenTxt(r.at), tailed, starts].filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('')}</div>
-    <div class="cfoot"><button type="button" class="btn sm" data-dismiss-pull="${esc(r.k)}" data-pulled-at="${r.at||0}">Dismiss</button></div>
+    <div class="cfoot pull-actions">${b?`<button type="button" class="btn sm untrack" data-untrack="${esc(r.k)}" aria-label="Untrack: open this bet in All Bets to delete it">Untrack</button>`:''}<button type="button" class="btn sm" data-dismiss-pull="${esc(r.k)}" data-pulled-at="${r.at||0}">Dismiss</button></div>
   </div>`;
 }
 function activeFilterCount(){
@@ -6591,11 +6605,7 @@ function render(){
   const v = $('#view');
   const shownOddsErrs = (oddsErrors||[]).filter(m=>!/quota|usage|credit|out_of_usage/i.test(String(m||'')));
   const errs = (feedErrors.length||shownOddsErrs.length) ? `<div class="err-list">${feedErrors.slice(0,4).map(esc).join('<br>')}${feedErrors.length>4?`<br>…and ${feedErrors.length-4} more feed errors`:''}${shownOddsErrs.length?'<br>Odds API: '+shownOddsErrs.map(esc).join('<br>'):''}</div>` : '';
-  if (ui.tab==='pulled' && !(typeof pulledCount==='function' ? pulledCount() : (typeof visiblePulled==='function' && (visiblePulled('good')||[]).length))){
-    if (typeof setTab==='function') setTab('good', {board: ui.board||'games'});
-    else ui.tab = 'good';
-    if (typeof syncTabChrome==='function') syncTabChrome();
-  }
+  // v39: Pulled is a bottom-bar tab now, so an empty Pulled tab shows its empty state instead of bouncing away
   if (ui.tab==='results' && !(typeof canOpenResults==='function' && canOpenResults())){ ui.tab = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks'; }
   if (ui.tab==='tracker') return renderTracker();
   if (ui.tab==='picks') return renderPicks();
@@ -6731,6 +6741,27 @@ function initPullToRefresh(){
   document.addEventListener('touchmove', onPtrMove, {passive:false});
   document.addEventListener('touchend', onPtrEnd, {passive:true});
   document.addEventListener('touchcancel', onPtrEnd, {passive:true});
+}
+
+/* v39: Untrack → jump to the tailed bet in Tracker → All Bets and flash it (never deletes anything) */
+function untrackPulled(k){
+  const b = typeof primaryLoggedBet==='function' ? primaryLoggedBet(k) : null;
+  if (!b){ if (typeof toast==='function') toast('Could not find that bet in your Tracker.'); return; }
+  try{ if (typeof setMoreOpen==='function') setMoreOpen(false); if (typeof setNavPop==='function') setNavPop(null); }catch(e){}
+  setTab('tracker');
+  if (typeof trackerUI!=='undefined') trackerUI.allOpen = true;
+  render();
+  const go = (tries) => {
+    const det = document.querySelector('#view .trk-allbets'); if (det && !det.open) det.open = true;
+    const sel = '#view [data-bet="'+(window.CSS && CSS.escape ? CSS.escape(String(b.id)) : String(b.id))+'"]';
+    const el = document.querySelector(sel);
+    if (!el){ if (tries>0) return setTimeout(()=>go(tries-1), 120); if (typeof toast==='function') toast('Open All Bets to find this bet.'); return; }
+    el.scrollIntoView({block:'center', behavior: (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'auto' : 'smooth'});
+    el.classList.remove('bet-flash'); void el.offsetWidth; el.classList.add('bet-flash');
+    clearTimeout(el._flashT); el._flashT = setTimeout(()=>el.classList.remove('bet-flash'), 2400);
+    if (typeof toast==='function') toast('Here it is. Tap Delete if you want to remove it.');
+  };
+  setTimeout(()=>go(10), 60);
 }
 /* ================= TRACKER ================= */
 function saveBets(){ saveJSON(LS.bets, bets); }
@@ -11973,7 +12004,7 @@ function renderSettings(){
 }
 
 /* ================= EVENTS ================= */
-const MORE_TABS = {tracker:1, pulled:1, all:1, results:1, settings:1};
+const MORE_TABS = {tracker:1, all:1, results:1, settings:1};
 const SLATE_TABS = {good:1};
 function setMoreOpen(open){
   const sheet = $('#moreSheet'), back = $('#moreBackdrop'), btn = $('#btnMore');
@@ -12032,9 +12063,10 @@ function syncTabChrome(){
     b.classList.toggle('on', slate && board===pb);
   });
   document.querySelectorAll('#bottomNav button[data-tab="picks"]').forEach(b=>b.classList.toggle('on', tab==='picks'));
+  document.querySelectorAll('#bottomNav button[data-tab="pulled"]').forEach(b=>b.classList.toggle('on', tab==='pulled'));
   document.querySelectorAll('#bottomNav [data-board-parent]').forEach(b=>{
     const pb = b.getAttribute('data-board-parent');
-    b.classList.toggle('on', slate && board===pb);
+    b.classList.toggle('on', slate && board===pb && tab!=='pulled');
     b.classList.toggle('pop-on', ui.navPop===pb);
   });
   const moreBtn = $('#btnMore');
@@ -12140,6 +12172,7 @@ if ($('#bottomNav')) $('#bottomNav').addEventListener('click', e=>{
     setTab('good', {board}); render(); window.scrollTo({top:0});
     return;
   }
+  if (e.target.closest('button[data-tab]')){ setMoreOpen(false); setNavPop(null); }
   onTabClick(e);
 });
 if ($('#navPop')) $('#navPop').addEventListener('click', e=>{
@@ -12212,6 +12245,8 @@ $('#btnRefresh').onclick = ()=>refresh(false);
 $('#view').addEventListener('click', e=>{
   if (e.target.closest('[data-open-settings]')){ setTab('settings'); if (typeof updateFilterChrome==='function') updateFilterChrome(); render(); window.scrollTo({top:0}); return; }
   if (e.target.closest('[data-clear-unlogged]')){ if (typeof clearUnloggedPulled==='function') clearUnloggedPulled(); return; }
+  const ut = e.target.closest('[data-untrack]');
+  if (ut){ e.preventDefault(); e.stopPropagation(); if (typeof untrackPulled==='function') untrackPulled(ut.dataset.untrack); return; }
   const d = e.target.closest('[data-dismiss-pull]');
   if (d){
     const k = d.dataset.dismissPull;
