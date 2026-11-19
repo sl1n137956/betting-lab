@@ -998,6 +998,7 @@ main.wrap{padding-top:16px}
     <div class="filters horizon-filter" id="horizonRow">
       <span class="mut horizon-lab">When</span>
       <div class="seg" id="horizonSeg" role="group" aria-label="Kickoff window">
+        <label><input type="radio" name="horizon" value="locked" hidden>Locked only</label>
         <label class="on"><input type="radio" name="horizon" value="24h" checked hidden>Next 24h</label>
         <label><input type="radio" name="horizon" value="48h" hidden>Next 48h</label>
         <label><input type="radio" name="horizon" value="all" hidden>All</label>
@@ -1464,7 +1465,7 @@ function sportOnFilter(lg){
   return ui.sports.includes(lg);
 }
 
-function normalizeHorizon(h){ return (h==='48h'||h==='all'||h==='24h') ? h : '24h'; }
+function normalizeHorizon(h){ return (h==='locked'||h==='48h'||h==='all'||h==='24h') ? h : '24h'; }
 function itemStartMs(x){
   if (!x) return 0;
   if (x.legs && x.start!=null && isFinite(+x.start)) return +x.start;
@@ -1480,12 +1481,16 @@ function itemState(x){
   if (x.legs && (x.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')) return 'in';
   return 'pre';
 }
-function inHorizon(startMs, state, hOverride){
+function inHorizon(startMs, state, hOverride, boardOverride){
   const h = hOverride ? normalizeHorizon(hOverride) : ((typeof ui!=='undefined' && ui.horizon) ? normalizeHorizon(ui.horizon) : '24h');
   const now = Date.now();
   const start = +startMs || 0;
   if (state && state!=='pre') return true;
   if (start && start <= now) return true;
+  if (h==='locked'){
+    const b = boardOverride || (typeof ui!=='undefined' && ui.board) || 'games';
+    return isOfficialLock(start, boardLockMins(b));
+  }
   if (h==='all') return true;
   if (!start) return true;
   return start <= now + (h==='48h' ? 48 : 24)*3600e3;
@@ -1590,7 +1595,11 @@ function picksBoardHTML(title, lockedSub, emptyMsg, list, board, cardFn){
   }
   html += `<div class="section-title"><h2>${title}</h2>${lockedSub?`<span class="hint">${lockedSub}</span>`:''}</div>`;
   if (locked.length) html += grid(locked);
-  else if (!early.length) html += `<div class="empty-state">${emptyMsg}</div>`;
+  else if (!early.length){
+    const lockedOnly = typeof ui!=='undefined' && normalizeHorizon(ui.horizon)==='locked';
+    const msg = (lockedOnly && lock>0) ? `No locked picks right now (locks ${fmtLockWindow(lock)} before tip). Switch <b>When</b> to <b>Next 24h</b> to view early previews.` : emptyMsg;
+    html += `<div class="empty-state">${msg}</div>`;
+  }
   if (early.length && lock>0){
     html += `<div class="early-preview-sec"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">⏳</span>${esc(earlyPreviewTitle(lock))}</h2><span class="hint">Still playable if you want to look ahead, but not locked into live results yet — so they will not trigger a false pull.</span></div>${grid(early)}</div>`;
   }
@@ -5896,7 +5905,7 @@ function render(){
       if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(p)) return false;
       if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
       if (hs && p.g && p.g.state!=='pre') return false;
-      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h)) return false;
+      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h, 'games')) return false;
       return true;
     }).length;
   };
@@ -8799,7 +8808,7 @@ function filteredProps(list){
     if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
     if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
     if (ui.hideStarted && g && g.state!=='pre') return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, g&&g.state)) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, g&&g.state, null, 'props')) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(p)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(p.id))) return false;
     }
@@ -9041,7 +9050,7 @@ function updatePropTabCounts(){
         if (typeof selectedBooksAllowProp==='function' && !selectedBooksAllowProp(p)) return false;
         if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
         if (hs && p.g && p.g.state!=='pre') return false;
-        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h)) return false;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h, 'props')) return false;
         return true;
       }).length;
   if (typeof setTabCount==='function'){
@@ -9551,7 +9560,7 @@ function filteredParlays(list){
     if (ui.mix && ui.mix!=='all' && pl.mix!==ui.mix) return false;
     const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
     if (ui.hideStarted && started) return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre')) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre', null, 'parlay')) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(pl)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(pl.id))) return false;
     }
@@ -9576,7 +9585,7 @@ function updateParlayTabCounts(){
         if (sp && sports.filter(Boolean).some(lg=>!sp.includes(lg))) return false;
         const started = (p.legs||[]).some(l=>l.g&&l.g.state&&l.g.state!=='pre');
         if (hs && started) return false;
-        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, started?'in':'pre', h)) return false;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, started?'in':'pre', h, 'parlay')) return false;
         return true;
       }).length;
   if (typeof setTabCount==='function'){
