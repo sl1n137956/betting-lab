@@ -8565,8 +8565,8 @@ function legCard(leg, i, weakest){
   const sel = '';
   const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}</div>` + legAssistHTML(leg, i);
   const resultBan = leg.result?`<div class="banner" style="margin:6px 0">Result: <b class="${leg.result==='HIT'?'pos':leg.result==='MISS'?'neg':''}">${leg.result}</b>${leg.actual!=null?` (actual ${leg.actual})`:''}</div>`:'';
-  const pl = (!leg.err && !leg.player) ? playFromLeg(leg) : null;
-  const propPl = (!leg.err && leg.player && typeof playFromPropLeg==='function') ? playFromPropLeg(leg) : null;
+  const pl = (!leg.err && !leg.player) ? (leg._card || playFromLeg(leg)) : null;
+  const propPl = (!leg.err && leg.player && typeof playFromPropLeg==='function') ? (leg._card || playFromPropLeg(leg)) : null;
   if (propPl && typeof propCard==='function'){
     return `<div class="pk-leg${weakest?' weak':''}">
       ${typed}${sel}
@@ -8615,6 +8615,23 @@ ${resultBan}
     <div class="cfoot pk-log" style="margin-top:14px"><span class="cfoot-meta">${verdictBadge(leg.verdict)}${unitPillHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button>${typeof openInBookHTML==='function'?openInBookHTML(leg, (leg.L&&leg.L.kind==='prop')?'prop':'game'):''}</span></div>`}
   </div>`;
 }
+/* v64: ONE source of truth. Each leg's card below is the board's own card (same model, same gates), so the
+   summary takes that card's final verdict and chance instead of the quick first-pass estimate. */
+const LEG_V = {good:'BET', watch:'WATCHLIST', avoid:'PASS'};
+function legSyncCard(leg){
+  if (!leg) return null; leg._card = null;
+  if (leg.err || leg.final || leg.verdict==='FINAL') return null;
+  let pl = null;
+  try{ pl = leg.player ? (typeof playFromPropLeg==='function' ? playFromPropLeg(leg) : null) : playFromLeg(leg); }catch(e){ pl = null; }
+  if (!pl || !LEG_V[pl.verdict]) return null;
+  leg._card = pl;
+  if (leg._v0==null){ leg._v0 = leg.verdict; leg._why0 = leg.why; leg._p0 = leg.p; }
+  const v = LEG_V[pl.verdict];
+  leg.verdict = v;
+  if (pl.p!=null && isFinite(pl.p)) leg.p = pl.p;
+  leg.why = v===leg._v0 ? leg._why0 : (v==='BET' ? 'The full verdict below says Bet' : v==='WATCHLIST' ? 'The full verdict below says Watch' : 'The full verdict below says Avoid');
+  return pl;
+}
 function parlaySummary(){
   const legs = PK.legs.filter(l=>!l.err);
   if (!legs.length) return '';
@@ -8648,7 +8665,7 @@ function parlaySummary(){
     </div>
     ${pAll!=null && bookAm!=null ? `<div class="hint">Parlay EV at the leg prices: ${fmtEdge(pAll*bookDec-1)} per $1 (${pAll*bookDec>=1?'positive':'negative'}). Your book's actual parlay price may differ: worth it only if it pays better than ${fmtAm(probToAm(pAll))}.</div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'} Fair odds = what the ticket should pay if the estimates are right.</div>`}
     <h3 style="margin-top:12px">Most likely to miss → least</h3>
-    <ol class="why">${ranked.map(x=>`<li><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)} · ${verdictBadge(x.l.verdict)} ${esc(x.l.why||'')}</li>`).join('')}</ol>
+    <ol class="why">${ranked.map(x=>`<li><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)} · ${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)} ${esc(x.l.why||'')}</li>`).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(l.desc)).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(l.desc||l.raw)).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
     <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML==='function'?openInBookHTML({legs, g:legs[0]&&legs[0].g}, legs.length>1?'parlay':'game'):''}</span></div>
@@ -8701,7 +8718,7 @@ function renderPicks(){
     ${typeof photoPanelHTML==='function' ? photoPanelHTML() : ''}
   </div>
   ${PK.busy && !PK.legs.length ? '<div class="pk-empty"><div class="big">Getting your verdict</div>Loading rosters, game pages and game logs…</div>' : ''}
-  ${PK.legs.length ? parlaySummary() + `<div class="grid pk-grid">${PK.legs.map((l,i)=>legCard(l,i,l===weakest)).join('')}</div>` : (PK.busy?'':'<div class="pk-empty"><div class="big">Nothing checked yet</div>Type a pick, or tap an example, then hit <b>Get verdict</b>.</div>')}`;
+  ${PK.legs.length ? (PK.legs.forEach(legSyncCard), parlaySummary()) + `<div class="grid pk-grid">${PK.legs.map((l,i)=>legCard(l,i,l===weakest)).join('')}</div>` : (PK.busy?'':'<div class="pk-empty"><div class="big">Nothing checked yet</div>Type a pick, or tap an example, then hit <b>Get verdict</b>.</div>')}`;
   $('#pkText').oninput = e=>{ PK.text = e.target.value;  };
   if (typeof photoBind==='function') photoBind(v);
   $('#btnCheck').onclick = runPicks;
