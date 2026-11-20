@@ -8564,11 +8564,40 @@ function playForMarketSide(g, mk, side){
   try{ if (typeof estimate==='function') play.E = estimate(play); if (typeof priceMath==='function') play.P = priceMath(play, play.E); }catch(e){}
   return play;
 }
+// v76: a leg judged at YOUR line/price still gets the board's research reasons (form, ranks, injuries, line
+// moves), minus the board's price lines; the price line is redone at your odds.
+function legMergeBoardCourt(leg){
+  if (leg._courtMerged || !leg.g || !leg.L || !['ml','spread','total'].includes(leg.L.kind)) return;
+  leg._courtMerged = true;
+  let C = null;
+  try{ const pl = playForMarketSide(leg.g, leg.L.kind, leg.L.kind==='total' ? leg.L.dir : leg.side); C = pl && typeof courtModel==='function' ? courtModel(pl) : null; }catch(e){ C = null; }
+  if (!C) return;
+  const keep = arr => (arr||[]).filter(x=>x && typeof x==='object' && /^Your line /.test(x.t||''));
+  const conv = list => (list||[]).filter(x=>x && x.txt && x.kind!=='price' && !x.always && !/break-even|odds pay like|price is a little steep|asked to be right|no side wins every night/i.test(x.txt)).map(x=>({t:x.txt, imp:x.imp||0, tag:''}));
+  const yes = keep(leg.yes).concat(conv(C.win)), no = keep(leg.no).concat(conv(C.lose));
+  if (leg.p!=null && leg.implied!=null && leg.userOdds!=null){
+    const need = (leg.implied*10).toFixed(1).replace(/\.0$/,''), have = (leg.p*10).toFixed(1).replace(/\.0$/,'');
+    if (leg.p >= leg.implied) yes.push({t:`At your ${fmtAmRaw(leg.userOdds)} you need about ${need} wins in 10; we have about ${have}`, imp:0.001, tag:''});
+    else no.push({t:`At your ${fmtAmRaw(leg.userOdds)} you need about ${need} wins in 10; we have about ${have}`, imp:-0.001, tag:''});
+  }
+  leg.yes = yes; leg.no = no;
+}
 function playFromLeg(leg){
   if (!leg || !leg.g || !leg.L || leg.L.kind==='prop' || leg.L.kind==='teamtotal' || leg.ownCourt) return null;   // v76: your own line/market → the leg's own courtroom
   const mk = leg.L.kind;
   const sideKey = mk==='total' ? leg.L.dir : leg.side;
   const pl = playForMarketSide(leg.g, mk, sideKey);
+  // v76: you typed your own price. If it's more than 1¢ away from the price the board card uses, the board
+  // card would judge a different bet, so this leg uses its own courtroom at your odds instead.
+  if (pl && leg.userOdds!=null){
+    const cp = pl.my && pl.my.best && pl.my.best.price!=null ? pl.my.best.price : (pl.sd && pl.sd.best ? pl.sd.best.price : null);
+    if (cp!=null && Math.abs(imp(leg.userOdds) - imp(cp)) > 0.01){
+      leg.ownCourt = true;
+      const note = `Best current price is ${fmtAm(cp)}; this verdict uses your ${fmtAm(leg.userOdds)}`;
+      if (!leg.lineNote) leg.lineNote = note; else if (!leg.lineNote.includes('Best current price')) leg.lineNote += ' · ' + note;
+      return null;
+    }
+  }
   return typeof verdictNoRange==='function' ? verdictNoRange(pl) : pl;
 }
 function gamePlayFor(g, side){
@@ -8902,6 +8931,7 @@ ${resultBan}
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
   const price = leg.price!=null ? (leg.userOdds==null && leg.noBook ? `${esc(NO_BOOK_LINE)} (market ${fmtAm(leg.price)}, reference only)` : `${fmtPx(leg.price, leg.userOdds==null?leg.bookCents:null)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}`) : 'no price';
+  if (leg.ownCourt && !leg.err) legMergeBoardCourt(leg);
   const gamePl = (!leg.err && g && !leg.ownCourt) ? (typeof verdictNoRange==="function" ? verdictNoRange(gamePlayFor(g, leg.side)) : gamePlayFor(g, leg.side)) : null;
   const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
   return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
