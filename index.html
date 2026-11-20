@@ -2097,6 +2097,30 @@ function parseAm(x){
 }
 function parsePt(x){ if(x==null) return null; if(typeof x==='number') return x; const s=String(x).replace(/^[ou]/i,'').trim(); if(/^pk$/i.test(s)) return 0; const n=parseFloat(s); return isFinite(n)?n:null; }
 const imp = a => a==null ? null : (a<0 ? (-a)/((-a)+100) : 100/(a+100));
+/* v53: ONE W–L tally for every record on screen. Wins and losses count; pushes are shown third; voids and
+   pending are never in the W–L. resOf(row) → 'win' | 'loss' | 'push' | 'void' | anything else = pending. */
+function wlRecord(rows, resOf){
+  const R = {w:0, l:0, p:0, v:0, pend:0, n:0};
+  for (const r of (rows||[])){
+    const x = String((resOf ? resOf(r) : r && r.res) || '').toLowerCase(); R.n++;
+    if (x==='win') R.w++; else if (x==='loss') R.l++; else if (x==='push') R.p++; else if (x==='void') R.v++; else R.pend++;
+  }
+  R.graded = R.w + R.l; R.wr = R.graded ? R.w/R.graded : null;
+  R.txt = `${R.w}–${R.l}${R.p?'–'+R.p:''}`;
+  return R;
+}
+// which board a tailed bet belongs to (for "your tailed bets" next to each board's record)
+function betBoardOf(b){
+  if (typeof isParlayBet==='function' && isParlayBet(b)) return 'parlay';
+  if (b && (b.src==='prop' || (b.link && b.link.kind==='prop') || /prop/i.test(String(b.market||'')))) return 'props';
+  if (typeof propBetInfo==='function' && propBetInfo(b)) return 'props';
+  if (b && b.src==='parlay') return 'parlay';
+  return 'games';
+}
+function tailedRecord(board){
+  const list = ((typeof bets!=='undefined' && Array.isArray(bets)) ? bets : []).filter(b=>!board || betBoardOf(b)===board);
+  return wlRecord(list, b=>b.result);
+}
 /* v51: ONE prop comparison for every grader. Lines ending .5 can't push; whole-number lines push on equality.
    "N+" markets are stored as Over N−0.5 before they get here (6+ assists = Over 5.5). */
 function propOutcome(v, side, line){
@@ -7055,7 +7079,7 @@ function tombstoneBet(id){
 function betProfit(b){ const o=+b.odds, s=+b.stake||0; if (b.result==='win') return profitOn(o, s); if (b.result==='loss') return -s; return 0; }
 function trackerStats(){
   const settled = bets.filter(b=>['win','loss','push','void'].includes(b.result)).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.created||0)-(b.created||0));
-  const W = settled.filter(b=>b.result==='win').length, Lo = settled.filter(b=>b.result==='loss').length, P = settled.length-W-Lo;
+  const REC = wlRecord(bets, b=>b.result); const W = REC.w, Lo = REC.l, P = REC.p;
   let net=0, staked=0, peak=0, maxDD=0, streak=0, worst=0; const cum=[0], monthly={}, bySport={}, byMkt={};
   for (const b of settled){
     const pr = betProfit(b); net += pr; if (b.result!=='void') staked += (+b.stake||0);
@@ -7067,7 +7091,7 @@ function trackerStats(){
       if(b.result==='win')x.w++; else if(b.result==='loss')x.l++; else x.p++; x.net+=pr; if(b.result!=='void') x.st+=(+b.stake||0);
     }
   }
-  return {W, Lo, P, net, staked, maxDD, cum, worst, curLoss:streak, monthly, bySport, byMkt, pending:bets.filter(b=>b.result==='pending').length};
+  return {REC, W, Lo, P, net, staked, maxDD, cum, worst, curLoss:streak, monthly, bySport, byMkt, pending:bets.filter(b=>b.result==='pending').length};
 }
 function sparkSVG(cum){
   if (cum.length<2) return `<div class="hint">The chart appears after your first settled bet.</div>`;
@@ -7352,7 +7376,7 @@ function renderTracker(pf){
   $('#view').innerHTML = `
   <div class="section-title"><h2><span class="h-emo" aria-hidden="true">📊</span>Bet Tracker</h2><span class="hint">Saved on this device.</span></div>
   <div class="trk-kpis">
-    <div class="trk-kpi"><div class="k">🏆 Record</div><div class="v">${st.W}–${st.Lo}${st.P?'–'+st.P:''}</div></div>
+    <div class="trk-kpi" title="Every bet you tailed or logged, all boards. Pushes shown third; voids not counted."><div class="k">🏆 Your record</div><div class="v" data-rec="tailed-all">${st.REC.txt}</div></div>
     <div class="trk-kpi"><div class="k">Win rate</div><div class="v">${wr==null?'—':(wr*100).toFixed(1)+'%'}</div></div>
     <div class="trk-kpi net"><div class="k">Net</div><div class="v">${netBubble(st.net)}</div></div>
     <div class="trk-kpi"><div class="k">ROI</div><div class="v ${roi==null?'':roi>=0?'pos':'neg'}">${roi==null?'—':(roi*100).toFixed(1)+'%'}</div></div>
@@ -8694,10 +8718,11 @@ function isRecommendedSnap(x){
 function liveRecordFromPlays(plays, opts){
   const o = opts||{};
   const unit = +S.unit||25;
+  const REC = wlRecord(plays, r=>r.res);
   const settled = plays.filter(r=>r.res==='win'||r.res==='loss');
-  const pushes = plays.filter(r=>r.res==='push').length;
-  const w = settled.filter(r=>r.res==='win').length, l = settled.length-w;
-  const pend = plays.filter(r=>!r.res || r.res==='pending').length;
+  const pushes = REC.p;
+  const w = REC.w, l = REC.l;
+  const pend = REC.pend;
   let net = 0;
   for (const r of settled){
     if (typeof o.netFn==='function') net += o.netFn(r, unit);
@@ -8776,13 +8801,15 @@ function liveRecordHTML(board){
     fifthVal = String(st.graded);
   }
   return `<div class="kpis">
-    <div class="kpi"><div class="k">Live record</div><div class="v">${st.w}-${st.l}${st.p?'-'+st.p:''}</div></div>
+    <div class="kpi" title="Every pick this board made, whether or not you tailed it. Pulled picks are listed separately."><div class="k">Board picks record</div><div class="v" data-rec="board-${board}">${st.w}–${st.l}${st.p?'–'+st.p:''}</div></div>
+    ${board!=='verdict' ? (()=>{ const t = tailedRecord(board); return `<div class="kpi" title="Only the ${board==='parlay'?'parlays':board==='props'?'props':'game bets'} you tailed or logged in the Tracker — the same count as the Tracker."><div class="k">Your tailed ${board==='parlay'?'parlays':board==='props'?'props':'game bets'}</div><div class="v" data-rec="tailed-${board}">${t.txt}</div></div>`; })() : ''}
     <div class="kpi"><div class="k">Win rate</div><div class="v">${st.wr==null?'—':(st.wr*100).toFixed(1)+'%'}</div></div>
     <div class="kpi"><div class="k">Profit at $${unit.toFixed(0)} flat</div><div class="v ${st.net>=0?'pos':'neg'}">${money(st.net)}</div></div>
     <div class="kpi"><div class="k">ROI</div><div class="v ${(st.roi||0)>=0?'pos':'neg'}">${st.roi==null?'—':(st.roi*100).toFixed(1)+'%'}</div></div>
     <div class="kpi"${board==='games'?' title="Closing line value: our price vs the final DraftKings line (house cut removed). Positive = we beat the close, the best long-run sign of real skill."':''}><div class="k">${fifthLabel}</div><div class="v ${fifthCls}">${fifthVal}</div></div>
     <div class="kpi"><div class="k">Pending</div><div class="v">${st.pend}</div></div>
   </div>
+  ${board!=='verdict' ? `<p class="hint rec-why">The board record counts every pick the app made on this board (pulled picks are listed below, not in it). Your record counts only the bets you tailed, including ones that were pulled after you tailed them and ones you typed in yourself, so the two only match when you tailed every pick.</p>` : ''}
   <div class="panel overflow"><h3>${esc(title)}</h3>
     <table>${cols}${rows||`<tr><td colspan="7" class="mut">${esc(empty)}</td></tr>`}</table>
     <div style="margin-top:8px"><button class="btn sm" id="btnGrade">Grade now</button> <span class="hint">Grading also runs on every refresh.</span></div></div>
@@ -9354,7 +9381,7 @@ function learnPanelHTML(){
     ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
     <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${cur.id}</div><div class="hint">since ${dt(cur.at)}</div></div>
-      <div class="kpi"><div class="k">Live record (v${cur.id})</div><div class="v">${lvN ? `${lv.w}-${lv.l}` : '—'}</div><div class="hint">${lvN ? pctS(lv.wr)+(lvN<100?' · small sample':'') : 'no graded strict plays yet'}</div></div>
+      <div class="kpi"><div class="k">Model v${cur.id} picks record</div><div class="v">${lvN ? `${lv.w}-${lv.l}` : '—'}</div><div class="hint">${lvN ? pctS(lv.wr)+(lvN<100?' · small sample':'') : 'no graded strict plays yet'}</div></div>
       <div class="kpi"><div class="k">Games learned from</div><div class="v">${(cur.games||0).toLocaleString()}</div><div class="hint">${cur.live ? cur.live+' captured live' : 'past games (backtest)'}</div></div>
       <div class="kpi"><div class="k">Live snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting for a final</div></div>
       <div class="kpi"><div class="k">Next learning check</div><div class="v" style="font-size:16px">${esc(nextTxt)}</div><div class="hint">${esc(sooner)}</div></div>
@@ -11834,7 +11861,7 @@ function propsLearnPanelHTML(){
     ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
     <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
-      <div class="kpi"><div class="k">Live graded</div><div class="v">${st.n?`${st.w}–${st.l}`:'—'}</div><div class="hint">${st.wr==null?'no graded props yet':fmtPct(st.wr,1)}</div></div>
+      <div class="kpi"><div class="k">Model picks graded</div><div class="v">${st.n?`${st.w}–${st.l}`:'—'}</div><div class="hint">${st.wr==null?'no graded props yet':fmtPct(st.wr,1)}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
       <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
@@ -11870,7 +11897,7 @@ function parlayLearnPanelHTML(){
     ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
     <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
-      <div class="kpi"><div class="k">Live graded</div><div class="v">${settled.length?`${w}–${l}`:'—'}</div><div class="hint">${settled.length?`2-leg ${two.filter(x=>x.y===1).length}–${two.filter(x=>x.y===0).length} · 3-leg ${three.filter(x=>x.y===1).length}–${three.filter(x=>x.y===0).length}`:'no graded parlays yet'}</div></div>
+      <div class="kpi"><div class="k">Model picks graded</div><div class="v">${settled.length?`${w}–${l}`:'—'}</div><div class="hint">${settled.length?`2-leg ${two.filter(x=>x.y===1).length}–${two.filter(x=>x.y===0).length} · 3-leg ${three.filter(x=>x.y===1).length}–${three.filter(x=>x.y===0).length}`:'no graded parlays yet'}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
       <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
@@ -13929,7 +13956,7 @@ function lockedBoardStats(board, opts){
   const w = use.filter(r=>r.res==='win').length, l = use.length - w;
   const staked = use.reduce((a,r)=>a+(+r.unit||(+S.unit||25)),0);
   const net = use.reduce((a,r)=>a+(+r.profit||0),0);
-  return {n:use.length, w, l, push:list.filter(r=>r.res==='push'||r.res==='void').length, pending:list.filter(r=>!r.res).length,
+  return {n:use.length, w, l, push:list.filter(r=>r.res==='push').length, void:list.filter(r=>r.res==='void').length, pending:list.filter(r=>!r.res).length,
     pulled:Object.values(st.locked).filter(r=>r && r.board===board && r.pulled && !r.tailedOnly && !r.shadow).length,
     wr:use.length ? w/use.length : null, roi:staked ? net/staked : null, net, units: net/((+S.unit)||25)};
 }
@@ -16277,7 +16304,8 @@ async function v51Regrade(){
   console.log('[v51 regrade]', JSON.stringify(log));
   const nb = log.bets.flipped.length;
   if (nb && typeof toast==='function') toast(`Fixed ${nb} prop bet grade${nb===1?'':'s'}: ` + log.bets.flipped.slice(0,3).map(f=>`${f.pick} ${f.old} → ${f.now}`).join('; ') + (nb>3?` and ${nb-3} more`:''));
-  try{ if (typeof render==='function' && typeof ui!=='undefined' && (ui.tab==='tracker' || ui.tab==='results')) render(); }catch(e){}
+  // v53: every record is recomputed from the graded lists on render, so re-render whatever tab is open
+  try{ if (typeof render==='function') render(); }catch(e){}
   return log;
 }
 setTimeout(()=>{ v51Regrade().catch(e=>console.warn('v51 regrade', e)); }, 20000);
