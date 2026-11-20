@@ -1291,23 +1291,23 @@ const SPORT_EMOJI = {nba:'🏀',nhl:'🏒',nfl:'🏈',mlb:'⚾',ncaaf:'🏈',nca
 function sportEmoji(id){ return SPORT_EMOJI[id]||'🏟️'; }
 function sportChipLabel(L){ return `<span class="sp-emo" aria-hidden="true">${sportEmoji(L.id)}</span>${L.label}`; }
 
-const BOOK_NAMES = {prophetx:'ProphetX',cryptocom:'Crypto.com',polymarket:'Polymarket',polymarket_us:'Polymarket US',kalshi:'Kalshi',draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
+const BOOK_NAMES = {novig:'Novig',prophetx:'ProphetX',cryptocom:'Crypto.com',polymarket:'Polymarket',polymarket_us:'Polymarket US',kalshi:'Kalshi',draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
 const ALL_PROP_STATS = ['pts','reb','ast','threes','pra','pr','pa','ar','stl','blk','tov','sog','saves','goals','hpts','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td','ks'];
 const ALL_GAME_MKTS = ['h2h','spreads','totals','ml','spread','total'];
 // v52: only free books. DraftKings comes from ESPN's free feed; prediction markets from their own free feeds (Kalshi via the relay).
 // Everything that needed an Odds API key (Bovada, FanDuel, Pinnacle…) is gone. Old names stay in BOOK_NAMES only so hand-logged bets keep their label.
-const FREE_BOOKS = ['draftkings','polymarket_us','polymarket','kalshi','prophetx','cryptocom'];
+const FREE_BOOKS = ['draftkings','polymarket_us','polymarket','kalshi','prophetx','cryptocom','novig'];
 // v58: ProphetX + Crypto.com are free too, but stay off until picked in Settings
 const DEFAULT_BOOKS_ON = ['draftkings','polymarket_us','polymarket','kalshi'];
 const NO_ODDS_KEY = '';   // the Odds API is removed; every old "if key" path is off
 const TRAD_BOOKS = ['draftkings'];
 // v35: Settings groups. Prediction markets price from their own free public APIs (no Odds API credits).
-const PREDICTION_BOOKS = ['polymarket','polymarket_us','kalshi','cryptocom'];
+const PREDICTION_BOOKS = ['polymarket','polymarket_us','kalshi','cryptocom','novig'];
 const POPULAR_BOOKS = TRAD_BOOKS.slice();
 const isPredictionBook = k => PREDICTION_BOOKS.includes(String(k||'').toLowerCase());
 const PM_BOOK_CAPS = { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] };
 const BOOK_CAPABILITIES = Object.assign(
-  { polymarket: Object.assign({}, PM_BOOK_CAPS), polymarket_us: Object.assign({}, PM_BOOK_CAPS), cryptocom: Object.assign({}, PM_BOOK_CAPS),
+  { polymarket: Object.assign({}, PM_BOOK_CAPS), polymarket_us: Object.assign({}, PM_BOOK_CAPS), cryptocom: Object.assign({}, PM_BOOK_CAPS), novig: Object.assign({}, PM_BOOK_CAPS),
     prophetx: { games: ALL_GAME_MKTS.slice(), props: ['pass_yds','rush_yds','rec_yds','rec','pass_td','pts','reb','ast','threes','pra','sog','saves','ks'] } },
   Object.fromEntries(TRAD_BOOKS.concat(['kalshi']).map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
 );
@@ -1497,7 +1497,7 @@ function polymarketOnlyFilterActive(){
   if (!books.length) return false;
   if (!books.every(b => PREDICTION_BOOKS.includes(b))) return false;
   const pmSel = books.some(b=>b==='polymarket'||b==='polymarket_us'), kSel = books.includes('kalshi'), cSel = books.includes('cryptocom');
-  const ccLive = cSel && typeof AV!=='undefined' && AV.cc && Object.keys(AV.cc.ev||{}).length>0;
+  const ccLive = (cSel && typeof AV!=='undefined' && AV.cc && Object.keys(AV.cc.ev||{}).length>0) || (books.includes('novig') && typeof AV!=='undefined' && AV.nv && Object.keys(AV.nv.ev||{}).length>0);
   return (pmSel && polymarketFeedLive()) || (kSel && kalshiFeedLive()) || ccLive;
 }
 function playHasPolymarketLine(p){
@@ -1552,6 +1552,7 @@ const BOOK_HOME_URL = {
   kalshi:'https://kalshi.com/calendar/sports',
   prophetx:'https://www.prophetx.co/lobby',
   cryptocom:'https://web.crypto.com/explore/predict/sports',
+  novig:'https://app.novig.us/',
   draftkings:'https://sportsbook.draftkings.com/',
   fanduel:'https://sportsbook.fanduel.com/',
   betmgm:'https://sports.betmgm.com/en/sports',
@@ -1660,6 +1661,7 @@ function bookOpenUrl(bookKey, item, kind){
   if (book==='kalshi'){
     return 'https://kalshi.com/calendar/sports';
   }
+  if (book==='novig') return BOOK_HOME_URL.novig;
   if ((book==='prophetx' || book==='cryptocom') && typeof v58BookUrl==='function') return v58BookUrl(book, g) || BOOK_HOME_URL[book];
   const mapped = BOOK_LEAGUE_URL[book] && lg && BOOK_LEAGUE_URL[book][lg];
   return mapped || BOOK_HOME_URL[book] || BOOK_HOME_URL.bovada;
@@ -1692,8 +1694,8 @@ function bookPriceFor(item, kind, bookKey){
       const m = g.pm && g.pm[mk] && g.pm[mk][side];
       return m && (mk==='ml' || point==null || m.point===point) ? cents(m.ask) : null;
     }
-    if ((b==='prophetx' || b==='cryptocom') && typeof avPmCheck==='function'){
-      const r = avPmCheck(b==='prophetx'?'px':'cc', {g, mk, side, sd:{point}, point});
+    if ((b==='prophetx' || b==='cryptocom' || b==='novig') && typeof avPmCheck==='function'){
+      const r = avPmCheck(AV_BOOK_VENUE[b], {g, mk, side, sd:{point}, point});
       if (!r.ok || !r.q) return null;
       const pre = (mk!=='ml' && r.q.pt!=null && point!=null && r.q.pt!==point) ? (mk==='spread'?fmtPt(r.q.pt):r.q.pt)+' ' : '';
       return pre + (r.q.am!=null ? fmtAm(+r.q.am) : cents(r.q.ask));
@@ -3602,7 +3604,7 @@ function myBooks(p){
     out.quotes.push({book:BOOK_LABEL(k), price:q.price, edge: fair - imp(q.price), kind:'book'});
   }
   // v48: real Polymarket / Polymarket US market for this exact side + point (see 23_avail.js)
-  const pmQs0 = ((hasPm || list.includes('kalshi') || list.includes('prophetx') || list.includes('cryptocom')) && typeof avPmGameQuote==='function') ? avPmGameQuote(p) : [];
+  const pmQs0 = ((hasPm || list.includes('kalshi') || list.includes('prophetx') || list.includes('cryptocom') || list.includes('novig')) && typeof avPmGameQuote==='function') ? avPmGameQuote(p) : [];
   // v58: ProphetX is an exchange priced in American odds — shown as a sportsbook price; value uses the price after its 2% commission
   for (const m of pmQs0) if (m.am!=null) out.quotes.push({book:BOOK_LABEL(m.book), bk:m.book, price:+m.am, cost:m.ask, edge: fair - m.ask, kind:'book'});
   const pmQs = pmQs0.filter(m=>m.am==null);
@@ -12337,7 +12339,7 @@ const PRESET_KEYS = ['strictMode','sMarkets','sMinWin','sModelMin','sModelEdge',
 function applyPreset(name){ const P = PRESETS[name]; if (!P) return; if (name==='relaxed'){ Object.assign(S, Object.fromEntries(PRESET_KEYS.map(k=>[k, PRESETS.super[k]]))); S.strictMode = false; } else for (const k of PRESET_KEYS) S[k] = P[k]; S.preset = name; }
 function detectPreset(){ if (!S.strictMode) return 'relaxed'; for (const n of ['super','picky']){ const P = PRESETS[n]; if (PRESET_KEYS.every(k=>String(S[k])===String(P[k]))) return n; } return 'custom'; }
 const MY_BOOK_CHOICES_OLD = [['bovada','Bovada'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi'],['draftkings','DraftKings'],['fanduel','FanDuel'],['betmgm','BetMGM'],['williamhill_us','Caesars'],['espnbet','ESPN BET'],['fanatics','Fanatics'],['betrivers','BetRivers'],['betonlineag','BetOnline']];
-const MY_BOOK_CHOICES = [['draftkings','DraftKings'],['prophetx','ProphetX'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi'],['cryptocom','Crypto.com']];
+const MY_BOOK_CHOICES = [['draftkings','DraftKings'],['prophetx','ProphetX'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi'],['cryptocom','Crypto.com'],['novig','Novig']];
 const BOOK_CHOICES_POPULAR = MY_BOOK_CHOICES.filter(([k])=>!PREDICTION_BOOKS.includes(k));
 const BOOK_CHOICES_PREDICTIONS = PREDICTION_BOOKS.map(k=>MY_BOOK_CHOICES.find(c=>c[0]===k)).filter(Boolean);
 function myBooksSummaryHTML(books){
@@ -14707,7 +14709,7 @@ function uniCaptureGames(){
       }
     }
     // v58: ProphetX + Crypto.com — moneylines always, spreads/totals only on the board's own lines (both list many alt lines)
-    for (const [v, src, lab] of [['px','px','ProphetX'], ['cc','cc','Crypto.com']]){
+    for (const [v, src, lab] of [['px','px','ProphetX'], ['cc','cc','Crypto.com'], ['nv','nv','Novig']]){
       const VE = (typeof AV!=='undefined' && AV[v] && AV[v].ev) ? AV[v].ev[g.eventId] : null;
       if (!VE || !VE.g) continue;
       for (const key in VE.g){
@@ -15337,7 +15339,7 @@ function uniResultsHTML(){
       const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
       return `<div class="uni-row"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `${pct(hr)} hit · <b class="${cls}">${roiS(r)}</b> ROI` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
     }).join('');
-    const src = Object.entries(c.src).map(([k,v])=>`${({sb:'sportsbook',pm:'Polymarket',kalshi:'Kalshi',px:'ProphetX',cc:'Crypto.com',shown:'shown',shadow:'tracked quietly'})[k]||k} ${f(v)}`).join(' · ');
+    const src = Object.entries(c.src).map(([k,v])=>`${({sb:'sportsbook',pm:'Polymarket',kalshi:'Kalshi',px:'ProphetX',cc:'Crypto.com',nv:'Novig',shown:'shown',shadow:'tracked quietly'})[k]||k} ${f(v)}`).join(' · ');
     const extra = (c.un||c.vd||c.pu) ? ` Pushes ${f(c.pu)}, voids ${f(c.vd)} (did not play / postponed), ungradeable ${f(c.un)}.` : '';
     return `<div class="v42-b uni-b"><h3>${title}</h3>
       <div class="v42-kv"><span class="k">Tracked today</span><span class="v">${f(c.today)} markets</span></div><div class="hint">${tv}</div>
@@ -15647,7 +15649,7 @@ function photoBind(v){
    that market is treated as not offered by that book (undo in Settings). Flags also go (anonymous) to the pool.
    Picks that fail stay tracked by the universe scan, and tailed bets are never hidden. */
 var AV = {ver:1, bypass:false, busy:false, last:0, every:10*60000,
-  pm:{t:0, lg:{}, ev:{}, err:null}, us:{t:0, lg:{}, ev:{}, err:null}, ka:{t:0, lg:{}, ev:{}, err:null}, px:{t:0, lg:{}, ev:{}, err:null}, cc:{t:0, lg:{}, ev:{}, err:null}};
+  pm:{t:0, lg:{}, ev:{}, err:null}, us:{t:0, lg:{}, ev:{}, err:null}, ka:{t:0, lg:{}, ev:{}, err:null}, px:{t:0, lg:{}, ev:{}, err:null}, cc:{t:0, lg:{}, ev:{}, err:null}, nv:{t:0, lg:{}, ev:{}, err:null}};
 var AV_LS = 'bl_av_idx_v1', AV_FLAG_LS = 'bl_nob_v1';
 var AV_US_LEAGUE = {nba:'nba', nfl:'nfl', nhl:'nhl', mlb:'mlb', ncaab:'cbb', ncaaf:'cfb', wnba:'wnba', mls:'mls', epl:'epl', ucl:'ucl', ufc:'ufc', atp:'atp', wta:'wta'};
 var AV_PM_SERIES = {nba:10345, nhl:10346, nfl:12185, ncaaf:12756, ncaab:10470, wnba:10105, mlb:3, mls:10189, epl:10188, ucl:10204, laliga:10193, seriea:10203, bund:10194};
@@ -15659,9 +15661,9 @@ var AV_KIND = {
   baseball:{strikeouts:'ks', pitcher_strikeouts:'ks'}
 };
 var AV_SPORT_OF = {nba:'basketball', wnba:'basketball', ncaab:'basketball', nfl:'football', ncaaf:'football', nhl:'hockey', mlb:'baseball'};
-function avVenueName(v){ return v==='us' ? 'Polymarket US' : v==='ka' ? 'Kalshi' : v==='px' ? 'ProphetX' : v==='cc' ? 'Crypto.com' : 'Polymarket'; }
-function avVenueBook(v){ return v==='us' ? 'polymarket_us' : v==='ka' ? 'kalshi' : v==='px' ? 'prophetx' : v==='cc' ? 'cryptocom' : 'polymarket'; }
-var AV_BOOK_VENUE = {polymarket:'pm', polymarket_us:'us', kalshi:'ka', prophetx:'px', cryptocom:'cc'};
+function avVenueName(v){ return v==='us' ? 'Polymarket US' : v==='ka' ? 'Kalshi' : v==='px' ? 'ProphetX' : v==='cc' ? 'Crypto.com' : v==='nv' ? 'Novig' : 'Polymarket'; }
+function avVenueBook(v){ return v==='us' ? 'polymarket_us' : v==='ka' ? 'kalshi' : v==='px' ? 'prophetx' : v==='cc' ? 'cryptocom' : v==='nv' ? 'novig' : 'polymarket'; }
+var AV_BOOK_VENUE = {polymarket:'pm', polymarket_us:'us', kalshi:'ka', prophetx:'px', cryptocom:'cc', novig:'nv'};
 function avNameKey(n){ return (typeof norm==='function' ? norm(n) : String(n||'').toLowerCase()).replace(/\b(jr|sr|ii|iii|iv|v)\b/g,'').replace(/\s+/g,' ').trim(); }
 function avKindOf(lg, stat){
   const sp = AV_SPORT_OF[lg] || 'basketball';
@@ -15955,7 +15957,7 @@ async function avLoadKalshi(lgs){
 function avLearnTypes(X){ X.types = X.types || {}; for (const lg in X.lg){ const L = X.lg[lg]; if (!L || !L.kinds) continue; const T = X.types[lg] || (X.types[lg] = {}); for (const k in L.kinds) T[k] = Date.now(); } }
 function avWantVenues(){
   const b = (typeof selectedBooks==='function') ? selectedBooks() : [];
-  return {pm: b.includes('polymarket'), us: b.includes('polymarket_us'), ka: b.includes('kalshi') && (typeof S==='undefined' || S.kalshiOn!==false), px: b.includes('prophetx'), cc: b.includes('cryptocom')};
+  return {pm: b.includes('polymarket'), us: b.includes('polymarket_us'), ka: b.includes('kalshi') && (typeof S==='undefined' || S.kalshiOn!==false), px: b.includes('prophetx'), cc: b.includes('cryptocom'), nv: b.includes('novig')};
 }
 function avLeaguesNow(){
   const now = Date.now(); const s = new Set();
@@ -15964,7 +15966,7 @@ function avLeaguesNow(){
 }
 async function avRefresh(force){
   const want = avWantVenues();
-  if (!want.pm && !want.us && !want.ka && !want.px && !want.cc) return;
+  if (!want.pm && !want.us && !want.ka && !want.px && !want.cc && !want.nv) return;
   if (AV.busy) return;
   const dueMain = (want.pm || want.us) && (force || Date.now() - AV.last >= AV.every);
   // Kalshi spreads/totals/props: every 3 minutes (the relay caches 15s; we stay well under any rate limit)
@@ -15974,7 +15976,8 @@ async function avRefresh(force){
   // v58: ProphetX + Crypto.com full reload every 3 minutes (prices on screen refresh every 15s in fpTick)
   const duePx = want.px && (force || Date.now() - (AV.px.t||0) >= 3*60000);
   const dueCc = want.cc && (force || Date.now() - (AV.cc.t||0) >= 3*60000);
-  if (!dueMain && !dueKa && !duePx && !dueCc) return;
+  const dueNv = want.nv && (force || Date.now() - (AV.nv.t||0) >= 3*60000);
+  if (!dueMain && !dueKa && !duePx && !dueCc && !dueNv) return;
   const lgs = avLeaguesNow(); if (!lgs.length) return;
   AV.busy = true; if (dueMain) AV.last = Date.now();
   try{
@@ -15984,6 +15987,7 @@ async function avRefresh(force){
     if (dueKa) jobs.push(avLoadKalshi(lgs).catch(e=>{ AV.ka.err = String(e.message||e); AV.ka.t = Date.now(); }));
     if (duePx && typeof avLoadPx==='function') jobs.push(avLoadPx(lgs).catch(e=>{ AV.px.err = String(e.message||e); AV.px.t = Date.now(); }));
     if (dueCc && typeof avLoadCc==='function') jobs.push(avLoadCc(lgs).catch(e=>{ AV.cc.err = String(e.message||e); AV.cc.t = Date.now(); }));
+    if (dueNv && typeof avLoadNv==='function') jobs.push(avLoadNv(lgs).catch(e=>{ AV.nv.err = String(e.message||e); AV.nv.t = Date.now(); }));
     await Promise.all(jobs);
     avSave();
   }finally{ AV.busy = false; }
@@ -15992,13 +15996,13 @@ async function avRefresh(force){
 function avSave(){
   try{
     const slim = X => ({t:X.t, err:X.err, lg:X.lg, types:X.types||{}, ev:Object.fromEntries(Object.entries(X.ev).filter(([k,E])=>E && E.ok))});
-    localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm), ka:{types:AV.ka.types||{}}, px:{types:AV.px.types||{}}, cc:{types:AV.cc.types||{}}}));
+    localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm), ka:{types:AV.ka.types||{}}, px:{types:AV.px.types||{}}, cc:{types:AV.cc.types||{}}, nv:{types:AV.nv.types||{}}}));
   }catch(e){ try{ localStorage.removeItem(AV_LS); }catch(_){} }
 }
 function avLoadSaved(){
   try{
     const d = JSON.parse(localStorage.getItem(AV_LS)||'null'); if (!d || d.v!==1) return;
-    for (const v of ['us','pm','ka','px','cc']) if (d[v] && d[v].types) AV[v].types = d[v].types;
+    for (const v of ['us','pm','ka','px','cc','nv']) if (d[v] && d[v].types) AV[v].types = d[v].types;
     for (const v of ['us','pm']) if (d[v] && d[v].t && Date.now() - d[v].t < 30*60000){ AV[v].t = d[v].t; AV[v].lg = d[v].lg||{}; AV[v].ev = d[v].ev||{}; AV[v].err = d[v].err||null; }
   }catch(e){}
 }
@@ -16118,7 +16122,7 @@ function avPmCheck(v, item){
 // prediction venue quote for a game play (used by "Bet on" / myBooks)
 function avPmGameQuote(p){
   const out = [];
-  for (const v of ['us','pm','ka','px','cc']){
+  for (const v of ['us','pm','ka','px','cc','nv']){
     const w = avWantVenues(); if (!w[v]) continue;
     const r = avPmCheck(v, p); if (r.ok && r.q && r.q.exact) out.push({v, book:avVenueBook(v), ...r.q});
   }
@@ -16175,7 +16179,7 @@ function avCheck(item, kind){
         else { whys.push(res.why); if (res.pending) pending = true; }
         continue;
       }
-      if (b==='prophetx' || b==='cryptocom'){
+      if (b==='prophetx' || b==='cryptocom' || b==='novig'){
         const res = avPmCheck(AV_BOOK_VENUE[b], item);
         if (res.ok){ okBooks.push(b); if (isProp && res.q && (!pmq || pmCost(res.q.ask, res.q.fee) < pmCost(pmq.ask, pmq.fee))) pmq = Object.assign({book:b}, res.q); if (isProp && !res.q && res.note) pmNote = pmNote || {book:b, txt:res.note}; }
         else { whys.push(res.why); if (res.pending) pending = true; }
@@ -16196,7 +16200,7 @@ function avCheck(item, kind){
     if (isProp){
       item.pmNote = (!pmq && pmNote) ? pmNote : null;
       if (pmq) item.pmProp = {book:pmq.book, ask:pmq.ask, fee:pmq.fee, line:pmq.pt, txt:pmq.txt, exact:pmq.exact, am:pmq.am!=null?pmq.am:undefined};
-      else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us' || item.pmProp.book==='kalshi' || item.pmProp.book==='prophetx' || item.pmProp.book==='cryptocom')) delete item.pmProp;
+      else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us' || item.pmProp.book==='kalshi' || item.pmProp.book==='prophetx' || item.pmProp.book==='cryptocom' || item.pmProp.book==='novig')) delete item.pmProp;
     }
     r = okBooks.length ? {ok:true, books:okBooks} : {ok:false, pending, why:[...new Set(whys)].slice(0,2).join(' · ') || 'Not on your books'};
   }
@@ -16220,6 +16224,7 @@ function avBookHasData(b){
   if (b==='polymarket') return !!(AV.pm.t && Object.keys(AV.pm.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.pm);
   if (b==='prophetx') return !!(AV.px.t && Object.keys(AV.px.ev).length);
   if (b==='cryptocom') return !!(AV.cc.t && Object.keys(AV.cc.ev).length);
+  if (b==='novig') return !!(AV.nv.t && Object.keys(AV.nv.ev).length);
   if (b==='kalshi') return !!(AV.ka.t && Object.keys(AV.ka.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.kalshi);
   return avQuoteBooks().has(b);
 }
@@ -16510,6 +16515,7 @@ async function fpTick(){
     }
     // v58: ProphetX (event markets via the relay) + Crypto.com (one ticker call per 50 contracts on screen)
     if (typeof v58FastReqs==='function') for (const f of v58FastReqs(items, gs)) reqs.push(async()=>{ changed += (await f()) || 0; });
+    if (typeof v60FastReqs==='function') for (const f of v60FastReqs(items, gs)) reqs.push(async()=>{ changed += (await f()) || 0; });
     // polite: at most 24 calls per tick, rotating through the rest on later ticks
     const n = reqs.length, cap = 24; const pick = n <= cap ? reqs : Array.from({length:cap}, (_, i)=>reqs[(FP.rr + i) % n]); FP.rr = (FP.rr + cap) % Math.max(1, n);
     await pool(pick.map(f=>async()=>{ try{ await f(); }catch(e){} }), 4);
@@ -16992,6 +16998,130 @@ function v58BookUrl(book, g){
     return 'https://web.crypto.com/explore/predict/sports' + (path ? '/'+path : '');
   }
   return null;
+}
+/* ================= v60: Novig (prediction exchange, cents) =================
+   Novig's API needs a signed key, so the Verdict relay signs read-only catalog/book calls for the app (cached 15s; the key never
+   reaches the browser). Each market is a 2-outcome contract; the price to buy one side is 1 − the best bid on the other side.
+   Novig charges its fee only once a game is live, so pre-game prices are fee-free. OFF until picked in Settings. */
+var NV_LG = {nba:'NBA', nfl:'NFL', nhl:'NHL', ncaaf:'NCAAF', ncaab:'NCAAB', mlb:'MLB', wnba:'WNBA', mls:'MLS', epl:'EPL', laliga:'La Liga', seriea:'Serie A', bund:'Bundesliga', ucl:'Champions League'};
+var NV_PROPT = {basketball:'POINTS,REBOUNDS,ASSISTS,THREE_POINTERS_MADE,POINTS_REBOUNDS_ASSISTS,POINTS_REBOUNDS,POINTS_ASSISTS,REBOUNDS_ASSISTS,STEALS,BLOCKS',
+  football:'PASSING_YARDS,RUSHING_YARDS,RECEIVING_YARDS,RECEPTIONS,PASSING_TOUCHDOWNS'};
+var NV_PART = {};   // league → {t, ev:{eventId:{home, away, comps}}, pl:{marketId:name}}
+function nvBase(){ return kalshiBase() + '/novig/v3'; }
+async function nvPages(q, max){
+  const out = []; let after = '';
+  for (let i=0; i<max; i++){
+    const r = await fetchJSON(`${nvBase()}/catalog/markets?${q}${after?'&after='+encodeURIComponent(after):''}`, 15000);
+    if (!r.ok || !r.data) throw new Error('HTTP '+r.status);
+    for (const m of (r.data.items||[])) out.push(m);
+    after = r.data.next || ''; if (!after || !(r.data.items||[]).length) break;
+  }
+  return out;
+}
+async function nvParticipants(L){
+  const c = NV_PART[L]; if (c && Date.now() - c.t < 20*60000) return c;
+  const r = await fetchJSON(`${nvBase()}/catalog/participants?league=${encodeURIComponent(L)}`, 15000);
+  if (!r.ok || !r.data) throw new Error('HTTP '+r.status);
+  const out = {t:Date.now(), ev:{}, pl:{}};
+  for (const e of (r.data.items||[])){
+    const comps = e.competitors || []; const by = id => comps.find(c=>c.competitorId===id) || null;
+    out.ev[e.eventId] = {home:by(e.homeCompetitorId), away:by(e.awayCompetitorId)};
+    for (const p of (e.players||[])) for (const id of (p.marketIds||[])) out.pl[id] = p.name;
+  }
+  NV_PART[L] = out; return out;
+}
+// "DEN +18.5" / "Seton Hall -4.5" / "UTA" → home|away
+function nvSide(P, name){
+  const lab = String(name||'').replace(/\s*[+-]?\d+(\.\d+)?\s*$/, '').trim().toLowerCase(); if (!lab || !P) return null;
+  for (const s of ['home','away']){ const c = P[s]; if (c && [c.symbol, c.shortName, c.name].some(x=>x && String(x).toLowerCase()===lab)) return s; }
+  return null;
+}
+function nvNum(s){ const m = /([+-]?\d+(\.\d+)?)\s*$/.exec(String(s||'')); return m ? +m[1] : NaN; }
+// one event's markets → venue entry. Rows keep the market id (mid) and which outcome they buy (o) so book calls can price them.
+function nvParse(X, g, ms, P, pl){
+  const lg = g.league; const E = {ok:true, t:Date.now(), g:{}, p:{}};
+  const row = (m, o, extra) => Object.assign({ask:null, fee:0, mid:m.marketId, o, oc:(m.outcomes||[]).map(x=>x.outcomeId)}, extra);
+  for (const m of ms){
+    if (m.status && m.status!=='OPEN') continue; const oc = m.outcomes || []; if (oc.length!==2) continue;
+    const t = m.marketType;
+    if (t==='MONEY'){ const s0 = nvSide(P, oc[0].name), s1 = nvSide(P, oc[1].name); if (s0 && s1 && s0!==s1){ avPutGame(E, 'ml|'+s0, row(m, 0, {pt:null})); avPutGame(E, 'ml|'+s1, row(m, 1, {pt:null})); } continue; }
+    if (t==='SPREAD'){ for (let i=0; i<2; i++){ const s = nvSide(P, oc[i].name), pt = nvNum(oc[i].name); if (s && isFinite(pt)) avPutGame(E, 'spread|'+s, row(m, i, {pt})); } continue; }
+    if (t==='TOTAL'){ const k = +m.strike; if (!isFinite(k)) continue; for (let i=0; i<2; i++){ const ou = /^over/i.test(oc[i].name) ? 'over' : /^under/i.test(oc[i].name) ? 'under' : null; if (ou) avPutGame(E, 'total|'+ou, row(m, i, {pt:k})); } continue; }
+    const kind = pxPropKind(lg, String(t).toLowerCase()); if (!kind) continue;
+    const name = pl[m.marketId] || String(m.description||'').split(' '+m.strike+' ')[0]; const k = +m.strike; if (!name || !isFinite(k)) continue;
+    const oi = /^over/i.test(oc[0].name) ? 0 : 1;
+    avPutProp(X, lg, E, kind, name, {eq:k, raw:k, txt:'O/U '+k, over:null, under:null, fee:0, mid:m.marketId, oi, oc:oc.map(x=>x.outcomeId)});
+  }
+  if (P && P.home && P.away) E.names = [P.away.name, P.home.name];
+  return E;
+}
+// price from a book: buying outcome i costs 1 − best bid on the other outcome
+function nvAskFrom(book, oc, i){ const o = book && book.orders ? book.orders[oc[1-i]] : null; const b = o && o[0] ? +o[0].price : NaN; return isFinite(b) && b>0 && b<1 ? avAsk(Math.round((1-b)*1000)/1000) : null; }
+var NV_BOOK = {};   // marketId → {t, b}
+async function nvBooks(ids){
+  const out = {}; const now = Date.now(); const need = [];
+  for (const id of new Set(ids)){ const c = NV_BOOK[id]; if (c && now - c.t < 14000) out[id] = c.b; else need.push(id); }
+  await pool(need.map(id=>async()=>{ try{ const r = await fetchJSON(`${nvBase()}/catalog/markets/${id}/book?depth=1`, 12000); if (r.ok && r.data){ NV_BOOK[id] = {t:Date.now(), b:r.data}; out[id] = r.data; } }catch(e){} }), 4);
+  return out;
+}
+function nvApply(E, books){
+  let n = 0;
+  for (const key in E.g) for (const r of E.g[key]){ const b = books[r.mid]; if (!b) continue; const a = nvAskFrom(b, r.oc, r.o); if (a!==r.ask){ r.ask = a; n++; } }
+  for (const key in E.p) for (const r of E.p[key]){ const b = books[r.mid]; if (!b) continue; const o = nvAskFrom(b, r.oc, r.oi), u = nvAskFrom(b, r.oc, 1-r.oi); if (o!==r.over || u!==r.under){ r.over = o; r.under = u; n++; } }
+  return n;
+}
+function nvNear(rows, target){ let best = null; for (const r of (rows||[])){ const pt = r.pt!=null ? r.pt : r.eq; if (best==null || Math.abs(pt - target) < Math.abs((best.pt!=null?best.pt:best.eq) - target)) best = r; } return best; }
+function nvMedian(rows){ const a = (rows||[]).map(r=>r.pt!=null?r.pt:r.eq).filter(isFinite).sort((x,y)=>x-y); return a.length ? a[Math.floor(a.length/2)] : null; }
+// which markets to price on a full load: moneylines, the middle (≈ main) spread/total line, and each board prop's nearest line
+function nvWantIds(g, E){
+  const ids = [];
+  for (const key in E.g){ const rows = E.g[key]; if (key.indexOf('ml|')===0){ for (const r of rows) ids.push(r.mid); continue; } const m = nvMedian(rows); const r = m!=null && nvNear(rows, m); if (r) ids.push(r.mid); }
+  for (const p of ((typeof props!=='undefined' && props) || [])){ if (!p || !p.playerName) continue; const pg = p.g || avGameOf(p); if (!pg || pg.eventId!==g.eventId) continue;
+    const rows = E.p[(p.kind==='hpts'?'pts':p.kind)+'|'+avNameKey(p.playerName)]; if (!rows) continue; const r = nvNear(rows, +p.line); if (r) ids.push(r.mid); }
+  return ids;
+}
+async function avLoadNv(lgs){
+  const X = AV.nv; const now = Date.now(); const lgOut = {}; const ev = {}; let errs = 0, okN = 0;
+  const hadProps = ((typeof props!=='undefined' && props) || []).length > 0;
+  const want = lgs.filter(lg=>NV_LG[lg]); for (const lg of lgs) if (!NV_LG[lg]) lgOut[lg] = {ok:true, none:true, kinds:{}, t:now};
+  if (!want.length){ X.lg = lgOut; X.ev = {}; X.t = Date.now(); return; }
+  const before = now + 36*3600000; const hits = [];
+  await pool(want.map(lg=>async()=>{
+    const L = lgOut[lg] = {ok:true, kinds:{}, t:now, games:0, mkts:0, err:0}; const NL = NV_LG[lg];
+    try{
+      const P = await nvParticipants(NL); const sp = AV_SPORT_OF[lg] || '';
+      const ms = await nvPages(`league=${encodeURIComponent(NL)}&marketType=MONEY,SPREAD,TOTAL&startsBefore=${before}`, 3);
+      const pt = NV_PROPT[sp] && hadProps ? await nvPages(`league=${encodeURIComponent(NL)}&marketType=${NV_PROPT[sp]}&startsBefore=${before}`, 8).catch(()=>{ errs++; return []; }) : [];
+      const byEv = {}; for (const m of ms.concat(pt)) (byEv[m.eventId] || (byEv[m.eventId] = [])).push(m);
+      for (const id in byEv){
+        const P1 = P.ev[id]; const st = +((byEv[id][0]||{}).startsTs); if (!P1 || !P1.home || !P1.away) continue;
+        const g = avMatchGame(lg, '', st, `${P1.away.name} @ ${P1.home.name}`, [P1.away.name, P1.home.name]);
+        if (!g || g.state==='post' || !g.start || g.start.getTime() - now > 36*3600000 || hits.some(h=>h.g===g)) continue;
+        const E = nvParse(X, g, byEv[id], P1, P.pl); E.id = id;
+        if (Object.keys(E.g).length || Object.keys(E.p).length){ hits.push({g, E}); ev[g.eventId] = E; L.games++; L.mkts += byEv[id].length; }
+      }
+      okN++;
+    }catch(e){ errs++; L.err = 1; }
+  }), 3);
+  // price: one book call per chosen market (relay caches 15s), capped so a full load stays polite
+  const ids = [...new Set(hits.flatMap(({g, E})=>nvWantIds(g, E)))].slice(0, 160);
+  if (ids.length){ const books = await nvBooks(ids); for (const {E} of hits) nvApply(E, books); }
+  for (const lg in lgOut){ const old = X.lg[lg]; if (old && old.kinds) for (const k in old.kinds) if (lgOut[lg].kinds) lgOut[lg].kinds[k] = (lgOut[lg].kinds[k]||0) + old.kinds[k]; }
+  if (errs && !Object.keys(ev).length && Object.keys(X.ev||{}).length){ X.t = Date.now(); return; }
+  X.lg = lgOut; X.ev = ev; avLearnTypes(X);
+  X.t = Date.now(); X.err = (errs && !okN) ? 'Novig unreachable' : null;
+  if (!hadProps) X.t = Date.now() - 150000;
+}
+/* 15s refresh: re-read the book of each Novig market behind a card on screen */
+function v60FastReqs(items, gs){
+  const w = avWantVenues(); if (!w.nv) return [];
+  const ids = [];
+  for (const p of items){ const E = AV.nv.ev[p.g && p.g.eventId]; if (!E) continue;
+    if (p.isProp){ const rows = E.p[(p.kind==='hpts'?'pts':p.kind)+'|'+avNameKey(p.playerName)]; const r = rows && nvNear(rows, +p.line); if (r) ids.push(r.mid); }
+    else { const mk = p.mk==='h2h'?'ml':(p.mk||'ml'); const pt = p.point!=null ? +p.point : (p.sd && p.sd.point!=null ? +p.sd.point : null);
+      for (const key in E.g) if (key.indexOf(mk+'|')===0){ const rows = E.g[key]; const r = mk==='ml' || pt==null ? rows[0] : nvNear(rows, key.endsWith('|over')||key.endsWith('|under') ? Math.abs(pt) : (key.split('|')[1]===p.side ? pt : -pt)); if (r) ids.push(r.mid); } } }
+  const list = [...new Set(ids)].slice(0, 40); if (!list.length) return [];
+  return [async()=>{ const books = await nvBooks(list); let n = 0; for (const id in AV.nv.ev) n += nvApply(AV.nv.ev[id], books); return n; }];
 }
 </script>
 </body>
