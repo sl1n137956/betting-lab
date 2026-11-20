@@ -670,7 +670,15 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .bet-par-tag{display:inline-block;vertical-align:2px;margin-right:4px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#c7d2fe;background:rgba(99,102,241,.2);border:1px solid rgba(129,140,248,.35)}
 .bet-legs{margin:4px 0 2px;font-size:13px;line-height:1.4;color:var(--txt2)}
 .kept-note{margin:8px 2px 0;color:#fde68a}
-.bet-when{font-size:12.5px;color:var(--mut, #8b97a8);margin-top:3px;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.bet-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;min-width:0}
+.bt{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:650;line-height:1.45;white-space:nowrap;border:1px solid transparent;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.bt-game{color:#93c5fd;background:rgba(59,130,246,.15);border-color:rgba(59,130,246,.32)}
+.bt-prop{color:#d8b4fe;background:rgba(168,85,247,.15);border-color:rgba(168,85,247,.32)}
+.bt-parlay{color:#f9a8d4;background:rgba(236,72,153,.15);border-color:rgba(236,72,153,.32)}
+.bt-locked{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.32)}
+.bt-early{color:#fde68a;background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.30)}
+.bt-start{color:#67e8f9;background:rgba(6,182,212,.13);border-color:rgba(6,182,212,.30)}
+.bt-tailed{color:var(--mut,#97a6bc);background:rgba(148,163,184,.10);border-color:rgba(148,163,184,.22)}
 .bet-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
 .sport-pill,.res-pill,.meta-pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11.5px;font-weight:700;letter-spacing:.02em}
 .sport-pill{background:var(--acc-dim);color:var(--acc-hi);border:1px solid rgba(59,130,246,.3)}
@@ -7031,23 +7039,52 @@ function profitSeries(period){
   return {kind:'bars', net, title, caption, bars};
 }
 function resultLabel(r){ return r==='win'?'Won':r==='loss'?'Lost':r==='push'?'Push':r==='void'?'Void':'Pending'; }
-/* v44: one quiet date/time line on each bet: game start (earliest leg for parlays), else when it was placed */
+/* v45: colorful tag row on each bet — tailed time, game start, Locked / Early Bird, and Game / Prop / Parlay */
 function betStartMs(b){
   const xs = [];
   if (b && b.link && isFinite(+b.link.start) && +b.link.start>0) xs.push(+b.link.start);
   for (const l of (b && Array.isArray(b.legs) ? b.legs : [])){ const st = l && (l.start!=null ? l.start : (l.link && l.link.start)); if (isFinite(+st) && +st>0) xs.push(+st); }
   return xs.length ? Math.min(...xs) : null;
 }
-function fmtBetWhen(ms){
-  const d = new Date(ms);
-  return `${d.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})} · ${d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`;
+function betTailedMs(b){
+  if (!b) return null;
+  if (isFinite(+b.created) && +b.created>0) return +b.created;
+  const m = /^b(\d{12,13})/.exec(String(b.id||'')); if (m) return +m[1];
+  return null;
 }
-function betWhenHTML(b){
-  const st = betStartMs(b);
-  if (st) return `<div class="bet-when" title="${st>Date.now()?'Starts':'Started'}">${esc(fmtBetWhen(st))}</div>`;
-  const pl = +b.created || 0;
-  if (pl) return `<div class="bet-when">Placed ${esc(fmtBetWhen(pl))}</div>`;
-  return b.date ? `<div class="bet-when">${esc(b.date)}</div>` : '';
+function fmtBetWhenShort(ms){
+  const d = new Date(ms), now = new Date();
+  const days = Math.abs(d.getTime()-now.getTime())/86400e3;
+  const day = days < 6 ? d.toLocaleDateString([], {weekday:'short'}) : d.toLocaleDateString([], {month:'short', day:'numeric'});
+  return `${day} ${d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`;
+}
+function fmtBetWhen(ms){ const d = new Date(ms); return `${d.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})} · ${d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`; }
+function betSrc(b){
+  if (b.src) return b.src;
+  if (typeof isParlayBet==='function' ? isParlayBet(b) : (b.market==='Parlay' || (b.legs && b.legs.length>1))) return 'parlay';
+  if (b.market==='Prop' || (b.link && b.link.pid!=null && b.link.pid!=='')) return 'prop';
+  if (b.link || ['Moneyline','Spread','Total'].includes(b.market)) return 'game';
+  return null;
+}
+function betLockState(b){
+  if (b.tailLock) return b.tailLock;
+  const linked = !!(b.link || b.playKey || (b.legs && b.legs.length));
+  if (!linked) return null;                                   // typed by hand: no tag
+  const st = betStartMs(b), tl = betTailedMs(b); if (!st || !tl) return null;
+  const src = betSrc(b); const board = src==='parlay' ? 'parlay' : src==='prop' ? 'props' : 'games';
+  const lead = typeof lockLeadMins==='function' ? lockLeadMins(board) : 30;
+  return (st - tl) <= lead*60000 ? 'locked' : 'early';
+}
+function betTagsHTML(b){
+  const tags = [];
+  const tl = betTailedMs(b), st = betStartMs(b), lk = betLockState(b), src = betSrc(b);
+  const SRC = {game:['bt-game','Game'], prop:['bt-prop','Prop'], parlay:['bt-parlay','Parlay']};
+  if (src && SRC[src]) tags.push(`<span class="bt ${SRC[src][0]}">${SRC[src][1]}</span>`);
+  if (lk==='locked') tags.push(`<span class="bt bt-locked" title="Tailed inside the lock window">🔒 Locked</span>`);
+  else if (lk==='early') tags.push(`<span class="bt bt-early" title="Tailed before it locked">🐣 Early Bird</span>`);
+  if (st) tags.push(`<span class="bt bt-start" title="${esc(fmtBetWhen(st))}">🕖 ${st>Date.now()?'Starts':'Started'} ${esc(fmtBetWhenShort(st))}</span>`);
+  if (tl) tags.push(`<span class="bt bt-tailed" title="${esc(fmtBetWhen(tl))}">Tailed ${esc(fmtBetWhenShort(tl))}</span>`);
+  return tags.length ? `<div class="bet-tags">${tags.join('')}</div>` : '';
 }
 function betIsPulled(b){
   const k = typeof betPlayKey==='function' ? betPlayKey(b) : null;
@@ -7075,10 +7112,10 @@ function tailDraftCapture(){ // read what's typed right now into the draft
   const f = readLogForm();
   const hasAny = (f.pick||'').trim() || (f.odds||'').trim() || pendingLink;
   if (!hasAny && !tailDraft) return;
-  const pl = pendingLink ? {link:pendingLink.link||null, legs:pendingLink.legs||null, fee:pendingLink.fee, playKey:pendingLink.playKey||null} : (tailDraft && tailDraft.pl) || null;
+  const pl = pendingLink ? {link:pendingLink.link||null, legs:pendingLink.legs||null, fee:pendingLink.fee, playKey:pendingLink.playKey||null, tailLock:pendingLink.tailLock||null, src:pendingLink.src||null} : (tailDraft && tailDraft.pl) || null;
   tailDraftSave({key: tailDraft && tailDraft.key ? tailDraft.key : tailDraftKeyOf(f, pl), pf:f, pl, more:!!trackerUI.more, at:Date.now()});
 }
-function trkKeep(){ const keep = readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; keep.playKey=pendingLink&&pendingLink.playKey; keep._keep=1; return keep; }
+function trkKeep(){ const keep = readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; keep.playKey=pendingLink&&pendingLink.playKey; keep.tailLock=pendingLink&&pendingLink.tailLock; keep.src=pendingLink&&pendingLink.src; keep._keep=1; return keep; }
 function renderTracker(pf){
   pf = pf || {};
   const isEmpty = !Object.keys(pf).some(k=>pf[k]!=null && pf[k]!=='' && k!=='_keep');
@@ -7095,9 +7132,9 @@ function renderTracker(pf){
     // a new Tail: same pick keeps what was typed, a different pick replaces the draft
     const key = tailDraftKeyOf(pf, null);
     if (tailDraft && tailDraft.key===key && tailDraft.pf){ pf = Object.assign({}, pf, tailDraft.pf); }
-    else { tailDraftSave({key, pf:Object.assign({}, pf, {link:undefined, legs:undefined}), pl:(pf.link||pf.legs||pf.playKey)?{link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null}:null, more:false, at:Date.now()}); }
+    else { tailDraftSave({key, pf:Object.assign({}, pf, {link:undefined, legs:undefined}), pl:(pf.link||pf.legs||pf.playKey)?{link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null, tailLock:pf.tailLock||null, src:pf.src||null}:null, more:false, at:Date.now()}); }
   }
-  if (pf.link || pf.legs || pf.playKey) pendingLink = {link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null};
+  if (pf.link || pf.legs || pf.playKey) pendingLink = {link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null, tailLock:pf.tailLock||(pendingLink&&pendingLink.tailLock)||null, src:pf.src||(pendingLink&&pendingLink.src)||null};
   const st = trackerStats();
   const wr = (st.W+st.Lo) ? st.W/(st.W+st.Lo) : null, roi = st.staked ? st.net/st.staked : null;
   const period = trackerUI.period||'all';
@@ -7122,7 +7159,7 @@ function renderTracker(pf){
     const segBtn = (r, lab) => `<button type="button" class="res-seg-btn r-${r}${res===r?' on':''}" data-setres="${esc(b.id)}" data-r="${r}" aria-pressed="${res===r?'true':'false'}">${lab}</button>`;
     return `<article class="${cls}" data-bet="${esc(b.id)}">
       <div class="bet-top"><div class="bet-name" title="${esc(b.pick||'')}">${isPar?'<span class="bet-par-tag">Parlay</span> ':''}${esc(shortBetName(b))}</div><span class="res-pill ${pill}">${esc(pillTxt)}</span></div>
-      ${betWhenHTML(b)}
+      ${betTagsHTML(b)}
       ${isPar && parNames.length>2 ? `<div class="bet-legs">${parNames.map(x=>`<div>• ${esc(x)}</div>`).join('')}</div>` : ''}
       <div class="bet-meta">
         <span class="sport-pill">${esc(b.sport||'Other')}</span>
@@ -7290,7 +7327,7 @@ function renderTracker(pf){
     const nb = {id:'b'+Date.now()+Math.random().toString(36).slice(2,6), created:Date.now(), updatedAt:Date.now(), date, sport, market, pick:String(f.get('pick')||'').trim(), odds:o, stake:+f.get('stake'), result, oddsType:typ, oddsEntered:entered};
     if (cents!=null){ nb.oddsCents=cents; nb.oddsFee=fee; }
     if (mult!=null) nb.oddsMult = mult;
-    if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; pendingLink = null; }
+    if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; if (pendingLink.tailLock) nb.tailLock = pendingLink.tailLock; if (pendingLink.src) nb.src = pendingLink.src; pendingLink = null; }
     bets.push(nb); tailDraftClear(); pendingLink = null;
     saveBets(); toast('Bet logged'); renderTracker();
   };
@@ -8377,13 +8414,13 @@ function renderPicks(){
   // keep Verdict drawers the user opened open across re-renders (scoped keys) and fill lazy bodies
   v.querySelectorAll('.pk-grid details[data-dd^="verdict|"]').forEach(d=>{ if (ui.open.has(d.dataset.dd) && !d.open) d.open = true; if (d.open && typeof fillLazyDetails==='function') fillLazyDetails(d); });
   v.querySelectorAll('[data-logleg]').forEach(b=>b.onclick=()=>{ const l = PK.legs[+b.dataset.logleg];
-    setTab('tracker'); renderTracker({date:isoDate(l.g?l.g.start:new Date()), sport:l.g?LMAP[l.g.league].label:'Other', market:l.market, pick:l.desc||l.raw, odds:l.price!=null?fmtAm(l.price):'', stake:S.unit, link:legLink(l)});
+    setTab('tracker'); renderTracker({tailLock:'none', src:l.market==='Prop'?'prop':'game', date:isoDate(l.g?l.g.start:new Date()), sport:l.g?LMAP[l.g.league].label:'Other', market:l.market, pick:l.desc||l.raw, odds:l.price!=null?fmtAm(l.price):'', stake:S.unit, link:legLink(l)});
     if (typeof updateFilterChrome==='function') updateFilterChrome(); window.scrollTo({top:0}); toast('Pre-filled. Check the odds, then Add bet.'); });
   const lp = $('#btnLogParlay'); if (lp) lp.onclick = ()=>{ const legs = PK.legs.filter(l=>!l.err);
     const dec = legs.every(l=>l.price!=null) ? legs.reduce((a,l)=>a*amToDec(l.price),1) : null;
     const am = dec ? (dec>=2 ? (dec-1)*100 : -100/(dec-1)) : null;
     const sports = [...new Set(legs.map(l=>l.g?LMAP[l.g.league].label:'Other'))];
-    setTab('tracker'); renderTracker({date:isoDate(new Date()), sport:sports.length===1?sports[0]:'Other', market:'Parlay', pick:`Parlay: ${legs.map(l=>l.desc||l.raw).join(' + ')}`, odds:am?fmtAm(am):'', stake:S.unit, legs:legs.every(l=>legLink(l))?legs.map(legLink):null});
+    setTab('tracker'); renderTracker({tailLock:'none', src:'parlay', date:isoDate(new Date()), sport:sports.length===1?sports[0]:'Other', market:'Parlay', pick:`Parlay: ${legs.map(l=>l.desc||l.raw).join(' + ')}`, odds:am?fmtAm(am):'', stake:S.unit, legs:legs.every(l=>legLink(l))?legs.map(legLink):null});
     if (typeof updateFilterChrome==='function') updateFilterChrome(); window.scrollTo({top:0}); toast(am?'Pre-filled with the leg-price payout. Use your book\'s real parlay odds.':'Enter your book\'s parlay odds, then Add bet.'); };
 }
 
@@ -12512,7 +12549,7 @@ $('#view').addEventListener('click', e=>{
     }
     setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
     const summary = (p.legs||[]).map(l=>typeof parlayLegLabel==='function'?parlayLegLabel(l):(l.label||l.playerName)).join(' / ');
-    const pf = {date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id, start:isFinite(p.start)?p.start:null}, legs:(typeof parlayLegSaveMeta==='function' ? (p.legs||[]).map(parlayLegSaveMeta) : null)};
+    const pf = {src:'parlay', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p,'parlay'))?'early':'locked', date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id, start:isFinite(p.start)?p.start:null}, legs:(typeof parlayLegSaveMeta==='function' ? (p.legs||[]).map(parlayLegSaveMeta) : null)};
     renderTracker(pf);
     window.scrollTo({top:0}); toast('Pre-filled this parlay. Confirm the combined odds at your book, then add the tailed bet.');
     return;
@@ -12526,7 +12563,7 @@ $('#view').addEventListener('click', e=>{
   const mb = rb.none ? null : Object.assign({}, rb, {kind: rb.pm ? 'pm' : 'book'});
   const usePm = !!(mb && mb.kind==='pm' && mb.cents!=null);
   const fee = typeof defaultPmFeeRate==='function' ? defaultPmFeeRate(p) : +S.pmFeeRate;
-  const pf = {date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime(), pid:p.isProp?(p.playerId||''):undefined}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
+  const pf = {src:p.isProp?'prop':'game', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p, p.isProp?'props':'games'))?'early':'locked', date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime(), pid:p.isProp?(p.playerId||''):undefined}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
   pf.odds = usePm ? String(Math.round(mb.cents*100)) : fmtAm(mb ? mb.price : (p.isProp ? p.price : (p.sd && p.sd.best && p.sd.best.price)));
   if (mb && mb.book) pf.book = mb.book;
   renderTracker(pf);
