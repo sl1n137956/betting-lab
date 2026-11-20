@@ -1,7 +1,7 @@
 /* Verdict app-shell cache. Never caches live API responses.
    v2: HTML pages are network-first with cache: 'no-store' so a new
    deploy is not stuck behind GitHub Pages or a stale iOS shell. */
-const CACHE = 'betting-lab-shell-v74';
+const CACHE = 'betting-lab-shell-v75';
 // v47: the photo reader (Tesseract.js + its English model from jsDelivr) is cached once so later photo checks start fast
 const OCR_CACHE = 'verdict-ocr-v1';
 function isOcrAsset(url){ return url.hostname === 'cdn.jsdelivr.net' && /tesseract/i.test(url.pathname); }

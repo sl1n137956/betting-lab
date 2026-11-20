@@ -1282,6 +1282,21 @@ a, button, label, summary, input, select, textarea, .btn, .chip{touch-action:man
 .tm-dots>i.w{background:#22c55e}.tm-dots>i.l{background:#ef4444}.tm-dots>i.t{background:#94a3b8}
 .tm-mini{flex:1;max-width:120px;height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
 .tm-mini>i{display:block;height:100%;border-radius:999px}.tm-mini>i.g{background:#22c55e}.tm-mini>i.r{background:#ef4444}
+
+/* v75: Try examples: three labelled pressable buttons */
+.pk-try-wrap{display:flex;flex-direction:column;align-items:stretch;gap:8px}
+.pk-try-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pk-try{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:var(--btn-h,44px);padding:8px 12px;border-radius:var(--btn-r,10px);border:1px solid rgba(59,130,246,.35);background:rgba(59,130,246,.10);color:var(--txt);cursor:pointer;text-align:left;min-width:0;font:inherit;transition:background .15s,border-color .15s}
+.pk-try:hover,.pk-try:focus-visible{background:rgba(59,130,246,.2);border-color:rgba(96,165,250,.6)}
+.pk-try:active{transform:translateY(1px)}
+.pk-try-k{font-size:10.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:#93c5fd;white-space:nowrap}
+.pk-try-v{font-size:13.5px;font-weight:650;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+@media (max-width:640px){
+  .pk-try-grid{grid-template-columns:1fr}
+  .pk-try{flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
+  .pk-try-k{flex:0 0 auto}
+  .pk-try-v{text-align:right}
+}
 </style>
 </head>
 <body>
@@ -8933,6 +8948,19 @@ function pickExampleChips(){
   }catch(e){ console.warn('try chips', e); }
   return out.map((x, k)=>x || PICK_EX_FALLBACK[k]);
 }
+// v75: three labelled Try examples (moneyline, spread, prop) from today's real slate, static fallback
+function pickTryExamples(ex){
+  ex = ex || pickExampleChips();
+  let propTxt = ex[3], propShow = ex[3];
+  try{
+    const now = Date.now(), okKind = {pts:'pts', reb:'reb', ast:'ast', threes:'3PM', pra:'PRA'};
+    const pr = (typeof props!=='undefined' ? (props||[]) : []).filter(p=>p && p.playerName && p.line!=null && okKind[p.kind] && p.g && p.g.state==='pre' && (typeof itemStartMs==='function' ? itemStartMs(p) : 0) < now + 24*3600e3)
+      .sort((a,b)=>(a.kind==='pts'?0:1)-(b.kind==='pts'?0:1) || (a.league==='nba'?0:1)-(b.league==='nba'?0:1) || ((b.overPrice!=null)-(a.overPrice!=null)) || (typeof itemStartMs==='function' ? itemStartMs(a)-itemStartMs(b) : 0) || String(a.playerName).localeCompare(String(b.playerName)))[0];
+    if (pr){ propTxt = `${pr.playerName} Over ${pr.line} ${okKind[pr.kind]}`; propShow = `${typeof shortPlayerName==='function' ? shortPlayerName(pr.playerName) : pr.playerName} Over ${pr.line} ${okKind[pr.kind]}`; }
+    else if (propTxt){ const m = String(propTxt).match(/^(.+?) (Over|Under) (.+)$/); if (m && typeof shortPlayerName==='function') propShow = `${shortPlayerName(m[1])} ${m[2]} ${m[3]}`; }
+  }catch(e){}
+  return [{k:'Moneyline', txt:ex[0], show:ex[0]}, {k:'Spread', txt:ex[1], show:ex[1]}, {k:'Prop', txt:propTxt, show:propShow}].filter(x=>x.txt);
+}
 function renderPicks(){
   const v = $('#view');
   const ranked = PK.legs.filter(l=>l.p!=null && !l.final).sort((a,b)=>a.p-b.p);
@@ -8942,7 +8970,7 @@ function renderPicks(){
     <h2><span class="h-emo" aria-hidden="true">⚖️</span>Get a Verdict</h2>
     <p class="lead">Type a moneyline, spread, total, or player prop — one per line. We’ll break it down the same way as Picks.</p>
     <div class="pk-input" id="pkInput"><textarea id="pkText" rows="5" placeholder="e.g. Rockets ML&#10;Celtics -4.5&#10;LeBron Over 24.5 Points&#10;…or paste a bet slip screenshot">${esc(PK.text)}</textarea><label class="pk-photo-btn" for="pkPhoto" title="Add a bet slip photo (or paste / drop one into the box)" aria-label="Add a bet slip photo"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg></label><input type="file" id="pkPhoto" accept="image/*" hidden><div class="pk-drop-hint">Drop the photo to read it</div></div>
-    <div class="pk-ex"><span class="lab">Try</span>${ex.slice(1,2).map(x=>`<span class="chip" data-ex="${esc(x)}">${esc(x)}</span>`).join('')}</div>
+    <div class="pk-ex pk-try-wrap"><span class="lab">Try</span><div class="pk-try-grid">${pickTryExamples(ex).map(x=>`<button type="button" class="pk-try" data-ex="${esc(x.txt)}" title="Add “${esc(x.txt)}” to the box"><span class="pk-try-k">${esc(x.k)}</span><span class="pk-try-v">${esc(x.show)}</span></button>`).join('')}</div></div>
     <div class="pk-actions">
       <button class="btn primary" id="btnCheck" ${PK.busy?'disabled':''}>${PK.busy?'Checking…':'Get verdict'}</button>
       <button class="btn" id="btnPkClear" title="Clear the typed picks and the photo">Clear all</button>
