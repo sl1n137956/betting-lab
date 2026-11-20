@@ -10046,7 +10046,7 @@ function propsUnsupportedNote(){
   if (!books.length) return '';
   if (books.length && books.every(b => b==='polymarket' || b==='polymarket_us')){
     const who = [...new Set(books.map(b=>b==='polymarket_us'?'Polymarket US':'Polymarket'))].join(' / ');
-    return "Only props "+who+" really lists right now (same player, stat and line) are shown. The rest are under \"hidden (not on your books)\" below. Add another book in Settings → My books to see more.";
+    return "Only prop types "+who+" really lists are shown (single stats + PRA). Lines can differ — tap Not on my book if one isn't there. The rest are under \"hidden (not on your books)\" below. Add another book in Settings → My books to see more.";
   }
   return '';
 }
@@ -10169,7 +10169,9 @@ function propCard(p){
   const bo = (p.implied!=null && p.p!=null)
     ? `<div class="beton ${p.edge>=0?'ok':'bad'}"><div>${(rec&&rec.none)?'The market price breaks even':'These odds break even'} at about ${typeof outOf10==='function'?outOf10(p.implied):Math.round(p.implied*10)} wins in 10. We estimate ${typeof outOf10==='function'?outOf10(p.p):Math.round(p.p*10)} in 10.</div></div>`
     : (p.p==null?`<div class="beton"><div class="mut">Researching this player’s real game log…</div></div>`:'');
-  const recLine = (p.price==null || !rec) ? '' : rec.none
+  const recLine = (p.price==null || !rec) ? '' : (rec.none && p.pmNote)
+    ? `<div class="beton"><div>Bet on: ${esc(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book)} <span class="mut av-differ">· Polymarket line may differ</span></div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}reference line from ${esc(propRefLabel(p))}</div></div>`
+    : rec.none
     ? `<div class="beton bad"><div>${esc(NO_BOOK_LINE)}</div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}fair line from ${esc(propRefLabel(p))}</div></div>`
     : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(rec.pm?`Buy on ${rec.book} at ${Math.round(rec.cents*100)}¢`:`Bet on: ${rec.book} at ${fmtAm(rec.price)}`)}</div>${p.p!=null?`<div class="mut">${esc(maxPayText(p.p, rec))} · fair line from ${propRefLabel(p)}</div>`:''}</div>`;
   const lazy = (id, sum, kind, body) => {
@@ -10180,7 +10182,7 @@ function propCard(p){
     ${logMarks}
     ${propHead(p)}
     ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
-    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.price==null||propSourceLabel(p)==='line'?'Research':(rec&&!rec.none)?rec.book:'Not at your books yet')}</div><div class="what">${esc(p.label)}</div></div>
+    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.price==null||propSourceLabel(p)==='line'?'Research':(rec&&!rec.none)?rec.book:(p.pmNote?(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book):'Not at your books yet'))}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${price}</div></div>
     ${recLine}
     ${p.tailedKeep?`<div class="hint kept-note">📌 Kept on your board because you tailed it. It is no longer in today's Prop Picks, but nothing says to pull it. Your bet is unchanged.</div>`:''}
@@ -15599,6 +15601,7 @@ async function avLoadUs(lgs){
   for (const lg of want){ const L = X.lg[lg]; if (!L || L.err) continue; L.kinds = {}; }
   for (const ev in X.ev){ const E = X.ev[ev]; if (!E.ok) continue; const g = ((typeof games!=='undefined' && games)||[]).find(x=>x && String(x.eventId)===String(ev)); const lg = g && g.league; if (!lg || !X.lg[lg]) continue;
     for (const k in E.p){ const kind = k.split('|')[0]; X.lg[lg].kinds[kind] = (X.lg[lg].kinds[kind]||0) + 1; } }
+  avLearnTypes(X);
   X.t = Date.now(); X.err = (errs && !okN) ? 'Polymarket US unreachable' : null;
 }
 
@@ -15667,8 +15670,10 @@ async function avLoadGlobal(lgs){
       X.lg[lg] = L; okN++;
     }catch(e){ errs++; X.lg[lg] = Object.assign({}, X.lg[lg]||{}, {err:String(e.message||e), t:now}); }
   }), 3);
+  avLearnTypes(X);
   X.t = Date.now(); X.err = (errs && !okN) ? 'Polymarket unreachable' : null;
 }
+function avLearnTypes(X){ X.types = X.types || {}; for (const lg in X.lg){ const L = X.lg[lg]; if (!L || !L.kinds) continue; const T = X.types[lg] || (X.types[lg] = {}); for (const k in L.kinds) T[k] = Date.now(); } }
 function avWantVenues(){
   const b = (typeof selectedBooks==='function') ? selectedBooks() : [];
   return {pm: b.includes('polymarket'), us: b.includes('polymarket_us')};
@@ -15696,13 +15701,14 @@ async function avRefresh(force){
 }
 function avSave(){
   try{
-    const slim = X => ({t:X.t, err:X.err, lg:X.lg, ev:Object.fromEntries(Object.entries(X.ev).filter(([k,E])=>E && E.ok))});
+    const slim = X => ({t:X.t, err:X.err, lg:X.lg, types:X.types||{}, ev:Object.fromEntries(Object.entries(X.ev).filter(([k,E])=>E && E.ok))});
     localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm)}));
   }catch(e){ try{ localStorage.removeItem(AV_LS); }catch(_){} }
 }
 function avLoadSaved(){
   try{
     const d = JSON.parse(localStorage.getItem(AV_LS)||'null'); if (!d || d.v!==1) return;
+    for (const v of ['us','pm']) if (d[v] && d[v].types) AV[v].types = d[v].types;
     for (const v of ['us','pm']) if (d[v] && d[v].t && Date.now() - d[v].t < 30*60000){ AV[v].t = d[v].t; AV[v].lg = d[v].lg||{}; AV[v].ev = d[v].ev||{}; AV[v].err = d[v].err||null; }
   }catch(e){}
 }
@@ -15727,6 +15733,41 @@ function avNear(list, want, exactOnly){
   }
   return best;
 }
+/* v49: props are checked by STAT TYPE only (Stanley: lines/sides differ, he flags those himself).
+   Allowed = single stats + PRA that Polymarket really lists for that sport (learned from live markets, kept across days);
+   combos it doesn't list (P+R, P+A, R+A, stocks), turnovers, NHL shots stay hidden. "N+" = Over N−0.5, "No" = Under N−0.5. */
+var AV_PROP_FALLBACK = {basketball:['pts','reb','ast','threes','pra','stl','blk'], football:['pass_yds','rush_yds','rec_yds','rec','pass_td'], hockey:['pts','ast','goals'], baseball:['ks']};
+function avTypesFor(v, lg){
+  const X = AV[v]; const out = new Set();
+  const T = (X.types && X.types[lg]) || {}; for (const k in T) out.add(k);
+  const L = X.lg[lg]; if (L && L.kinds) for (const k in L.kinds) out.add(k);
+  return out;
+}
+function avPmPropType(v, item, g, L, E){
+  const name = avVenueName(v), lg = g.league, lgLab = (LMAP[lg]||{}).label || lg;
+  let kind = item.kind || item.mk; if (kind==='hpts') kind = 'pts';
+  const label = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[kind]) || kind;
+  const learned = avTypesFor(v, lg);
+  const types = learned.size ? learned : new Set(AV_PROP_FALLBACK[AV_SPORT_OF[lg]||'basketball'] || []);
+  if (!types.has(kind)) return {ok:false, why:`${name} doesn't offer ${label} props for ${lgLab}${['pr','pa','ar'].includes(kind)?' (only single stats + PRA)':''}`};
+  // game must be on the venue once its list has loaded (unknown/pending → prefer showing)
+  if (!E && L && !L.err && !L.none && X_loaded(v)) return {ok:false, why:`${name} doesn't list this game`};
+  let q = null;
+  if (E && E.ok){
+    const pk = Object.keys(E.p); const nmKey = avNameKey(item.playerName);
+    const want = nmKey.split(' '); const last = want[want.length-1], fi = (want[0]||'')[0];
+    const same = k => { const nm = k.slice(k.indexOf('|')+1); if (nm===nmKey) return true; const a = nm.split(' '); return a[a.length-1]===last && (a[0]||'')[0]===fi; };
+    const players = new Set(pk.map(k=>k.slice(k.indexOf('|')+1)));
+    const mine = pk.filter(same);
+    if (!mine.length && players.size >= 8) return {ok:false, why:`${name} has no props for ${item.playerName} on this game`};
+    const rows = E.p[mine.find(k=>k.indexOf(kind+'|')===0) || ''] || [];
+    const line = +item.line, side = String(item.side||'over').toLowerCase()==='under' ? 'under' : 'over';
+    const hit = rows.find(r=>Math.abs(r.eq - line) < 1e-9);
+    if (hit && hit[side]!=null) q = {ask:hit[side], fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:true};
+  }
+  return {ok:true, q, note: q ? null : `${name} line may differ`};
+}
+function X_loaded(v){ return !!(AV[v] && AV[v].t); }
 // one prediction venue, one item → {ok, pending, why, q:{ask, fee, pt, txt}}
 function avPmCheck(v, item){
   const X = AV[v]; const name = avVenueName(v);
@@ -15738,6 +15779,8 @@ function avPmCheck(v, item){
   if (L.err && !Object.keys(X.ev).length) return {ok:false, pending:true, why:`Couldn't reach ${name} to confirm`};
   if (L.none) return {ok:false, why:`${name} doesn't list ${(LMAP[lg]||{}).label||lg} games`};
   const E = X.ev[g.eventId];
+  const isPropQ0 = !!(item.isProp || (item.kind && item.playerName && !['ml','spread','total'].includes(item.mk)));
+  if (isPropQ0) return avPmPropType(v, item, g, L, E);
   if (!E) return {ok:false, why:`${name} doesn't list this game`};
   const isPropQ = !!(item.isProp || (item.kind && item.playerName && !['ml','spread','total'].includes(item.mk)));
   if (!E.ok && E.partial && !isPropQ && (item.mk==='ml' || item.mk==='h2h')){
@@ -15830,12 +15873,12 @@ function avCheck(item, kind){
   else {
     const isProp = kind==='props';
     const sp = avSport(item), mt = avMtype(item);
-    const okBooks = [], whys = []; let pending = false; let pmq = null;
+    const okBooks = [], whys = []; let pending = false; let pmq = null, pmNote = null;
     for (const b of books){
       if (avBookBlocked(b, sp, mt)){ whys.push(`You flagged ${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} ${isProp?((typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[mt])||mt):mt} as not offered`); continue; }
       if (b==='polymarket' || b==='polymarket_us'){
         const res = avPmCheck(b==='polymarket_us'?'us':'pm', item);
-        if (res.ok){ okBooks.push(b); if (isProp && (!pmq || res.q.ask < pmq.ask)) pmq = Object.assign({book:b}, res.q); }
+        if (res.ok){ okBooks.push(b); if (isProp && res.q && (!pmq || res.q.ask < pmq.ask)) pmq = Object.assign({book:b}, res.q); if (isProp && !res.q && res.note) pmNote = pmNote || {book:b, txt:res.note}; }
         else { whys.push(res.why); if (res.pending) pending = true; }
         continue;
       }
@@ -15849,6 +15892,7 @@ function avCheck(item, kind){
       else whys.push(`${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} doesn't offer this market`);
     }
     if (isProp){
+      item.pmNote = (!pmq && pmNote) ? pmNote : null;
       if (pmq) item.pmProp = {book:pmq.book, ask:pmq.ask, fee:pmq.fee, line:pmq.pt, txt:pmq.txt, exact:pmq.exact};
       else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us')) delete item.pmProp;
     }
