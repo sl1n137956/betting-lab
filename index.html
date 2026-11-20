@@ -1661,7 +1661,11 @@ function bookOpenUrl(bookKey, item, kind){
   if (book==='kalshi'){
     return 'https://kalshi.com/calendar/sports';
   }
-  if (book==='novig') return BOOK_HOME_URL.novig;
+  if (book==='novig'){
+    // Novig's own share link format (novig.onelink.me → novig.com?deep_link_value=…) opens the game.
+    const E = (typeof AV!=='undefined' && AV && AV.nv && AV.nv.ev && g) ? AV.nv.ev[g.eventId] : null;
+    return (E && E.id) ? 'https://novig.com/?deep_link_value=%2Fevent-markets%2F'+encodeURIComponent(E.id) : BOOK_HOME_URL.novig;
+  }
   if ((book==='prophetx' || book==='cryptocom') && typeof v58BookUrl==='function') return v58BookUrl(book, g) || BOOK_HOME_URL[book];
   const mapped = BOOK_LEAGUE_URL[book] && lg && BOOK_LEAGUE_URL[book][lg];
   return mapped || BOOK_HOME_URL[book] || BOOK_HOME_URL.bovada;
