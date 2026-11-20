@@ -670,6 +670,11 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .bet-par-tag{display:inline-block;vertical-align:2px;margin-right:4px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#c7d2fe;background:rgba(99,102,241,.2);border:1px solid rgba(129,140,248,.35)}
 .bet-legs{margin:4px 0 2px;font-size:13px;line-height:1.4;color:var(--txt2)}
 .kept-note{margin:8px 2px 0;color:#fde68a}
+.ag-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
+.ag-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:12px;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);color:var(--txt2,#c3d0e6)}
+.ag-chip b{color:var(--txt,#e8eef8)}
+.ag-sec{margin:6px 0 18px}
+.ag-h{font-size:15px;margin:4px 2px 10px;display:flex;align-items:center;gap:6px}
 .bet-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;min-width:0}
 .bt{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:650;line-height:1.45;white-space:nowrap;border:1px solid transparent;letter-spacing:.01em;font-variant-numeric:tabular-nums}
 .bt-game{color:#93c5fd;background:rgba(59,130,246,.15);border-color:rgba(59,130,246,.32)}
@@ -2197,7 +2202,7 @@ function ymd(d){ return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+S
 
 // Football is weekly, so NFL/NCAAF always look a full week ahead; other sports use the "Days ahead" setting.
 const WEEKLY = new Set(['nfl','ncaaf']);
-const leagueDays = id => WEEKLY.has(id) ? 7 : Math.max(1, Math.min(7, +S.lookaheadDays||3));
+const leagueDays = id => WEEKLY.has(id) ? 7 : Math.max(2, Math.min(7, +S.lookaheadDays||3));   // v46: at least today + tomorrow so the next 24h is always covered
 async function fetchEspn(){
   feedErrors = [];
   const base = new Date();
@@ -6256,6 +6261,35 @@ function gameCard(g){
     ${checksHTML(g)}
     <div class="cfoot"><span class="books">Sources: ${esc([...g.sources].join(' + '))}${g.fx?' + ESPN game page':''}${g.wx?' + Open-Meteo':''}</span>${g.broadcast?`<span class="books">📺 ${esc(g.broadcast)}</span>`:''}</div></div>`;
 }
+/* v46: All Games = every game in every sport you have on in Settings that starts in the next 24 hours, plus live games.
+   Display only: ignores the board filters (sport chips, Locked/24h/48h, Hide started, Polymarket-only) and the model's auto-off. */
+function allGamesList(){
+  const now = Date.now(), until = now + 24*3600e3, q = norm(ui.q||'');
+  const on = new Set(S.enabled||[]);
+  return (games||[]).filter(g=>{
+    if (!g || g.pickOnly || !on.has(g.league)) return false;
+    const st = g.start && g.start.getTime ? g.start.getTime() : +g.start || 0;
+    if (g.state==='in') return true;
+    if (g.state==='post') return false;
+    if (!st || st > until) return false;
+    if (st < now - 6*3600e3) return false;           // stale "scheduled" rows from earlier
+    if (q && !norm((g.home&&g.home.name||'')+' '+(g.away&&g.away.name||'')+' '+(g.title||'')).includes(q)) return false;
+    return true;
+  }).sort((a,b)=>((a.state==='in')===(b.state==='in') ? 0 : a.state==='in' ? -1 : 1) || (a.start-b.start));
+}
+function allGamesHTML(list){
+  const live = list.filter(g=>g.state==='in'), up = list.filter(g=>g.state!=='in');
+  const byLg = {}; for (const g of list) byLg[g.league] = (byLg[g.league]||0)+1;
+  const chips = Object.entries(byLg).sort((a,b)=>b[1]-a[1]).map(([lg,n])=>`<span class="ag-chip">${sportEmoji(lg)} ${esc((LMAP[lg]||{}).label||lg)} <b>${n}</b></span>`).join('');
+  const dayKey = g => { const d = new Date(g.start); const t = new Date(); const tm = new Date(); tm.setDate(t.getDate()+1);
+    return d.toDateString()===t.toDateString() ? 'Today' : d.toDateString()===tm.toDateString() ? 'Tomorrow' : d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}); };
+  const groups = []; for (const g of up){ const k = dayKey(g); let G = groups.find(x=>x.k===k); if (!G){ G = {k, list:[]}; groups.push(G); } G.list.push(g); }
+  const sec = (title, arr, cls) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span></h3><div class="grid">${arr.map(gameCard).join('')}</div></div>`;
+  const off = LEAGUES.filter(L=>!(S.enabled||[]).includes(L.id)).map(L=>L.label);
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now${off.length?` · hidden because you turned them off in Settings: ${esc(off.join(', '))}`:''}. Board filters don't apply here. Odds show when the free feed has them; % = no-vig probability.</span></div>`
+    + (list.length ? `<div class="ag-chips">${chips}</div>` + (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live') : '') + groups.map(G=>sec(esc(G.k), G.list)).join('')
+      : `<div class="empty-state">No games in the next 24 hours for the sports you have on.</div>`);
+}
 function filtered(list, isPlay){
   const q = norm(ui.q);
   return list.filter(x=>{
@@ -6681,7 +6715,7 @@ function render(){
   const good = vis('good').sort((a,b)=>(a.rank||99)-(b.rank||99));
   const watch = vis('watch').sort((a,b)=>b.score-a.score);
   const avoid = vis('avoid').sort((a,b)=>a.g.start-b.g.start);
-  const allG = filtered(games, false).sort((a,b)=>a.start-b.start);
+  const allG = allGamesList();
   const gamesLive = (ui.board||'games')==='games';
   const hideOnly = (list, v) => {
     const fv = (typeof ensureFilterView==='function') ? ensureFilterView('games:good') : null;
@@ -6744,7 +6778,7 @@ function render(){
     const items = list.length ? `<div class="pulled-list">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">None of the bets you tailed has flipped to Avoid.</div>`;
     v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">⛔</span>Pulled</h2><span class="hint">Only bets you tailed. For a parlay, the line that went bad is shown, and the whole parlay is pulled to be safe. It also stays on Picks in red until the game starts.</span></div>` + items + errs;
   }
-  else if (ui.tab==='all') v.innerHTML = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Each market shows its best side's verdict. % = no-vig probability.</span></div>` + (allG.length?`<div class="grid">${allG.map(gameCard).join('')}</div>`:`<div class="empty-state">No games in this window. Try another sport, untick "Hide started", or raise "Days ahead" in Settings.</div>`) + errs;
+  else if (ui.tab==='all') v.innerHTML = allGamesHTML(allG) + errs;
 }
 
 /* ================= PULL TO REFRESH (mobile / iOS PWA) ================= */
