@@ -1160,9 +1160,9 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .pk-ticket ol.why li{margin:0 0 var(--s2);line-height:1.5}
 .pk-ticket ol.why li:last-child{margin-bottom:0}
 .pk-ticket ol.why .verdict-pill{min-width:0;padding:0 10px;height:24px;font-size:10.5px;vertical-align:middle}
-.pk-ticket ol.why .tk-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.pk-ticket ol.why .tk-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:8px}
 .pk-ticket ol.why .tk-name{min-width:0}
-.pk-ticket ol.why .tk-badge{flex:none;display:inline-flex}
+.pk-ticket ol.why .tk-badge{display:inline-flex;justify-self:end;margin-top:1px}
 .kpis{gap:var(--s3)}
 .beton{margin:0;padding:var(--s3) var(--s3);display:flex;flex-direction:column;gap:var(--s1)}
 .beton .mut{margin-top:0}
@@ -1448,6 +1448,27 @@ function unitTierOpen(board, u){
   if (!(u > 1)) return true;
   const r = UNIT_GATE && UNIT_GATE[board] && UNIT_GATE[board][String(u)];
   return !!(r && r.n >= UNIT_GATE_MIN && r.roi > 0);
+}
+// v69: compact player name for tight spots: first initial + full last name ("S. Gilgeous-Alexander", "J. Jackson Jr.")
+const NAME_SUFFIX = new Set(['jr','jr.','sr','sr.','ii','iii','iv','v']);
+const NAME_PARTICLE = new Set(['de','da','del','della','di','van','von','der','den','la','le','st','st.','mac','dos','das','du','el','al']);
+function shortPlayerName(name){
+  const t = String(name||'').trim().split(/\s+/).filter(Boolean);
+  if (t.length<2) return String(name||'').trim();
+  let suf = []; while (t.length>2 && NAME_SUFFIX.has(t[t.length-1].toLowerCase())) suf.unshift(t.pop());
+  if (t.length<2) return String(name||'').trim();
+  const first = t[0];
+  let i = t.length-1; while (i>1 && NAME_PARTICLE.has(t[i-1].toLowerCase())) i--;
+  const last = t.slice(i).join(' ');
+  const ini = (first.match(/[A-Za-zÀ-ÿ]/)||[first[0]])[0].toUpperCase();
+  return `${ini}. ${last}${suf.length?' '+suf.join(' '):''}`;
+}
+function legShortDesc(leg){
+  const d = (leg && (leg.desc||leg.raw)) || '';
+  const nm = leg && leg.player && leg.player.name;
+  if (!nm) return d;
+  const sh = shortPlayerName(nm);
+  return d.indexOf(nm)>=0 ? d.replace(nm, sh) : d;
 }
 function recommendedUnits(item, kind){
   const rawV = String((item && (item.verdict || item.J)) || '').toLowerCase();
@@ -3572,10 +3593,10 @@ function strictGates(p, opts){
   opts = opts||{}; const F = []; const {g, mk, sd, j} = p; const sp = sportOf(g); const price = sd.best.price;
   const mkts = String(S.sMarkets||'ml').split(',').map(x=>x.trim());
   // v67: Verdict judges any pick he sends. Board-only filters (odds range, sports on/off in Settings,
-  // model auto-off sports) are skipped; the strictness bars of the preset (incl. which bet types it trusts) still apply.
+  // model auto-off sports) are skipped; the strictness bars of the preset still apply to every bet type (v69: spreads/totals too).
   const vmode = opts.noRange || (typeof VERDICT_NO_RANGE!=='undefined' && VERDICT_NO_RANGE>0);
   if (g.state && g.state!=='pre' && !opts.bt) F.push('game already started');
-  if (!mkts.includes(mk)) F.push(`strict mode only takes ${mkts.map(m=>MKN_S[m]||m).join('/')}`);
+  if (!vmode && !mkts.includes(mk)) F.push(`strict mode only takes ${mkts.map(m=>MKN_S[m]||m).join('/')}`);
   if (p.side==='draw') F.push('draws are never strict plays');
   if (vmode){ if (typeof learnOff==='function' && learnOff('mk:'+mk)) F.push(`the app turned off strict ${MKN_S[mk]||mk} after they lost money in testing`); }
   else if (typeof learnOff==='function' && learnOff(g.league) && !String(S.sExclude||'').split(',').map(x=>x.trim()).includes(g.league)) F.push(`the app turned ${LMAP[g.league]?LMAP[g.league].label:g.league} off for strict picks after it lost money in testing (${learnOffWhy(g.league)})`);
@@ -3639,6 +3660,7 @@ function evaluateAll(){
     else if (p.verdict==='good' && inMyRange(p)===false){ p.verdict='watch'; p.reasons.unshift(`Outside your ${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)} range`); }
     else if (p.verdict==='good' && p.my && p.my.best && p.my.best.edge<0){ p.verdict='watch'; p.reasons.unshift(`${p.my.best.book} price is worse than fair`); }
   }
+  for (const p of plays) noOverpayGuard(p); // v69: never a Bet at negative value / overpay
   // v41: a pick that was pulled stays off every list for the rest of that game
   try{ if (typeof applyPulledFinal==='function') applyPulledFinal('games'); }catch(e){ console.warn('pulled final', e); }
   // one Good per game (avoid correlated stacks); favorites first, then score
@@ -3651,6 +3673,29 @@ function evaluateAll(){
   try{ recordResults(); }catch(e){ console.warn('results', e); }
   try{ trackPlayTabs(); }catch(e){ console.warn('tabs', e); }
   try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){ console.warn('parlays', e); }
+}
+
+// v69: value at the best available price. A Bet must be positive value (no overpay) in every mode.
+function playValue(p){
+  try{
+    const estP = (p.E && p.E.final) || (typeof estimate==='function' ? estimate(p).final : (p.sd && p.sd.nv));
+    let cost = null;
+    const r = typeof recBookFor==='function' ? recBookFor(p) : null;
+    if (r && !r.none && r.cost!=null) cost = r.cost;
+    else if (p.sd && p.sd.best && p.sd.best.price!=null) cost = imp(p.sd.best.price);
+    if (estP==null || cost==null || !isFinite(estP) || !isFinite(cost)) return null;
+    return {estP, cost, v: estP - cost};
+  }catch(e){ return null; }
+}
+function noOverpayGuard(p){
+  if (!p || p.verdict!=='good') return p;
+  const pv = playValue(p);
+  if (pv && pv.v <= 0){
+    const c = Math.round(-pv.v*100);
+    p.verdict = 'watch';
+    (p.reasons||(p.reasons=[])).unshift(c>0 ? `Not a Bet: you'd overpay about ${c}¢ per $1 at the best price` : `Not a Bet: the best price is only fair value, no edge`);
+  }
+  return p;
 }
 
 // v67: Verdict judges every typed pick on its own merits. The min/max odds range is a board filter only,
@@ -3666,6 +3711,7 @@ function verdictNoRange(p){
     else if (q.verdict==='good'){ q.verdict='watch'; q.reasons.unshift(`Strict mode: missed "${q.strictFails[0]}"${q.strictFails.length>1?` (+${q.strictFails.length-1} more)`:''}`); }
     else if (q.verdict==='watch' && q.strictFails.length<=2) q.reasons.unshift(`Close to strict: missed "${q.strictFails.join('" and "')}"`);
   } else if (q.verdict==='good' && q.my && q.my.best && q.my.best.edge<0){ q.verdict='watch'; q.reasons.unshift(`${q.my.best.book} price is worse than fair`); }
+  noOverpayGuard(q);
   q._verdictNR = true;
   return q;
 }
@@ -8266,7 +8312,7 @@ function judgeLeg(leg){
   const edge = imp_!=null ? p - imp_ : null; leg.edge = edge;
   const dog = dog0;
   if (edge!=null){
-    if (p>=betMin && edge>=edgeBet && !leg.gtd){ leg.verdict='BET'; leg.why=`Est. ${fmtPct(p)} vs implied ${fmtPct(imp_)} (${fmtEdge(edge)})`; }
+    if (p>=betMin && edge>=edgeBet && edge>0 && !leg.gtd){ leg.verdict='BET'; leg.why=`Est. ${fmtPct(p)} vs implied ${fmtPct(imp_)} (${fmtEdge(edge)})`; }
     else if (dog && edge>=0.06 && !leg.gtd){ leg.verdict='BET'; leg.why=`Underdog with a big estimated edge ${fmtEdge(edge)}: needs research`; }
     else if (p>=watchMin && edge>=-0.04 || dog && edge>=0.02){ leg.verdict='WATCHLIST'; leg.why=`Est. ${fmtPct(p)} vs implied ${fmtPct(imp_)}${leg.gtd?' and a game-time decision':''}: thin`; }
     else { leg.verdict='PASS'; leg.why= edge < -0.04 ? `Price too short: implied ${fmtPct(imp_)} vs est. ${fmtPct(p)}` : `Est. only ${fmtPct(p)}`; }
@@ -8761,12 +8807,12 @@ function parlaySummary(){
       <div class="kpi"><div class="k">All legs hit</div><div class="v">${pAll!=null?fmtPct(pAll):'—'}</div></div>
       <div class="kpi"><div class="k">Fair parlay odds</div><div class="v">${pAll!=null?fmtAm(probToAm(pAll)):'—'}</div></div>
       <div class="kpi"><div class="k">Payout from prices</div><div class="v">${bookAm!=null?fmtAm(bookAm):'—'}</div></div>
-      <div class="kpi"><div class="k">Weakest leg</div><div class="v" style="font-size:15px">${weakest?esc(weakest.l.desc||weakest.l.raw)+' ('+fmtPct(weakest.l.p,0)+')':'—'}</div></div>
+      <div class="kpi"><div class="k">Weakest leg</div><div class="v" style="font-size:15px">${weakest?esc(legShortDesc(weakest.l))+' ('+fmtPct(weakest.l.p,0)+')':'—'}</div></div>
     </div>
     ${pAll!=null && bookAm!=null ? `<div class="hint">Parlay EV at the leg prices: ${fmtEdge(pAll*bookDec-1)} per $1 (${pAll*bookDec>=1?'positive':'negative'}). Your book's actual parlay price may differ: worth it only if it pays better than ${fmtAm(probToAm(pAll))}.</div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'} Fair odds = what the ticket should pay if the estimates are right.</div>`}
     <h3 style="margin-top:12px">Most likely to miss → least</h3>
-    <ol class="why">${ranked.map(x=>`<li><span class="tk-row"><span class="tk-name"><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)}</span><span class="tk-badge">${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</span></span></li>`).join('')}</ol>
-    ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(l.desc)).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(l.desc||l.raw)).join(', ')}.</div>` : ''}
+    <ol class="why">${ranked.map(x=>`<li><span class="tk-row"><span class="tk-name"><b>${esc(legShortDesc(x.l))}</b> · ${fmtPct(x.l.p,0)}</span><span class="tk-badge">${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</span></span></li>`).join('')}</ol>
+    ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(legShortDesc(l))).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(legShortDesc(l))).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
     <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML==='function'?openInBookHTML({legs, g:legs[0]&&legs[0].g}, legs.length>1?'parlay':'game'):''}</span></div>
   </div>`;
@@ -10036,6 +10082,8 @@ function buildPropPlay(raw, side, feat, est){
   const pSide = pOver==null ? null : (side==='under' ? 1-pOver : pOver);
   const implied = price!=null ? imp(price) : null;
   const gates = (pOver==null) ? {verdict:'watch', fails:['still loading this player’s game log']} : strictPropGates(pOver, price, feat, side, raw);
+  // v69: a prop Bet must be positive value at its price (no overpay)
+  if (gates.verdict==='good' && pSide!=null && implied!=null && pSide - implied <= 0){ gates.verdict='watch'; gates.fails = (gates.fails||[]).concat([`Not a Bet: you'd overpay about ${Math.max(0,Math.round((implied-pSide)*100))}¢ per $1 at this price`]); }
   const label = `${raw.playerName||'Player'} ${side==='over'?'Over':'Under'} ${raw.line} ${PROP_KIND_LABEL[raw.kind]||raw.kind}`;
   const win = [], lose = [];
   const f = feat||{};
