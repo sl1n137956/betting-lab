@@ -16906,6 +16906,7 @@ async function ccInstruments(sym){
 }
 async function avLoadCc(lgs){
   const X = AV.cc; const now = Date.now(); const lgOut = {}; const ev = {}; let errs = 0, okN = 0;
+  const hadProps = ((typeof props!=='undefined' && props) || []).length > 0;
   const want = lgs.filter(lg=>CC_LG[lg]); for (const lg of lgs) if (!CC_LG[lg]) lgOut[lg] = {ok:true, none:true, kinds:{}, t:now};
   if (!want.length){ X.lg = lgOut; X.ev = {}; X.t = Date.now(); return; }
   // one call per league-season series ("NBA2026"), from 8 hours ago on; seasons are labeled by start year, so ask this year and its neighbours
@@ -16954,7 +16955,7 @@ async function avLoadCc(lgs){
   X.lg = lgOut; X.ev = ev; avLearnTypes(X);
   X.t = Date.now(); X.err = (errs && !okN) ? 'Crypto.com unreachable' : null;
   // props board not loaded yet → player props were skipped; come back in ~30s instead of 3 minutes
-  if (!((typeof props!=='undefined' && props) || []).length) X.t = Date.now() - 150000;
+  if (!hadProps) X.t = Date.now() - 150000;
 }
 
 /* ---- 15s price refresh for the cards on screen (called from fpTick) ---- */
