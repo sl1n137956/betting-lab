@@ -1200,6 +1200,17 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .pk-drop-hint{display:none;position:absolute;inset:0;border:2px dashed rgba(96,165,250,.7);border-radius:12px;background:rgba(15,23,42,.75);color:var(--acc-hi,#93c5fd);font-weight:650;align-items:center;justify-content:center;pointer-events:none}
 .pk-input.drag .pk-drop-hint{display:flex}
 .pk-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2)}
+
+/* v70: one status row at the top of every card */
+.card > .card-status{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2,8px);margin:0}
+.card > .card-status + *{margin-top:var(--s3,12px) !important}
+.card-status > *{margin:0 !important;min-height:var(--pill-h,28px);height:auto;padding:0 12px !important;border-radius:999px !important;font-size:12px !important;line-height:1.2;display:inline-flex !important;align-items:center;gap:6px;box-sizing:border-box;width:auto !important;max-width:100%;white-space:normal}
+.card-status > .pulled-tag{border-radius:14px !important;padding:4px 12px !important}
+.card-status > .av-tag{border-radius:14px !important;padding:4px 4px 4px 12px !important;flex-wrap:wrap}
+.av-tag .av-ok-btn{margin-left:auto}
+.av-pull-sec{margin-top:var(--s4,16px)}
+.av-pull-grp + .av-pull-grp{margin-top:var(--s3,12px)}
+.av-pull-h{margin:var(--s3,12px) 0 var(--s2,8px)}
 </style>
 </head>
 <body>
@@ -7186,7 +7197,8 @@ function render(){
   else if (ui.tab==='pulled'){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
     const items = list.length ? `<div class="pulled-list">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">None of the bets you tailed has flipped to Avoid.</div>`;
-    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">⛔</span>Pulled</h2><span class="hint">Only bets you tailed. For a parlay, the line that went bad is shown, and the whole parlay is pulled to be safe. It also stays on Picks in red until the game starts.</span></div>` + items + errs;
+    const avSec = typeof avPulledSectionHTML==='function' ? avPulledSectionHTML() : '';
+    v.innerHTML = `<div class="section-title pulled-head"><h2><span class="h-emo" aria-hidden="true">⛔</span>Pulled</h2><span class="hint">Only bets you tailed. For a parlay, the line that went bad is shown, and the whole parlay is pulled to be safe. It also stays on Picks in red until the game starts.</span></div>` + items + avSec + errs;
   }
   else if (ui.tab==='all') v.innerHTML = allGamesHTML(allG) + errs;
 }
@@ -16459,7 +16471,7 @@ function avHiddenHTML(board, tab){
   const open = !!(window.__avOpen && window.__avOpen[board+':'+tab]);
   const cards = list.slice(0, 60).map(x=>{
     const r = avCheck(x, kind) || {};
-    const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> Not on your books${r.why?` <span class="av-why">· ${esc(r.why)}</span>`:''}${r.user?` <button type="button" class="av-undo" data-nob-undo="${esc(board+'|'+avItemId(x, board))}">Undo</button>`:''}</div>`;
+    const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> Not on your books${r.why?` <span class="av-why">· ${esc(r.why)}</span>`:''}${typeof avOkBtnHTML==='function' ? avOkBtnHTML(board, x, r.user) : (r.user?` <button type="button" class="av-undo" data-nob-undo="${esc(board+'|'+avItemId(x, board))}">Undo</button>`:'')}</div>`;
     let html = ''; try{ html = cardFn(x); }catch(e){ return ''; }
     return String(html).replace(/^\s*<div class="([^"]*)"/, (m, c)=>`<div class="${c} av-off"`).replace(/^(\s*<div [^>]*>)/, `$1${tag}`);
   }).join('');
@@ -17404,6 +17416,102 @@ function tmBlockHTML(p){
       <div class="tm-line">${esc(bx.line)}</div>
     </div></details>`;
 }
+/* ================= v70 ================= */
+/* 1) Card status row: every status pill (Not locked yet, Locked, Tailed, Back in, Pulled, locks-in timer…)
+      is gathered into one wrap row at the top of the card, 8px apart, same 28px pill size. */
+const CARD_STATUS_SEL = ':scope > .eb-tag, :scope > .lk-tag, :scope > .you-bet-lab, :scope > .logged-badge, :scope > .pulled-tag, :scope > .moved-up, :scope > .moved-down, :scope > .lock-badge-row, :scope > .av-tag';
+function cardStatusFix(root){
+  const cards = (root||document).querySelectorAll('.card:not([data-st])');
+  for (const c of cards){
+    c.setAttribute('data-st','1');
+    let items; try{ items = [...c.querySelectorAll(CARD_STATUS_SEL)]; }catch(e){ items = []; }
+    if (!items.length) continue;
+    const row = document.createElement('div'); row.className = 'card-status';
+    c.insertBefore(row, c.firstChild);
+    for (const el of items){
+      if (el.classList.contains('lock-badge-row')){ // unwrap the timer pill
+        if (getComputedStyle(el).display==='none'){ el.remove(); continue; }
+        [...el.children].forEach(ch=>row.appendChild(ch)); el.remove(); continue;
+      }
+      row.appendChild(el);
+    }
+    if (!row.children.length) row.remove();
+  }
+}
+(function cardStatusObserve(){
+  if (typeof MutationObserver==='undefined' || typeof document==='undefined') return;
+  let q = false;
+  const run = ()=>{ q = false; try{ cardStatusFix(document); }catch(e){ console.warn('card status', e); } };
+  const mo = new MutationObserver(()=>{ if (!q){ q = true; (window.requestAnimationFrame||setTimeout)(run); } });
+  const start = ()=>{ mo.observe(document.body, {childList:true, subtree:true}); run(); };
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
+
+/* 2) "It's on my book": undo any auto (or manual) "not on your book" hide. Remembered per
+      game + market + side + line + book, so later refreshes don't hide it again. */
+const AV_OK_LS = 'bl_av_ok_v1';
+function avOkStore(){ let d; try{ d = JSON.parse(localStorage.getItem(AV_OK_LS)||'null'); }catch(e){ d = null; } d = d && typeof d==='object' ? d : {};
+  const cut = Date.now() - 14*864e5; for (const k in d) if (!(d[k] > cut)) delete d[k]; return d; }
+function avOkSave(d){ try{ localStorage.setItem(AV_OK_LS, JSON.stringify(d)); }catch(e){} }
+function avOkLine(item){ const v = item && ((item.sd && item.sd.point!=null) ? item.sd.point : (item.line!=null ? item.line : null)); return v==null ? '' : String(v); }
+function avOkKey(item, board){
+  const bks = (typeof selectedBooks==='function' ? selectedBooks() : []).slice().sort().join('+') || 'any';
+  return `${avItemId(item, board)}|${avOkLine(item)}|${bks}`;
+}
+function avOverridden(item, board){ try{ return !!avOkStore()[avOkKey(item, board)]; }catch(e){ return false; } }
+(function wrapAvCheck(){
+  if (typeof avCheck!=='function') return;
+  const orig = avCheck;
+  avCheck = function(item, kind){
+    if (item && kind!=='parlay'){
+      const board = kind==='props' ? 'props' : 'games';
+      if (avOverridden(item, board)){ const r = {ok:true, books:(typeof selectedBooks==='function'?selectedBooks():[]), override:true}; item._av = null; return r; }
+    }
+    return orig.apply(this, arguments);
+  };
+})();
+function avFindByKey(board, id){
+  const src = board==='props' ? ((typeof props!=='undefined'&&props)||[]) : board==='parlay' ? ((typeof parlays!=='undefined'&&parlays)||[]) : ((typeof plays!=='undefined'&&plays)||[]);
+  return src.find(x=>x && (avItemId(x, board)===id || x.id===id)) || null;
+}
+function avRestore(board, id){
+  const item = avFindByKey(board, id);
+  // clear today's manual hide too
+  try{ const d = avFlags(); const day = d.h[avDayKey()]; if (day){ delete day[id]; if (item) delete day[avItemId(item, board)]; } avSaveFlags(d); }catch(e){}
+  if (item && board!=='parlay'){ const s = avOkStore(); s[avOkKey(item, board)] = Date.now(); avOkSave(s); item._av = null; }
+  AV.ver++;
+  try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
+  toast('Back on the board. Verdict will remember your book has this one.');
+  if (typeof softRender==='function') softRender(); else if (typeof render==='function') render();
+}
+function avOkBtnHTML(board, item, user){
+  return `<button type="button" class="btn sm av-ok-btn" data-av-ok="${esc(board+'|'+avItemId(item, board))}" title="Put this pick back and stop hiding it">${user?'Undo':'It\u2019s on my book'}</button>`;
+}
+// Pulled tab: every pick hidden as not on your book (auto or by you), with a count and the restore button
+function avPulledSectionHTML(){
+  if (typeof avHiddenItems!=='function') return '';
+  let n = 0; const parts = [];
+  for (const [board, lab] of [['games','Games'],['props','Props']]){
+    for (const tab of ['good','watch']){
+      let list = []; try{ list = avHiddenItems(board, tab) || []; }catch(e){ list = []; }
+      if (!list.length) continue; n += list.length;
+      const kind = board==='props' ? 'props' : 'games'; const cardFn = board==='props' ? propCard : playCard;
+      parts.push(`<div class="av-pull-grp"><div class="mut av-pull-h">${lab} · ${tab==='good'?'Picks':'Watchlist'} (${list.length})</div><div class="pulled-list">${list.slice(0,40).map(x=>{
+        const r = avCheck(x, kind) || {}; let html=''; try{ html = cardFn(x); }catch(e){ return ''; }
+        const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> Not on your books${r.why?` <span class="av-why">· ${esc(r.why)}</span>`:''}${avOkBtnHTML(board, x, r.user)}</div>`;
+        return String(html).replace(/^\s*<div class="([^"]*)"/, (m, c)=>`<div class="${c} av-off"`).replace(/^(\s*<div [^>]*>)/, `$1${tag}`);
+      }).join('')}</div></div>`);
+    }
+  }
+  if (!n) return '';
+  const open = !!(window.__avOpen && window.__avOpen['pulled:auto']);
+  return `<details class="av-hid av-pull-sec" data-av-sec="pulled:auto" ${open?'open':''}><summary><span class="av-x" aria-hidden="true">❌</span> Not on your book (auto) · ${n}</summary><div class="av-note">Verdict hid these because your books didn't seem to list them. If your book does have one, tap <b>It\u2019s on my book</b> and it goes back on the board and stays there.</div>${parts.join('')}</details>`;
+}
+document.addEventListener('click', e=>{
+  const t = e.target && e.target.closest ? e.target.closest('[data-av-ok]') : null; if (!t) return;
+  e.preventDefault(); e.stopPropagation();
+  const v = t.getAttribute('data-av-ok'); const i = v.indexOf('|'); avRestore(v.slice(0,i), v.slice(i+1));
+}, true);
 </script>
 </body>
 </html>
