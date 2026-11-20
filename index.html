@@ -1114,6 +1114,24 @@ main.wrap{padding-top:16px}
 .v42-tbl td .hint{margin-top:4px;font-size:12px;line-height:1.35;white-space:normal}
 .v42-tbl td div{line-height:1.4}
 @media (max-width:767.98px){ .auto-chip{white-space:normal} }
+.btn.sm.btn-nob{color:#fecaca;background:rgba(225,29,72,.14);border:1px solid rgba(244,63,94,.5)}
+.btn.sm.btn-nob:hover{background:rgba(225,29,72,.26)}
+details.av-hid{margin:18px 0 8px;border:1px solid rgba(244,63,94,.35);border-radius:14px;background:rgba(225,29,72,.06);padding:4px 12px}
+details.av-hid>summary{cursor:pointer;padding:10px 2px;font-weight:750;color:#fecaca;list-style:none}
+details.av-hid>summary::-webkit-details-marker{display:none}
+details.av-hid>summary::after{content:' ▾';color:var(--mut)}
+details.av-hid[open]>summary::after{content:' ▴'}
+.av-note{font-size:12.5px;color:var(--mut);margin:0 0 10px}
+.av-off>*:not(.av-tag){opacity:.55;filter:grayscale(.85)}
+.av-off .btn-tail,.av-off .btn-nob{pointer-events:none;opacity:.5}
+.av-tag{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;padding:5px 11px;border-radius:12px;font-size:12.5px;font-weight:750;line-height:1.35;color:#ffe4e6;background:rgba(225,29,72,.32);border:1px solid rgba(244,63,94,.7);filter:none;overflow-wrap:anywhere}
+.av-why{font-weight:600;color:#fecdd3}
+.av-undo{margin-left:auto;background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:2px 10px;font-size:12px;cursor:pointer}
+.av-flag-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:6px 0;border-top:1px solid var(--line)}
+.av-flag-row>span:first-child{flex:1 1 180px}
+.av-off-lab{color:var(--avoid)}
+.av-set{margin:12px 0}
+.ag-tailed{display:inline-flex;align-items:center;gap:5px;margin:0 0 8px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:750;color:var(--logged-hi);background:var(--logged-dim);border:1px solid rgba(34,211,238,.5)}
 </style>
 </head>
 <body>
@@ -1469,25 +1487,27 @@ function gameHasPolymarketLine(g){
 }
 function selectedBooksAllowGame(g){
   if (!g) return false;
+  if (typeof AV!=='undefined' && AV.bypass) return true;
   if (polymarketOnlyFilterActive()) return gameHasPolymarketLine(g);
   return true;
 }
+// v48: market-level check (exact market + side + line at one of your books) — see 23_avail.js
 function selectedBooksAllowPlay(p){
   if (!p) return false;
-  const books = selectedBooks();
-  if (!bookSupportsMarket(books, 'games', p)) return false;
-  if (polymarketOnlyFilterActive()) return playHasPolymarketLine(p);
-  return true;
+  if (typeof AV!=='undefined' && AV.bypass) return true;
+  if (typeof avCheck==='function') return avCheck(p, 'games').ok;
+  return bookSupportsMarket(selectedBooks(), 'games', p);
 }
 function selectedBooksAllowProp(p){
   if (!p) return false;
-  const books = selectedBooks();
-  if (!bookSupportsMarket(books, 'props', p)) return false;
-  if (polymarketOnlyFilterActive() && p.g && !gameHasPolymarketLine(p.g)) return false;
-  return true;
+  if (typeof AV!=='undefined' && AV.bypass) return true;
+  if (typeof avCheck==='function') return avCheck(p, 'props').ok;
+  return bookSupportsMarket(selectedBooks(), 'props', p);
 }
 function selectedBooksAllowParlay(pl){
   if (!pl || !Array.isArray(pl.legs) || !pl.legs.length) return false;
+  if (typeof AV!=='undefined' && AV.bypass) return true;
+  if (typeof avCheck==='function') return avCheck(pl, 'parlay').ok;
   return pl.legs.every(l => l && (l.isProp ? selectedBooksAllowProp(l) : selectedBooksAllowPlay(l)));
 }
 
@@ -1568,6 +1588,8 @@ function bookPriceFor(item, kind, bookKey){
     }
     if (!g || !mk || !side) return null;
     if (b==='polymarket' || b==='polymarket_us'){
+      if (typeof avPmCheck==='function'){ const r = avPmCheck(b==='polymarket_us'?'us':'pm', {g, mk, side, sd:{point}, point}); if (r.ok && r.q) return cents(r.q.ask); }
+      if (b==='polymarket_us') return null;
       const m = g.pm && g.pm[mk] && g.pm[mk][side];
       return m && (mk==='ml' || point==null || m.point===point) ? cents(m.ask) : null;
     }
@@ -3398,9 +3420,12 @@ function myBooks(p){
     if (mk!=='ml' && q.point!==sd.point) continue;
     out.quotes.push({book:BOOK_LABEL(k), price:q.price, edge: fair - imp(q.price), kind:'book'});
   }
-  if (hasPm && g.pm && g.pm[mk] && g.pm[mk][p.side]){
+  // v48: real Polymarket / Polymarket US market for this exact side + point (see 23_avail.js)
+  const pmQs = (hasPm && typeof avPmGameQuote==='function') ? avPmGameQuote(p) : [];
+  for (const m of pmQs){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:BOOK_LABEL(m.book), bk:m.book, price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:false, pm:{ask:m.ask, fee:m.fee, point:m.pt}}); }
+  if (!pmQs.length && list.includes('polymarket') && g.pm && g.pm[mk] && g.pm[mk][p.side]){
     const m = g.pm[mk][p.side];
-    if (mk==='ml' || m.point===sd.point){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:pmLabel, bk:'polymarket', price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:m.thin, pm:m}); }
+    if (mk==='ml' || m.point===sd.point){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:'Polymarket', bk:'polymarket', price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:m.thin, pm:m}); }
   }
   if (list.includes('kalshi') && g.kalshi && g.kalshi[mk] && g.kalshi[mk][p.side]){
     const m = g.kalshi[mk][p.side];
@@ -5953,6 +5978,7 @@ async function refresh(forceOdds=false){
     mergeOddsApi();
     try{ await fetchPolymarket(); }catch(e){ pmErr = String(e.message||e); }
     mergePolymarket();
+    if (typeof avRefresh==='function') avRefresh(false).catch(e=>console.warn('avail', e));
     try{ if (typeof fetchKalshi==='function') await fetchKalshi(); }catch(e){ kalshiErr = String(e.message||e); }
     try{ if (typeof mergeKalshi==='function') mergeKalshi(); }catch(e){ console.warn('kalshi merge', e); }
     stampFirstSeen();
@@ -6166,7 +6192,7 @@ function playCard(p){
     ${lazy(cid, '⚖️ Courtroom', 'court', courtBody, ' court-dd')}
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(p):''}
     ${lazy(mid, '📐 Numbers', 'nums', numsBody)}
-    <div class="cfoot"><span class="cfoot-meta">${confBadge(p.j.conf)}${unitPillHTML(p,"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'game'):''}</span></div>
+    <div class="cfoot"><span class="cfoot-meta">${confBadge(p.j.conf)}${unitPillHTML(p,"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'game'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'games'):''}</span></div>
   </div>`;
 }
 
@@ -6303,7 +6329,21 @@ function allGamesList(){
     if (st < now - 6*3600e3) return false;           // stale "scheduled" rows from earlier
     if (q && !norm((g.home&&g.home.name||'')+' '+(g.away&&g.away.name||'')+' '+(g.title||'')).includes(q)) return false;
     return true;
-  }).sort((a,b)=>((a.state==='in')===(b.state==='in') ? 0 : a.state==='in' ? -1 : 1) || (a.start-b.start));
+  }).sort((a,b)=>((a.state==='in')===(b.state==='in') ? 0 : a.state==='in' ? -1 : 1)
+    || (a.state==='in' ? (gameTailedPending(b)?1:0) - (gameTailedPending(a)?1:0) : 0)
+    || (a.start-b.start));
+}
+// v48: a live game you have a pending bet on (single, prop, or parlay leg)
+function gameTailedPending(g){
+  const ev = String((g && g.eventId) || ''); if (!ev) return false;
+  try{
+    return ((typeof bets!=='undefined' && bets) || []).some(b=>{
+      if (!b || (b.result && b.result!=='pending')) return false;
+      if (b.link && b.link.ev!=null && String(b.link.ev)===ev) return true;
+      if (String(b.playKey||'').split(/[|:]/).includes(ev)) return true;
+      return Array.isArray(b.legs) && b.legs.some(l=>l && [l.link&&l.link.ev, l.ev, l.eventId].some(x=>x!=null && String(x)===ev) || (l && String(l.playKey||l.k||'').split(/[|:]/).includes(ev)));
+    });
+  }catch(e){ return false; }
 }
 function allGamesHTML(list){
   const live = list.filter(g=>g.state==='in'), up = list.filter(g=>g.state!=='in');
@@ -6312,7 +6352,8 @@ function allGamesHTML(list){
   const dayKey = g => { const d = new Date(g.start); const t = new Date(); const tm = new Date(); tm.setDate(t.getDate()+1);
     return d.toDateString()===t.toDateString() ? 'Today' : d.toDateString()===tm.toDateString() ? 'Tomorrow' : d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}); };
   const groups = []; for (const g of up){ const k = dayKey(g); let G = groups.find(x=>x.k===k); if (!G){ G = {k, list:[]}; groups.push(G); } G.list.push(g); }
-  const sec = (title, arr, cls, extra) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span>${extra||''}</h3><div class="grid">${arr.map(gameCard).join('')}</div></div>`;
+  const liveCard = g => { const h = gameCard(g); return gameTailedPending(g) ? String(h).replace(/^(\s*<div [^>]*>)/, '$1<div class="ag-tailed"><span aria-hidden="true">🎟️</span> You tailed this</div>') : h; };
+  const sec = (title, arr, cls, extra) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span>${extra||''}</h3><div class="grid">${arr.map(cls==='ag-live'?liveCard:gameCard).join('')}</div></div>`;
   const off = LEAGUES.filter(L=>!(S.enabled||[]).includes(L.id)).map(L=>L.label);
   return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now${off.length?` · hidden because you turned them off in Settings: ${esc(off.join(', '))}`:''}. Board filters don't apply here. Odds show when the free feed has them; % = no-vig probability.</span></div>`
     + (list.length ? `<div class="ag-chips">${chips}</div>` + (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live', ` <span class="live-upd mut" data-live-upd>${typeof liveAgoTxt==='function'?esc(liveAgoTxt()):''}</span>`) : '') + groups.map(G=>sec(esc(G.k), G.list)).join('')
@@ -6779,11 +6820,11 @@ function render(){
   if (ui.tab==='results') return renderResults();
   if (!lastUpdated && !(ui.board==='props' && (props||[]).length) && !(ui.board==='parlay' && (parlays||[]).length)){ v.innerHTML = busy ? `<div class="empty-state">Loading the slate…</div>` : `<div class="empty-state">No data yet.</div>${errs}`; return; }
   if ((ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && ui.board==='parlay' && typeof renderParlayBoard==='function'){
-    v.innerHTML = renderParlayBoard(ui.tab, errs);
+    v.innerHTML = renderParlayBoard(ui.tab, errs) + (typeof avHiddenHTML==='function' ? avHiddenHTML('parlay', ui.tab) : '');
     return;
   }
   if ((ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && ui.board==='props' && typeof renderPropsBoard==='function'){
-    v.innerHTML = renderPropsBoard(ui.tab, errs);
+    v.innerHTML = renderPropsBoard(ui.tab, errs) + (typeof avHiddenHTML==='function' ? avHiddenHTML('props', ui.tab) : '');
     return;
   }
   if (ui.tab==='good'){
@@ -6791,16 +6832,16 @@ function render(){
     const body = (typeof picksBoardHTML==='function')
       ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), (typeof withPulledTailed==='function' ? withPulledTailed(good.concat(typeof lockedKeepItems==='function' ? lockedKeepItems('games', good) : []), 'games') : good), 'games', playCard)
       : section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'));
-    v.innerHTML = slateLayout('good', body + errs, counts);
+    v.innerHTML = slateLayout('good', body + errs, counts) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'good') : '');
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
     const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
     const watchMain = section('<span class="h-emo" aria-hidden="true">👀</span>Watchlist', 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, sportFilterEmpty(over.length?'No other watchlist items.':'Nothing on the watchlist.'))
       + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '') + errs;
-    v.innerHTML = slateLayout('watch', watchMain, {good:good.length, watch:watch.length, avoid:avoid.length});
+    v.innerHTML = slateLayout('watch', watchMain, {good:good.length, watch:watch.length, avoid:avoid.length}) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'watch') : '');
   }
-  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length});
+  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length}) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'avoid') : '');
   else if (ui.tab==='pulled'){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
     const items = list.length ? `<div class="pulled-list">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">None of the bets you tailed has flipped to Avoid.</div>`;
@@ -8452,10 +8493,10 @@ function renderPicks(){
     <h2><span class="h-emo" aria-hidden="true">⚖️</span>Get a Verdict</h2>
     <p class="lead">Type a moneyline, spread, total, or player prop — one per line. We’ll break it down the same way as Picks.</p>
     <textarea id="pkText" rows="5" placeholder="e.g. Rockets ML&#10;Celtics -4.5&#10;LeBron Over 24.5 Points">${esc(PK.text)}</textarea>
-    <div class="pk-ex"><span class="lab">Try</span>${ex.map(x=>`<span class="chip" data-ex="${esc(x)}">${esc(x)}</span>`).join('')}</div>
+    <div class="pk-ex"><span class="lab">Try</span>${ex.slice(1,2).map(x=>`<span class="chip" data-ex="${esc(x)}">${esc(x)}</span>`).join('')}</div>
     <div class="pk-actions">
       <button class="btn primary" id="btnCheck" ${PK.busy?'disabled':''}>${PK.busy?'Checking…':'Get verdict'}</button>
-      <button class="btn" id="btnPkClear">Clear</button>
+      <button class="btn" id="btnPkClear" title="Clear the typed picks and the photo">Clear all</button>
       <span class="hint">${games.length?`${games.length} events loaded`:'Loading games…'}</span>
     </div>
     ${typeof photoPanelHTML==='function' ? photoPanelHTML() : ''}
@@ -8465,7 +8506,7 @@ function renderPicks(){
   $('#pkText').oninput = e=>{ PK.text = e.target.value;  };
   if (typeof photoBind==='function') photoBind(v);
   $('#btnCheck').onclick = runPicks;
-  $('#btnPkClear').onclick = ()=>{ PK.text=''; PK.legs=[];  renderPicks(); };
+  $('#btnPkClear').onclick = ()=>{ PK.text=''; PK.legs=[]; PK.photoText=null; if (typeof PHOTO!=='undefined'){ Object.assign(PHOTO, {busy:false, text:'', conf:null, rows:[], stake:'', fail:'', thumb:'', ran:false}); PK.photoStake = null; } renderPicks(); };
   v.querySelectorAll('[data-ex]').forEach(c=>c.onclick=()=>{
     const t=c.dataset.ex||''; if(!t) return;
     const cur=($('#pkText')&&$('#pkText').value)||'';
@@ -10005,7 +10046,7 @@ function propsUnsupportedNote(){
   if (!books.length) return '';
   if (books.length && books.every(b => b==='polymarket' || b==='polymarket_us')){
     const who = [...new Set(books.map(b=>b==='polymarket_us'?'Polymarket US':'Polymarket'))].join(' / ');
-    return who+" doesn't offer combo/niche props (PRA, P+R, P+A, R+A, turnovers) or NHL/MLB player props, so those are hidden. Select another book like Bovada, Kalshi, or DraftKings in Settings → My books to see them.";
+    return "Only props "+who+" really lists right now (same player, stat and line) are shown. The rest are under \"hidden (not on your books)\" below. Add another book in Settings → My books to see more.";
   }
   return '';
 }
@@ -10148,7 +10189,7 @@ function propCard(p){
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
     ${lazy(nid, '🩺 Injuries, lineups &amp; news', 'inj', propInjBody(p))}
     ${lazy(mid, '📐 Numbers', 'nums', propNumbersHTML(p))}
-    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}</span></div>
+    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'props'):''}</span></div>
   </div>`;
 }
 
@@ -10876,7 +10917,7 @@ function parlayCardInner(pl){
     ${lazy(cid,'⚖️ Courtroom','court',parlayCourtroomHTML(pl))}
     ${lazy(nid,'🩺 Injuries, lineups &amp; news','inj',parlayInjBody(pl))}
     ${lazy(mid,'📐 Numbers','nums',parlayNumbersHTML(pl))}
-    <div class="cfoot"><span class="cfoot-meta"><span class="mut">${pl.mix==='mixed'?'Games + props':pl.mix==='props'?'Props only':'Games only'}</span>${unitPillHTML(pl,"parlay")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(pl.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(pl,'parlay'):''}</span></div>
+    <div class="cfoot"><span class="cfoot-meta"><span class="mut">${pl.mix==='mixed'?'Games + props':pl.mix==='props'?'Props only':'Games only'}</span>${unitPillHTML(pl,"parlay")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(pl.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(pl,'parlay'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(pl,'parlay'):''}</span></div>
   </div>`;
 }
 
@@ -13757,6 +13798,7 @@ function lockedKeepItems(board, shownList){
       if (!item && typeof tailedParlayFromBet==='function'){ try{ item = tailedParlayFromBet({playKey:k, link:{mk:'parlay', dec:rec.dec, start:rec.start, n:rec.n}, legs:rec.legs, pick:rec.label, odds:rec.am}); }catch(e){ item = null; } }
     }
     if (!item) continue;
+    if (typeof avCheck==='function' && !(typeof isTailedPending==='function' && isTailedPending(item)) && !avCheck(item, board==='parlay'?'parlay':board).ok) continue;
     const c = Object.assign({}, item, {lockedKeep:true, tailedKeep:false});
     if (item.verdict!=='good') c.coolNote = coolNoteText(item, board);
     if (board==='parlay'){ c.verdict = 'good'; c.C = Object.assign({}, item.C||{}, {J:'BET'}); }
@@ -15367,7 +15409,7 @@ async function photoHandle(file){
   if (PHOTO.fail){ PHOTO.rows = PHOTO.rows.map(r=>r.ok ? r : r); renderPicks(); return; }
   // confident read: drop unreadable rows only if they had nothing useful, then run the normal Verdict
   PK.photoStake = parseFloat(PHOTO.stake) > 0 ? +parseFloat(PHOTO.stake) : null;
-  PK.text = photoRowsToText(); PHOTO.ran = true;
+  PK.text = photoRowsToText(); PK.photoText = PK.text; PHOTO.ran = true;
   renderPicks(); runPicks();
 }
 function photoBind(v){
@@ -15376,8 +15418,562 @@ function photoBind(v){
   v.querySelectorAll('[data-ph-del]').forEach(b=>b.onclick = ()=>{ photoSyncInputs(); PHOTO.rows.splice(+b.dataset.phDel, 1); renderPicks(); });
   const add = v.querySelector('#phAdd'); if (add) add.onclick = ()=>{ photoSyncInputs(); PHOTO.rows.push({text:'', odds:'', ok:false, why:'', read:''}); renderPicks(); const last = v.querySelectorAll('[data-ph-text]'); if (last.length) last[last.length-1].focus(); };
   const run = v.querySelector('#phRun'); if (run) run.onclick = photoRun;
-  const clr = v.querySelector('#phClear'); if (clr) clr.onclick = ()=>{ Object.assign(PHOTO, {busy:false, text:'', conf:null, rows:[], stake:'', fail:'', thumb:'', ran:false}); PK.photoStake = null; renderPicks(); };
+  // v48: "Clear photo" removes only the photo and what it read; your typed picks stay (top "Clear all" clears both)
+  const clr = v.querySelector('#phClear'); if (clr) clr.onclick = ()=>{
+    if (PHOTO.ran && PK.photoText!=null && String(PK.text||'').trim()===String(PK.photoText).trim()){ PK.text = ''; PK.legs = []; }
+    PK.photoText = null;
+    Object.assign(PHOTO, {busy:false, text:'', conf:null, rows:[], stake:'', fail:'', thumb:'', ran:false}); PK.photoStake = null; renderPicks(); };
 }
+/* ================= v48: real "is this on my book?" check =================
+   A pick shows only if one of your selected books actually lists that exact market + side
+   (player, stat and the same line or a half-point neighbour; for games the side and the point).
+   Prediction markets are checked against their live markets:
+     - Polymarket (global): gamma-api events per league series (prop + game markets with prices)
+     - Polymarket US: gateway.polymarket.us league events + one event page per game (public, no key)
+   Sportsbooks are trusted by their known menus (BOOK_CAPABILITIES) unless you flag them.
+   "Not on my book": hides that pick today, and after 2 flags for the same book + sport + market type
+   that market is treated as not offered by that book (undo in Settings). Flags also go (anonymous) to the pool.
+   Picks that fail stay tracked by the universe scan, and tailed bets are never hidden. */
+var AV = {ver:1, bypass:false, busy:false, last:0, every:10*60000,
+  pm:{t:0, lg:{}, ev:{}, err:null}, us:{t:0, lg:{}, ev:{}, err:null}};
+var AV_LS = 'bl_av_idx_v1', AV_FLAG_LS = 'bl_nob_v1';
+var AV_US_LEAGUE = {nba:'nba', nfl:'nfl', nhl:'nhl', mlb:'mlb', ncaab:'cbb', ncaaf:'cfb', wnba:'wnba', mls:'mls', epl:'epl', ucl:'ucl', ufc:'ufc', atp:'atp', wta:'wta'};
+var AV_PM_SERIES = {nba:10345, nhl:10346, nfl:12185, ncaaf:12756, ncaab:10470, wnba:10105, mlb:3, mls:10189, epl:10188, ucl:10204, laliga:10193, seriea:10203, bund:10194};
+// stat names in the market type → the app's prop kinds (sport-specific where they differ)
+var AV_KIND = {
+  basketball:{points:'pts', rebounds:'reb', assists:'ast', threes:'threes', steals:'stl', blocks:'blk', turnovers:'tov', points_rebounds_assists:'pra', points_rebounds:'pr', points_assists:'pa', rebounds_assists:'ar'},
+  football:{passing_yards:'pass_yds', rushing_yards:'rush_yds', receiving_yards:'rec_yds', receptions:'rec', passing_touchdowns:'pass_td', rushing_touchdowns:'rush_td', receiving_touchdowns:'rec_td'},
+  hockey:{points:'pts', goals:'goals', assists:'ast', shots_on_goal:'sog', shots:'sog', saves:'saves'},
+  baseball:{strikeouts:'ks', pitcher_strikeouts:'ks'}
+};
+var AV_SPORT_OF = {nba:'basketball', wnba:'basketball', ncaab:'basketball', nfl:'football', ncaaf:'football', nhl:'hockey', mlb:'baseball'};
+function avVenueName(v){ return v==='us' ? 'Polymarket US' : 'Polymarket'; }
+function avVenueBook(v){ return v==='us' ? 'polymarket_us' : 'polymarket'; }
+function avNameKey(n){ return (typeof norm==='function' ? norm(n) : String(n||'').toLowerCase()).replace(/\b(jr|sr|ii|iii|iv|v)\b/g,'').replace(/\s+/g,' ').trim(); }
+function avKindOf(lg, stat){
+  const sp = AV_SPORT_OF[lg] || 'basketball';
+  const k = (AV_KIND[sp]||{})[stat];
+  if (k) return k;
+  if (sp!=='basketball' && AV_KIND.basketball[stat]) return null;
+  return null;
+}
+function avGameOf(item){
+  if (!item) return null;
+  if (item.g) return item.g;
+  const ev = item.eventId || item.ev;
+  return ev ? ((typeof games!=='undefined' && games) || []).find(g=>g && String(g.eventId)===String(ev)) || null : null;
+}
+function avMatchGame(lg, slug, startMs, title, names){
+  const toks = String(slug||'').split('-'); const a = (toks[1]||'').toLowerCase(), h = (toks[2]||'').toLowerCase();
+  const fix = x => (typeof KALSHI_ABBR_FIX!=='undefined' && KALSHI_ABBR_FIX[x]) || x;
+  const N = s => (typeof norm==='function' ? norm(s) : String(s||'').toLowerCase());
+  const t = N(title) + ' ' + (names||[]).map(N).join(' ');
+  let best = null, bs = 0;
+  for (const g of ((typeof games!=='undefined' && games) || [])){
+    if (!g || g.league!==lg || !g.eventId || g.pickOnly) continue;
+    if (isFinite(startMs) && g.start && Math.abs(g.start.getTime() - startMs) > 4*3600000) continue;
+    let sc = 0;
+    const sa = fix(String(g.away.short||'').toLowerCase()), sh = fix(String(g.home.short||'').toLowerCase());
+    if (sa && a && (sa===fix(a) || (a.length>=3 && sa.length>=3 && (sa.indexOf(a)===0 || a.indexOf(sa)===0)))) sc += 2;
+    if (sh && h && (sh===fix(h) || (h.length>=3 && sh.length>=3 && (sh.indexOf(h)===0 || h.indexOf(sh)===0)))) sc += 2;
+    for (const T of [g.away, g.home]) if ([T.name, T.loc, T.nick].filter(Boolean).some(x=>{ const n = N(x); return n.length>2 && t.includes(n); })) sc += 1.5;
+    if (sc > bs){ bs = sc; best = g; }
+  }
+  return bs >= 3 ? best : null;
+}
+function avSideByTeam(g, team, desc){
+  const fix = x => (typeof KALSHI_ABBR_FIX!=='undefined' && KALSHI_ABBR_FIX[x]) || x;
+  const N = s => (typeof norm==='function' ? norm(s) : String(s||'').toLowerCase());
+  if (team){
+    const ab = fix(String(team.abbreviation||'').toLowerCase());
+    for (const s of ['home','away']){ const sh = fix(String(g[s].short||'').toLowerCase()); if (ab && sh && ab===sh) return s; }
+    const nm = N(team.name||team.alias||'');
+    for (const s of ['home','away']){ const T = g[s]; if ([T.name, T.loc, T.nick].filter(Boolean).map(N).some(x=>x && nm && (x===nm || (x.length>3 && nm.includes(x))))) return s; }
+  }
+  const o = N(desc);
+  if (o){
+    const hit = T => [T.nick, T.loc, T.name, T.short].filter(Boolean).map(N).some(x=>x && (x===o || (o.length>3 && x.includes(o)) || (x.length>3 && o.includes(x))));
+    const hh = hit(g.home||{}), aa = hit(g.away||{});
+    if (hh && !aa) return 'home'; if (aa && !hh) return 'away';
+  }
+  if (team && (team.ordering==='home' || team.ordering==='away')) return team.ordering;
+  return null;
+}
+function avPutGame(E, key, rec){ (E.g[key] || (E.g[key] = [])).push(rec); }
+function avPutProp(X, lg, E, kind, name, rec){
+  const k = kind+'|'+avNameKey(name);
+  (E.p[k] || (E.p[k] = [])).push(rec);
+  const L = X.lg[lg] || (X.lg[lg] = {ok:true, kinds:{}}); L.kinds = L.kinds || {}; L.kinds[kind] = (L.kinds[kind]||0) + 1;
+}
+var avAsk = x => (x!=null && isFinite(+x) && +x>0 && +x<1) ? +x : null;
+
+/* ---- Polymarket US: one call per league, then one event page per board game ---- */
+function avIngestUsEvent(X, g, e){
+  const lg = g.league; const sp = AV_SPORT_OF[lg] || '';
+  const E = X.ev[g.eventId] = {slug:e.slug, ok:true, t:Date.now(), g:{}, p:{}};
+  for (const m of (e.markets||[])){
+    if (!m || m.closed || m.active===false || m.hidden || m.archived) continue;
+    const t = String(m.sportsMarketType||'');
+    const sides = m.marketSides || [];
+    const q = s => (s && s.tradable!==false && s.quote) ? avAsk(s.quote.value) : null;
+    const long = sides.find(s=>s.long===true), short = sides.find(s=>s.long===false);
+    if (/_team_full_game_winner$|_team_full_time_winner$|_full_time_winner$/.test(t)){
+      if (m.marketType==='drawable_outcome' || /soccer/.test(t)){
+        const qq = String(m.question||'');
+        const side = /draw|tie\b/i.test(qq) && !(long && long.team) ? 'draw' : avSideByTeam(g, long && long.team, qq.replace(/^will\s+/i,'').replace(/\s+win.*$/i,''));
+        if (side) avPutGame(E, 'ml|'+side, {pt:null, ask:q(long)});
+      } else {
+        for (const s of sides){ const side = avSideByTeam(g, s.team, s.description); if (side) avPutGame(E, 'ml|'+side, {pt:null, ask:q(s)}); }
+      }
+      continue;
+    }
+    if (/_team_full_game_spread$/.test(t)){
+      for (const s of sides){ const side = avSideByTeam(g, s.team, ''); const pt = parseFloat(s.description); if (side && isFinite(pt)) avPutGame(E, 'spread|'+side, {pt, ask:q(s)}); }
+      continue;
+    }
+    if (/_team_full_game_total$/.test(t) && m.line!=null){
+      const ln = +m.line;
+      if (long) avPutGame(E, 'total|over', {pt:ln, ask:q(long)});
+      if (short) avPutGame(E, 'total|under', {pt:ln, ask:q(short)});
+      continue;
+    }
+    const pm = /^([a-z]+)_player_([a-z_]+)$/.exec(t);
+    if (pm && m.line!=null && isFinite(+m.line)){
+      const kind = avKindOf(lg, pm[2]); if (!kind) { const L = X.lg[lg] || (X.lg[lg] = {ok:true, kinds:{}}); L.other = L.other || {}; L.other[pm[2]] = (L.other[pm[2]]||0)+1; continue; }
+      const nm = (/^Will\s+(.+?)\s+(?:record|throw|score|have|make|get|tally|register)\b/i.exec(String(m.question||''))||[])[1];
+      if (!nm) continue;
+      const ln = +m.line;
+      // "at least N" / "N+" = Over N−0.5; YES buys the Over, NO buys the Under
+      avPutProp(X, lg, E, kind, nm, {eq: Math.round((ln - 0.5)*2)/2, raw: ln, txt: ln+'+', over:q(long), under:q(short), fee:null});
+    }
+  }
+  if (sp) {} // sport kept for future per-sport rules
+  return E;
+}
+async function avLoadUs(lgs){
+  const X = AV.us; const now = Date.now(); let errs = 0, okN = 0;
+  const want = lgs.filter(lg=>AV_US_LEAGUE[lg]);
+  for (const lg of lgs) if (!AV_US_LEAGUE[lg]) X.lg[lg] = {ok:true, none:true, kinds:{}, t:now};
+  const matched = [];
+  await pool(want.map(lg=>async()=>{
+    try{
+      const r = await fetchJSON(`https://gateway.polymarket.us/v2/leagues/${AV_US_LEAGUE[lg]}/events?limit=1000&active=true&closed=false`, 20000);
+      if (!r.ok || !r.data) throw new Error('HTTP '+r.status);
+      const evs = Array.isArray(r.data.events) ? r.data.events : [];
+      X.lg[lg] = {ok:true, t:now, kinds:{}, n:evs.length};
+      for (const e of evs){
+        if (e.closed || e.ended) continue;
+        const st = Date.parse(e.startTime||e.startDate||'');
+        const names = []; for (const m of (e.markets||[])) for (const s of (m.marketSides||[])) if (s.team && s.team.name) names.push(s.team.name);
+        const g = avMatchGame(lg, e.slug, st, e.title, names);
+        if (g && g.state!=='post'){
+          matched.push({g, slug:e.slug, st});
+          // the league list already carries the moneyline: use it until the full event page loads
+          const prev = X.ev[g.eventId];
+          if (!(prev && prev.ok && prev.slug===e.slug)){ const E = avIngestUsEvent(X, g, e); E.ok = false; E.partial = true; E.pending = true; }
+        }
+      }
+      okN++;
+    }catch(e){ errs++; X.lg[lg] = Object.assign({}, X.lg[lg]||{}, {err:String(e.message||e), t:now}); }
+  }), 4);
+  // event pages: soonest games first, refresh each one at most every 10 minutes
+  matched.sort((a,b)=>a.g.start-b.g.start);
+  const seen = new Set(); const todo = [];
+  for (const x of matched){
+    if (seen.has(x.g.eventId)) continue; seen.add(x.g.eventId);
+    const prev = X.ev[x.g.eventId];
+    if (prev && prev.ok && prev.slug===x.slug && now - prev.t < AV.every - 5000) continue;
+    if (!(prev && (prev.ok || prev.partial))) X.ev[x.g.eventId] = {slug:x.slug, ok:false, pending:true, g:{}, p:{}};
+    if (x.g.start && x.g.start.getTime() - now > 30*3600000) continue;
+    todo.push(x);
+  }
+  const cap = todo.slice(0, 90);
+  await pool(cap.map(x=>async()=>{
+    try{
+      const r = await fetchJSON(`https://gateway.polymarket.us/v1/events/slug/${encodeURIComponent(x.slug)}`, 20000);
+      if (!r.ok || !r.data) throw new Error('HTTP '+r.status);
+      avIngestUsEvent(X, x.g, r.data.event || r.data);
+    }catch(e){ errs++; const E = X.ev[x.g.eventId]; if (E && !E.ok){ E.pending = false; E.err = String(e.message||e); } }
+  }), 4);
+  // league prop coverage from the event pages we have
+  for (const lg of want){ const L = X.lg[lg]; if (!L || L.err) continue; L.kinds = {}; }
+  for (const ev in X.ev){ const E = X.ev[ev]; if (!E.ok) continue; const g = ((typeof games!=='undefined' && games)||[]).find(x=>x && String(x.eventId)===String(ev)); const lg = g && g.league; if (!lg || !X.lg[lg]) continue;
+    for (const k in E.p){ const kind = k.split('|')[0]; X.lg[lg].kinds[kind] = (X.lg[lg].kinds[kind]||0) + 1; } }
+  X.t = Date.now(); X.err = (errs && !okN) ? 'Polymarket US unreachable' : null;
+}
+
+/* ---- Polymarket (global): gamma events per league series ---- */
+function avIngestGammaEvent(X, g, ev){
+  const lg = g.league;
+  const E = X.ev[g.eventId] = {slug:ev.slug, ok:true, t:Date.now(), g:{}, p:{}};
+  for (const m of (ev.markets||[])){
+    if (!m || m.closed || m.acceptingOrders===false || m.active===false) continue;
+    const type = String(m.sportsMarketType||''); const outs = safeArr(m.outcomes); const pr = safeArr(m.outcomePrices).map(Number);
+    if (outs.length!==2) continue;
+    const fee = m.feesEnabled===false ? 0 : (m.feeSchedule && m.feeSchedule.rate!=null ? +m.feeSchedule.rate : null);
+    const a0 = avAsk(m.bestAsk!=null && +m.bestAsk>0 ? +m.bestAsk : pr[0]);
+    const a1 = avAsk(m.bestBid!=null && +m.bestBid>0 ? 1-(+m.bestBid) : pr[1]);
+    const line = m.line!=null && m.line!=='' ? +m.line : null; const slug = String(m.slug||'');
+    const pq = /^(.+?):\s*(.+?)\s+O\/U\s+(-?[\d.]+)/i.exec(String(m.question||''));
+    if (pq && /^(yes|over)$/i.test(outs[0]) && !/\bvs\.?\b/i.test(pq[1])){
+      let kind = (typeof UNI_PM_PROP!=='undefined' && UNI_PM_PROP[type]) || avKindOf(lg, type);
+      if (lg==='nhl' && kind==='pts') kind = 'hpts';
+      if (!kind) continue;
+      const ln = line!=null ? line : +pq[3];
+      avPutProp(X, lg, E, kind, pq[1].trim(), {eq: ln, raw: ln, txt: 'O/U '+ln, over:a0, under:a1, fee});
+      continue;
+    }
+    if (type==='moneyline'){
+      if (typeof SOCCER!=='undefined' && SOCCER.has(lg) && /^yes$/i.test(outs[0])){
+        const qq = String(m.question||'');
+        const side = /-draw$/.test(slug) || /draw\?$/i.test(qq) ? 'draw' : avSideByTeam(g, null, qq.replace(/^will\s+/i,'').replace(/\s+win.*$/i,''));
+        if (side) avPutGame(E, 'ml|'+side, {pt:null, ask:a0, fee});
+      } else {
+        const s0 = avSideByTeam(g, null, outs[0]), s1 = avSideByTeam(g, null, outs[1]);
+        if (s0 && s1 && s0!==s1){ avPutGame(E, 'ml|'+s0, {pt:null, ask:a0, fee}); avPutGame(E, 'ml|'+s1, {pt:null, ask:a1, fee}); }
+      }
+    } else if (type==='spreads' && line!=null){
+      const s0 = /spread-home/.test(slug) ? 'home' : /spread-away/.test(slug) ? 'away' : avSideByTeam(g, null, outs[0]);
+      if (s0){ const s1 = s0==='home'?'away':'home'; avPutGame(E, 'spread|'+s0, {pt:line, ask:a0, fee}); avPutGame(E, 'spread|'+s1, {pt:-line, ask:a1, fee}); }
+    } else if (type==='totals' && line!=null && /^over$/i.test(outs[0])){
+      avPutGame(E, 'total|over', {pt:line, ask:a0, fee}); avPutGame(E, 'total|under', {pt:line, ask:a1, fee});
+    }
+  }
+  return E;
+}
+async function avLoadGlobal(lgs){
+  const X = AV.pm; const now = Date.now(); let errs = 0, okN = 0;
+  const iso = new Date(now - 6*3600000).toISOString().replace(/\.\d+Z$/,'Z');
+  for (const lg of lgs) if (!AV_PM_SERIES[lg]) X.lg[lg] = {ok:true, none:true, kinds:{}, t:now};
+  await pool(lgs.filter(lg=>AV_PM_SERIES[lg]).map(lg=>async()=>{
+    try{
+      const L = {ok:true, t:now, kinds:{}, n:0}; const fresh = {};
+      for (let off = 0; off < 60; off += 5){
+        const r = await fetchJSON(`https://gamma-api.polymarket.com/events?series_id=${AV_PM_SERIES[lg]}&closed=false&end_date_min=${iso}&limit=5&offset=${off}&order=startTime&ascending=true`, 20000);
+        if (!r.ok || !Array.isArray(r.data)) throw new Error('HTTP '+r.status);
+        let past = false;
+        for (const ev of r.data){
+          const st = Date.parse(ev.startTime||'');
+          if (isFinite(st) && st - now > 36*3600000){ past = true; continue; }
+          L.n++;
+          const g = avMatchGame(lg, ev.slug, st, ev.title, []);
+          if (!g) continue;
+          X.lg[lg] = X.lg[lg] && X.lg[lg].ok ? X.lg[lg] : L;
+          const E = avIngestGammaEvent(X, g, ev); fresh[g.eventId] = E;
+        }
+        if (past || r.data.length < 5) break;
+      }
+      L.kinds = {}; for (const ev in fresh) for (const k in fresh[ev].p){ const kind = k.split('|')[0]; L.kinds[kind] = (L.kinds[kind]||0) + 1; }
+      X.lg[lg] = L; okN++;
+    }catch(e){ errs++; X.lg[lg] = Object.assign({}, X.lg[lg]||{}, {err:String(e.message||e), t:now}); }
+  }), 3);
+  X.t = Date.now(); X.err = (errs && !okN) ? 'Polymarket unreachable' : null;
+}
+function avWantVenues(){
+  const b = (typeof selectedBooks==='function') ? selectedBooks() : [];
+  return {pm: b.includes('polymarket'), us: b.includes('polymarket_us')};
+}
+function avLeaguesNow(){
+  const now = Date.now(); const s = new Set();
+  for (const g of ((typeof games!=='undefined' && games) || [])) if (g && g.eventId && g.start && g.state!=='post' && g.start.getTime() - now < 36*3600000) s.add(g.league);
+  return [...s];
+}
+async function avRefresh(force){
+  const want = avWantVenues();
+  if (!want.pm && !want.us) return;
+  if (AV.busy) return;
+  if (!force && Date.now() - AV.last < AV.every) return;
+  const lgs = avLeaguesNow(); if (!lgs.length) return;
+  AV.busy = true; AV.last = Date.now();
+  try{
+    const jobs = [];
+    if (want.us) jobs.push(avLoadUs(lgs).catch(e=>{ AV.us.err = String(e.message||e); AV.us.t = Date.now(); }));
+    if (want.pm) jobs.push(avLoadGlobal(lgs).catch(e=>{ AV.pm.err = String(e.message||e); AV.pm.t = Date.now(); }));
+    await Promise.all(jobs);
+    avSave();
+  }finally{ AV.busy = false; }
+  avChanged(true);
+}
+function avSave(){
+  try{
+    const slim = X => ({t:X.t, err:X.err, lg:X.lg, ev:Object.fromEntries(Object.entries(X.ev).filter(([k,E])=>E && E.ok))});
+    localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm)}));
+  }catch(e){ try{ localStorage.removeItem(AV_LS); }catch(_){} }
+}
+function avLoadSaved(){
+  try{
+    const d = JSON.parse(localStorage.getItem(AV_LS)||'null'); if (!d || d.v!==1) return;
+    for (const v of ['us','pm']) if (d[v] && d[v].t && Date.now() - d[v].t < 30*60000){ AV[v].t = d[v].t; AV[v].lg = d[v].lg||{}; AV[v].ev = d[v].ev||{}; AV[v].err = d[v].err||null; }
+  }catch(e){}
+}
+avLoadSaved();
+// after new market data: re-run the board so prices at your books + verdicts + parlays use it
+function avChanged(reEval){
+  AV.ver++;
+  try{ if (reEval && typeof evaluateAll==='function' && typeof busy!=='undefined' && !busy && (typeof games!=='undefined' && games.length)) evaluateAll(); }catch(e){ console.warn('avail re-eval', e); }
+  try{ if (typeof buildParlays==='function' && !(reEval)) buildParlays(); }catch(e){}
+  try{ if (typeof softRender==='function') softRender(); }catch(e){}
+}
+
+/* ---- lookups ---- */
+function avNear(list, want, exactOnly){
+  let best = null;
+  for (const r of (list||[])){
+    if (r.pt==null && want==null) return r;
+    if (r.pt==null || want==null) continue;
+    const d = Math.abs(r.pt - want);
+    if (d < 1e-9) return r;
+    if (!exactOnly && d <= 0.5 + 1e-9 && (!best || d < Math.abs(best.pt - want))) best = r;
+  }
+  return best;
+}
+// one prediction venue, one item → {ok, pending, why, q:{ask, fee, pt, txt}}
+function avPmCheck(v, item){
+  const X = AV[v]; const name = avVenueName(v);
+  const g = avGameOf(item); if (!g) return {ok:false, why:`${name}: game not found`};
+  const lg = g.league;
+  if (!X.t) return {ok:false, pending:true, why:`Checking ${name}…`};
+  const L = X.lg[lg];
+  if (!L) return {ok:false, pending:AV.busy, why:`${name} has no ${(LMAP[lg]||{}).label||lg} markets loaded`};
+  if (L.err && !Object.keys(X.ev).length) return {ok:false, pending:true, why:`Couldn't reach ${name} to confirm`};
+  if (L.none) return {ok:false, why:`${name} doesn't list ${(LMAP[lg]||{}).label||lg} games`};
+  const E = X.ev[g.eventId];
+  if (!E) return {ok:false, why:`${name} doesn't list this game`};
+  const isPropQ = !!(item.isProp || (item.kind && item.playerName && !['ml','spread','total'].includes(item.mk)));
+  if (!E.ok && E.partial && !isPropQ && (item.mk==='ml' || item.mk==='h2h')){
+    const rows = E.g['ml|'+item.side]; const hit = rows && rows[0];
+    if (hit && hit.ask!=null) return {ok:true, q:{ask:hit.ask, fee:hit.fee, pt:null, exact:true}};
+    return {ok:false, why:`${name} has no live moneyline price on this side`};
+  }
+  if (!E.ok) return {ok:false, pending:!!E.pending || AV.busy, why: E.pending ? `Checking ${name}…` : `Couldn't load this game from ${name}`};
+  const isProp = !!(item.isProp || (item.kind && item.playerName && !['ml','spread','total'].includes(item.mk)));
+  if (isProp){
+    let kind = item.kind || item.mk; if (kind==='hpts') kind = 'pts'; const side = String(item.side||'over').toLowerCase()==='under' ? 'under' : 'over';
+    const label = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[kind]) || kind;
+    const evHas = Object.keys(E.p).some(k=>k.indexOf(kind+'|')===0);
+    if (!evHas && !(L.kinds && L.kinds[kind])) return {ok:false, why:`${name} doesn't offer ${label} props for ${(LMAP[lg]||{}).label||lg}`};
+    if (!evHas) return {ok:false, why:`${name} has no ${label} props on this game`};
+    let rows = E.p[kind+'|'+avNameKey(item.playerName)];
+    if (!rows){
+      // last name + first initial fallback ("Kel'el Ware" vs "Kelel Ware")
+      const want = avNameKey(item.playerName).split(' '); const last = want[want.length-1], fi = (want[0]||'')[0];
+      for (const k in E.p){ if (k.indexOf(kind+'|')!==0) continue; const nm = k.slice(kind.length+1).split(' '); if (nm[nm.length-1]===last && (nm[0]||'')[0]===fi){ rows = E.p[k]; break; } }
+    }
+    if (!rows || !rows.length) return {ok:false, why:`${name} has no ${label} market for ${item.playerName}`};
+    const line = +item.line;
+    const whole = Math.abs(line - Math.round(line)) < 1e-9;
+    let hit = null;
+    for (const r of rows){ const d = Math.abs(r.eq - line); if (d < 1e-9 || (whole && d <= 0.5 + 1e-9)){ if (!hit || d < Math.abs(hit.eq - line)) hit = r; } }
+    if (!hit){ const near = rows.slice().sort((a,b)=>Math.abs(a.eq-line)-Math.abs(b.eq-line)).slice(0,3).sort((a,b)=>a.eq-b.eq).map(r=>r.txt).join(', '); return {ok:false, why:`${name} lists ${item.playerName} ${label} at ${near}, not ${line}`}; }
+    const ask = hit[side];
+    if (ask==null) return {ok:false, why:`${name} has no ${side==='over'?'Over (Yes)':'Under (No)'} price on this line`};
+    return {ok:true, q:{ask, fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:Math.abs(hit.eq-line)<1e-9}};
+  }
+  const mk = item.mk==='h2h' ? 'ml' : item.mk==='spreads' ? 'spread' : item.mk==='totals' ? 'total' : item.mk;
+  if (!['ml','spread','total'].includes(mk)) return {ok:false, why:`${name} doesn't offer this market`};
+  const side = item.side; const point = mk==='ml' ? null : (item.sd && item.sd.point!=null ? +item.sd.point : (item.point!=null ? +item.point : null));
+  const rows = E.g[mk+'|'+side];
+  const mkName = mk==='ml' ? 'moneyline' : mk;
+  if (!rows || !rows.length) return {ok:false, why:`${name} has no ${mkName} market for this game`};
+  const hit = mk==='ml' ? rows[0] : avNear(rows, point, false);
+  if (!hit) return {ok:false, why:`${name} ${mkName} lines don't include ${point}`};
+  if (hit.ask==null) return {ok:false, why:`${name} has no live price on this side`};
+  return {ok:true, q:{ask:hit.ask, fee:hit.fee, pt:hit.pt, exact: mk==='ml' || hit.pt===point}};
+}
+// prediction venue quote for a game play (used by "Bet on" / myBooks)
+function avPmGameQuote(p){
+  const out = [];
+  for (const v of ['us','pm']){
+    const w = avWantVenues(); if (!(v==='us' ? w.us : w.pm)) continue;
+    const r = avPmCheck(v, p); if (r.ok && r.q && r.q.exact) out.push({v, book:avVenueBook(v), ...r.q});
+  }
+  return out;
+}
+
+/* ---- manual flags ("Not on my book") ---- */
+function avFlags(){ if (AV.flags) return AV.flags; const d = loadJSON(AV_FLAG_LS, null) || {}; d.f = d.f || {}; d.h = d.h || {}; AV.flags = d; return d; }
+function avSaveFlags(d){ AV.flags = d; AV.fver = (AV.fver||0) + 1; saveJSON(AV_FLAG_LS, d); }
+function avDayKey(){ const d = new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+function avMtype(item){
+  if (!item) return '';
+  if (item.isParlay || (item.legs && item.legs.length>1)) return 'parlay';
+  if (item.isProp || (item.kind && item.playerName)) return item.kind || item.mk || 'prop';
+  const mk = item.mk==='h2h'?'ml':item.mk==='spreads'?'spread':item.mk==='totals'?'total':item.mk; return mk || '';
+}
+function avSport(item){ const g = avGameOf(item) || (item && item.legs && item.legs[0] && avGameOf(item.legs[0])); return (g && g.league) || item.league || ''; }
+function avFlagKey(book, sport, mtype){ return `${book}|${sport}|${mtype}`; }
+function avBookBlocked(book, sport, mtype){ const f = avFlags().f[avFlagKey(book, sport, mtype)]; return !!(f && f.n >= 2); }
+function avItemId(item, board){ try{ return (typeof boardKeyOf==='function' ? boardKeyOf(board || (item.isParlay?'parlay':item.isProp?'props':'games'), item) : '') || item.id || ''; }catch(e){ return item.id || ''; } }
+function avHiddenToday(item, board){ const d = avFlags(); const day = d.h[avDayKey()]; return !!(day && day[avItemId(item, board)]); }
+
+/* ---- the one gate every board uses ---- */
+function avCheck(item, kind){
+  if (!item) return {ok:false, why:'missing'};
+  const books = selectedBooks();
+  const board = kind==='parlay' ? 'parlay' : kind==='props' ? 'props' : 'games';
+  const bkKey = books.join(',');
+  const sig = AV.ver+'|'+(AV.fver||0)+'|'+bkKey+'|'+avDayKey();
+  if (item._av && item._av.sig===sig) return item._av.r;
+  let r;
+  if (avHiddenToday(item, board)) r = {ok:false, user:true, why:'You marked this "not on my book" today'};
+  else if (kind==='parlay'){
+    const legs = item.legs || [];
+    r = {ok:true, books:[]};
+    for (const l of legs){ const lr = avCheck(l, l.isProp?'props':'games'); if (!lr.ok){ r = {ok:false, pending:lr.pending, why:'Leg not on your books: '+(l.label||'')+(lr.why?' — '+lr.why:'')}; break; } }
+    if (r.ok && books.length){
+      const sp = avSport(item);
+      const okB = books.filter(b=>!avBookBlocked(b, sp, 'parlay'));
+      if (!okB.length) r = {ok:false, why:'You flagged parlays as not on your books'};
+    }
+  }
+  else if (!books.length) r = {ok:true, books:[]};
+  else {
+    const isProp = kind==='props';
+    const sp = avSport(item), mt = avMtype(item);
+    const okBooks = [], whys = []; let pending = false; let pmq = null;
+    for (const b of books){
+      if (avBookBlocked(b, sp, mt)){ whys.push(`You flagged ${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} ${isProp?((typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[mt])||mt):mt} as not offered`); continue; }
+      if (b==='polymarket' || b==='polymarket_us'){
+        const res = avPmCheck(b==='polymarket_us'?'us':'pm', item);
+        if (res.ok){ okBooks.push(b); if (isProp && (!pmq || res.q.ask < pmq.ask)) pmq = Object.assign({book:b}, res.q); }
+        else { whys.push(res.why); if (res.pending) pending = true; }
+        continue;
+      }
+      if (b==='kalshi'){
+        const g = avGameOf(item); const mk = item.mk==='h2h'?'ml':item.mk;
+        if (!isProp && mk==='ml' && g && g.kalshi && g.kalshi.ml && g.kalshi.ml[item.side]) okBooks.push(b);
+        else whys.push(isProp ? 'Kalshi player props aren\'t loaded here' : (mk==='ml' ? 'Kalshi has no price on this game' : 'Kalshi spreads/totals aren\'t loaded here'));
+        continue;
+      }
+      if (bookSupportsMarket([b], isProp?'props':'games', item)) okBooks.push(b);
+      else whys.push(`${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} doesn't offer this market`);
+    }
+    if (isProp){
+      if (pmq) item.pmProp = {book:pmq.book, ask:pmq.ask, fee:pmq.fee, line:pmq.pt, txt:pmq.txt, exact:pmq.exact};
+      else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us')) delete item.pmProp;
+    }
+    r = okBooks.length ? {ok:true, books:okBooks} : {ok:false, pending, why:[...new Set(whys)].slice(0,2).join(' · ') || 'Not on your books'};
+  }
+  item._av = {sig, r};
+  return r;
+}
+function avBypassed(){ return !!AV.bypass; }
+function avWithBypass(fn){ const was = AV.bypass; AV.bypass = true; try{ return fn(); } finally { AV.bypass = was; } }
+
+/* ---- hidden picks list (collapsed, greyed, red tag) ---- */
+function avHiddenItems(board, tab){
+  const books = selectedBooks(); const fl = avFlags(); const anyHide = !!fl.h[avDayKey()];
+  if (!books.length && !anyHide) return [];
+  let all = [], shown = [];
+  try{
+    if (board==='games'){
+      const src = (typeof plays!=='undefined' ? plays : []).filter(p=>p.verdict===tab);
+      shown = filtered(src, true); all = avWithBypass(()=>filtered(src, true));
+    } else if (board==='props'){
+      const src = (typeof props!=='undefined' ? props : []).filter(p=>p.verdict===tab);
+      shown = filteredProps(src); all = avWithBypass(()=>filteredProps(src));
+    } else {
+      const src = (typeof parlays!=='undefined' ? parlays : []).filter(p=>p.verdict===tab);
+      shown = filteredParlays(src); all = avWithBypass(()=>filteredParlays(src));
+    }
+  }catch(e){ console.warn('hidden picks', e); return []; }
+  const s = new Set(shown);
+  return all.filter(x=>!s.has(x));
+}
+function avHiddenHTML(board, tab){
+  if (!['good','watch','avoid'].includes(tab)) return '';
+  const list = avHiddenItems(board, tab); if (!list.length) return '';
+  const cardFn = board==='games' ? playCard : board==='props' ? propCard : parlayCard;
+  const kind = board==='parlay' ? 'parlay' : board==='props' ? 'props' : 'games';
+  const pend = list.filter(x=>{ const r = avCheck(x, kind); return r && r.pending; }).length;
+  const open = !!(window.__avOpen && window.__avOpen[board+':'+tab]);
+  const cards = list.slice(0, 60).map(x=>{
+    const r = avCheck(x, kind) || {};
+    const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> Not on your books${r.why?` <span class="av-why">· ${esc(r.why)}</span>`:''}${r.user?` <button type="button" class="av-undo" data-nob-undo="${esc(board+'|'+avItemId(x, board))}">Undo</button>`:''}</div>`;
+    let html = ''; try{ html = cardFn(x); }catch(e){ return ''; }
+    return String(html).replace(/^\s*<div class="([^"]*)"/, (m, c)=>`<div class="${c} av-off"`).replace(/^(\s*<div [^>]*>)/, `$1${tag}`);
+  }).join('');
+  const label = `${list.length} pick${list.length===1?'':'s'} hidden (not on your books)` + (pend ? ` · still checking ${pend}` : '');
+  return `<details class="av-hid" data-av-sec="${esc(board+':'+tab)}" ${open?'open':''}><summary><span class="av-x" aria-hidden="true">❌</span> ${esc(label)}</summary><div class="av-note">These aren't offered at the books you picked in Settings (or you marked them). They're still tracked behind the scenes so the model keeps learning.</div><div class="grid">${cards}</div></details>`;
+}
+function nobBtnHTML(item, board){
+  if (!item) return '';
+  const id = item.id || ''; if (!id) return '';
+  return `<button type="button" class="btn sm btn-nob" data-nob="${esc(board+'|'+id)}" title="Hide this pick for today and tell Verdict your book doesn't offer it">Not on my book</button>`;
+}
+function avFindItem(board, id){
+  const src = board==='parlay' ? (typeof parlays!=='undefined'?parlays:[]) : board==='props' ? (typeof props!=='undefined'?props:[]) : (typeof plays!=='undefined'?plays:[]);
+  return (src||[]).find(x=>x && x.id===id) || null;
+}
+function avFlagItem(board, id){
+  const item = avFindItem(board, id); if (!item) { toast('Could not find that pick'); return; }
+  const kind = board==='parlay' ? 'parlay' : board==='props' ? 'props' : 'games';
+  const r0 = avCheck(item, kind);
+  let books = (r0 && r0.books && r0.books.length) ? r0.books : selectedBooks();
+  if (!books.length) books = ['any'];
+  const d = avFlags(); const day = avDayKey();
+  d.h = {[day]: Object.assign({}, d.h[day]||{}, {[avItemId(item, board)]: Date.now()})}; // keep today only
+  const sp = avSport(item), mt = avMtype(item);
+  let hit = null;
+  for (const b of books){ const k = avFlagKey(b, sp, mt); const f = d.f[k] || {n:0}; f.n = (f.n||0) + 1; f.at = Date.now(); d.f[k] = f; if (!hit || f.n > hit.n) hit = {b, n:f.n}; }
+  avSaveFlags(d);
+  try{ avPoolFlag(books, sp, mt); }catch(e){}
+  AV.ver++;
+  const mtLab = mt==='parlay' ? 'parlays' : ((typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[mt]) || ({ml:'moneylines', spread:'spreads', total:'totals'}[mt]) || mt);
+  const bLab = hit && hit.b!=='any' ? (typeof bookLabelOf==='function'?bookLabelOf(hit.b):hit.b) : 'your book';
+  const lgLab = (LMAP[sp]||{}).label || sp;
+  toast(hit && hit.n>=2 ? `Hidden. ${lgLab} ${mtLab} won't show for ${bLab} anymore (undo in Settings).` : `Hidden for today. Flag one more ${lgLab} ${mtLab} pick and Verdict stops showing them for ${bLab}.`);
+  try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
+  if (typeof softRender==='function') softRender();
+}
+function avUndoHide(board, key){
+  const d = avFlags(); const day = d.h[avDayKey()]; if (day && day[key]) delete day[key];
+  avSaveFlags(d); AV.ver++;
+  try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
+  if (typeof softRender==='function') softRender();
+}
+function avUndoFlag(k){ const d = avFlags(); delete d.f[k]; avSaveFlags(d); AV.ver++; try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){} }
+// anonymous pool: book + sport + market type only (no user, no pick)
+function avPoolFlag(books, sport, mtype){
+  if (typeof authHttp!=='function' || !authHttp() || typeof firebase==='undefined' || !firebase.firestore || typeof AUTH==='undefined' || !AUTH.ready) return;
+  for (const b of books){
+    if (!b || b==='any') continue;
+    const id = 'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+    try{ fs().collection('book_flags').doc(id).set({id, book:String(b).slice(0,24), sport:String(sport||'').slice(0,16), mtype:String(mtype||'').slice(0,16), createdAt:Date.now()}).catch(()=>{}); }catch(e){}
+  }
+}
+function avSettingsHTML(){
+  const d = avFlags(); const ks = Object.keys(d.f).sort((a,b)=>(d.f[b].n||0)-(d.f[a].n||0));
+  const lab = k => { const [b, sp, mt] = k.split('|'); const mtLab = mt==='parlay'?'Parlays':((typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[mt]) || ({ml:'Moneyline', spread:'Spread', total:'Total'}[mt]) || mt); return `${b==='any'?'Any book':(typeof bookLabelOf==='function'?bookLabelOf(b):b)} · ${(LMAP[sp]||{}).label||sp||'All'} · ${mtLab}`; };
+  const rows = ks.length ? ks.map(k=>`<div class="av-flag-row"><span>${esc(lab(k))}</span><span class="mut">${d.f[k].n>=2?'<b class="av-off-lab">Hidden</b>':`${d.f[k].n} flag · 1 more hides it`}</span><button type="button" class="btn sm" data-nob-unflag="${esc(k)}">Undo</button></div>`).join('') : `<div class="mut">Nothing flagged. Tap <b>Not on my book</b> on a pick your book doesn't offer.</div>`;
+  const cov = [];
+  const w = avWantVenues();
+  for (const v of ['us','pm']){
+    if (!(v==='us'?w.us:w.pm)) continue; const X = AV[v];
+    const parts = Object.entries(X.lg||{}).filter(([lg,L])=>L && L.kinds && Object.keys(L.kinds).length).map(([lg,L])=>`${(LMAP[lg]||{}).label||lg}: ${Object.keys(L.kinds).map(k=>(typeof PROP_KIND_SHORT!=='undefined'&&PROP_KIND_SHORT[k])||k).join(', ')}`);
+    cov.push(`<div class="mut" style="margin-top:6px"><b>${avVenueName(v)}</b> props found right now — ${parts.length?esc(parts.join(' · ')):(X.t?'none for today\'s games':'checking…')}</div>`);
+  }
+  return `<div class="card av-set" id="avSetCard"><h3 style="margin:0 0 6px">Not on my book</h3><div class="mut" style="margin-bottom:8px">Picks only show when one of your books really lists that bet. Markets you flagged twice stay hidden for that book.</div>${rows}${cov.join('')}</div>`;
+}
+(function avBind(){
+  if (typeof document==='undefined' || window.__avBound) return; window.__avBound = true;
+  document.addEventListener('click', e=>{
+    const t = e.target && e.target.closest ? e.target.closest('[data-nob],[data-nob-undo],[data-nob-unflag]') : null;
+    if (!t) return;
+    e.preventDefault(); e.stopPropagation();
+    if (t.hasAttribute('data-nob')){ const v = t.getAttribute('data-nob'); const i = v.indexOf('|'); avFlagItem(v.slice(0,i), v.slice(i+1)); }
+    else if (t.hasAttribute('data-nob-undo')){ const v = t.getAttribute('data-nob-undo'); const i = v.indexOf('|'); avUndoHide(v.slice(0,i), v.slice(i+1)); }
+    else { avUndoFlag(t.getAttribute('data-nob-unflag')); const c = document.getElementById('avSetCard'); if (c) c.outerHTML = avSettingsHTML(); }
+  }, true);
+  document.addEventListener('toggle', e=>{ const d = e.target; if (d && d.matches && d.matches('details.av-hid')){ window.__avOpen = window.__avOpen || {}; window.__avOpen[d.getAttribute('data-av-sec')] = d.open; } }, true);
+})();
+// Settings: add the flag list under My books
+if (typeof renderSettings==='function'){
+  const _rsAv = renderSettings;
+  renderSettings = function(){ const r = _rsAv.apply(this, arguments); try{ const v = $('#view'); if (v && !$('#avSetCard')){ const sel = $('#myBooksSel'); const anchor = sel ? (sel.closest('.s-row') || sel) : null; const html = avSettingsHTML(); if (anchor) anchor.insertAdjacentHTML('afterend', html); else v.insertAdjacentHTML('beforeend', html); } }catch(e){ console.warn('av settings', e); } return r; };
+}
+// keep the market index fresh while the app is open
+setInterval(()=>{ if (!document.hidden) avRefresh(false).catch(()=>{}); }, 60000);
 </script>
 </body>
 </html>
