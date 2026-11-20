@@ -1551,10 +1551,72 @@ function bookItemGame(item){
   }
   return null;
 }
+/* v54: prediction markets open the exact bet, not the app home.
+   Kalshi: kalshi.com/markets/<series>/<any-slug>/<event>?op_market_ticker=<market>&op_side=BUY&op_order_side=yes|no
+           → that game's market page with the order ticket already on this line and side (universal link → Kalshi app).
+   Polymarket: polymarket.com/event/<event-slug> → that game's page (Polymarket keeps no market in the URL).
+   Polymarket US: polymarket.us/event/<event-slug> → that game's page; polymarket.us links open the Polymarket US app on iPhone. */
+function bookLinkItem(item, kind){
+  if (!item) return null;
+  const g = (typeof avGameOf==='function' ? avGameOf(item) : null) || bookItemGame(item);
+  if (!g) return null;
+  if (item.L){
+    const L = item.L;
+    if (L.kind==='prop') return {g, isProp:true, kind:L.stat||item.kind, playerName:(item.player && item.player.name)||item.playerName||'', line:L.line, side:L.dir||'over'};
+    const mk = L.kind; return {g, mk, side: mk==='total' ? L.dir : item.side, sd:{point:L.line}, point:L.line};
+  }
+  if (item.isProp || kind==='prop') return {g, isProp:true, kind:item.kind||item.mk, playerName:item.playerName, line:item.line, side:item.side};
+  return {g, mk:item.mk, side:item.side, sd:item.sd, point:item.sd && item.sd.point!=null ? item.sd.point : item.point};
+}
+function kalshiMarketUrl(tk, y){
+  const t = String(tk||''); const parts = t.split('-'); if (parts.length < 3) return null;
+  const ev = parts[0]+'-'+parts[1], series = parts[0]; // SERIES-GAMECODE-OUTCOME
+  return `https://kalshi.com/markets/${series.toLowerCase()}/game/${ev.toLowerCase()}?op_market_ticker=${encodeURIComponent(t)}&op_side=BUY&op_order_side=${y===0?'no':'yes'}`;
+}
+function kalshiEventUrl(g, it){
+  if (!g || !g.kalshi || !g.kalshi.ev) return null;
+  const ev = String(g.kalshi.ev); const code = ev.slice(ev.indexOf('-')+1);
+  const cfg = (typeof KX_EXTRA!=='undefined' && KX_EXTRA[g.league]) || null;
+  let series = ev.slice(0, ev.indexOf('-'));
+  if (cfg && it){
+    if (it.isProp){ let k = it.kind; if (k==='hpts') k = 'pts'; if (cfg.props && cfg.props[k]) series = cfg.p + cfg.props[k]; }
+    else if (it.mk==='spread') series = cfg.p+'SPREAD';
+    else if (it.mk==='total') series = cfg.p+'TOTAL';
+  }
+  return `https://kalshi.com/markets/${series.toLowerCase()}/game/${(series+'-'+code).toLowerCase()}`;
+}
+function bookDeepUrl(book, item, kind){
+  try{
+    if (book!=='kalshi' && book!=='polymarket' && book!=='polymarket_us') return null;
+    if (kind==='parlay' || (item && Array.isArray(item.legs) && item.legs.length>1)) item = item && item.legs && item.legs.length===1 ? item.legs[0] : item;
+    const it = bookLinkItem(item, kind); if (!it) return null;
+    const g = it.g;
+    if (book==='kalshi'){
+      if (typeof avPmCheck==='function' && typeof AV!=='undefined'){
+        const r = avPmCheck('ka', it);
+        if (r && r.q && r.q.tk){ const u = kalshiMarketUrl(r.q.tk, r.q.y); if (u) return u; }
+      }
+      if (!it.isProp && it.mk==='ml' && g.kalshi && g.kalshi.ml && g.kalshi.ml[it.side] && g.kalshi.ml[it.side].tk) return kalshiMarketUrl(g.kalshi.ml[it.side].tk, 1);
+      return kalshiEventUrl(g, it);
+    }
+    const v = book==='polymarket_us' ? 'us' : 'pm';
+    const E = typeof AV!=='undefined' && AV[v] && AV[v].ev ? AV[v].ev[g.eventId] : null;
+    const slug = (E && E.slug) || (v==='pm' && g.pm && g.pm.slug) || null;
+    if (!slug) return null;
+    if (v==='us'){
+      // canonical game page (what polymarket.us/event/<slug> redirects to); polymarket.us/* opens the Polymarket US app on iPhone
+      const pre = String(slug).split('-')[0];
+      return /^[a-z0-9]+$/.test(pre) ? `https://polymarket.us/sports/${pre}/${encodeURIComponent(slug)}` : 'https://polymarket.us/event/'+encodeURIComponent(slug);
+    }
+    return 'https://polymarket.com/event/' + encodeURIComponent(slug);
+  }catch(e){ return null; }
+}
 function bookOpenUrl(bookKey, item, kind){
   const book = String(bookKey||'').toLowerCase();
   const g = bookItemGame(item);
   const lg = String((g && g.league) || (item && item.league) || '').toLowerCase();
+  const deep = bookDeepUrl(book, item, kind);
+  if (deep) return deep;
   if (book==='polymarket'){
     const slug = g && g.pm && g.pm.slug;
     if (slug) return 'https://polymarket.com/event/'+slug;
@@ -15717,7 +15779,7 @@ function avIngestGammaEvent(X, g, ev){
       if (lg==='nhl' && kind==='pts') kind = 'hpts';
       if (!kind) continue;
       const ln = line!=null ? line : +pq[3];
-      avPutProp(X, lg, E, kind, pq[1].trim(), {eq: ln, raw: ln, txt: 'O/U '+ln, over:a0, under:a1, fee});
+      avPutProp(X, lg, E, kind, pq[1].trim(), {eq: ln, raw: ln, txt: 'O/U '+ln, over:a0, under:a1, fee, ms:slug});
       continue;
     }
     if (type==='moneyline'){
@@ -15802,7 +15864,7 @@ async function avLoadKalshi(lgs){
       const code = String(g.kalshi.ev).slice(String(g.kalshi.ev).indexOf('-')+1);
       const E = ev[g.eventId] = {ok:true, t:now, code, g:{}, p:{}};
       const ab = {};
-      for (const s in g.kalshi.ml){ const q = g.kalshi.ml[s]; if (!q) continue; avPutGame(E, 'ml|'+s, {pt:null, ask:q.ask, fee:KALSHI_FEE}); if (q.tk && s!=='draw') ab[String(q.tk).split('-').pop().toUpperCase()] = s; }
+      for (const s in g.kalshi.ml){ const q = g.kalshi.ml[s]; if (!q) continue; avPutGame(E, 'ml|'+s, {pt:null, ask:q.ask, fee:KALSHI_FEE, tk:q.tk||null, y:1}); if (q.tk && s!=='draw') ab[String(q.tk).split('-').pop().toUpperCase()] = s; }
       E.ab = ab; E.series = []; byCode[code] = {g, E}; L.games++;
     }
     if (!L.games) continue;
@@ -15851,7 +15913,9 @@ async function avRefresh(force){
   if (AV.busy) return;
   const dueMain = (want.pm || want.us) && (force || Date.now() - AV.last >= AV.every);
   // Kalshi spreads/totals/props: every 3 minutes (the relay caches 15s; we stay well under any rate limit)
-  const dueKa = want.ka && (force || Date.now() - (AV.ka.t||0) >= 3*60000);
+  // v54: if the first pass ran before Kalshi moneylines had matched any game, retry as soon as they have (not 3 minutes later)
+  const kaEmptyButReady = !Object.keys(AV.ka.ev||{}).length && ((typeof games!=='undefined' && games)||[]).some(g=>g && g.kalshi && g.kalshi.ev) && Date.now() - (AV.ka.t||0) >= 20000;
+  const dueKa = want.ka && (force || kaEmptyButReady || Date.now() - (AV.ka.t||0) >= 3*60000);
   if (!dueMain && !dueKa) return;
   const lgs = avLeaguesNow(); if (!lgs.length) return;
   AV.busy = true; if (dueMain) AV.last = Date.now();
@@ -15931,7 +15995,7 @@ function avPmPropType(v, item, g, L, E){
     const rows = E.p[mine.find(k=>k.indexOf(kind+'|')===0) || ''] || [];
     const line = +item.line, side = String(item.side||'over').toLowerCase()==='under' ? 'under' : 'over';
     const hit = rows.find(r=>Math.abs(r.eq - line) < 1e-9);
-    if (hit && hit[side]!=null) q = {ask:hit[side], fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:true};
+    if (hit && hit[side]!=null) q = {ask:hit[side], fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:true, tk:hit.tk||null, y:side==='over'?1:0};
   }
   return {ok:true, q, note: q ? null : `${name} line may differ`};
 }
@@ -15978,7 +16042,7 @@ function avPmCheck(v, item){
     if (!hit){ const near = rows.slice().sort((a,b)=>Math.abs(a.eq-line)-Math.abs(b.eq-line)).slice(0,3).sort((a,b)=>a.eq-b.eq).map(r=>r.txt).join(', '); return {ok:false, why:`${name} lists ${item.playerName} ${label} at ${near}, not ${line}`}; }
     const ask = hit[side];
     if (ask==null) return {ok:false, why:`${name} has no ${side==='over'?'Over (Yes)':'Under (No)'} price on this line`};
-    return {ok:true, q:{ask, fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:Math.abs(hit.eq-line)<1e-9}};
+    return {ok:true, q:{ask, fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:Math.abs(hit.eq-line)<1e-9, tk:hit.tk||null, y:side==='over'?1:0}};
   }
   const mk = item.mk==='h2h' ? 'ml' : item.mk==='spreads' ? 'spread' : item.mk==='totals' ? 'total' : item.mk;
   if (!['ml','spread','total'].includes(mk)) return {ok:false, why:`${name} doesn't offer this market`};
@@ -15989,7 +16053,7 @@ function avPmCheck(v, item){
   const hit = mk==='ml' ? rows[0] : avNear(rows, point, false);
   if (!hit) return {ok:false, why:`${name} ${mkName} lines don't include ${point}`};
   if (hit.ask==null) return {ok:false, why:`${name} has no live price on this side`};
-  return {ok:true, q:{ask:hit.ask, fee:hit.fee, pt:hit.pt, exact: mk==='ml' || hit.pt===point}};
+  return {ok:true, q:{ask:hit.ask, fee:hit.fee, pt:hit.pt, exact: mk==='ml' || hit.pt===point, tk:hit.tk||null, y:hit.y}};
 }
 // prediction venue quote for a game play (used by "Bet on" / myBooks)
 function avPmGameQuote(p){
