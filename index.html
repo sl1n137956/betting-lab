@@ -1160,6 +1160,9 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .pk-ticket ol.why li{margin:0 0 var(--s2);line-height:1.5}
 .pk-ticket ol.why li:last-child{margin-bottom:0}
 .pk-ticket ol.why .verdict-pill{min-width:0;padding:0 10px;height:24px;font-size:10.5px;vertical-align:middle}
+.pk-ticket ol.why .tk-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.pk-ticket ol.why .tk-name{min-width:0}
+.pk-ticket ol.why .tk-badge{flex:none;display:inline-flex}
 .kpis{gap:var(--s3)}
 .beton{margin:0;padding:var(--s3) var(--s3);display:flex;flex-direction:column;gap:var(--s1)}
 .beton .mut{margin-top:0}
@@ -1455,8 +1458,11 @@ function recommendedUnits(item, kind){
     (item.j && item.j.conf && item.j.conf.v!=null) ? item.j.conf.v :
     (typeof item.conf==='number' ? (item.conf<=5 ? item.conf*20 : item.conf) : null)
   );
-  if (!isGood && !isWatch){
-    return {u:0, label:'0u (Skip)', short:'Skip (0u)', dollars:0, cls:'u-skip', note:'Skip: pass on this spot'};
+  // v68: only a Bet gets a stake. Watch / Skip / Avoid are 0u with a matching label.
+  if (!isGood){
+    const isAvoid = rawV==='avoid' || rawV==='pass';
+    const w = isWatch ? 'Watch' : isAvoid ? 'Avoid' : 'Skip';
+    return {u:0, label:`0u (${w})`, short:`${w} (0u)`, dollars:0, cls:'u-skip', note: isWatch ? 'Watch: no stake until it becomes a Bet' : isAvoid ? 'Avoid: pass on this spot' : 'Skip: pass on this spot'};
   }
   let T = UNIT_TIERS[3];
   if (isGood){
@@ -8759,7 +8765,7 @@ function parlaySummary(){
     </div>
     ${pAll!=null && bookAm!=null ? `<div class="hint">Parlay EV at the leg prices: ${fmtEdge(pAll*bookDec-1)} per $1 (${pAll*bookDec>=1?'positive':'negative'}). Your book's actual parlay price may differ: worth it only if it pays better than ${fmtAm(probToAm(pAll))}.</div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'} Fair odds = what the ticket should pay if the estimates are right.</div>`}
     <h3 style="margin-top:12px">Most likely to miss → least</h3>
-    <ol class="why">${ranked.map(x=>`<li><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)} · ${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</li>`).join('')}</ol>
+    <ol class="why">${ranked.map(x=>`<li><span class="tk-row"><span class="tk-name"><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)}</span><span class="tk-badge">${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</span></span></li>`).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(l.desc)).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(l.desc||l.raw)).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
     <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML==='function'?openInBookHTML({legs, g:legs[0]&&legs[0].g}, legs.length>1?'parlay':'game'):''}</span></div>
