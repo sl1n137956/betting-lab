@@ -112,7 +112,7 @@ main.wrap{padding-top:24px;padding-bottom:72px;padding-left:16px;padding-right:1
 .team{display:flex;align-items:center;gap:9px;font-weight:550;letter-spacing:-.005em}
 .team img,.team-logo{width:26px;height:26px;object-fit:contain;border-radius:7px;background:rgba(255,255,255,.04);flex:none}
 .team-mono,.player-mono{display:inline-grid;place-items:center;flex:none;background:rgba(59,130,246,.18);color:var(--acc-hi);font-weight:700;letter-spacing:.02em}
-.team-mono{width:26px;height:26px;border-radius:7px;font-size:9px}
+.team-mono{width:26px;height:26px;border-radius:7px;font-size:9px;letter-spacing:0;overflow:hidden}
 .player-pfp{width:40px;height:40px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,.06);flex:none;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}
 .player-mono{width:40px;height:40px;border-radius:50%;font-size:13px}
 .team .rec{color:var(--mut2);font-weight:450;font-size:12px;font-variant-numeric:tabular-nums}
@@ -1297,6 +1297,8 @@ a, button, label, summary, input, select, textarea, .btn, .chip{touch-action:man
   .pk-try-k{flex:0 0 auto}
   .pk-try-v{text-align:right}
 }
+/* v76: math-table headers never split mid-word */
+table.ftab th,.ftab th{white-space:nowrap;overflow-wrap:normal;word-break:normal}
 </style>
 </head>
 <body>
@@ -2613,7 +2615,7 @@ async function fetchEspn(){
   const base = new Date();
   const tasks = [];
   for (const L of LEAGUES){
-    if (!S.enabled.includes(L.id)) continue;
+    // v76: every sport is fetched so All Games can list it; sports off in Settings stay off the boards (marked agOnly)
     const dates = []; for (let i=0;i<leagueDays(L.id);i++){ const d=new Date(base); d.setDate(d.getDate()+i); dates.push(ymd(d)); }
     for (const dt of dates){
       const url = `https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${dt}${L.q?'&'+L.q:''}`;
@@ -6414,7 +6416,8 @@ async function refresh(forceOdds=false){
     if (okCount===0 && total>0) throw new Error('ESPN feed unreachable (check internet)');
     const keepPick = (games||[]).filter(g=>g && g.pickOnly);
     games = parseEspnGames(results);
-    for (const g of keepPick){ if (!games.some(x=>x.id===g.id)) games.push(g); }
+    for (const g of games){ if (g && !(S.enabled||[]).includes(g.league)){ g.agOnly = true; g.pickOnly = true; } }   // v76: All Games + Verdict only
+    for (const g of keepPick){ if (!g.agOnly && !games.some(x=>x.id===g.id)) games.push(g); }
     try{ await fetchOddsApi(forceOdds); }catch(e){ const m=String(e.message||e); if (!/quota|usage|credit|out_of_usage/i.test(m)) oddsErrors.push(m); }
     mergeOddsApi();
     try{ await fetchPolymarket(); }catch(e){ pmErr = String(e.message||e); }
@@ -6759,9 +6762,9 @@ function gameCard(g){
    Display only: ignores the board filters (sport chips, Locked/24h/48h, Hide started, Polymarket-only) and the model's auto-off. */
 function allGamesList(noSport){
   const now = Date.now(), until = now + 24*3600e3, q = norm(ui.q||'');
-  const on = new Set(noSport ? (S.enabled||[]) : (typeof effSports==='function' ? effSports() : (S.enabled||[])));   // v74: your sport filter applies here too
+  const on = new Set(noSport ? LEAGUES.map(L=>L.id) : (typeof agSports==='function' ? agSports() : LEAGUES.map(L=>L.id)));   // v76: All Games is its own list: every sport, its own chips
   return (games||[]).filter(g=>{
-    if (!g || g.pickOnly || !on.has(g.league)) return false;
+    if (!g || (g.pickOnly && !g.agOnly) || !on.has(g.league)) return false;
     const st = g.start && g.start.getTime ? g.start.getTime() : +g.start || 0;
     if (g.state==='in') return true;
     if (g.state==='post') return false;
@@ -6795,9 +6798,9 @@ function allGamesHTML(list){
   const liveCard = g => { const h = gameCard(g); return gameTailedPending(g) ? String(h).replace(/^(\s*<div [^>]*>)/, '$1<div class="ag-tailed"><span aria-hidden="true">🎟️</span> You tailed this</div>') : h; };
   const sec = (title, arr, cls, extra) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span>${extra||''}</h3><div class="grid">${arr.map(cls==='ag-live'?liveCard:gameCard).join('')}</div></div>`;
   const off = LEAGUES.filter(L=>!(S.enabled||[]).includes(L.id)).map(L=>L.label);
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now${off.length?` · hidden because you turned them off in Settings: ${esc(off.join(', '))}`:''}. Your sport filter applies here; the other board filters don't. Odds show when the free feed has them; % = no-vig probability.</span></div>`
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now, in every sport. Settings and the board filters don't apply here; the sport chips above only narrow this list. Odds show when the free feed has them; % = no-vig probability.</span></div>`
     + (list.length ? `<div class="ag-chips">${chips}</div>` + (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live', ` <span class="live-upd mut" data-live-upd>${typeof liveAgoTxt==='function'?esc(liveAgoTxt()):''}</span>`) : '') + groups.map(G=>sec(esc(G.k), G.list)).join('')
-      : `<div class="empty-state">No games in the next 24 hours for the sports you picked.</div>`);
+      : `<div class="empty-state">No games in the next 24 hours for the sports picked above.</div>`);
 }
 function filtered(list, isPlay){
   const q = norm(ui.q);
@@ -7128,6 +7131,7 @@ function renderMarketChips(){
   box.querySelectorAll('[data-mkt]').forEach(c=>c.onclick=()=>{ ui.mkt=c.dataset.mkt; document.querySelectorAll('[data-mkt]').forEach(x=>x.classList.toggle('on',x===c)); if (typeof saveFilters==='function') saveFilters(); render(); });
 }
 function renderChips(){
+  if (ui.tab==='all' && typeof renderAllGamesChips==='function') return renderAllGamesChips();
   const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid' || ui.tab==='all';
   const onProps = restrict && (ui.board||'games')==='props';
   const onParlay = restrict && (ui.board||'games')==='parlay';
@@ -8007,8 +8011,22 @@ function parseLeg(raw){
   let s = ' '+raw.toLowerCase().replace(/[’']/g,"'").replace(/\s+/g,' ').trim()+' ';
   const om = s.match(/(?:^|\s|@)([+-]\d{3,4})\s*$/) || s.match(/\(([+-]\d{3,4})\)/) || s.match(/\bodds\s*([+-]?\d{3,4})\b/);
   if (om){ const v = parseAm(om[1]); if (v!=null && Math.abs(v)>=100){ L.odds = v; s = s.replace(om[0],' '); } }
-  for (const [re, st] of STAT_WORDS){ if (re.test(s)){ L.stat = st; s = s.replace(re,' '); break; } }
+  // v76: a league word in the middle ("Pacers vs Cavaliers NBA Total…") is not part of a name
+  s = s.replace(/\b(nba|nfl|nhl|mlb|wnba|ncaab|ncaaf|cbb|cfb)\b/g, ' ');
   let m;
+  // v76: team totals ("LA Lakers Team total OVER 122") are their own market, never a game total or a player prop
+  if (/\bteam total\b/.test(s)){
+    s = s.replace(/\bteam total\b/, ' ').replace(/\b(points|pts|runs|goals)\b/g, ' ');
+    L.kind = 'teamtotal';
+    if ((m = s.match(/\b(?:o|over|u|under)\s*(\d{1,3}(?:\.\d)?)\b/))){ L.dir = /^u/.test(m[0].trim()) ? 'under' : 'over'; L.line = +m[1]; s = s.replace(m[0],' '); }
+    else if ((m = s.match(/(\d{1,3}(?:\.\d)?)/))){ L.dir = 'over'; L.line = +m[1]; s = s.replace(m[0],' '); }
+    L.nameText = s.replace(/\b(the|vs|v|at|@|line|game|tonight|bet)\b/g,' ').replace(/[^a-z0-9.\- ]/g,' ').replace(/\s+/g,' ').trim();
+    return L;
+  }
+  // v76: "Total Points" / "Points Total" / "Game total" on a matchup = the game total, not a player's points
+  const gameTot = /\b(game |match )?total (points|pts|runs|goals)\b|\b(points|pts|runs|goals) total\b|\bgame total\b/.test(s);
+  if (gameTot) s = s.replace(/\b(game |match )?total (points|pts|runs|goals)\b|\b(points|pts|runs|goals) total\b|\bgame total\b/, ' total ');
+  if (!gameTot) for (const [re, st] of STAT_WORDS){ if (re.test(s)){ L.stat = st; s = s.replace(re,' '); break; } }
   if (L.stat){
     L.kind = 'prop';
     if ((m = s.match(/(\d+(?:\.\d)?)\s*\+/))){ L.dir='over'; L.line=+m[1]; L.incl=true; s=s.replace(m[0],' '); }
@@ -8204,9 +8222,40 @@ function statusFlags(g, leg){
   if (g.state==='post'){ leg.final = true; leg.no.push(`Game is FINAL (${g.away.short} ${g.away.score} - ${g.home.short} ${g.home.score}). Too late to bet.`); }
   else if (g.state==='in'){ leg.live = true; leg.no.push(`Game is LIVE (${g.statusText}). Pregame numbers below may be stale.`); }
 }
+// v76: team total (own market): market-implied team score from the game total and spread, your line and odds
+function tlNormCdf(z){ const t = 1/(1+0.2316419*Math.abs(z)); const d = 0.3989423*Math.exp(-z*z/2); const p = d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274)))); return z>0 ? 1-p : p; }
+function teamTotalLegAnalysis(leg){
+  const {g, side, L} = leg; const T = g[side], O = g[side==='home'?'away':'home'];
+  leg.market = 'Team total'; leg.ownCourt = true;
+  leg.desc = `${T.name} team total ${L.dir==='under'?'Under':'Over'} ${L.line}`;
+  statusFlags(g, leg);
+  const SDV = {nba:11.5, wnba:9.5, ncaab:10.5, nfl:7.5, ncaaf:9.5, nhl:1.25, mlb:2.4}[g.league] || 10;
+  const A = g.analysis || {};
+  const tot = A.total && A.total.sides && A.total.sides.over && A.total.sides.over.point!=null ? +A.total.sides.over.point : null;
+  const spS = A.spread && A.spread.sides && A.spread.sides[side]; const sp = spS && spS.point!=null ? +spS.point : null;
+  if (L.line==null){ leg.err = 'Add the team-total number, like “Lakers team total Over 115.5”.'; return; }
+  if (tot!=null){
+    const proj = tot/2 - (sp!=null ? sp/2 : 0);
+    const pOver = 1 - tlNormCdf((L.line - proj)/SDV);
+    leg.p = clamp(L.dir==='under' ? 1-pOver : pOver, 0.03, 0.97); leg.conf = 45;
+    const diff = proj - L.line, helps = L.dir==='under' ? diff<0 : diff>0;
+    const impl = `The game total ${tot}${sp!=null?` and ${T.short} ${fmtPt(sp)}`:''} imply about ${proj.toFixed(1)} points for ${T.short}`;
+    if (Math.abs(diff) < 1) leg.no.push({t:`No clear edge: ${impl.charAt(0).toLowerCase()+impl.slice(1)}, right at your ${L.line}, so this is close to a coin flip`, imp:-0.0001, tag:''});
+    else (helps ? leg.yes : leg.no).push({t:`${impl}, ${Math.abs(diff).toFixed(1)} ${diff>0?'above':'below'} your ${L.line}`, imp: leg.p-0.5, tag:''});
+    if (sp!=null && sp<=-10) (L.dir==='under' ? leg.yes : leg.no).push({t:`${T.short} are ${Math.abs(sp)}-point favorites, so their starters may sit late if it turns into a blowout`, imp:L.dir==='under'?0.01:-0.01, tag:''});
+    leg.formula = `team score ≈ total ÷ 2 − spread ÷ 2 = ${proj.toFixed(1)}; typical swing ±${SDV} → chance of ${L.dir} ${L.line} ≈ ${fmtPct(leg.p)}`;
+  } else { leg.no.push({t:'No game total in the free feed yet, so the team total can’t be estimated', imp:-0.0001, tag:'missing'}); leg.formula = '—'; }
+  leg.no.push({t: L.dir==='under' ? 'A fast pace or overtime can push the team over' : 'A slow pace or a cold shooting night can keep the team under', imp:-0.0002, tag:''});
+  if (L.odds!=null){ leg.implied = imp(L.odds); leg.userOdds = L.odds; } else leg.implied = null;
+  leg.price = L.odds!=null ? L.odds : null;
+  leg.info.push('Team-total odds aren’t in the free feeds, so this uses your odds against a market-implied estimate');
+  const c = teamCtx(g, side); if (c.inj){ leg.info.push(`Injuries ${T.short}: ${injText(c.inj)}`); leg.info.push(`Injuries ${O.short}: ${injText(c.injOpp)}`); }
+  if (g.state==='post'){ const own = +(side==='home' ? g.home.score : g.away.score); if (isFinite(own)) leg.result = own===L.line ? 'PUSH' : (L.dir==='over' ? own>L.line : own<L.line) ? 'HIT' : 'MISS'; }
+}
 function teamLegAnalysis(leg){
+  if (leg.L && leg.L.kind==='teamtotal') return teamTotalLegAnalysis(leg);
   const {g, side, L} = leg, sp = sportOf(g), mk = L.kind;
-  const T = g[side], O = g[other(side)];
+  const T = g[side], O = g[side==='home'?'away':'home'];
   leg.desc = mk==='ml' ? `${T.name} ML` : mk==='spread' ? `${T.name} ${L.line===0?'PK':fmtPt(L.line)}` : `${L.dir==='over'?'Over':'Under'} ${L.line} (${g.away.short} @ ${g.home.short})`;
   leg.market = mk==='ml'?'Moneyline':mk==='spread'?'Spread':'Total';
   statusFlags(g, leg);
@@ -8219,7 +8268,10 @@ function teamLegAnalysis(leg){
       const diff = mk==='spread' ? (L.line - sd.point) : (L.dir==='over' ? sd.point - L.line : L.line - sd.point);
       const perPt = mk==='spread' ? ({nba:0.03,wnba:0.03,ncaab:0.03,nfl:0.03,ncaaf:0.025}[g.league] || 0.12) : ({nba:0.02,wnba:0.02,ncaab:0.02,nfl:0.025,ncaaf:0.02}[g.league] || 0.12);
       lineAdj = diff*perPt; formula.push(`line adj ${diff>0?'+':''}${diff} pts × ${(perPt*100).toFixed(1)}% = ${fmtEdge(lineAdj)}`);
-      leg.no.push(`Your line ${mk==='spread'?fmtPt(L.line):L.line} differs from the book's ${mk==='spread'?fmtPt(sd.point):sd.point}; estimate adjusted, but no price shown for your exact line`);
+      { const better = mk==='spread' ? L.line > sd.point : (L.dir==='under' ? L.line > sd.point : L.line < sd.point);
+        const gap = Math.abs(L.line - sd.point), gapTxt = gap===0.5 ? 'half a point' : `${gap} point${gap===1?'':'s'}`;
+        (better ? leg.yes : leg.no).push({t:`Your line ${mk==='spread'?fmtPt(L.line):L.line} is ${gapTxt} ${better?'better':'worse'} than the current market line ${mk==='spread'?fmtPt(sd.point):sd.point}; the estimate is adjusted to your line`, imp: better?0.0001:-0.0001, tag:''}); }
+      leg.ownCourt = true; leg.lineNote = `Current market line is ${mk==='spread'?fmtPt(sd.point):sd.point}; this verdict uses your line ${mk==='spread'?fmtPt(L.line):L.line}${L.odds!=null?' at your odds':''}`;
     } else {
       implied = imp(sd.best.price); leg.bookPrice = sd.best.price; leg.bookName = sd.best.book;
       // v36: price + book from YOUR books only (best one); the market best stays a reference for the math
@@ -8513,7 +8565,7 @@ function playForMarketSide(g, mk, side){
   return play;
 }
 function playFromLeg(leg){
-  if (!leg || !leg.g || !leg.L || leg.L.kind==='prop') return null;
+  if (!leg || !leg.g || !leg.L || leg.L.kind==='prop' || leg.L.kind==='teamtotal' || leg.ownCourt) return null;   // v76: your own line/market → the leg's own courtroom
   const mk = leg.L.kind;
   const sideKey = mk==='total' ? leg.L.dir : leg.side;
   const pl = playForMarketSide(leg.g, mk, sideKey);
@@ -8620,6 +8672,11 @@ async function resolveLeg(raw, override){
         const same = leg.liveProps.filter(x=>x.kind===kind);
         const exact = same.find(x=>Math.abs(+x.line - typedLine)<1e-9);
         if (exact){ leg.liveMatched = exact; if (!override) leg.matchKey = 'lp:'+exact.id; }
+        else if (!override && same.length && L.odds!=null){
+          // v76: you typed a price for your line, so keep your line; just say where the market is
+          const near = same.slice().sort((a,b)=>Math.abs(a.line-typedLine)-Math.abs(b.line-typedLine))[0];
+          if (near) leg.lineNote = `Current market line is ${near.line}; this verdict uses your line ${L.line} at your odds`;
+        }
         else if (!override && same.length){
           // closest live line within 1 point on the same stat: use it (the dropdown keeps "your line" as an option)
           const near = same.slice().sort((a,b)=>Math.abs(a.line-typedLine)-Math.abs(b.line-typedLine))[0];
@@ -8689,6 +8746,18 @@ async function resolveLeg(raw, override){
         const okAlt = x => x && x.c && x.c.g && x.c.g.id!==top.c.g.id && x.c.g.state!=='post';
         leg.dym = leg.cands.slice(1, leg.scoredN).filter(x=>okAlt(x) && x.sc!=null && top && top.sc!=null && top.sc - x.sc < 2.6 && (top.fuzzy || (x.c.base||0) >= (top.c.base||0) - 1.5)).slice(0,3);
         if (top && top.fuzzy && !leg.dym.length) leg.dym = leg.cands.slice(1, leg.scoredN).filter(okAlt).slice(0,2);
+        // v76: "Pacers vs Cavaliers …" named both teams of the matched game → no "did you mean" noise
+        const nt = ' '+norm(L.nameText)+' ';
+        const named = T => [T.name, T.nick, (T.name||'').split(' ').pop()].filter(Boolean).some(n=>nt.includes(' '+norm(n)+' ') || nt.includes(' '+norm(n)));
+        if (top && top.c && top.c.g && L.kind==='total' && named(top.c.g.away) && named(top.c.g.home)) leg.dym = [];
+        // v76: an alternative must match as much of what you typed as the pick does ("LA Lakers" ≠ "Mercyhurst Lakers"),
+        // and the same team/league is offered once
+        const toks = norm(L.nameText).split(' ').filter(Boolean);
+        const hits = T => { if (!T) return 0; const w = norm([T.name, T.short, T.abbr, T.nick].filter(Boolean).join(' ')).split(' ');
+          const nw = norm(T.name||'').split(' '); const ini = k => nw.slice(0,k).map(x=>x[0]).join('');
+          return toks.filter(t => w.includes(t) || (t.length>=2 && t.length<=4 && [2,3].some(k=>ini(k)===t))).length; };
+        if (top && top.c && top.c.g){ const th = hits(top.c.g[top.c.side]); const seenN = new Set();
+          leg.dym = (leg.dym||[]).filter(x=>{ const T = x.c.g[x.c.side]; const k = norm(T.name)+'|'+x.c.g.league; if (seenN.has(k)) return false; seenN.add(k); return hits(T) >= th; }); }
       }
       await ensureFx(leg.g); evaluateAll();
       teamLegAnalysis(leg);
@@ -8726,7 +8795,7 @@ async function rerunLeg(i, key){
 }
 /* ---------- render ---------- */
 function verdictBadge(v){ const c = v==='BET'?'b-good':v==='WATCHLIST'?'b-watch':v==='FINAL'?'b-none':'b-avoid'; return `<span class="badge ${c}">${v==='WATCHLIST'?'MAYBE LATER':v==='PASS'?'SKIP':v}</span>`; }
-function legItem(x){ if (typeof x==='string') return `<li>${esc(x)}</li>`; return `<li><span>${esc(x.t)}</span>${x.tag?` <em>(${esc(x.tag)})</em>`:''}</li>`; }
+function legItem(x){ if (typeof x==='string') return `<li>${esc(x)}</li>`; return `<li><span>${esc(x.t)}</span>${x.tag && / /.test(x.tag) && !/^rule points/i.test(x.tag)?` <em>(${esc(x.tag)})</em>`:''}</li>`; }   // v76: hide internal tags
 function legSort(arr, dir){ return arr.slice().sort((a,b)=>{ const ia=typeof a==='string'?0:a.imp||0, ib=typeof b==='string'?0:b.imp||0; return dir>0? ib-ia : ia-ib; }); }
 /* Verdict cards reuse the board's card builders, so their <details> keys and lazy ids are scoped
    with a "verdict" prefix: the Courtroom always opens on THIS card (never a hidden twin on another tab),
@@ -8759,7 +8828,7 @@ function legAssistHTML(leg, i){
       : `<div class="pk-assume">Assuming <b>Moneyline</b> — add a line (like “${esc(verdictShortName(T, g))} -4.5”) to check a spread instead.</div>`);
   }
   if (leg.guessed && g) bits.push(`<div class="pk-assume">Best guess: <b>${esc(g[leg.side].name)}</b> (closest name on today's board)</div>`);
-  if (leg.dym && leg.dym.length) bits.push(`<div class="pk-dym-row"><span class="lab">Did you mean</span>${leg.dym.map(x=>`<button type="button" class="chip pk-dym" data-dym="${i}" data-dym-key="${esc(x.key)}">${esc(x.c.g[x.c.side].name)} <span class="mut">· ${esc(LMAP[x.c.g.league].label)}</span></button>`).join('')}</div>`);
+  if (leg.dym && leg.dym.length) bits.push(`<div class="pk-dym-row"><span class="lab">Did you mean</span>${leg.dym.map(x=>`<button type="button" class="chip pk-dym" data-dym="${i}" data-dym-key="${esc(x.key)}">${esc(x.c.g[x.c.side].name)} <span class="mut">· ${esc(LMAP[x.c.g.league].label)}${g && g[leg.side] && x.c.g[x.c.side].name===g[leg.side].name ? ' · '+esc(fmtTime(x.c.g.start)) : ''}</span></button>`).join('')}</div>`);
   if (leg.err && leg.hint==='teamless'){
     const ex = (typeof pickExampleChips==='function' ? pickExampleChips() : []).find(x=>/\bover\b/i.test(x) && /\//.test(x)) || 'Lakers/Celtics Over 225.5';
     bits.push(`<div class="pk-dym-row"><span class="lab">Try</span><button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(ex)}">${esc(ex)}</button></div>`);
@@ -8813,7 +8882,7 @@ function legCard(leg, i, weakest){
   const g = leg.g;
   const selHtml = legMatchSelectHTML(leg, i);
   const sel = '';
-  const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}</div>` + legAssistHTML(leg, i);
+  const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}${leg.lineNote?` · ${esc(leg.lineNote)}`:''}</div>` + legAssistHTML(leg, i);
   const resultBan = leg.result?`<div class="banner" style="margin:6px 0">Result: <b class="${leg.result==='HIT'?'pos':leg.result==='MISS'?'neg':''}">${leg.result}</b>${leg.actual!=null?` (actual ${leg.actual})`:''}</div>`:'';
   const pl = (!leg.err && !leg.player) ? (leg._card || playFromLeg(leg)) : null;
   const propPl = (!leg.err && leg.player && typeof playFromPropLeg==='function') ? (leg._card || playFromPropLeg(leg)) : null;
@@ -8833,7 +8902,7 @@ ${resultBan}
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
   const price = leg.price!=null ? (leg.userOdds==null && leg.noBook ? `${esc(NO_BOOK_LINE)} (market ${fmtAm(leg.price)}, reference only)` : `${fmtPx(leg.price, leg.userOdds==null?leg.bookCents:null)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}`) : 'no price';
-  const gamePl = (!leg.err && g) ? (typeof verdictNoRange==="function" ? verdictNoRange(gamePlayFor(g, leg.side)) : gamePlayFor(g, leg.side)) : null;
+  const gamePl = (!leg.err && g && !leg.ownCourt) ? (typeof verdictNoRange==="function" ? verdictNoRange(gamePlayFor(g, leg.side)) : gamePlayFor(g, leg.side)) : null;
   const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
   return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
     ${head}
@@ -9829,6 +9898,7 @@ function imgFallback(el, cls){
   const s = document.createElement('span');
   s.className = cls || 'team-mono';
   s.textContent = el.getAttribute('data-ab') || '?';
+  if (s.textContent.length>3) s.style.fontSize = '7.5px';   // v76: 4-letter codes fit the 26px tile
   if (el.parentNode) el.replaceWith(s);
 }
 function teamLogoHTML(t, cls){
@@ -17771,6 +17841,51 @@ function effSports(){ sportSelSyncEnabled(); const en = S.enabled||[]; return SP
   ui.sports = effSports(); if (typeof syncSportAlias==='function') syncSportAlias();
   try{ if (typeof render==='function' && document.getElementById('view')) render(); }catch(e){}
 })();
+
+/* ================= v76: All Games has its own sport chips =================
+   All Games ignores Settings and the board selection: every sport's games, narrowed only by its own chips (saved separately). */
+var AG_SEL_LS = 'bl_ag_sel_v1';
+var AG_SEL = (function(){ try{ const d = JSON.parse(localStorage.getItem(AG_SEL_LS)||'null'); if (Array.isArray(d)) return d.filter(id=>LMAP[id]); }catch(e){} return LEAGUES.map(L=>L.id); })();
+function agSave(){ try{ localStorage.setItem(AG_SEL_LS, JSON.stringify(AG_SEL)); }catch(e){} }
+function agSports(){ return AG_SEL.slice(); }
+function renderAllGamesChips(){
+  const counts = {}; for (const g of allGamesList(true)) counts[g.league] = (counts[g.league]||0)+1;
+  const on = new Set(AG_SEL), total = Object.values(counts).reduce((a,n)=>a+n,0);
+  const allOn = LEAGUES.every(L=>on.has(L.id));
+  const chips = `<span class="chip ${allOn?'on':''}" data-ag-sport="all" title="Show every sport">All<span class="n">${total}</span></span>`
+    + LEAGUES.map(L=>`<span class="chip ${on.has(L.id)?'on':''} ${counts[L.id]?'':'empty'}" data-ag-sport="${L.id}" title="${on.has(L.id)?'Shown in All Games. Tap to hide.':'Hidden in All Games. Tap to show.'}">${sportChipLabel(L)}<span class="n">${counts[L.id]||0}</span></span>`).join('');
+  const box = $('#sportChips'); if (box) box.innerHTML = chips;
+  const el = $('#chipNote'); if (el){ el.hidden = false; el.textContent = 'These chips only change the All Games list. Settings and the Games / Props boards use their own sports.'; }
+}
+document.addEventListener('click', e=>{
+  const c = e.target.closest && e.target.closest('[data-ag-sport]'); if (!c) return;
+  e.stopPropagation();
+  const id = c.getAttribute('data-ag-sport');
+  if (id==='all') AG_SEL = LEAGUES.map(L=>L.id);
+  else { const i = AG_SEL.indexOf(id); if (i>=0) AG_SEL.splice(i,1); else AG_SEL.push(id); }
+  agSave(); render();
+}, true);
+
+/* v76: Verdict parsing regression cases (Stanley's slip, Nov 20 2026). Run verdictParseSelfTest() in the
+   console or the test script: returns [] when every line still parses as expected. */
+var VERDICT_PARSE_CASES = [
+  ['Hornets VS Hawks Total Points Under 219 -110',            {kind:'total', dir:'under', line:219,   odds:-110, nameText:'hornets hawks'}],
+  ['Pacers vs Cavaliers NBA Total points over 234.5 -110',    {kind:'total', dir:'over',  line:234.5, odds:-110, nameText:'pacers cavaliers'}],
+  ['Magic Vs Nets Total Points Over 223.5 -110',              {kind:'total', dir:'over',  line:223.5, odds:-110, nameText:'magic nets'}],
+  ['Chicago Bulls ML -135',                                   {kind:'ml', odds:-135, nameText:'chicago bulls'}],
+  ['OKC -11.5 -110',                                          {kind:'spread', line:-11.5, odds:-110, nameText:'okc'}],
+  ['Rockets/Nuggets Under 228 -110',                          {kind:'total', dir:'under', line:228,   odds:-110, nameText:'rockets nuggets'}],
+  ['LA Lakers Team total OVER 122 -110',                      {kind:'teamtotal', dir:'over', line:122, odds:-110, nameText:'la lakers'}],
+  ['Luka Doncic OVER 35.5 points  -125',                      {kind:'prop', dir:'over', line:35.5, odds:-125, stat:'pts', nameText:'luka doncic'}],
+];
+function verdictParseSelfTest(){
+  const fails = [];
+  for (const [raw, want] of VERDICT_PARSE_CASES){
+    let L; try{ L = parseLeg(raw); }catch(e){ fails.push(raw+' → threw '+e); continue; }
+    for (const k of Object.keys(want)) if (L[k]!==want[k]) fails.push(`${raw} → ${k}=${JSON.stringify(L[k])} (want ${JSON.stringify(want[k])})`);
+  }
+  return fails;
+}
 </script>
 </body>
 </html>
