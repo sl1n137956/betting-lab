@@ -1369,6 +1369,19 @@ const UNIT_TIERS = [
   {u:1,   cls:'u-1',    txt:'1u',   note:'1 unit: solid spot',                      conf:60, p:0.60},
   {u:0.5, cls:'u-half', txt:'0.5u', note:'0.5 units: light spot',                   conf:0,  p:0}
 ];
+/* v56: sizes above 1u are LOCKED until that size earns it. The 2u and 1.5u ratings are still computed and recorded
+   (as "tu"), but the bet is sized at 1u until picks the model rated at that size have their own graded record of at least
+   UNIT_GATE_MIN picks with a profit (flat 1u, so the test is fair). Separate for Games and Props. Gate stats come from
+   the same rows as "Is it making money?" and are cached in localStorage so sizing is instant on startup. */
+const UNIT_GATE_MIN = 30;
+const UNIT_GATE_KEY = 'bl_unit_gate_v1';
+let UNIT_GATE = (()=>{ try{ return JSON.parse(localStorage.getItem(UNIT_GATE_KEY)||'null') || {games:{}, props:{}}; }catch(e){ return {games:{}, props:{}}; } })();
+function unitGateSet(g){ UNIT_GATE = g || {games:{}, props:{}}; try{ localStorage.setItem(UNIT_GATE_KEY, JSON.stringify(UNIT_GATE)); }catch(e){} }
+function unitTierOpen(board, u){
+  if (!(u > 1)) return true;
+  const r = UNIT_GATE && UNIT_GATE[board] && UNIT_GATE[board][String(u)];
+  return !!(r && r.n >= UNIT_GATE_MIN && r.roi > 0);
+}
 function recommendedUnits(item, kind){
   const rawV = String((item && (item.verdict || item.J)) || '').toLowerCase();
   const isGood = rawV==='good' || rawV==='bet';
@@ -1385,8 +1398,15 @@ function recommendedUnits(item, kind){
   if (isGood){
     T = UNIT_TIERS.find(t => conf!=null ? conf>=t.conf : (p!=null ? p>=t.p : t.u===1)) || UNIT_TIERS[3];
   }
+  const board = String(kind||'').startsWith('prop') ? 'props' : 'games';
+  const tier = T.u; let capNote = '';
+  if (isGood && !unitTierOpen(board, tier)){
+    const r = (UNIT_GATE[board]||{})[String(tier)] || {n:0};
+    capNote = `Model rates this a ${T.txt} spot, but ${T.txt} is locked until ${T.txt}-rated ${board==='props'?'props':'picks'} prove it (${r.n||0}/${UNIT_GATE_MIN} graded${r.n?`, ${r.roi>0?'+':''}${Math.round((r.roi||0)*100)}% so far`:''}). Sized at 1u for now.`;
+    T = UNIT_TIERS[2];
+  }
   const dollars = Math.round(T.u * ((typeof S!=='undefined' && +S.unit>0) ? +S.unit : 25) * 100) / 100;
-  return {u:T.u, label:`${T.txt} (${fmtUnitDollars(T.u)})`, short:T.txt, dollars, cls:T.cls, note: isWatch ? '0.5 units: light lean only' : T.note};
+  return {u:T.u, tier, capped: !!capNote, label:`${T.txt} (${fmtUnitDollars(T.u)})`, short:T.txt, dollars, cls:T.cls, note: isWatch ? '0.5 units: light lean only' : (capNote || T.note)};
 }
 function unitPillHTML(item, kind){
   const r = recommendedUnits(item, kind);
@@ -13763,17 +13783,18 @@ function legRecOf(l){
 function makeLockRec(board, x, extra){
   const now = Date.now();
   // v55: each locked single is staked at its recommended units (2u / 1.5u / 1u / 0.5u), so profit is in real units
-  const u = (board!=='parlay' && typeof recommendedUnits==='function') ? (recommendedUnits(x, board==='props'?'prop':'game').u || 1) : 1;
+  const RU = (board!=='parlay' && typeof recommendedUnits==='function') ? recommendedUnits(x, board==='props'?'prop':'game') : null;
+  const u = (RU && RU.u) || 1, tu = (RU && RU.tier) || u;   // v56: tu = the size the model rated it (may be locked down to 1u)
   const unit = (+S.unit||25) * u;
   if (board==='parlay'){
     return Object.assign({board, k:x.id, at:now, start:itemStartMs(x), label:x.label||'Parlay', n:x.n, dec:x.dec, am:x.am, p:x.p, minLegP:(x.legs||[]).reduce((m,l)=>l&&l.p!=null?Math.min(m,+l.p):m, 1), legs:(x.legs||[]).map(legRecOf), unit}, extra||{});
   }
   if (board==='props'){
     const g = x.g;
-    return Object.assign({board, k:propKeyOf(x), at:now, start:itemStartMs(x), label:x.label||`${x.playerName} ${x.side} ${x.line}`, ev:(g&&g.eventId)||x.eventId, lg:x.league||(g&&g.league), pid:x.playerId||'', playerName:x.playerName||'', kind:x.kind, side:x.side, line:x.line, price:x.price, p:x.p, unit, u}, extra||{});
+    return Object.assign({board, k:propKeyOf(x), at:now, start:itemStartMs(x), label:x.label||`${x.playerName} ${x.side} ${x.line}`, ev:(g&&g.eventId)||x.eventId, lg:x.league||(g&&g.league), pid:x.playerId||'', playerName:x.playerName||'', kind:x.kind, side:x.side, line:x.line, price:x.price, p:x.p, unit, u, tu}, extra||{});
   }
   const g = x.g, price = (x.my && x.my.best) ? x.my.best.price : (x.sd && x.sd.best ? x.sd.best.price : null);
-  return Object.assign({board:'games', k:playResultKey(x), at:now, start:itemStartMs(x), label:x.label, game:g&&g.away&&g.home?`${g.away.short} @ ${g.home.short}`:'', ev:g.eventId, lg:g.league, mk:x.mk, side:x.side, point:x.sd?x.sd.point:null, price, p:x.est!=null?x.est:null, outs:curOuts(g), unit, u}, extra||{});
+  return Object.assign({board:'games', k:playResultKey(x), at:now, start:itemStartMs(x), label:x.label, game:g&&g.away&&g.home?`${g.away.short} @ ${g.home.short}`:'', ev:g.eventId, lg:g.league, mk:x.mk, side:x.side, point:x.sd?x.sd.point:null, price, p:x.est!=null?x.est:null, outs:curOuts(g), unit, u, tu}, extra||{});
 }
 // record every item that is officially locked right now (runs whether or not alerts are on)
 function recordLocks(board){
@@ -14553,8 +14574,9 @@ function uniUpsert(b, src, id, base, snap){
   r.at = now; r.price = snap.price; r.v = snap.v || 'nocall'; r.p = snap.p!=null ? Math.round(snap.p*10000)/10000 : null; r.mins = mins;
   if (snap.shown) r.shown = 1;
   if (snap.u!=null) r.u = snap.u; else delete r.u;
+  if (snap.tu!=null) r.tu = snap.tu; else delete r.tu;
   if (snap.X) r.X = snap.X;
-  if (lockNow) r.lk = {price:r.price, v:r.v, p:r.p, u:r.u, at:now};
+  if (lockNow) r.lk = {price:r.price, v:r.v, p:r.p, u:r.u, tu:r.tu, at:now};
   if (closeNow) r.cl = {price:r.price, v:r.v, p:r.p, at:now};
   UNI_DIRTY.add(id);
   return r;
@@ -14632,7 +14654,7 @@ function uniCaptureGames(){
         if (v==='none' || v==='started' || !v) v = 'avoid';
         if (typeof isFinalPulled==='function' && play && play.side===s && isFinalPulled(play.id)) v = 'avoid';
         const id = `g:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`;
-        if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, u: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').u : null, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
+        if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, u: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').u : null, tu: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').tier : null, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
       }
     }
     // Kalshi moneylines (loaded through the Verdict relay whenever Kalshi prices are on)
@@ -14798,7 +14820,7 @@ async function uniCaptureProps(){
         if (m.need) needLog.add(gm.l+':'+x.pid);
         const a = propAthleteCache[gm.l+':'+x.pid];
         if (!a || !a.name) needAth.add(gm.l+':'+x.pid);
-        if (uniUpsert('props', 'sb', id, {l:gm.l, ev:gm.ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {price:x.price, v:m.v, p:m.p, u: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').u : null, shown: bp && (bp.verdict==='good'||bp.verdict==='watch') ? 1 : 0})) n++;
+        if (uniUpsert('props', 'sb', id, {l:gm.l, ev:gm.ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {price:x.price, v:m.v, p:m.p, u: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').u : null, tu: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').tier : null, shown: bp && (bp.verdict==='good'||bp.verdict==='watch') ? 1 : 0})) n++;
       }
     }catch(e){ UNI_ST.evAt[gm.ev] = Date.now(); uniErr('props '+gm.ev, e); }
   }), 2);
@@ -16464,7 +16486,7 @@ function v55UniPick(r){
 function v55UniRow(r){
   const res = r.res || null;
   return {src:'uni', b:r.b, key: r.b==='games' ? v55KeyG(r.ev, r.mk, r.side) : v55KeyP(r.ev, r.pid, r.kind, r.side),
-    start:+r.t||0, res, price:uniPrice(r), u:+((r.lk && r.lk.u) || r.u) || 1};
+    start:+r.t||0, res, price:uniPrice(r), u:+((r.lk && r.lk.u) || r.u) || 1, tu:+((r.lk && (r.lk.tu || r.lk.u)) || r.tu || r.u) || 1};
 }
 async function moneyLoad(force){
   if (MONEY.busy) return MONEY.rows;
@@ -16484,8 +16506,35 @@ async function moneyLoad(force){
   try{ for (const r of (typeof UNI_OUT!=='undefined' ? UNI_OUT : [])) if (v55UniPick(r)) out.push(v55UniRow(r)); }catch(e){}
   try{ for (const r of (typeof UNI!=='undefined' ? UNI.values() : [])) if (v55UniPick(r) && +r.t <= Date.now()) out.push(v55UniRow(r)); }catch(e){}
   MONEY.rows = out; MONEY.at = Date.now(); MONEY.busy = false;
+  try{ unitGateRefresh(); }catch(e){}
   return out;
 }
+/* v56: each locked size (1.5u, 2u) has to earn its way in. Its record is graded flat 1u per pick so a bigger stake
+   can't make a tier look better or worse than it is. */
+function unitGateRefresh(){
+  const g = {games:{}, props:{}};
+  for (const b of ['games','props']){
+    for (const r of moneyRowsFor(b)){
+      if (r.res!=='win' && r.res!=='loss') continue;
+      const k = String(+r.tu || +r.u || 1); if (!(+k > 1)) continue;
+      const t = g[b][k] = g[b][k] || {n:0, w:0, l:0, net:0};
+      t.n++; if (r.res==='win'){ t.w++; t.net += (v55Dec(r.price)||2) - 1; } else { t.l++; t.net -= 1; }
+    }
+    for (const t of Object.values(g[b])) t.roi = t.n ? t.net/t.n : 0;
+  }
+  if (typeof unitGateSet==='function') unitGateSet(g);
+  return g;
+}
+function unitGateHTML(){
+  if (typeof UNIT_GATE==='undefined') return '';
+  const cell = (b, u) => { const r = (UNIT_GATE[b]||{})[String(u)] || {n:0, w:0, l:0, roi:0}; const open = typeof unitTierOpen==='function' && unitTierOpen(b, u);
+    return `${open?'🔓 <b>On</b>':'🔒 Locked'} <span class="mut">· ${r.n?`${r.w}–${r.l}, ${r.roi>=0?'+':''}${Math.round(r.roi*100)}%`:'no graded picks yet'} · ${Math.min(r.n,UNIT_GATE_MIN)}/${UNIT_GATE_MIN}</span>`; };
+  return `<div class="panel" style="margin-top:10px"><b>Bet sizes</b> <span class="hint">Bigger sizes stay locked (bet 1u instead) until picks the model rated at that size win money over at least ${UNIT_GATE_MIN} graded picks. 1u and 0.5u are always on.</span>
+    <table style="margin-top:6px"><tr><th></th><th>Games</th><th>Props</th></tr>
+    <tr><td>2u (nuke)</td><td>${cell('games',2)}</td><td>${cell('props',2)}</td></tr>
+    <tr><td>1.5u</td><td>${cell('games',1.5)}</td><td>${cell('props',1.5)}</td></tr></table></div>`;
+}
+setTimeout(()=>{ try{ moneyLoad(true); }catch(e){} }, 5000);
 function moneyRowsFor(board){
   const st = typeof V41==='function' ? V41() : {locked:{}};
   const seen = new Map();
@@ -16493,7 +16542,7 @@ function moneyRowsFor(board){
     if (!r || r.board!==board || r.tailedOnly || r.shadow || r.pulled) continue;
     const key = board==='games' ? v55KeyG(r.ev, r.mk, r.side) : v55KeyP(r.ev, r.pid || r.playerName, r.kind, r.side);
     const base = +S.unit||25; const u = +r.u || ((+r.unit||base)/base) || 1;
-    seen.set(key, {src:'lock', b:board, key, start:+r.start||0, res:r.res||null, price:r.price, u, profitU: r.profit!=null ? (+r.profit)/base : null});
+    seen.set(key, {src:'lock', b:board, key, start:+r.start||0, res:r.res||null, price:r.price, u, tu:+r.tu || u, profitU: r.profit!=null ? (+r.profit)/base : null});
     if (board==='props' && r.playerName && r.pid) seen.set(v55KeyP(r.ev, r.playerName, r.kind, r.side), seen.get(key));
   }
   for (const r of MONEY.rows){ if (r.b!==board || seen.has(r.key)) continue; seen.set(r.key, r); }
@@ -16533,11 +16582,12 @@ function moneySectionHTML(){
   };
   const any = A.length;
   return `<div class="card v41-score v55-money">
-    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money?</h2><span class="hint">Every Pick the board made (Games and Props), graded automatically from finals. Each pick counts at its recommended size (2u, 1.5u, 1u or 0.5u; older picks 1u). Not just the bets you tailed.</span></div>
+    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money?</h2><span class="hint">Every Pick the board made (Games and Props), graded automatically from finals. Each pick counts at the size it was given (1u or 0.5u, or 1.5u/2u once unlocked; older picks 1u). Not just the bets you tailed.</span></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Board</th><th>W–L</th><th>Win rate</th><th>Profit</th><th>ROI</th><th>Today</th><th>Yesterday</th><th>Waiting</th><th>So far</th></tr></thead>
     <tbody>${line('Games', G)}${line('Props', P)}${line('Both', A, 'v55-total')}</tbody></table></div>
     ${any ? '' : `<div class="hint" style="margin-top:8px">${MONEY.at ? 'No board Picks have started yet on this device. Picks show up here once their game starts, and get graded after the final.' : 'Loading graded picks…'}</div>`}
     <div class="hint" style="margin-top:8px">Profit is in units (1u = $${(+S.unit||25).toFixed(0)}). Pushes don't count as wins or losses. Pulled picks are left out.</div>
+    ${unitGateHTML()}
   </div>`;
 }
 /* ---------- the combined Results page ---------- */
