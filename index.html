@@ -6742,9 +6742,9 @@ function gameCard(g){
 }
 /* v46: All Games = every game in every sport you have on in Settings that starts in the next 24 hours, plus live games.
    Display only: ignores the board filters (sport chips, Locked/24h/48h, Hide started, Polymarket-only) and the model's auto-off. */
-function allGamesList(){
+function allGamesList(noSport){
   const now = Date.now(), until = now + 24*3600e3, q = norm(ui.q||'');
-  const on = new Set(S.enabled||[]);
+  const on = new Set(noSport ? (S.enabled||[]) : (typeof effSports==='function' ? effSports() : (S.enabled||[])));   // v74: your sport filter applies here too
   return (games||[]).filter(g=>{
     if (!g || g.pickOnly || !on.has(g.league)) return false;
     const st = g.start && g.start.getTime ? g.start.getTime() : +g.start || 0;
@@ -6780,9 +6780,9 @@ function allGamesHTML(list){
   const liveCard = g => { const h = gameCard(g); return gameTailedPending(g) ? String(h).replace(/^(\s*<div [^>]*>)/, '$1<div class="ag-tailed"><span aria-hidden="true">🎟️</span> You tailed this</div>') : h; };
   const sec = (title, arr, cls, extra) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span>${extra||''}</h3><div class="grid">${arr.map(cls==='ag-live'?liveCard:gameCard).join('')}</div></div>`;
   const off = LEAGUES.filter(L=>!(S.enabled||[]).includes(L.id)).map(L=>L.label);
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now${off.length?` · hidden because you turned them off in Settings: ${esc(off.join(', '))}`:''}. Board filters don't apply here. Odds show when the free feed has them; % = no-vig probability.</span></div>`
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now${off.length?` · hidden because you turned them off in Settings: ${esc(off.join(', '))}`:''}. Your sport filter applies here; the other board filters don't. Odds show when the free feed has them; % = no-vig probability.</span></div>`
     + (list.length ? `<div class="ag-chips">${chips}</div>` + (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live', ` <span class="live-upd mut" data-live-upd>${typeof liveAgoTxt==='function'?esc(liveAgoTxt()):''}</span>`) : '') + groups.map(G=>sec(esc(G.k), G.list)).join('')
-      : `<div class="empty-state">No games in the next 24 hours for the sports you have on.</div>`);
+      : `<div class="empty-state">No games in the next 24 hours for the sports you picked.</div>`);
 }
 function filtered(list, isPlay){
   const q = norm(ui.q);
@@ -7113,7 +7113,7 @@ function renderMarketChips(){
   box.querySelectorAll('[data-mkt]').forEach(c=>c.onclick=()=>{ ui.mkt=c.dataset.mkt; document.querySelectorAll('[data-mkt]').forEach(x=>x.classList.toggle('on',x===c)); if (typeof saveFilters==='function') saveFilters(); render(); });
 }
 function renderChips(){
-  const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
+  const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid' || ui.tab==='all';
   const onProps = restrict && (ui.board||'games')==='props';
   const onParlay = restrict && (ui.board||'games')==='parlay';
   if (!Array.isArray(ui.sports)){ ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id)); if (typeof syncSportAlias==='function') syncSportAlias(); }
@@ -7150,6 +7150,8 @@ function renderChips(){
     for (const pl of (parlays||[])){
       (pl.sports||[pl.league]).filter(Boolean).forEach(lg=>propSports[lg]=1);
     }
+  } else if (restrict && ui.tab==='all'){
+    for (const g of allGamesList(true)) countOne(g, g.league);
   } else if (restrict){
     const want = ui.tab;
     for (const p of plays){
@@ -7162,21 +7164,21 @@ function renderChips(){
   } else {
     games.forEach(g=>{ if((!ui.hideStarted || g.state==='pre') && !(typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(g):0, g.state))) counts[g.league]=(counts[g.league]||0)+1; });
   }
-  const skip = (typeof modelSkippedSports==='function') ? modelSkippedSports(ui.board||'games') : new Set();
+  const skip = (ui.tab!=='all' && typeof modelSkippedSports==='function') ? modelSkippedSports(ui.board||'games') : new Set();
   const shown = typeof autoShowSet==='function' ? autoShowSet(ui.board||'games') : new Set();
   const onSet = new Set(ui.sports||[]);
-  const allOn = LEAGUES.every(L=>onSet.has(L.id));
+  const allOn = LEAGUES.filter(L=>(S.enabled||[]).includes(L.id)).every(L=>onSet.has(L.id));
   const hardOff = id => !(S.enabled||[]).includes(id);
   const total = Object.values(counts).reduce((a,n)=>a+n,0);
   const showList = restrict ? LEAGUES : LEAGUES.filter(L=>S.enabled.includes(L.id) || counts[L.id] || onSet.has(L.id));
   const chips = restrict
-    ? `<span class="chip ${allOn?'on':''}" data-sport="all" title="Show every sport on this tab">All<span class="n">${total}</span></span>` +
+    ? `<span class="chip ${allOn?'on':''}" data-sport="all" title="Show every sport you have on in Settings">All<span class="n">${total}</span></span>` +
       `<span class="chip reset-chip" data-sport="reset" title="Back to defaults: sports the model does not recommend start off">Reset</span>` +
-      showList.filter(L=>!hardOff(L.id) || counts[L.id]).map(L=>{
+      showList.filter(L=>!hardOff(L.id)).map(L=>{
         const auto = skip.has(L.id) && !hardOff(L.id);
         const on = auto ? shown.has(L.id) : onSet.has(L.id);
         const why = auto && typeof modelOffWhy==='function' ? modelOffWhy(ui.board||'games', L.id) : '';
-        const tip = auto ? (on ? `Model auto-off (${why}). Shown for this visit only.` : `Model auto-off: ${why}. Tap to peek for this visit; it resets on reload.`) : (on ? 'Shown on this tab. Tap to hide.' : 'Hidden on this tab. Tap to show.');
+        const tip = auto ? (on ? `Model auto-off (${why}). Shown for this visit only.` : `Model auto-off: ${why}. Tap to peek for this visit; it resets on reload.`) : (on ? 'Shown on every board and All Games. Tap to hide.' : 'Hidden everywhere. Tap to show.');
         return `<span class="chip ${on?'on':''} ${counts[L.id]?'':'empty'}${auto?' auto-off':''}" data-sport="${L.id}" title="${esc(tip)}">${sportChipLabel(L)}${auto?'<span class="auto-tag" aria-hidden="true">auto-off</span>':''}<span class="n">${counts[L.id]||0}</span></span>`;
       }).join('')
     : null;
@@ -7184,7 +7186,7 @@ function renderChips(){
       showList.map(L=>`<span class="chip ${ui.sport===L.id?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}">${sportChipLabel(L)}<span class="n">${counts[L.id]||0}</span></span>`).join('');
   $('#sportChips').innerHTML = chipsAll;
   const autoList = restrict ? (typeof v42GroupOff==='function' ? v42GroupOff(LEAGUES.filter(L=>skip.has(L.id) && !hardOff(L.id)).map(L=>({lab:L.label, why:typeof modelOffWhy==='function'?modelOffWhy(ui.board||'games', L.id):''}))).map(g=>`${g.labs.join(', ')} auto-off: ${g.why}`) : []) : [];
-  const note = restrict
+  const note = (restrict && ui.tab==='all') ? 'Your sport picks apply to every board and All Games.' : restrict
     ? (autoList.length ? 'The model picks the sports for this board from your Settings list, based on profit. ' + autoList.join(' · ') + '. They come back on by themselves once they recover. Tap one to peek for this visit only.' : 'The model picks the sports for this board from your Settings list, based on profit. Nothing is auto-off right now.')
     : ((!onProps && !onParlay && ui.tab==='good') ? (typeof goodPlaysExcludeLine==='function'?goodPlaysExcludeLine():'') : '');
   const el = $('#chipNote');
@@ -12991,11 +12993,11 @@ document.addEventListener('click', e=>{
 });
 $('#sportChips').addEventListener('click', e=>{
   const c=e.target.closest('[data-sport]'); if(!c) return;
-  const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
+  const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid' || ui.tab==='all';
   const id = c.dataset.sport;
   if (restrict){
     if (!Array.isArray(ui.sports)) ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id));
-    const autoB = (typeof modelSkippedSports==='function' && typeof autoShowSet==='function') ? modelSkippedSports(ui.board||'games') : new Set();
+    const autoB = (ui.tab!=='all' && typeof modelSkippedSports==='function' && typeof autoShowSet==='function') ? modelSkippedSports(ui.board||'games') : new Set();
     if (id==='all') ui.sports = LEAGUES.map(L=>L.id);
     else if (id==='reset'){ ui.sports = (typeof defaultSportsList==='function'?defaultSportsList(ui.board||'games'):LEAGUES.map(L=>L.id)); ui.horizon = '24h'; if (typeof autoShowSet==='function') autoShowSet(ui.board||'games').clear(); }
     else if (autoB.has(id)){ const set = autoShowSet(ui.board||'games'); if (set.has(id)) set.delete(id); else set.add(id); if (!ui.sports.includes(id)) ui.sports.push(id); }   // v42: temporary peek, not saved
@@ -17701,6 +17703,46 @@ document.addEventListener('paste', v71HandlePaste, true);
 /* 4) iOS ignores user-scalable=no in Safari, so block pinch gestures directly */
 ['gesturestart','gesturechange','gestureend'].forEach(ev=>document.addEventListener(ev, e=>{ e.preventDefault(); }, {passive:false}));
 document.addEventListener('touchmove', e=>{ if (e.touches && e.touches.length>1) e.preventDefault(); }, {passive:false});
+/* ================= v74: one sport filter everywhere =================
+   The sports you pick on any board (Games, Props, Parlays, every tab, All Games) are one shared choice, saved across reloads.
+   What shows = your pick ∩ the sports turned on in Settings. Verdict (pasted picks) ignores all of this on purpose. */
+var SPORT_SEL_LS = 'bl_sport_sel_v1';
+var SPORT_SEL = (function(){
+  try{ const d = JSON.parse(localStorage.getItem(SPORT_SEL_LS)||'null'); if (d && Array.isArray(d.sel)) return {sel:d.sel.filter(id=>LMAP[id]), en:Array.isArray(d.en)?d.en:(S.enabled||[]).slice()}; }catch(e){}
+  const v = (typeof filterViews!=='undefined' && filterViews && filterViews['games:good']) || null;
+  const seed = (v && Array.isArray(v.sports) && v.sports.length) ? v.sports : LEAGUES.map(L=>L.id);
+  return {sel: seed.filter(id=>LMAP[id] && (S.enabled||[]).includes(id)), en:(S.enabled||[]).slice()};
+})();
+function sportSelSave(){ try{ localStorage.setItem(SPORT_SEL_LS, JSON.stringify(SPORT_SEL)); }catch(e){} }
+// a sport newly turned on in Settings shows up right away
+function sportSelSyncEnabled(){
+  const en = S.enabled||[], old = SPORT_SEL.en||[];
+  if (en.length===old.length && en.every(x=>old.includes(x))) return;
+  for (const a of en) if (!old.includes(a) && !SPORT_SEL.sel.includes(a)) SPORT_SEL.sel.push(a);
+  SPORT_SEL.en = en.slice(); sportSelSave();
+}
+function effSports(){ sportSelSyncEnabled(); const en = S.enabled||[]; return SPORT_SEL.sel.filter(x=>en.includes(x)); }
+(function(){
+  const _ensure = ensureFilterView;
+  ensureFilterView = function(key){ const v = _ensure.apply(this, arguments); if (v && typeof v==='object') v.sports = effSports(); return v; };
+  const _save = saveFilters;
+  saveFilters = function(){
+    if (Array.isArray(ui.sports)){ const en = S.enabled||[]; SPORT_SEL.sel = ui.sports.filter(x=>LMAP[x] && en.includes(x)); SPORT_SEL.en = en.slice(); sportSelSave(); ui.sports = SPORT_SEL.sel.slice(); }
+    const r = _save.apply(this, arguments);
+    try{ for (const k of Object.keys(filterViews||{})) if (filterViews[k] && typeof filterViews[k]==='object') filterViews[k].sports = SPORT_SEL.sel.slice(); saveJSON(LS.filterViews, filterViews); }catch(e){}
+    return r;
+  };
+  const _sof = sportOnFilter;
+  sportOnFilter = function(lg){
+    if (!lg) return false;
+    if (ui.tab!=='pulled' && !effSports().includes(lg)) return false;   // Settings + your pick
+    return _sof(lg);
+  };
+  const _apply = applyFilterView;
+  applyFilterView = function(){ const r = _apply.apply(this, arguments); ui.sports = effSports(); if (typeof syncSportAlias==='function') syncSportAlias(); return r; };
+  ui.sports = effSports(); if (typeof syncSportAlias==='function') syncSportAlias();
+  try{ if (typeof render==='function' && document.getElementById('view')) render(); }catch(e){}
+})();
 </script>
 </body>
 </html>
