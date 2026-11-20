@@ -1148,6 +1148,55 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .ag-tailed{display:inline-flex;align-items:center;gap:5px;margin:0 0 8px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:750;color:var(--logged-hi);background:var(--logged-dim);border:1px solid rgba(34,211,238,.5)}
 .av-nodata{margin:6px 2px 10px;font-size:12.5px;color:var(--mut)}
 .px-flash{animation:pxf 1.2s ease}@keyframes pxf{0%{background:rgba(96,165,250,.28)}100%{background:transparent}}
+
+/* ===== v67: one spacing system + one button shape ===== */
+:root{--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--btn-h:44px;--btn-r:10px;--pill-h:28px}
+/* even vertical rhythm inside cards, the ticket summary and Verdict legs */
+.card > *, .pk-ticket > *, .pk-leg > *{margin-bottom:0 !important}
+.card > * + *:not(.logged-badge), .pk-ticket > * + *, .pk-leg > * + *{margin-top:var(--s3) !important}
+.card > .logged-badge + *{margin-top:var(--s3) !important}
+.pk-ticket h3, .pk-ticket .kpis, .pk-ticket ol.why, .pk-ticket ul.why{margin-top:0;margin-bottom:0}
+.pk-ticket > h3 + ol.why{margin-top:var(--s2) !important}
+.pk-ticket ol.why li{margin:0 0 var(--s2);line-height:1.5}
+.pk-ticket ol.why li:last-child{margin-bottom:0}
+.pk-ticket ol.why .verdict-pill{min-width:0;padding:0 10px;height:24px;font-size:10.5px;vertical-align:middle}
+.kpis{gap:var(--s3)}
+.beton{margin:0;padding:var(--s3) var(--s3);display:flex;flex-direction:column;gap:var(--s1)}
+.beton .mut{margin-top:0}
+/* card footer: pills row, then the action row, same gaps everywhere */
+.cfoot{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:var(--s3);margin-top:var(--s3)}
+.cfoot-meta{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);margin:0}
+.cfoot-meta:empty{display:none}
+.cfoot-acts,.pk-log.cfoot-acts{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:var(--s2);margin:0}
+.cfoot-acts > *{flex:0 1 auto}
+.cfoot-acts .open-book-wrap{display:inline-flex}
+.pk-log{margin:var(--s3) 0 0}
+/* every pressable action button: one rounded-rectangle shape, one height, one font size */
+.btn, .btn.sm, .btn.primary, .btn.danger, .btn.ln-btn, .btn.ln-btn-ghost, .btn.acct-pill, .btn.acct-link, .btn.auth-submit, .btn.auth-google, .btn-book, .btn.sm.btn-nob, .btn-tail, .cfoot .btn, .pk-log .btn, .btn.filters-btn, .btn.sm.filters-btn, .filters-btn{
+  border-radius:var(--btn-r) !important;min-height:var(--btn-h);padding:0 var(--s4) !important;font-size:14px !important;font-weight:650;line-height:1.15;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.primary,.btn.primary:hover{box-shadow:0 0 0 1px rgba(255,255,255,.12) inset;font-weight:700}
+.btn:active{transform:none}
+/* status pills stay fully rounded and one size */
+.unit-pill, .conf, .cfoot .badge, .cfoot-meta .verdict-pill, .logged-badge{
+  display:inline-flex;align-items:center;min-height:var(--pill-h);height:var(--pill-h);padding:0 var(--s3);border-radius:999px !important;font-size:12px;line-height:1;box-sizing:border-box;margin:0}
+.conf{cursor:help;letter-spacing:.01em;font-weight:650}
+.card > .logged-badge{align-self:flex-start;width:max-content}
+/* dropdown sections inside cards */
+.card > details.dd{padding-top:0}
+.tm-dd{margin-top:0}
+@media (max-width:640px){
+  .cfoot-acts > .btn, .cfoot-acts > .open-book-wrap{flex:1 1 auto}
+  .cfoot-acts .open-book-wrap > .btn{width:100%}
+  .pk-ticket{padding:var(--s4)}
+}
+.pk-input{position:relative}
+.pk-input textarea{display:block;width:100%;box-sizing:border-box;padding-right:56px !important;padding-bottom:52px !important;min-height:150px}
+.pk-photo-btn{position:absolute;right:10px;bottom:10px;width:40px;height:40px;border-radius:var(--btn-r);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--acc-hi,#93c5fd);background:rgba(59,130,246,.14);border:1px solid rgba(96,165,250,.35);transition:background .2s}
+.pk-photo-btn:hover{background:rgba(59,130,246,.26)}
+.pk-drop-hint{display:none;position:absolute;inset:0;border:2px dashed rgba(96,165,250,.7);border-radius:12px;background:rgba(15,23,42,.75);color:var(--acc-hi,#93c5fd);font-weight:650;align-items:center;justify-content:center;pointer-events:none}
+.pk-input.drag .pk-drop-hint{display:flex}
+.pk-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2)}
 </style>
 </head>
 <body>
@@ -1271,6 +1320,7 @@ details.av-hid[open]>summary::after{content:' ▴'}
 <script>
 "use strict";
 /* ================= CONFIG ================= */
+let VERDICT_NO_RANGE = 0; // v67: >0 while building a Verdict card, so the board odds range is skipped
 const LEAGUES = [
   {id:'nba',   label:'NBA',    path:'basketball/nba',                 oa:'basketball_nba',            kind:'team'},
   {id:'nhl',   label:'NHL',    path:'hockey/nhl',                     oa:'icehockey_nhl',             kind:'team'},
@@ -3515,16 +3565,21 @@ const SPORT_HAS_MODEL = id => !!sportOf({league:id}).pred;
 function strictGates(p, opts){
   opts = opts||{}; const F = []; const {g, mk, sd, j} = p; const sp = sportOf(g); const price = sd.best.price;
   const mkts = String(S.sMarkets||'ml').split(',').map(x=>x.trim());
+  // v67: Verdict judges any pick he sends. Board-only filters (odds range, sports on/off in Settings,
+  // model auto-off sports) are skipped; the strictness bars of the preset (incl. which bet types it trusts) still apply.
+  const vmode = opts.noRange || (typeof VERDICT_NO_RANGE!=='undefined' && VERDICT_NO_RANGE>0);
   if (g.state && g.state!=='pre' && !opts.bt) F.push('game already started');
   if (!mkts.includes(mk)) F.push(`strict mode only takes ${mkts.map(m=>MKN_S[m]||m).join('/')}`);
   if (p.side==='draw') F.push('draws are never strict plays');
-  if (typeof learnOff==='function' && learnOff(g.league) && !String(S.sExclude||'').split(',').map(x=>x.trim()).includes(g.league)) F.push(`the app turned ${LMAP[g.league]?LMAP[g.league].label:g.league} off for strict picks after it lost money in testing (${learnOffWhy(g.league)})`);
+  if (vmode){ if (typeof learnOff==='function' && learnOff('mk:'+mk)) F.push(`the app turned off strict ${MKN_S[mk]||mk} after they lost money in testing`); }
+  else if (typeof learnOff==='function' && learnOff(g.league) && !String(S.sExclude||'').split(',').map(x=>x.trim()).includes(g.league)) F.push(`the app turned ${LMAP[g.league]?LMAP[g.league].label:g.league} off for strict picks after it lost money in testing (${learnOffWhy(g.league)})`);
   else if (typeof learnOff==='function' && learnOff('mk:'+mk)) F.push(`the app turned off strict ${MKN_S[mk]||mk} after they lost money in testing`);
-  if (isExcluded(g.league, true)) F.push(`excluded from strict mode (${g.league==='ncaab'?'college basketball lost money in the test':SOCCER.has(g.league)?'soccer lost money in the test (draws)':'the model does not recommend this sport'})`);
-  if (S.sNoSoccer && SOCCER.has(g.league)) F.push('soccer is left out of strict mode (draws make it riskier; it lost money in the test)');
+  if (!vmode && isExcluded(g.league, true)) F.push(`excluded from strict mode (${g.league==='ncaab'?'college basketball lost money in the test':SOCCER.has(g.league)?'soccer lost money in the test (draws)':'the model does not recommend this sport'})`);
+  if (!vmode && S.sNoSoccer && SOCCER.has(g.league)) F.push('soccer is left out of strict mode (draws make it riskier; it lost money in the test)');
   // his price range (singles): judged at his book's price when one of his books has it
   const myP = (!opts.bt && p.my && p.my.best) ? p.my.best.price : price;
-  if (myP < S.sFavMin) F.push(`price ${fmtAm(myP)} is outside your range (nothing more expensive than ${fmtAm(S.sFavMin)})`);
+  if (vmode){}
+  else if (myP < S.sFavMin) F.push(`price ${fmtAm(myP)} is outside your range (nothing more expensive than ${fmtAm(S.sFavMin)})`);
   else if (myP > S.sDogMax) F.push(`price ${fmtAm(myP)} is outside your range (nothing longer than ${fmtAm(S.sDogMax)})`);
   if (mk!=='ml' && price < S.maxJuice) F.push(`juice ${fmtAm(price)} too high`);
   // estimated win chance (win rate first)
@@ -3567,6 +3622,7 @@ function evaluateAll(){
   for (const g of games) plays.push(...evalGame(g));
   for (const p of plays) p.my = myBooks(p);
   for (const p of plays){
+    p._v0 = p.verdict; p._r0 = (p.reasons||[]).slice();
     p.strictFails = strictGates(p);
     if (p.verdict==='started') continue;
     if (S.strictMode){
@@ -3589,6 +3645,23 @@ function evaluateAll(){
   try{ recordResults(); }catch(e){ console.warn('results', e); }
   try{ trackPlayTabs(); }catch(e){ console.warn('tabs', e); }
   try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){ console.warn('parlays', e); }
+}
+
+// v67: Verdict judges every typed pick on its own merits. The min/max odds range is a board filter only,
+// so this rebuilds a board play's verdict without the range rule (and without board-only demotions).
+function verdictNoRange(p){
+  if (!p || p._v0==null) return p;
+  const q = Object.assign({}, p);
+  q.verdict = p._v0; q.reasons = (p._r0||[]).slice(); q.pulledFinal = false; q.rank = null;
+  q.strictFails = strictGates(q, {noRange:true});
+  if (q.verdict==='started') return q;
+  if (S.strictMode){
+    if (q.strictFails.length===0 && q.base!=='avoid'){ if (q.verdict!=='good') q.reasons.unshift('Passed every strict check'); q.verdict='good'; }
+    else if (q.verdict==='good'){ q.verdict='watch'; q.reasons.unshift(`Strict mode: missed "${q.strictFails[0]}"${q.strictFails.length>1?` (+${q.strictFails.length-1} more)`:''}`); }
+    else if (q.verdict==='watch' && q.strictFails.length<=2) q.reasons.unshift(`Close to strict: missed "${q.strictFails.join('" and "')}"`);
+  } else if (q.verdict==='good' && q.my && q.my.best && q.my.best.edge<0){ q.verdict='watch'; q.reasons.unshift(`${q.my.best.book} price is worse than fair`); }
+  q._verdictNR = true;
+  return q;
 }
 
 /* ================= YOUR BOOKS (Bovada / Polymarket / any Odds API key) ================= */
@@ -3704,6 +3777,16 @@ function maxPayText(estP, r){
   const am = probToAm(estP); if (am==null) return '';
   return `Don't pay more than ${fmtAm(Math.round(am))}${r && r.book ? ' on '+r.book : ''}`;
 }
+// v67: one plain-English value line: "Best price 52¢ · worth about 49¢, so you'd overpay 3¢"
+function valueTxt(estP, cost){
+  if (!(estP>0 && estP<1) || !(cost>0 && cost<1)) return '';
+  const d = Math.round((estP - cost)*100); const per = (typeof pxMode==='function' && pxMode()==='c') ? '' : ' per $1';
+  return d>0 ? `so you get ${d}¢ of value${per}` : d<0 ? `so you'd overpay ${-d}¢${per}` : `so it's about a fair price`;
+}
+function worthLine(head, estP, cost){
+  const fair = (estP>0 && estP<1) ? probToAm(estP) : null; const vt = valueTxt(estP, cost);
+  return head + (fair!=null ? ` · worth about ${fmtAm(Math.round(fair))}${vt?', '+vt:''}` : '');
+}
 function betOnText(p){
   const my = p.my, sd = p.sd; const estP = (p.E && p.E.final) || (typeof estimate==='function' ? estimate(p).final : sd.nv); const fair = probToAm(estP);
   const sideName = p.mk==='total' ? (p.side==='over'?'Over':'Under')+' '+sd.point : p.side==='draw' ? 'Draw' : (p.g[p.side].nick||p.g[p.side].short||p.g[p.side].name);
@@ -3712,10 +3795,10 @@ function betOnText(p){
   if (r.none){
     const hint = (!NO_ODDS_KEY && my && my.required) ? ' (add an Odds API key in Settings to see your sportsbooks)' : '';
     const ref = sd && sd.best && sd.best.price!=null ? sd.best.price : null;
-    return {line: ref!=null ? `Best price: ${fmtAm(ref)} (reference line)` : 'Reference line only', max:`Fair price ${fmtAm(Math.round(fair))} · ${refTxt}`, ok:false, none:true};
+    return {line: ref!=null ? worthLine(`Best price ${fmtAm(ref)}`, estP, imp(ref)) : `Worth about ${fmtAm(Math.round(fair))}`, max:`Reference line · ${refTxt}`, ok:false, none:true};
   }
   const line = (r.pm ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${r.book} at ${fmtPx(r.price, r.cents)}` : `Bet on: ${r.book} at ${fmtAm(r.price)}`) + missingBovadaHint(my);
-  return {line, max:`${maxPayText(estP, r)} · ${refTxt}`, ok:(estP - r.cost)>=0, thin:r.thin, rec:r};
+  return {line: worthLine(line, estP, r.cost), max: refTxt.charAt(0).toUpperCase()+refTxt.slice(1), ok:(estP - r.cost)>=0, thin:r.thin, rec:r};
 }
 
 /* ================= POLYMARKET (public API, no key) ================= */
@@ -4396,7 +4479,7 @@ function trackPlayTabs(){
   const seen = new Set();
   const newcomers = [];
   for (const p of plays){
-    if (!p.g || p.g.state!=='pre' || !p.g.eventId || !TAB_RANK[p.verdict]) continue;
+    if (!p.g || p.g.state!=='pre' || !p.g.eventId || !TAB_RANK[p.verdict] || p.g.pickOnly) continue; // v67: Verdict-only games never touch the boards
     const k = playResultKey(p); seen.add(k);
     const prev = playTabs[k];
     const cur = p.verdict;
@@ -4464,7 +4547,7 @@ function recordResults(){
   if (!S.strictMode) return; // the history tracks the strict model only
   const now = Date.now(); const goodIds = new Set();
   for (const p of plays){
-    if (p.verdict!=='good' || p.g.state!=='pre' || !p.g.eventId) continue;
+    if (p.verdict!=='good' || p.g.state!=='pre' || !p.g.eventId || p.g.pickOnly) continue;
     const startMs = p.g.start && (p.g.start.getTime ? p.g.start.getTime() : +p.g.start);
     if (typeof isOfficialLock==='function' && !isOfficialLock(startMs, typeof boardLockMins==='function'?boardLockMins('games'):60)) continue;
     const k = `${p.g.eventId}|${p.mk}|${p.side}`; goodIds.add(k);
@@ -6349,7 +6432,7 @@ function courtHTML(p){
     <div><div class="ct neg">Case AGAINST</div><ul>${ag.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
     <div class="judge"><span class="ct">Verdict</span> <span class="badge ${verdict==='BET'?'b-good':verdict==='WATCHLIST'?'b-watch':'b-avoid'}">${verdict}</span> <span class="mut">${esc(p.reasons.find(r=>!/^[+−]/.test(r))||'')}</span></div></div>`;
 }
-function confBadge(c){ return `<span class="conf conf-${c.label.toLowerCase()}" title="${esc(c.notes.join('; ')||'all key data present')}">Confidence ${c.label} ${Math.round(c.v)}</span>`; }
+function confBadge(c){ return `<span class="conf conf-${c.label.toLowerCase()}" title="${esc(c.notes.join('; ')||'all key data present')}">Verdict confidence ${c.label} ${Math.round(c.v)}</span>`; }
 // v36: the big price on a card is always from one of your books (or the fair price when none of them has it)
 function recPriceHTML(p, bo){
   const r = (bo && bo.rec) || (typeof recBookFor==='function' ? recBookFor(p) : {none:true});
@@ -7888,7 +7971,9 @@ async function playerCandidates(text, leagueHint){
       for (const it of ((r.data&&r.data.items)||[])){
         if (!leagues.includes(it.league)) continue;
         const tid = it.teamRelationships && it.teamRelationships[0] && it.teamRelationships[0].id;
-        const tm = games.filter(g=>g.league===it.league && (g.home.id===String(tid)||g.away.id===String(tid))).sort((a,b)=>a.start-b.start)[0];
+        let tm = games.filter(g=>g.league===it.league && (g.home.id===String(tid)||g.away.id===String(tid))).sort((a,b)=>a.start-b.start)[0];
+        // v67: a sport turned off in Settings is still judged in Verdict, so pull that team's next game in (Verdict only)
+        if (!tm && tid && typeof importNextGameForTeam==='function'){ try{ tm = await importNextGameForTeam(it.league, tid); }catch(e){} }
         out.push({a:{id:String(it.id), name:it.displayName, pos:'', st:''}, g:tm||null, side: tm ? (tm.home.id===String(tid)?'home':'away') : null, sc: nameScore(q, it.displayName)+1, noGame:!tm});
       }
     }catch(e){}
@@ -8186,8 +8271,7 @@ function judgeLeg(leg){
   }
   if (leg.live && leg.verdict==='BET'){ leg.verdict='WATCHLIST'; leg.why += ' (game already live)'; }
   if (leg.rankOnly && leg.implied==null && leg.verdict==='BET'){ leg.verdict='WATCHLIST'; leg.why += ' (ranking-only estimate, no odds to compare)'; }
-  leg.outRange = leg.price!=null && (leg.price < S.sFavMin || leg.price > S.sDogMax);
-  if (leg.outRange && !leg.final){ leg.no.unshift({t:`Outside your range: ${fmtAm(leg.price)} is ${leg.price < S.sFavMin ? `more expensive than ${fmtAm(S.sFavMin)}` : `longer than ${fmtAm(S.sDogMax)}`}`, imp:-1, tag:'your rule for singles'}); if (leg.verdict==='BET'||leg.verdict==='WATCHLIST'){ leg.verdict='PASS'; leg.why='Outside your '+fmtAm(S.sFavMin)+' to '+fmtAm(S.sDogMax)+' range'; } }
+  leg.outRange = false; // v67: Verdict never applies the board's min/max odds range
   if (p!=null && !leg.final){ const need = leg.implied;
     const est = outOf10(p), nd = need!=null ? outOf10(need) : null;
     const priceBit = need!=null ? (p>=need ? `The price is fair: this should hit about ${est} of 10, and the odds pay like it hits ${nd}.` : `The price is a little steep: this should hit about ${est} of 10, but the odds pay like it hits ${nd}.`) : `We think this hits about ${est} of 10${leg.p!=null?`; only bet at ${fmtAm(probToAm(p))} or better`:''}.`;
@@ -8278,7 +8362,8 @@ function playFromLeg(leg){
   if (!leg || !leg.g || !leg.L || leg.L.kind==='prop') return null;
   const mk = leg.L.kind;
   const sideKey = mk==='total' ? leg.L.dir : leg.side;
-  return playForMarketSide(leg.g, mk, sideKey);
+  const pl = playForMarketSide(leg.g, mk, sideKey);
+  return typeof verdictNoRange==='function' ? verdictNoRange(pl) : pl;
 }
 function gamePlayFor(g, side){
   if (!g) return null;
@@ -8423,6 +8508,13 @@ async function resolveLeg(raw, override){
         }
         leg.cands = mkCands(cands);
       }
+      // v67: a full team name with no exact match on the loaded slate (e.g. its sport is off in Settings and a
+      // similar name from another sport matched) → ask ESPN and pull that team's game in for Verdict only
+      if (!override && cands.length && norm(L.nameText).split(' ').length>=2 && !cands.some(c=>c.g && c.g[c.side] && norm(c.g[c.side].name)===norm(L.nameText))){
+        try{ const imp = await importGamesForTeamQuery(L.nameText);
+          if (imp && imp.length){ evaluateAll(); const again = teamCandidates(L.nameText); if (again.length){ cands = again; leg.cands = mkCands(cands); } }
+        }catch(e){ console.warn('import exact team', e); }
+      }
       // matched team's game already ended → pull in their NEXT game so the verdict is bettable
       if (!override && cands.length && cands[0].g.state==='post' && !cands[0].g.ind){
         try{ const top = cands[0]; const ng = await importNextGameForTeam(top.g.league, top.g[top.side].id);
@@ -8492,7 +8584,8 @@ function scopeVerdictCard(html, i, pl){
   return String(html||'')
     .replace(/(<details\b[^>]*?)\sopen(?=[\s>])/g, '$1')
     .replace(/data-dd="([^"]*)"/g, (m, k)=>`data-dd="verdict|${i}|${k}"`)
-    .replace(/data-lazy-id="([^"]*)"/g, (m, k)=>`data-lazy-id="${pre}${k}"`);
+    .replace(/data-lazy-id="([^"]*)"/g, (m, k)=>`data-lazy-id="${pre}${k}"`)
+    .replace(/\sdata-log="[^"]*"/g, ` data-logleg="${i}"`);
 }
 function legAssistHTML(leg, i){
   const bits = [];
@@ -8575,7 +8668,6 @@ function legCard(leg, i, weakest){
       ${typed}${sel}
 ${resultBan}
       ${injectMatchTitle(scopeVerdictCard(propCard(propPl), i, propPl), selHtml)}
-      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button></div>
     </div>`;
   }
   if (pl && typeof playCard==='function'){
@@ -8583,12 +8675,11 @@ ${resultBan}
       ${typed}${sel}
 ${resultBan}
       ${injectMatchTitle(scopeVerdictCard(playCard(pl), i, pl), selHtml)}
-      <div class="pk-log cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button></div>
     </div>`;
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
   const price = leg.price!=null ? (leg.userOdds==null && leg.noBook ? `${esc(NO_BOOK_LINE)} (market ${fmtAm(leg.price)}, reference only)` : `${fmtPx(leg.price, leg.userOdds==null?leg.bookCents:null)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}`) : 'no price';
-  const gamePl = (!leg.err && g) ? gamePlayFor(g, leg.side) : null;
+  const gamePl = (!leg.err && g) ? (typeof verdictNoRange==="function" ? verdictNoRange(gamePlayFor(g, leg.side)) : gamePlayFor(g, leg.side)) : null;
   const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
   return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
     ${head}
@@ -8620,7 +8711,7 @@ ${resultBan}
 }
 /* v64: ONE source of truth. Each leg's card below is the board's own card (same model, same gates), so the
    summary takes that card's final verdict and chance instead of the quick first-pass estimate. */
-const LEG_V = {good:'BET', watch:'WATCHLIST', avoid:'PASS'};
+const LEG_V = {good:'BET', watch:'WATCHLIST', avoid:'PASS', none:'PASS'};
 function legSyncCard(leg){
   if (!leg) return null; leg._card = null;
   if (leg.err || leg.final || leg.verdict==='FINAL') return null;
@@ -8668,7 +8759,7 @@ function parlaySummary(){
     </div>
     ${pAll!=null && bookAm!=null ? `<div class="hint">Parlay EV at the leg prices: ${fmtEdge(pAll*bookDec-1)} per $1 (${pAll*bookDec>=1?'positive':'negative'}). Your book's actual parlay price may differ: worth it only if it pays better than ${fmtAm(probToAm(pAll))}.</div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'} Fair odds = what the ticket should pay if the estimates are right.</div>`}
     <h3 style="margin-top:12px">Most likely to miss → least</h3>
-    <ol class="why">${ranked.map(x=>`<li><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)} · ${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)} ${esc(x.l.why||'')}</li>`).join('')}</ol>
+    <ol class="why">${ranked.map(x=>`<li><b>${esc(x.l.desc||x.l.raw)}</b> · ${fmtPct(x.l.p,0)} · ${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</li>`).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(l.desc)).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(l.desc||l.raw)).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
     <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML==='function'?openInBookHTML({legs, g:legs[0]&&legs[0].g}, legs.length>1?'parlay':'game'):''}</span></div>
@@ -8711,7 +8802,7 @@ function renderPicks(){
   v.innerHTML = `<div class="pk-hero">
     <h2><span class="h-emo" aria-hidden="true">⚖️</span>Get a Verdict</h2>
     <p class="lead">Type a moneyline, spread, total, or player prop — one per line. We’ll break it down the same way as Picks.</p>
-    <textarea id="pkText" rows="5" placeholder="e.g. Rockets ML&#10;Celtics -4.5&#10;LeBron Over 24.5 Points">${esc(PK.text)}</textarea>
+    <div class="pk-input" id="pkInput"><textarea id="pkText" rows="5" placeholder="e.g. Rockets ML&#10;Celtics -4.5&#10;LeBron Over 24.5 Points&#10;…or paste a bet slip screenshot">${esc(PK.text)}</textarea><label class="pk-photo-btn" for="pkPhoto" title="Add a bet slip photo (or paste / drop one into the box)" aria-label="Add a bet slip photo"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg></label><input type="file" id="pkPhoto" accept="image/*" hidden><div class="pk-drop-hint">Drop the photo to read it</div></div>
     <div class="pk-ex"><span class="lab">Try</span>${ex.slice(1,2).map(x=>`<span class="chip" data-ex="${esc(x)}">${esc(x)}</span>`).join('')}</div>
     <div class="pk-actions">
       <button class="btn primary" id="btnCheck" ${PK.busy?'disabled':''}>${PK.busy?'Checking…':'Get verdict'}</button>
@@ -9901,7 +9992,8 @@ function strictPropGates(pOver, price, feat, side, raw){
   const watchMin = Math.max(0.50, betMin-0.06);
   if (feat && feat.n<8) fails.push('small sample (under 8 prior games)');
   if (feat && feat.l10n<5) fails.push('short recent sample (under 5 of last 10)');
-  if (price!=null && (price<lo || price>hi)) fails.push('odds outside '+fmtAm(lo)+' to '+fmtAm(hi));
+  const noRange = typeof VERDICT_NO_RANGE!=='undefined' && VERDICT_NO_RANGE>0; // v67: Verdict ignores the odds range
+  if (!noRange && price!=null && (price<lo || price>hi)) fails.push('odds outside '+fmtAm(lo)+' to '+fmtAm(hi));
   if (pSide==null) fails.push('no estimate yet');
   if (pSide!=null && pSide < betMin) fails.push('estimated win chance below '+Math.round(betMin*100)+'%');
   let verdict = 'avoid';
@@ -9909,7 +10001,7 @@ function strictPropGates(pOver, price, feat, side, raw){
     const hard = fails.filter(x=>!/^estimated win chance/.test(x));
     if (!hard.length) verdict = 'good';
     else verdict = 'watch';
-  } else if (pSide!=null && pSide>=watchMin && (price==null || (price>=lo-25 && price<=hi+25))){
+  } else if (pSide!=null && pSide>=watchMin && (price==null || noRange || (price>=lo-25 && price<=hi+25))){
     verdict = 'watch';
   } else {
     verdict = 'avoid';
@@ -10394,10 +10486,10 @@ function propCard(p){
     ? `<div class="beton ${p.edge>=0?'ok':'bad'}"><div>${(rec&&rec.none)?'The market price breaks even':'These odds break even'} at about ${typeof outOf10==='function'?outOf10(p.implied):Math.round(p.implied*10)} wins in 10. We estimate ${typeof outOf10==='function'?outOf10(p.p):Math.round(p.p*10)} in 10.</div></div>`
     : (p.p==null?`<div class="beton"><div class="mut">Researching this player’s real game log…</div></div>`:'');
   const recLine = (p.price==null || !rec) ? '' : (rec.none && p.pmNote)
-    ? `<div class="beton"><div>Bet on: ${esc(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book)} <span class="mut av-differ">· Polymarket line may differ</span></div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}reference line from ${esc(propRefLabel(p))}</div></div>`
+    ? `<div class="beton"><div>Bet on: ${esc(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book)} <span class="mut av-differ">· Polymarket line may differ</span></div><div class="mut">${fairAm!=null?`Worth about ${esc(fmtAm(Math.round(fairAm)))} · `:''}reference line from ${esc(propRefLabel(p))}</div></div>`
     : rec.none
-    ? `<div class="beton"><div>Best price: ${p.price!=null?esc(fmtAm(p.price)):'—'} <span class="mut">(reference line)</span></div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}fair line from ${esc(propRefLabel(p))}</div></div>`
-    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(rec.pm?`Buy on ${rec.book} at ${fmtPx(rec.price, rec.cents)}`:`Bet on: ${rec.book} at ${fmtAm(rec.price)}`)}</div>${p.p!=null?`<div class="mut">${esc(maxPayText(p.p, rec))} · fair line from ${propRefLabel(p)}</div>`:''}</div>`;
+    ? `<div class="beton ${(p.p!=null && p.price!=null && p.p-imp(p.price)>=0)?'ok':'bad'}"><div>${esc(p.price!=null ? worthLine(`Best price ${fmtAm(p.price)}`, p.p, imp(p.price)) : 'No price yet')}</div><div class="mut">Reference line · fair line from ${esc(propRefLabel(p))}</div></div>`
+    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(worthLine(rec.pm?`Buy on ${rec.book} at ${fmtPx(rec.price, rec.cents)}`:`Bet on ${rec.book} at ${fmtAm(rec.price)}`, p.p, rec.cost))}</div><div class="mut">Fair line from ${esc(propRefLabel(p))}</div></div>`;
   const lazy = (id, sum, kind, body) => {
     const open = ui.open.has(id);
     return `<details class="dd${kind==='court'?' court-dd':''}" data-dd="${esc(id)}" data-lazy="${kind}" data-lazy-id="${esc(p.id)}" ${open?'open':''}><summary>${sum}</summary>${open?body:''}</details>`;
@@ -10410,12 +10502,11 @@ function propCard(p){
       <div class="price">${price}</div></div>
     ${recLine}
     ${p.tailedKeep?`<div class="hint kept-note">📌 Kept on your board because you tailed it. It is no longer in today's Prop Picks, but nothing says to pull it. Your bet is unchanged.</div>`:''}
-    ${bo}
     ${p.strictFails && p.strictFails.length && p.verdict!=='good' ? `<div class="hint" style="margin:6px 2px 0">Missed: ${esc(p.strictFails[0])}${p.strictFails.length>1?` (+${p.strictFails.length-1} more)`:''}</div>`:''}
     ${typeof tmBlockHTML==='function' ? tmBlockHTML(p) : ''}
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
     ${lazy(nid, '🩺 Injuries, lineups &amp; news', 'inj', propInjBody(p))}
-    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'props'):''}</span></div>
+    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}" title="How sure the judge is about this call">Verdict confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'props'):''}</span></div>
   </div>`;
 }
 
@@ -10541,7 +10632,8 @@ function playFromPropLeg(leg){
   const est = raw.rows ? estimateProp(feat) : {pOver:leg.p, notes:[]};
   if (est.pOver==null && leg.L.dir==='under' && leg.p!=null) est.pOver = 1-leg.p;
   if (est.pOver==null && leg.p!=null) est.pOver = leg.L.dir==='under' ? 1-leg.p : leg.p;
-  const play = buildPropPlay(raw, leg.L.dir==='under'?'under':'over', feat, est);
+  let play; VERDICT_NO_RANGE++;
+  try{ play = buildPropPlay(raw, leg.L.dir==='under'?'under':'over', feat, est); } finally { VERDICT_NO_RANGE--; }
   if (leg.price!=null) play.price = leg.price;
   if (leg.p!=null && play.p==null) play.p = leg.p;
   if (leg.bookName) play.bookName = leg.bookName;
@@ -15604,9 +15696,9 @@ function slipParse(text, conf){
 /* ---------- UI ---------- */
 function photoPanelHTML(){
   const P = PHOTO;
-  const head = `<div class="ph-row"><label class="btn ph-btn" for="pkPhoto">📷 Upload pick photo</label><input type="file" id="pkPhoto" accept="image/*" hidden><span class="hint">Bet slip screenshot or a photo. Read on your phone; the picture is never uploaded.</span></div>`;
+  const head = '';   // v67: the photo button now lives inside the picks box (bottom corner)
   if (P.busy) return `<div class="ph-card">${head}<div class="ph-prog">Reading the photo… <span id="phStage">${esc(photoStageTxt())}</span></div></div>`;
-  if (!P.text && !P.fail) return `<div class="ph-card">${head}</div>`;
+  if (!P.text && !P.fail) return '';
   const rows = P.rows.map((r,i)=>`<div class="ph-leg ${r.ok?'':'bad'}"><input data-ph-text="${i}" value="${esc(r.text)}" placeholder="${esc(r.ok?'':'Type this pick, e.g. Lakers ML')}" aria-label="Pick ${i+1}"><input data-ph-odds="${i}" class="ph-odds" value="${esc(r.odds)}" placeholder="Odds" aria-label="Odds"><button type="button" class="ph-x" data-ph-del="${i}" aria-label="Remove">×</button>${r.ok || !r.read ? '' : `<div class="ph-why">Couldn't tell: ${esc(r.why)}. Read: “${esc(r.read.slice(0,120))}”</div>`}</div>`).join('');
   const failBox = P.fail ? `<div class="ph-fail"><b>Couldn't read a pick from this photo.</b> ${esc(P.fail)}. Type or fix it below, then tap Check.</div>` : `<div class="ph-ok">Read ${P.rows.filter(r=>r.ok).length} pick${P.rows.filter(r=>r.ok).length===1?'':'s'} from the photo${P.conf!=null?` (text confidence ${Math.round(P.conf)}%)`:''}. Fix anything that looks wrong, then Check again.</div>`;
   return `<div class="ph-card">${head}
@@ -15657,6 +15749,15 @@ async function photoHandle(file){
 }
 function photoBind(v){
   const inp = v.querySelector('#pkPhoto'); if (inp) inp.onchange = e=>{ const f = e.target.files && e.target.files[0]; e.target.value = ''; photoHandle(f); };
+  // v67: paste a copied image straight into the picks box (Ctrl/Cmd+V, or long-press Paste on a phone), or drop one on it
+  const imgOf = list => { for (const it of (list ? [...list] : [])){ const f = it && (it.getAsFile ? (it.kind==='file' && /^image\//.test(it.type) ? it.getAsFile() : null) : (/^image\//.test(it.type||'') ? it : null)); if (f) return f; } return null; };
+  const ta = v.querySelector('#pkText'); const box = v.querySelector('#pkInput');
+  if (ta) ta.onpaste = e=>{ const cd = e.clipboardData; const f = cd && (imgOf(cd.items) || imgOf(cd.files)); if (f){ e.preventDefault(); photoHandle(f); } };
+  if (box){
+    box.ondragover = e=>{ if (e.dataTransfer && [...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); box.classList.add('drag'); } };
+    box.ondragleave = ()=>box.classList.remove('drag');
+    box.ondrop = e=>{ box.classList.remove('drag'); const f = e.dataTransfer && (imgOf(e.dataTransfer.files) || imgOf(e.dataTransfer.items)); if (f){ e.preventDefault(); photoHandle(f); } };
+  }
   v.querySelectorAll('[data-ph-text],[data-ph-odds],#phStake').forEach(el=>el.oninput = photoSyncInputs);
   v.querySelectorAll('[data-ph-del]').forEach(b=>b.onclick = ()=>{ photoSyncInputs(); PHOTO.rows.splice(+b.dataset.phDel, 1); renderPicks(); });
   const add = v.querySelector('#phAdd'); if (add) add.onclick = ()=>{ photoSyncInputs(); PHOTO.rows.push({text:'', odds:'', ok:false, why:'', read:''}); renderPicks(); const last = v.querySelectorAll('[data-ph-text]'); if (last.length) last[last.length-1].focus(); };
