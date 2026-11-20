@@ -912,7 +912,9 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 }
 @media (max-width:380px){ .acct-btn:not(.signed) svg{display:none} }
 /* Verdict+ : smart guessing chips, community learning pill, Safari redirect notice */
-.pk-assume{font-size:12.5px;color:var(--txt2);margin:6px 2px 0;display:flex;flex-wrap:wrap;align-items:center;gap:6px;line-height:1.45}
+.pk-assume{font-size:12.5px;color:var(--txt2);margin:8px 2px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 8px;line-height:1.45}
+.pk-assume .pk-assume-lab{flex:1 0 100%;margin-bottom:2px}
+.pk-assume .chip.pk-dym{min-height:0;padding:7px 14px;line-height:1.25}
 .pk-assume b{color:#fff}
 .pk-dym-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 2px 2px}
 .pk-dym-row .lab{font-size:11px;color:var(--mut);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-right:2px}
@@ -8505,7 +8507,7 @@ function legAssistHTML(leg, i){
     const tot = g.analysis && g.analysis.total && g.analysis.total.sides && g.analysis.total.sides.over;
     if (tot && tot.point!=null) alts.push(`${verdictShortName(g.away, g)}/${verdictShortName(g.home, g)} Over ${tot.point}`);
     bits.push(alts.length
-      ? `<div class="pk-assume">Assuming <b>Moneyline</b> — tap to switch: ${alts.map(a=>`<button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(a)}">${esc(a)}</button>`).join(' ')}</div>`
+      ? `<div class="pk-assume"><span class="pk-assume-lab">Assuming <b>Moneyline</b> — tap to switch:</span>${alts.map(a=>`<button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(a)}">${esc(a)}</button>`).join(' ')}</div>`
       : `<div class="pk-assume">Assuming <b>Moneyline</b> — add a line (like “${esc(verdictShortName(T, g))} -4.5”) to check a spread instead.</div>`);
   }
   if (leg.guessed && g) bits.push(`<div class="pk-assume">Best guess: <b>${esc(g[leg.side].name)}</b> (closest name on today's board)</div>`);
