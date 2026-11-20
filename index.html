@@ -16953,6 +16953,8 @@ async function avLoadCc(lgs){
   if (errs && !Object.keys(ev).length && Object.keys(X.ev||{}).length){ X.t = Date.now(); return; }
   X.lg = lgOut; X.ev = ev; avLearnTypes(X);
   X.t = Date.now(); X.err = (errs && !okN) ? 'Crypto.com unreachable' : null;
+  // props board not loaded yet → player props were skipped; come back in ~30s instead of 3 minutes
+  if (!((typeof props!=='undefined' && props) || []).length) X.t = Date.now() - 150000;
 }
 
 /* ---- 15s price refresh for the cards on screen (called from fpTick) ---- */
