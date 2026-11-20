@@ -1133,6 +1133,7 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .av-set{margin:12px 0}
 .ag-tailed{display:inline-flex;align-items:center;gap:5px;margin:0 0 8px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:750;color:var(--logged-hi);background:var(--logged-dim);border:1px solid rgba(34,211,238,.5)}
 .av-nodata{margin:6px 2px 10px;font-size:12.5px;color:var(--mut)}
+.px-flash{animation:pxf 1.2s ease}@keyframes pxf{0%{background:rgba(96,165,250,.28)}100%{background:transparent}}
 </style>
 </head>
 <body>
@@ -2086,7 +2087,47 @@ function parseAm(x){
 }
 function parsePt(x){ if(x==null) return null; if(typeof x==='number') return x; const s=String(x).replace(/^[ou]/i,'').trim(); if(/^pk$/i.test(s)) return 0; const n=parseFloat(s); return isFinite(n)?n:null; }
 const imp = a => a==null ? null : (a<0 ? (-a)/((-a)+100) : 100/(a+100));
-const fmtAm = a => a==null ? '—' : (a>0?'+':'')+Math.round(a);
+/* v51: ONE prop comparison for every grader. Lines ending .5 can't push; whole-number lines push on equality.
+   "N+" markets are stored as Over N−0.5 before they get here (6+ assists = Over 5.5). */
+function propOutcome(v, side, line){
+  if (v==null || line==null || !isFinite(+v) || !isFinite(+line)) return null;
+  v = +v; line = +line;
+  if (Math.abs(v - line) < 1e-9) return 'push';
+  const over = String(side||'over').toLowerCase()!=='under';
+  return (over ? v > line : v < line) ? 'win' : 'loss';
+}
+const fmtAmRaw = a => (a==null || !isFinite(+a)) ? '—' : (+a>0?'+':'')+Math.round(+a);
+/* v51: one shared price formatter. Display follows the selected books:
+   only prediction markets → cents ("62¢"); only sportsbooks → American ("-163"); a mix or nothing → "62¢ / -163".
+   Cents come from the probability the price implies (fair prices are built from the de-vigged probability, so they round-trip).
+   Internal math stays American; tracked bets keep the odds type they were entered with. */
+let _pxm = {k:null, m:'am'};
+function pxMode(){
+  try{
+    const b = (typeof selectedBooks==='function' ? selectedBooks() : []) || [];
+    const k = b.join(','); if (_pxm.k===k) return _pxm.m;
+    const pr = b.filter(x=>PREDICTION_BOOKS.includes(String(x).toLowerCase())).length;
+    const m = !b.length ? 'both' : pr===b.length ? 'c' : pr===0 ? 'am' : 'both';
+    _pxm = {k, m}; return m;
+  }catch(e){ return 'am'; }
+}
+function fmtCents(p){ if (p==null || !isFinite(+p)) return '—'; const c = Math.round(+p*100); return c<1 ? '<1¢' : c>99 ? '>99¢' : c+'¢'; }
+// am = American price; c = the actual prediction-market ask (0–1) when there is one (otherwise cents come from am)
+function fmtPx(am, c){
+  const a = (am==null || am==='' || !isFinite(+am)) ? null : +am;
+  const cc = (c!=null && isFinite(+c)) ? +c : (a!=null ? imp(a) : null);
+  if (a==null && cc==null) return '—';
+  const m = pxMode();
+  if (m==='am') return a!=null ? fmtAmRaw(a) : fmtCents(cc);
+  if (m==='c' || a==null) return fmtCents(cc);
+  return fmtCents(cc)+' / '+fmtAmRaw(a);
+}
+const fmtAm = a => fmtPx(a);
+// value pre-filled into the tail form: cents when only prediction markets are selected, American otherwise
+function tailOddsDefault(am, c){
+  if (pxMode()==='c'){ const cc = c!=null ? +c : imp(+am); if (cc!=null && cc>0 && cc<1) return {oddsType:'polymarket', odds:String(Math.round(cc*100))}; }
+  return {oddsType:'american', odds: am!=null && isFinite(+am) ? fmtAmRaw(+am) : ''};
+}
 const fmtPct = (p,d=1) => p==null ? '—' : (p*100).toFixed(d)+'%';
 const fmtEdge = e => e==null ? 'n/a' : (e>0?'+':'')+(e*100).toFixed(1)+'%';
 const fmtPt = p => p==null ? '' : (p>0?'+':'')+p;
@@ -2126,7 +2167,7 @@ function oddsPreviewLine(type, entered, stake, rate){
     const d = parseMultiplier(entered);
     if (d==null) return '';
     const am = decToAmerican(d);
-    return `${fmtMult(d)} ≈ ${fmtAm(am)}, get back $${(st*d).toFixed(2)} (win $${(st*(d-1)).toFixed(2)}) on $${stTxt}`;
+    return `${fmtMult(d)} ≈ ${fmtAmRaw(am)}, get back $${(st*d).toFixed(2)} (win $${(st*(d-1)).toFixed(2)}) on $${stTxt}`;
   }
   if (type==='polymarket'){
     const c = parsePmCents(entered);
@@ -2136,12 +2177,12 @@ function oddsPreviewLine(type, entered, stake, rate){
     if (am==null) return '';
     const win = profitOn(am, st);
     const feeBit = fee>0 ? ` after ${Math.round(fee*100)}% fee` : '';
-    return `${Math.round(c*100)}¢ ≈ ${fmtAm(am)}${feeBit}, win $${Math.abs(win).toFixed(2)} on $${stTxt}`;
+    return `${Math.round(c*100)}¢ ≈ ${fmtAmRaw(am)}${feeBit}, win $${Math.abs(win).toFixed(2)} on $${stTxt}`;
   }
   const am = parseAm(entered);
   if (am==null) return '';
   const win = profitOn(am, st);
-  return `${fmtAm(am)}, win $${Math.abs(win).toFixed(2)} on $${stTxt}`;
+  return `${fmtAmRaw(am)}, win $${Math.abs(win).toFixed(2)} on $${stTxt}`;
 }
 // v35: third way to enter a tailed bet — payout multiplier (total return ÷ stake = decimal odds)
 const ODDS_PLACEHOLDER = {american:'-150', polymarket:'58 or 58¢', multiplier:'2.5x'};
@@ -2167,7 +2208,7 @@ function americanToEntered(type, am, rate){
     const c = (fee>0 && typeof pmMaxCents==='function') ? pmMaxCents(cost, fee) : cost;
     return c>0 && c<1 ? String(Math.round(c*100)) : null;
   }
-  return fmtAm(Math.round(am));
+  return fmtAmRaw(Math.round(am));
 }
 function fmtBetOdds(b){
   if (!b) return '—';
@@ -2179,7 +2220,7 @@ function fmtBetOdds(b){
     const c = b.oddsCents!=null ? +b.oddsCents : parsePmCents(b.oddsEntered);
     if (c!=null) return Math.round(c*100)+'¢';
   }
-  return fmtAm(+b.odds);
+  return fmtAmRaw(+b.odds);
 }
 function fmtStake(s){
   const n = +s || 0;
@@ -3373,7 +3414,7 @@ function strictGates(p, opts){
     const neo = (typeof playResultKey==='function' && p.g && p.g.eventId) ? newKeyOutSince(playResultKey(p), g) : null;
     if (neo) F.push('key player ruled out: '+(neo.n||'a key player'));
     const E = estimate(p), P = priceMath(p, E); p.E = E; p.P = P;
-    if (+S.sMinEV > -99 && P.edge*100 < +S.sMinEV) F.push(`the price at ${P.book} (${P.pm?Math.round(P.cents*100)+'¢':fmtAm(P.am)}) is worse than what it's worth (${fmtAm(probToAm(E.final))})`);
+    if (+S.sMinEV > -99 && P.edge*100 < +S.sMinEV) F.push(`the price at ${P.book} (${fmtPx(P.am, P.pm?P.cents:null)}) is worse than what it's worth (${fmtAm(probToAm(E.final))})`);
     const mb = p.my; if (mb){ if (mb.best && mb.best.thin) F.push(`${mb.best.book||'Prediction'} market is thin (wide spread or low money)`); /* v50: a book with no live price never vetoes a pick (reference price is used) */ }
   }
   return F;
@@ -3428,13 +3469,13 @@ function myBooks(p){
     out.quotes.push({book:BOOK_LABEL(k), price:q.price, edge: fair - imp(q.price), kind:'book'});
   }
   // v48: real Polymarket / Polymarket US market for this exact side + point (see 23_avail.js)
-  const pmQs = (hasPm && typeof avPmGameQuote==='function') ? avPmGameQuote(p) : [];
+  const pmQs = ((hasPm || list.includes('kalshi')) && typeof avPmGameQuote==='function') ? avPmGameQuote(p) : [];
   for (const m of pmQs){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:BOOK_LABEL(m.book), bk:m.book, price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:false, pm:{ask:m.ask, fee:m.fee, point:m.pt}}); }
   if (!pmQs.length && list.includes('polymarket') && g.pm && g.pm[mk] && g.pm[mk][p.side]){
     const m = g.pm[mk][p.side];
     if (mk==='ml' || m.point===sd.point){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:'Polymarket', bk:'polymarket', price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:m.thin, pm:m}); }
   }
-  if (list.includes('kalshi') && g.kalshi && g.kalshi[mk] && g.kalshi[mk][p.side]){
+  if (list.includes('kalshi') && !pmQs.some(q=>q.book==='kalshi') && g.kalshi && g.kalshi[mk] && g.kalshi[mk][p.side]){
     const m = g.kalshi[mk][p.side];
     const cost = pmCost(m.ask, m.fee); out.quotes.push({book:'Kalshi', bk:'kalshi', price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', venue:'kalshi', thin:m.thin, pm:m});
   }
@@ -3460,6 +3501,7 @@ function priceSourceNote(){
   return `<div class="banner price-banner">${text}.</div>`;
 }
 function missingBovadaHint(my){
+  return ''; // v51: pick first — no book-setup hints on the pick line
   if (S.oddsKey) return '';
   if (!myBookList().includes('bovada')) return '';
   const has = my && (my.quotes||[]).some(q=>/bovada/i.test(q.book||''));
@@ -3510,7 +3552,7 @@ const NO_BOOK_LINE = 'None of your books has this line yet';
 // "Don't pay more than" in the recommended book's own format (¢ for prediction markets, American for sportsbooks)
 function maxPayText(estP, r){
   if (estP==null || !(estP>0 && estP<1)) return '';
-  if (r && r.pm) return `Don't pay more than ${Math.max(1, Math.floor(pmMaxCents(estP, r.fee)*100))}¢ on ${r.book}`;
+  if (r && r.pm){ const mc = Math.max(1, Math.floor(pmMaxCents(estP, r.fee)*100)); return `Don't pay more than ${mc}¢${pxMode()==='both'?' / '+fmtAmRaw(Math.round(probToAm(estP))):''} on ${r.book}`; }
   const am = probToAm(estP); if (am==null) return '';
   return `Don't pay more than ${fmtAm(Math.round(am))}${r && r.book ? ' on '+r.book : ''}`;
 }
@@ -3524,7 +3566,7 @@ function betOnText(p){
     const ref = sd && sd.best && sd.best.price!=null ? sd.best.price : null;
     return {line: ref!=null ? `Best price: ${fmtAm(ref)} (reference line)` : 'Reference line only', max:`Fair price ${fmtAm(Math.round(fair))} · ${refTxt}`, ok:false, none:true};
   }
-  const line = (r.pm ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${r.book} at ${Math.round(r.cents*100)}¢ (≈ ${fmtAm(r.price)} after fee)` : `Bet on: ${r.book} at ${fmtAm(r.price)}`) + missingBovadaHint(my);
+  const line = (r.pm ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${r.book} at ${fmtPx(r.price, r.cents)}` : `Bet on: ${r.book} at ${fmtAm(r.price)}`) + missingBovadaHint(my);
   return {line, max:`${maxPayText(estP, r)} · ${refTxt}`, ok:(estP - r.cost)>=0, thin:r.thin, rec:r};
 }
 
@@ -3581,9 +3623,12 @@ const KALSHI_SERIES = {nba:'KXNBAGAME', nhl:'KXNHLGAME', nfl:'KXNFLGAME', mlb:'K
   mls:'KXMLSGAME', epl:'KXEPLGAME', ucl:'KXUCLGAME', laliga:'KXLALIGAGAME', seriea:'KXSERIEAGAME', bund:'KXBUNDESLIGAGAME', ufc:'KXUFCFIGHT', atp:'KXATPMATCH', wta:'KXWTAMATCH'};
 const KALSHI_FEE = 0.07;
 const KALSHI_ABBR_FIX = {gsw:'gs', nyk:'ny', nop:'no', sas:'sa', pho:'phx', brk:'bkn', cho:'cha', was:'wsh', njd:'nj', lak:'la', sjs:'sj', tbl:'tb', kcc:'kc', gnb:'gb', sfo:'sf', nwe:'ne', nor:'no', tam:'tb', uta:'utah', lvk:'vgk', vgk:'vgk', clb:'cbj', mon:'mtl'};
-function kalshiBase(){ return String(S.kalshiRelay||'').trim().replace(/\/+$/,'') || 'https://api.elections.kalshi.com/trade-api/v2'; }
+// v51: default relay (a small Cloudflare Worker that only forwards read-only market data GETs, cached 15s). Settings can override it.
+const KALSHI_RELAY_DEFAULT = 'https://kalshi-relay.verdict-sl1n1.workers.dev';
+function kalshiBase(){ return String(S.kalshiRelay||'').trim().replace(/\/+$/,'') || KALSHI_RELAY_DEFAULT; }
 let kalshiCache = loadJSON('bl_kalshicache', null); let kalshiErr = null;
-function wantsKalshi(){ return myBookList().includes('kalshi') && S.kalshiOn!==false; }
+// moneylines load whenever Kalshi is on (also feeds universe tracking); prices only count on the board when Kalshi is one of your books
+function wantsKalshi(){ return S.kalshiOn!==false; }
 async function fetchKalshi(){
   if (!wantsKalshi()){ kalshiErr = null; return; }
   const fresh = Math.max(10*1000, (typeof refreshIntervalMs==="function"?refreshIntervalMs():60000) - 2000);
@@ -3603,7 +3648,7 @@ async function fetchKalshi(){
     }catch(e){ errs++; }
   }), 4);
   if (want.length && errs===want.length){
-    kalshiErr = 'Kalshi prices could not load in this browser (Kalshi blocks web apps from reading prices directly).';
+    kalshiErr = 'Kalshi prices could not load right now (relay unreachable). Retrying in 5 minutes.';
     kalshiCache = Object.assign({t:0, m:{}}, kalshiCache||{}, {failT:Date.now()});
     return;
   }
@@ -3815,13 +3860,13 @@ function alertWhen(d){
 function playAlertLine(p){
   const r = recBookFor(p);
   const when = p.g && p.g.start ? alertWhen(p.g.start) : '';
-  const at = r.none ? ' (none of your books has it yet)' : r.pm ? ` ${Math.round(r.cents*100)}¢ (${r.book})` : ` ${fmtAm(r.price)} (${r.book})`;
+  const at = r.none ? ' (none of your books has it yet)' : r.pm ? ` ${fmtPx(r.price, r.cents)} (${r.book})` : ` ${fmtAm(r.price)} (${r.book})`;
   return `${p.label}${at}${when?` · ${when}`:''}`;
 }
 const _lockPushInFlight = new Set();
 function propAlertLine(p){
   const r = propRecBook(p);
-  const price = r.none ? '(none of your books has it yet)' : r.pm ? `${Math.round(r.cents*100)}¢ (${r.book})` : `${fmtAm(r.price)} (${r.book})`;
+  const price = r.none ? '(none of your books has it yet)' : r.pm ? `${fmtPx(r.price, r.cents)} (${r.book})` : `${fmtAm(r.price)} (${r.book})`;
   const when = p.g && p.g.start ? alertWhen(p.g.start) : '';
   return `${p.label || ((p.playerName||'')+' '+(p.side==='under'?'Under':'Over')+' '+(p.line!=null?p.line:''))} ${price}${when?` · ${when}`:''}`.trim();
 }
@@ -4377,7 +4422,13 @@ async function gradeAll(){
       let anyLoss=false, allDone=true, allPush=true;
       for (const L of legs){
         if (L.res==null){
-          if (L.kind==='prop'){ allDone=false; continue; }
+          // v51 fix: a single prop tailed from the board has link.mk = the stat ('ast') and no kind:'prop', so it used to fall
+          // through to gradeSide() and was graded as a GAME TOTAL (e.g. 231 points > 5.5 → "win"). Props now grade from the box score.
+          if (isPropLeg(L)){
+            if (L.start && L.start > now - 2*3600000){ allDone=false; continue; }
+            const pr = await gradePropLeg(L, b); if (!pr){ allDone=false; continue; }
+            L.res = pr; L.pg = 51; if (L.res==='loss') anyLoss = true; if (L.res!=='push' && L.res!=='void') allPush=false; continue;
+          }
           if (!L.start || L.start > now - 2*3600000){ allDone=false; continue; }
           const fin = await eventFinal(L.lg, L.ev, L.start); if (!fin){ allDone=false; continue; }
           if (fin.canceled) L.res='void'; else if (!fin.done){ allDone=false; continue; } else L.res = gradeSide(fin, L.lg, L.mk, L.side, L.point);
@@ -5576,7 +5627,7 @@ function contextBullets(p){
 
 function pricePlain(P, E, who, tone){
   const est = outOf10(E.final), need = outOf10(P.need);
-  const odds = P.pm ? `${Math.round(P.cents*100)}¢ on ${P.book||'Polymarket'}` : `${fmtAm(P.am)} at ${P.book}`;
+  const odds = P.pm ? `${fmtPx(P.am, P.cents)} on ${P.book||'Polymarket'}` : `${fmtAm(P.am)} at ${P.book}`;
   if (P.edge>=0){
     const opts = [
       `The price is fair: ${who} should win about ${est} of 10, and the odds pay like it wins ${need}`,
@@ -5947,7 +5998,7 @@ function numbersHTML(p, C){
   let run = E.start;
   for (const s of E.steps){ run += s.dp; rows.push(`<tr><td>${esc((CAL[s.key]&&CAL[s.key].what)||s.plain||s.key)}</td><td class="${s.dp>0.0005?'pos':s.dp<-0.0005?'neg':'mut'}">${s.dp>=0?'+':''}${(s.dp*100).toFixed(1)} pts</td><td class="mut">${fmtPct(run)}</td></tr>`); }
   rows.push(`<tr><td><b>Estimated win chance</b></td><td><b>${fmtPct(E.final)}</b></td><td class="mut">about ${outOf10(E.final)} of 10</td></tr>`);
-  rows.push(`<tr><td>Break-even at this price</td><td>${fmtPct(P.need)}</td><td class="mut">${P.pm?`${Math.round(P.cents*100)}¢ on ${P.book||'Polymarket'}`:`${fmtAm(P.am)} at ${P.book}`} · about ${outOf10(P.need)} of 10</td></tr>`);
+  rows.push(`<tr><td>Break-even at this price</td><td>${fmtPct(P.need)}</td><td class="mut">${P.pm?`${fmtPx(P.am, P.cents)} on ${P.book||'Polymarket'}`:`${fmtAm(P.am)} at ${P.book}`} · about ${outOf10(P.need)} of 10</td></tr>`);
   rows.push(`<tr><td>Edge</td><td class="${P.edge>=0?'pos':'neg'}">${fmtEdge(P.edge)}</td><td class="mut">EV per $${(+S.unit||25).toFixed(0)}: ${P.ev25>=0?'+':'-'}$${Math.abs(P.ev25).toFixed(2)}</td></tr>`);
   return `<table class="ftab ntab">${rows.join('')}</table>
     <div class="mut" style="margin-top:6px">No-vig (fair) ${fmtPct(p.sd.nv)} · raw implied ${fmtPct(p.sd.impBest)} · hold ${p.A&&p.A.hold!=null?fmtPct(p.A.hold):'—'}</div>`;
@@ -5964,7 +6015,7 @@ function mathHTML(p, C){
     <div class="hint" style="margin-top:6px">Weights come from a logistic regression on ${CAL.games} past games (DraftKings closing odds as the start, ${CAL.fitDate}), shrunk toward 0 when noisy. "Weight 0" = it did not beat the odds in the test.</div>
     ${inj?`<div class="ct" style="margin-top:8px">Injuries (measured worth)</div><ul class="why">${inj}</ul>`:''}
     <div class="ct" style="margin-top:8px">Your price</div>
-    <ul class="why"><li>${P.ref?'None of your books has this line yet — reference only, not a place to bet: ':''}${esc(P.book)} ${P.pm?`${Math.round(P.cents*100)}¢ ask + fee = ${(P.cost*100).toFixed(1)}¢ (${fmtAm(P.am)})`:fmtAm(P.am)} → break-even ${fmtPct(P.need)}</li>
+    <ul class="why"><li>${P.ref?'None of your books has this line yet — reference only, not a place to bet: ':''}${esc(P.book)} ${P.pm?`${Math.round(P.cents*100)}¢ ask + fee = ${(P.cost*100).toFixed(1)}¢${pxMode()!=='c'?` (${fmtAmRaw(P.am)})`:''}`:fmtAm(P.am)} → break-even ${fmtPct(P.need)}</li>
       <li>Estimate ${fmtPct(E.final)} − break-even ${fmtPct(P.need)} = <b class="${P.edge>=0?'pos':'neg'}">${fmtEdge(P.edge)}</b></li>
       <li>Expected value per $${(+S.unit||25).toFixed(0)}: <b class="${P.ev>=0?'pos':'neg'}">${P.ev25>=0?'+':'-'}$${Math.abs(P.ev25).toFixed(2)}</b> · fair price ${fmtAm(probToAm(E.final))}</li></ul>
     <div class="ct" style="margin-top:8px">Strict checks</div>${gates}`;
@@ -6158,7 +6209,7 @@ function recPriceHTML(p, bo){
     const estP = (p.E && p.E.final) || (p.sd && p.sd.nv); const am = estP!=null && typeof probToAm==='function' ? probToAm(estP) : null;
     return `<div class="price">${am!=null?fmtAm(Math.round(am)):'—'}<small>fair price</small></div>`;
   }
-  return `<div class="price">${r.pm?Math.round(r.cents*100)+'¢':fmtAm(r.price)}<small>${esc(r.book)}</small></div>`;
+  return `<div class="price">${fmtPx(r.price, r.pm?r.cents:null)}<small>${esc(r.book)}</small></div>`;
 }
 function playCard(p){
   const {g, sd, A} = p;
@@ -7274,7 +7325,7 @@ function renderTracker(pf){
       ${isPar && parNames.length>2 ? `<div class="bet-legs">${parNames.map(x=>`<div>• ${esc(x)}</div>`).join('')}</div>` : ''}
       <div class="bet-meta">
         <span class="sport-pill">${esc(b.sport||'Other')}</span>
-        <span class="meta-pill">${esc(typeof fmtBetOdds==='function'?fmtBetOdds(b):fmtAm(+b.odds))}</span>
+        <span class="meta-pill">${esc(typeof fmtBetOdds==='function'?fmtBetOdds(b):fmtAmRaw(+b.odds))}</span>
         <span class="meta-pill">$${((+b.stake)||0).toFixed((+b.stake)%1?2:0)}</span>
         ${res!=='pending'?`<span class="meta-pill ${pr>0?'pos':pr<0?'neg':''}">${pr?moneyShort(pr):'—'}</span>`:''}
       </div>
@@ -7469,7 +7520,7 @@ function renderTracker(pf){
 
 const CSV_COLS = ['date','sport','market','pick','odds','stake','result'];
 function csvCell(v){ v = String(v==null?'':v); return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
-function betsToCSV(){ return [CSV_COLS.concat(['profit']).join(',')].concat(bets.map(b=>CSV_COLS.map(c=>csvCell(c==='odds'?fmtAm(+b.odds):b[c])).concat([betProfit(b).toFixed(2)]).join(','))).join('\r\n'); }
+function betsToCSV(){ return [CSV_COLS.concat(['profit']).join(',')].concat(bets.map(b=>CSV_COLS.map(c=>csvCell(c==='odds'?fmtAmRaw(+b.odds):b[c])).concat([betProfit(b).toFixed(2)]).join(','))).join('\r\n'); }
 function exportCSV(){
   const blob = new Blob([betsToCSV()], {type:'text/csv'}); const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = `betting-lab-bets-${ymd(new Date())}.csv`; document.body.appendChild(a); a.click(); a.remove();
@@ -8393,7 +8444,7 @@ ${resultBan}
     </div>`;
   }
   const head = g ? `<div class="chead"><span><span class="lg">${esc(LMAP[g.league].label)}</span> ${esc(g.away.name)} @ ${esc(g.home.name)}</span>${g.state==='in'?`<span class="badge b-live">● Live ${esc(g.statusText)}</span>`:g.state==='post'?`<span class="badge b-none">Final ${esc(g.away.score)}-${esc(g.home.score)}</span>`:`<span>${fmtTime(g.start)}</span>`}</div>` : '';
-  const price = leg.price!=null ? (leg.userOdds==null && leg.noBook ? `${esc(NO_BOOK_LINE)} (market ${fmtAm(leg.price)}, reference only)` : `${leg.bookCents!=null&&leg.userOdds==null?Math.round(leg.bookCents*100)+'¢ ≈ ':''}${fmtAm(leg.price)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}`) : 'no price';
+  const price = leg.price!=null ? (leg.userOdds==null && leg.noBook ? `${esc(NO_BOOK_LINE)} (market ${fmtAm(leg.price)}, reference only)` : `${fmtPx(leg.price, leg.userOdds==null?leg.bookCents:null)}${leg.userOdds!=null?' (your odds)':leg.bookName?' '+esc(leg.bookName):''}`) : 'no price';
   const gamePl = (!leg.err && g) ? gamePlayFor(g, leg.side) : null;
   const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
   return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
@@ -8527,13 +8578,13 @@ function renderPicks(){
   // keep Verdict drawers the user opened open across re-renders (scoped keys) and fill lazy bodies
   v.querySelectorAll('.pk-grid details[data-dd^="verdict|"]').forEach(d=>{ if (ui.open.has(d.dataset.dd) && !d.open) d.open = true; if (d.open && typeof fillLazyDetails==='function') fillLazyDetails(d); });
   v.querySelectorAll('[data-logleg]').forEach(b=>b.onclick=()=>{ const l = PK.legs[+b.dataset.logleg];
-    setTab('tracker'); renderTracker({tailLock:'none', src:l.market==='Prop'?'prop':'game', date:isoDate(l.g?l.g.start:new Date()), sport:l.g?LMAP[l.g.league].label:'Other', market:l.market, pick:l.desc||l.raw, odds:l.price!=null?fmtAm(l.price):'', stake:(PK.photoStake||S.unit), link:legLink(l)});
+    setTab('tracker'); renderTracker({tailLock:'none', src:l.market==='Prop'?'prop':'game', date:isoDate(l.g?l.g.start:new Date()), sport:l.g?LMAP[l.g.league].label:'Other', market:l.market, pick:l.desc||l.raw, ...tailOddsDefault(l.price!=null?l.price:null, l.userOdds==null?l.bookCents:null), stake:(PK.photoStake||S.unit), link:legLink(l)});
     if (typeof updateFilterChrome==='function') updateFilterChrome(); window.scrollTo({top:0}); toast('Pre-filled. Check the odds, then Add bet.'); });
   const lp = $('#btnLogParlay'); if (lp) lp.onclick = ()=>{ const legs = PK.legs.filter(l=>!l.err);
     const dec = legs.every(l=>l.price!=null) ? legs.reduce((a,l)=>a*amToDec(l.price),1) : null;
     const am = dec ? (dec>=2 ? (dec-1)*100 : -100/(dec-1)) : null;
     const sports = [...new Set(legs.map(l=>l.g?LMAP[l.g.league].label:'Other'))];
-    setTab('tracker'); renderTracker({tailLock:'none', src:'parlay', date:isoDate(new Date()), sport:sports.length===1?sports[0]:'Other', market:'Parlay', pick:`Parlay: ${legs.map(l=>l.desc||l.raw).join(' + ')}`, odds:am?fmtAm(am):'', stake:(PK.photoStake||S.unit), legs:legs.every(l=>legLink(l))?legs.map(legLink):null});
+    setTab('tracker'); renderTracker({tailLock:'none', src:'parlay', date:isoDate(new Date()), sport:sports.length===1?sports[0]:'Other', market:'Parlay', pick:`Parlay: ${legs.map(l=>l.desc||l.raw).join(' + ')}`, ...tailOddsDefault(am||null), stake:(PK.photoStake||S.unit), legs:legs.every(l=>legLink(l))?legs.map(legLink):null});
     if (typeof updateFilterChrome==='function') updateFilterChrome(); window.scrollTo({top:0}); toast(am?'Pre-filled with the leg-price payout. Use your book\'s real parlay odds.':'Enter your book\'s parlay odds, then Add bet.'); };
 }
 
@@ -9315,7 +9366,7 @@ function learnPanelHTML(){
       <li><b>How:</b> uses the last ${LEARN_WINDOW} days (newer games count more, live-captured games count 1.5×). It learns on the older days, then tests on the newest ${LEARN_HOLD} days it never saw.</li>
       <li><b>Only keeps a change if</b> it wins more often on those unseen days (at least 1 point better) with at least ${LEARN_MIN_HOLD_PLAYS} plays and no loss of money. Weights must also predict the unseen games better. Each step is small: one notch per bar, at most ${LEARN_CAP} per weight.</li>
       <li><b>Sports and markets:</b> any that lose over 40+ strict plays (losing money and winning less than the odds expected) get switched off for strict picks, and switched back on if they recover.</li>
-      <li><b>Never changed by learning:</b> your odds range (${fmtAm(S.sFavMin)} to ${fmtAm(S.sDogMax)}), your books, the sports you turned off, your bet size. If you change something under Advanced (Custom), learning leaves your own settings alone.</li>
+      <li><b>Never changed by learning:</b> your odds range (${fmtAmRaw(S.sFavMin)} to ${fmtAmRaw(S.sDogMax)}), your books, the sports you turned off, your bet size. If you change something under Advanced (Custom), learning leaves your own settings alone.</li>
       <li><b>Honest limits:</b> ${LEARN_HOLD} days is a small test, so a change can still be luck. Injuries only count once ${LEARN_INJ_MIN} live games are graded (${snaps.filter(x=>x.y!=null && x.inj!=null).length} so far). v1's numbers come from the same days it was tuned on, so they are too rosy. The live record is the scoreboard that matters.</li></ul></details>
   </div>`;
 }
@@ -10172,7 +10223,7 @@ function propCard(p){
   const fairAm = (p.p!=null && typeof probToAm==='function') ? probToAm(p.p) : null;
   const price = p.price==null ? `<span class="mut">no price</span><small>typed / research</small>`
     : (rec && rec.none) ? `${fairAm!=null?fmtAm(Math.round(fairAm)):'—'}<small>fair price</small>`
-    : rec ? `${rec.pm?Math.round(rec.cents*100)+'¢':fmtAm(rec.price)}<small>${esc(rec.book)}</small>`
+    : rec ? `${fmtPx(rec.price, rec.pm?rec.cents:null)}<small>${esc(rec.book)}</small>`
     : `${fmtAm(p.price)}<small>${esc(propSourceLabel(p))}</small>`;
   const bo = (p.implied!=null && p.p!=null)
     ? `<div class="beton ${p.edge>=0?'ok':'bad'}"><div>${(rec&&rec.none)?'The market price breaks even':'These odds break even'} at about ${typeof outOf10==='function'?outOf10(p.implied):Math.round(p.implied*10)} wins in 10. We estimate ${typeof outOf10==='function'?outOf10(p.p):Math.round(p.p*10)} in 10.</div></div>`
@@ -10181,7 +10232,7 @@ function propCard(p){
     ? `<div class="beton"><div>Bet on: ${esc(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book)} <span class="mut av-differ">· Polymarket line may differ</span></div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}reference line from ${esc(propRefLabel(p))}</div></div>`
     : rec.none
     ? `<div class="beton"><div>Best price: ${p.price!=null?esc(fmtAm(p.price)):'—'} <span class="mut">(reference line)</span></div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}fair line from ${esc(propRefLabel(p))}</div></div>`
-    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(rec.pm?`Buy on ${rec.book} at ${Math.round(rec.cents*100)}¢`:`Bet on: ${rec.book} at ${fmtAm(rec.price)}`)}</div>${p.p!=null?`<div class="mut">${esc(maxPayText(p.p, rec))} · fair line from ${propRefLabel(p)}</div>`:''}</div>`;
+    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(rec.pm?`Buy on ${rec.book} at ${fmtPx(rec.price, rec.cents)}`:`Bet on: ${rec.book} at ${fmtAm(rec.price)}`)}</div>${p.p!=null?`<div class="mut">${esc(maxPayText(p.p, rec))} · fair line from ${propRefLabel(p)}</div>`:''}</div>`;
   const lazy = (id, sum, kind, body) => {
     const open = ui.open.has(id);
     return `<details class="dd${kind==='court'?' court-dd':''}" data-dd="${esc(id)}" data-lazy="${kind}" data-lazy-id="${esc(p.id)}" ${open?'open':''}><summary>${sum}</summary>${open?body:''}</details>`;
@@ -11470,16 +11521,13 @@ async function propLearnGrade(){
     try{ data = await fetchEventBox(lg, ev); }catch(e){}
     const aths = data ? athletesFromSummary(data) : [];
     const finished = data && data.header && data.header.competitions && data.header.competitions[0] && data.header.competitions[0].status && (data.header.competitions[0].status.type||{}).completed;
-    if (!finished && !aths.length){ done++; continue; }
+    if (!finished || !aths.length){ done++; continue; }   // v51: never grade from a live (unfinished) box score
     for (const x of list){
       const ath = aths.find(a=>a.id && String(a.id)===String(x.playerId)) || aths.find(a=>x.playerName && a.name && a.name.toLowerCase()===String(x.playerName).toLowerCase());
       if (!ath) continue;
       const val = boxStat(ath, x.kind, lg);
       if (val==null || x.line==null) continue;
-      let res = 'push';
-      if (val===x.line) res='push';
-      else if (x.side==='over') res = val>x.line?'win':'loss';
-      else res = val<x.line?'win':'loss';
+      const res = propOutcome(val, x.side, +x.line); if (!res) continue;
       x.y = res==='win'?1:res==='loss'?0:-1;
       x.res = res; x.actual=val; x.graded=now;
       graded.push(x); n++;
@@ -12288,7 +12336,7 @@ function renderSettings(){
     <label>Sports without ESPN computer (set by the model)<select name="sNoModelSports" disabled><option value="1" ${S.sNoModelSports?'selected':''}>Allowed</option><option value="0" ${!S.sNoModelSports?'selected':''}>Not allowed</option></select></label>
     <label>Polymarket prices<select name="pmOn"><option value="1" ${S.pmOn?'selected':''}>On</option><option value="0" ${!S.pmOn?'selected':''}>Off</option></select></label>
     <label>Kalshi prices<select name="kalshiOn"><option value="1" ${S.kalshiOn!==false?'selected':''}>On</option><option value="0" ${S.kalshiOn===false?'selected':''}>Off</option></select></label>
-    <label style="grid-column:span 2">Kalshi price relay (optional URL; blank = Kalshi's public API)<input name="kalshiRelay" value="${esc(S.kalshiRelay||'')}" placeholder="https://…/trade-api/v2"></label>
+    <label style="grid-column:span 2">Kalshi price relay (blank = built-in Verdict relay; paste your own URL to override)<input name="kalshiRelay" value="${esc(S.kalshiRelay||'')}" placeholder="Built-in Verdict relay (default)"></label>
     ${ST.filter(([k])=>k!=='sFavMin'&&k!=='sDogMax').map(([k,l])=>{ const auto = PRESET_KEYS.includes(k); return `<label>${l}${auto?' <span class="mut">(model)</span>':''}<input name="${k}" type="number" step="any" value="${S[k]}" ${auto?'disabled':''}></label>`; }).join('')}
   </div><div class="hint" style="margin-top:8px">Fields marked (model) are set by the model's automatic pickiness and are shown read-only. Polymarket's 5% taker fee is added before comparing prices.</div></div>
 
@@ -12319,11 +12367,11 @@ function renderSettings(){
     <li><b>No-vig probability</b>: each side's implied probability divided by the sum of all sides (removes the book's cut). With several books, consensus = average across books (Pinnacle weighted ×${S.sharpWeight}).</li>
     <li><b>Edge</b> = consensus no-vig probability − implied probability of the best price. Needs 2+ books, so ESPN-only mode shows "n/a".</li>
     <li><b>Line movement</b>: the market's opening line (DraftKings from ESPN, or an Odds API open when the book sends one) vs now. The first price this phone or PC happened to see is stored on this device only and is not used to pull a play, so two devices with the same settings judge movement the same way.</li>
-    <li><b>Hard rules (applied first)</b>: Avoid favorites worse than ${fmtAm(S.avoidFavBelow)}, dogs above ${fmtAm(S.longshotAbove)} without a ${S.dogMinEdge}% model or price edge, juice worse than ${fmtAm(S.avoidJuice)}, and heavy adverse line moves. A moneyline Pick needs a favorite between ${fmtAm(S.goodFavMin)} and ${fmtAm(S.goodFavMax)} (or a dog clearing the stricter underdog bar), no adverse move, and model/price edge ≥ −${S.neutralTol}%.</li>
-    <li><b>Spreads/totals</b>: a Pick needs price no worse than ${fmtAm(S.maxJuice)}, no adverse move, and the factor score below. Model edge on spreads uses ESPN win probability at 60% weight (it is a win %, not a cover %).</li>
+    <li><b>Hard rules (applied first)</b>: Avoid favorites worse than ${fmtAmRaw(S.avoidFavBelow)}, dogs above ${fmtAmRaw(S.longshotAbove)} without a ${S.dogMinEdge}% model or price edge, juice worse than ${fmtAmRaw(S.avoidJuice)}, and heavy adverse line moves. A moneyline Pick needs a favorite between ${fmtAmRaw(S.goodFavMin)} and ${fmtAmRaw(S.goodFavMax)} (or a dog clearing the stricter underdog bar), no adverse move, and model/price edge ≥ −${S.neutralTol}%.</li>
+    <li><b>Spreads/totals</b>: a Pick needs price no worse than ${fmtAmRaw(S.maxJuice)}, no adverse move, and the factor score below. Model edge on spreads uses ESPN win probability at 60% weight (it is a win %, not a cover %).</li>
     <li><b>Factor model</b>: each market side gets points from price range, ESPN model vs market, best price vs books, line movement, injuries (team leaders and QBs count most; IR/long-term ignored), last-5 form, home/away split, rest/back-to-backs, head-to-head, season scoring margin or projections vs the line, starting goalies (GAA), and weather for outdoor totals. Composite ≥ ${S.goodScore} with 2+ supporting factors and confidence ≥ ${S.minConfGood} can land on Picks. Underdogs need ≥ ${S.dogGoodScore}, ${S.dogMinFactors}+ strong factors and a ${S.dogMinEdge}% model or price edge.</li>
     <li><b>Confidence</b> starts at 100 and drops for missing data: no game page, no model, no injury report, only one book, unconfirmed goalie/pitcher, key game-time decisions, unknown outdoor weather.</li>
-    <li><b>Strict mode</b> (${S.strictMode?'on':'off'}): no cap, built for win rate on singles. A play lands on Picks only if it passes every check: ${S.sMarkets==='ml'?'moneyline only, ':''}price between ${fmtAm(S.sFavMin)} and ${fmtAm(S.sDogMax)} at your book, estimated win chance ≥ ${(S.sMinWin*100).toFixed(0)}%, ESPN's computer agrees (≥ ${(S.sModelMin*100).toFixed(0)}% and not less sure than the odds, where it exists), no line move against of more than ${S.sMaxAdvPct}%, ${S.sMinPos}+ supporting factors, nothing strongly against, ${S.sExclude?`not ${esc(S.sExclude.toUpperCase())}, `:''}full data (confidence ≥ ${S.sMinConf}, injury report, confirmed goalie/pitcher, no key game-time decisions) and not a thin Polymarket market. Value (price vs estimate) is shown but ${+S.sMinEV>-99?`must be at least ${S.sMinEV}%`:'is not required'}. Picks are ranked by estimated win chance. Misses go to the Watchlist with the missed check named.</li>
+    <li><b>Strict mode</b> (${S.strictMode?'on':'off'}): no cap, built for win rate on singles. A play lands on Picks only if it passes every check: ${S.sMarkets==='ml'?'moneyline only, ':''}price between ${fmtAmRaw(S.sFavMin)} and ${fmtAmRaw(S.sDogMax)} at your book, estimated win chance ≥ ${(S.sMinWin*100).toFixed(0)}%, ESPN's computer agrees (≥ ${(S.sModelMin*100).toFixed(0)}% and not less sure than the odds, where it exists), no line move against of more than ${S.sMaxAdvPct}%, ${S.sMinPos}+ supporting factors, nothing strongly against, ${S.sExclude?`not ${esc(S.sExclude.toUpperCase())}, `:''}full data (confidence ≥ ${S.sMinConf}, injury report, confirmed goalie/pitcher, no key game-time decisions) and not a thin Polymarket market. Value (price vs estimate) is shown but ${+S.sMinEV>-99?`must be at least ${S.sMinEV}%`:'is not required'}. Picks are ranked by estimated win chance. Misses go to the Watchlist with the missed check named.</li>
   </ul></div>
   </div></details>
   </form>`;
@@ -12360,7 +12408,7 @@ function renderSettings(){
     if (newKey!==S.oddsKey) oddsCache = null;
     S.oddsKey = newKey; S.oddsRegions = f.get('oddsRegions'); S.oddsBooks = String(f.get('oddsBooks')||'').trim();
     S.enabled = LEAGUES.filter(L=>f.get('en_'+L.id)).map(L=>L.id);
-    S.deepData = f.get('deepData')==='1'; S.pmOn = f.get('pmOn')==='1'; S.kalshiOn = f.get('kalshiOn')!=='0'; S.kalshiRelay = String(f.get('kalshiRelay')||'').trim(); if (typeof kalshiCache!=='undefined' && kalshiCache) kalshiCache.failT = 0;
+    S.deepData = f.get('deepData')==='1'; S.pmOn = f.get('pmOn')==='1'; S.kalshiOn = f.get('kalshiOn')!=='0'; S.kalshiRelay = String(f.get('kalshiRelay')||'').trim(); if (typeof KALSHI_RELAY_DEFAULT!=='undefined' && S.kalshiRelay.replace(/\/+$/,'')===KALSHI_RELAY_DEFAULT) S.kalshiRelay = ''; if (typeof kalshiCache!=='undefined' && kalshiCache) kalshiCache.failT = 0;
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).concat(extra).join(',');
     S.myBooksCustom = true;
@@ -12664,7 +12712,7 @@ $('#view').addEventListener('click', e=>{
     }
     setTab('tracker'); if (typeof updateFilterChrome==='function') updateFilterChrome();
     const summary = (p.legs||[]).map(l=>typeof parlayLegLabel==='function'?parlayLegLabel(l):(l.label||l.playerName)).join(' / ');
-    const pf = {src:'parlay', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p,'parlay'))?'early':'locked', date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAm(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id, start:isFinite(p.start)?p.start:null}, legs:(typeof parlayLegSaveMeta==='function' ? (p.legs||[]).map(parlayLegSaveMeta) : null)};
+    const pf = {src:'parlay', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p,'parlay'))?'early':'locked', date: isoDate(new Date(isFinite(p.start)?p.start:Date.now())), sport:(p.sports||[]).map(s=>(LMAP[s]&&LMAP[s].label)||s).join('+')||'Parlay', market:'Parlay', pick:`${p.n}-leg ${fmtDecX?fmtDecX(p.dec):((p.dec||0).toFixed(2)+'x')} · ${summary}`, stake:(typeof recommendedUnits==="function" && recommendedUnits(p, p.isParlay?"parlay":p.isProp?"prop":"game").dollars) || S.unit, oddsType:'american', odds: (typeof fmtAm==='function'?fmtAmRaw(p.am):String(p.am||'')), playKey:p.id, link:{mk:'parlay', n:p.n, dec:p.dec, id:p.id, start:isFinite(p.start)?p.start:null}, legs:(typeof parlayLegSaveMeta==='function' ? (p.legs||[]).map(parlayLegSaveMeta) : null)};
     renderTracker(pf);
     window.scrollTo({top:0}); toast('Pre-filled this parlay. Confirm the combined odds at your book, then add the tailed bet.');
     return;
@@ -12678,8 +12726,9 @@ $('#view').addEventListener('click', e=>{
   const mb = rb.none ? null : Object.assign({}, rb, {kind: rb.pm ? 'pm' : 'book'});
   const usePm = !!(mb && mb.kind==='pm' && mb.cents!=null);
   const fee = typeof defaultPmFeeRate==='function' ? defaultPmFeeRate(p) : +S.pmFeeRate;
-  const pf = {src:p.isProp?'prop':'game', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p, p.isProp?'props':'games'))?'early':'locked', date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime(), pid:p.isProp?(p.playerId||''):undefined}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
-  pf.odds = usePm ? String(Math.round(mb.cents*100)) : fmtAm(mb ? mb.price : (p.isProp ? p.price : (p.sd && p.sd.best && p.sd.best.price)));
+  const pf = {src:p.isProp?'prop':'game', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p, p.isProp?'props':'games'))?'early':'locked', date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime(), pid:p.isProp?(p.playerId||''):undefined, kind:p.isProp?'prop':undefined, stat:p.isProp?p.kind:undefined, playerName:p.isProp?(p.playerName||''):undefined}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
+  if (usePm) pf.odds = String(Math.round(mb.cents*100));
+  else { const td = tailOddsDefault(mb ? mb.price : (p.isProp ? p.price : (p.sd && p.sd.best && p.sd.best.price))); pf.oddsType = td.oddsType; pf.odds = td.odds; }
   if (mb && mb.book) pf.book = mb.book;
   renderTracker(pf);
   window.scrollTo({top:0}); toast(mb ? `Pre-filled with ${mb.book}'s price. Confirm the odds there, then add the tailed bet.` : 'None of your books has this line yet. Type the odds you actually get, then add the tailed bet.');
@@ -13383,8 +13432,8 @@ async function vcGradeOne(r){
     const aths = athletesFromSummary(data);
     const ath = aths.find(a=>r.playerId && a.id===String(r.playerId)) || aths.find(a=>a.name && norm(a.name)===norm(r.player||''));
     if (!ath) return {void:true, why:'did not play'};
-    const val = boxStat(ath, r.stat); if (val==null) return null;
-    const res = val===r.line ? 'push' : (r.side==='over' ? (val>r.line?'win':'loss') : (val<r.line?'win':'loss'));
+    const val = boxStat(ath, r.stat, r.sport); if (val==null) return null;
+    const res = propOutcome(val, r.side, +r.line); if (!res) return null;
     return {res, actual:val};
   }
   if (r.ind || VC_IND.has(r.sport)){
@@ -13694,9 +13743,11 @@ function urgentGameLeg(r){
   if (newOut && now.length) return `key player ruled out: ${newOut.n||'a starter'}`;
   const sd = g.analysis && g.analysis[r.mk] && g.analysis[r.mk].sides && g.analysis[r.mk].sides[r.side];
   if (sd && sd.best){
-    if (r.mk==='ml' && r.price!=null && sd.best.price!=null){
-      const mv = amCents(r.price) - amCents(sd.best.price);
-      if (mv >= 60) return `huge line move against it (${fmtAm(r.price)} → ${fmtAm(sd.best.price)})`;
+    const curP = ((typeof plays!=='undefined' && plays) || []).find(x=>x && x.g===g && x.mk===r.mk && x.side===r.side);
+    const nowPx = (curP && curP.my && curP.my.best && curP.my.best.price!=null) ? curP.my.best.price : sd.best.price;
+    if (r.mk==='ml' && r.price!=null && nowPx!=null){
+      const mv = amCents(r.price) - amCents(nowPx);
+      if (mv >= 60) return `huge line move against it (${fmtAm(r.price)} → ${fmtAm(nowPx)})`;
     } else if (r.point!=null && sd.point!=null){
       const d = r.mk==='spread' ? (sd.point - r.point) : r.side==='over' ? (r.point - sd.point) : (sd.point - r.point);
       if (d >= 2.5) return `huge line move against it (${r.point} → ${sd.point})`;
@@ -13833,12 +13884,11 @@ async function gradeLockedRecords(){
     const a = bx.aths.find(x=>pid && String(x.id)===pid) || bx.aths.find(x=>nm && String(x.name||'').toLowerCase()===nm);
     if (!bx.aths.length) return null;                        // box score not readable yet
     if (!a) return 'void';                                   // not in the box score: did not play
-    const v = boxStat(a, r.kind||r.stat);
+    const v = boxStat(a, r.kind||r.stat, r.lg);
     if (v==null && a.stats && !Object.keys(a.stats).length) return 'void';   // listed but did not play
     const line = r.line!=null ? +r.line : +r.point;
     if (v==null || !isFinite(line)) return null;
-    if (v===line) return 'push';
-    return String(r.side).toLowerCase()==='over' ? (v>line?'win':'loss') : (v<line?'win':'loss');
+    return propOutcome(v, r.side, line);
   };
   const maps = [st.locked].concat(typeof v42PolicyMaps==='function' ? v42PolicyMaps() : []);
   let nPol = 0;
@@ -14390,7 +14440,7 @@ function v42FilterPickHTML(board){
      scorer props), Over and Under, for every NBA/WNBA/NHL/NFL/MLB game in the next 36 hours.
    - Polymarket: every game market (moneyline, every spread and total line, team totals, halves and quarters) and every
      player O/U market, matched to an ESPN game.
-   - Kalshi: moneylines, when the board already has Kalshi prices (Kalshi blocks browsers without a relay).
+   - Kalshi: moneylines, plus spreads/totals when Kalshi is one of your books (through the Verdict relay).
    Storage: open rows in IndexedDB "uni" (and memory); graded rows move to "uniDone" (kept 30 days, used by the learners)
    and are counted into daily summary rows in "uniSum" (kept 120 days). Snapshot writes are throttled to once per market
    per 15 minutes, plus one at the board's lock time and one near the start. */
@@ -14510,13 +14560,26 @@ function uniCaptureGames(){
         if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
       }
     }
-    // Kalshi moneylines (only when the board already fetched them; Kalshi blocks browsers without a relay)
+    // Kalshi moneylines (loaded through the Verdict relay whenever Kalshi prices are on)
     if (g.kalshi && g.kalshi.ml){
       for (const s in g.kalshi.ml){
         const q = g.kalshi.ml[s]; if (!q || !(q.ask>0 && q.ask<1)) continue;
         const cost = typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask; const am = decToAm(1/cost);
         const rowSb = UNI.get(`g:${g.eventId}:ml:${s}:`);
         if (uniUpsert('games', 'kalshi', `k:${g.eventId}:ml:${s}`, {l:g.league, ev:String(g.eventId), t, mk:'ml', side:s, pt:null, game:`${g.away.short} @ ${g.home.short}`, book:'Kalshi'}, {price:am, v: rowSb ? rowSb.v : 'nocall', p: rowSb ? rowSb.p : null})) n++;
+      }
+    }
+    // v51: Kalshi spreads + totals (relay index), every line Kalshi lists for this game
+    const KE = (typeof AV!=='undefined' && AV.ka && AV.ka.ev) ? AV.ka.ev[g.eventId] : null;
+    if (KE && KE.g){
+      for (const key in KE.g){
+        const [mk, s] = key.split('|'); if (mk==='ml') continue;
+        for (const q of KE.g[key]){
+          if (!q || !(q.ask>0 && q.ask<1)) continue;
+          const cost = typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask; const am = decToAm(1/cost);
+          const rowSb = UNI.get(`g:${g.eventId}:${mk}:${s}:${q.pt}`); if (!rowSb) continue; // only the board's own lines (Kalshi lists many alt lines)
+          if (uniUpsert('games', 'kalshi', `k:${g.eventId}:${mk}:${s}:${q.pt}`, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt:q.pt, game:`${g.away.short} @ ${g.home.short}`, book:'Kalshi'}, {price:am, v: rowSb ? rowSb.v : 'nocall', p: rowSb ? rowSb.p : null})) n++;
+        }
       }
     }
   }
@@ -14912,8 +14975,8 @@ function uniGradePropRow(r, bx){
   if (a.stats.appearances!=null && +a.stats.appearances===0) return {res:'void'};
   const v = uniStatValue(a.stats, r.kind, r.l);
   if (v===undefined || v==null) return {res:'ungradeable'};
-  if (v===r.pt) return {res:'push', act:v};
-  return {res: (r.side==='over') === (v>r.pt) ? 'win' : 'loss', act:v};
+  const res = propOutcome(v, r.side, +r.pt); if (!res) return {res:'ungradeable'};
+  return {res, act:v};
 }
 // parlay prop legs that are not in the props snapshot list (shadow candidates)
 async function uniPropLegResult(leg){
@@ -15445,7 +15508,7 @@ function photoBind(v){
    that market is treated as not offered by that book (undo in Settings). Flags also go (anonymous) to the pool.
    Picks that fail stay tracked by the universe scan, and tailed bets are never hidden. */
 var AV = {ver:1, bypass:false, busy:false, last:0, every:10*60000,
-  pm:{t:0, lg:{}, ev:{}, err:null}, us:{t:0, lg:{}, ev:{}, err:null}};
+  pm:{t:0, lg:{}, ev:{}, err:null}, us:{t:0, lg:{}, ev:{}, err:null}, ka:{t:0, lg:{}, ev:{}, err:null}};
 var AV_LS = 'bl_av_idx_v1', AV_FLAG_LS = 'bl_nob_v1';
 var AV_US_LEAGUE = {nba:'nba', nfl:'nfl', nhl:'nhl', mlb:'mlb', ncaab:'cbb', ncaaf:'cfb', wnba:'wnba', mls:'mls', epl:'epl', ucl:'ucl', ufc:'ufc', atp:'atp', wta:'wta'};
 var AV_PM_SERIES = {nba:10345, nhl:10346, nfl:12185, ncaaf:12756, ncaab:10470, wnba:10105, mlb:3, mls:10189, epl:10188, ucl:10204, laliga:10193, seriea:10203, bund:10194};
@@ -15457,8 +15520,8 @@ var AV_KIND = {
   baseball:{strikeouts:'ks', pitcher_strikeouts:'ks'}
 };
 var AV_SPORT_OF = {nba:'basketball', wnba:'basketball', ncaab:'basketball', nfl:'football', ncaaf:'football', nhl:'hockey', mlb:'baseball'};
-function avVenueName(v){ return v==='us' ? 'Polymarket US' : 'Polymarket'; }
-function avVenueBook(v){ return v==='us' ? 'polymarket_us' : 'polymarket'; }
+function avVenueName(v){ return v==='us' ? 'Polymarket US' : v==='ka' ? 'Kalshi' : 'Polymarket'; }
+function avVenueBook(v){ return v==='us' ? 'polymarket_us' : v==='ka' ? 'kalshi' : 'polymarket'; }
 function avNameKey(n){ return (typeof norm==='function' ? norm(n) : String(n||'').toLowerCase()).replace(/\b(jr|sr|ii|iii|iv|v)\b/g,'').replace(/\s+/g,' ').trim(); }
 function avKindOf(lg, stat){
   const sp = AV_SPORT_OF[lg] || 'basketball';
@@ -15681,10 +15744,78 @@ async function avLoadGlobal(lgs){
   avLearnTypes(X);
   X.t = Date.now(); X.err = (errs && !okN) ? 'Polymarket unreachable' : null;
 }
+/* ---- v51 Kalshi (through the relay): spreads, totals and player props per board game ----
+   Game events share one code across series: KXNBAGAME-26NOV20PHXUTA ↔ KXNBASPREAD-26NOV20PHXUTA ↔ KXNBAPTS-26NOV20PHXUTA.
+   Spread "UTA8" = Utah wins by over 7.5 (YES = Utah −7.5, NO = Phoenix +7.5). Total YES = Over, NO = Under.
+   Props "Name: N+" = Over N−0.5 (YES) / Under (NO). Only markets closing within 4 days, paginated, 2 at a time. */
+var KX_EXTRA = {nba:{p:'KXNBA', props:{pts:'PTS',reb:'REB',ast:'AST',threes:'3PT',pra:'PRA',blk:'BLK',stl:'STL'}}, wnba:{p:'KXWNBA', props:{pts:'PTS',reb:'REB',ast:'AST'}},
+  nhl:{p:'KXNHL', props:{pts:'PTS',goals:'GOAL',ast:'AST',saves:'SAVE'}}, nfl:{p:'KXNFL', props:{pass_yds:'PASSYDS',rush_yds:'RSHYDS',rec_yds:'RECYDS',rec:'REC',pass_td:'PASSTDS'}},
+  ncaab:{p:'KXNCAAMB'}, ncaaf:{p:'KXNCAAF'}, mlb:{p:'KXMLB', props:{ks:'KS'}}, epl:{p:'KXEPL'}, ucl:{p:'KXUCL'}, mls:{p:'KXMLS'}, laliga:{p:'KXLALIGA'}, seriea:{p:'KXSERIEA'}, bund:{p:'KXBUNDESLIGA'}};
+var avSleep = ms => new Promise(r=>setTimeout(r, ms));
+async function kxPaged(series, maxClose){
+  const out = []; let cursor = '';
+  for (let page = 0; page < 8; page++){
+    const r = await fetchJSON(`${kalshiBase()}/markets?series_ticker=${series}&status=open&limit=1000&max_close_ts=${maxClose}${cursor?'&cursor='+encodeURIComponent(cursor):''}`, 15000);
+    if (!r.ok || !r.data || !Array.isArray(r.data.markets)) throw new Error('HTTP '+r.status);
+    for (const m of r.data.markets) out.push(m);
+    cursor = r.data.cursor || ''; if (!cursor || !r.data.markets.length) break;
+    await avSleep(250);
+  }
+  return out;
+}
+async function avLoadKalshi(lgs){
+  const X = AV.ka; const now = Date.now(); const maxClose = Math.floor(now/1000) + 4*86400;
+  const ev = {}; const lgOut = {}; let errs = 0, okN = 0;
+  for (const lg of lgs){
+    const cfg = KX_EXTRA[lg];
+    if (!cfg || typeof KALSHI_SERIES==='undefined' || !KALSHI_SERIES[lg]){ lgOut[lg] = {ok:true, none:true, kinds:{}, t:now}; continue; }
+    const L = lgOut[lg] = {ok:true, kinds:{}, t:now, games:0, mkts:0, boardGames:0};
+    // board games of this league that Kalshi lists (moneyline match from the game series)
+    const byCode = {};
+    for (const g of ((typeof games!=='undefined' && games) || [])){
+      if (!g || g.league!==lg || !g.eventId || !g.start || g.state==='post' || g.start.getTime() - now > 36*3600000) continue;
+      L.boardGames++;
+      if (!g.kalshi || !g.kalshi.ev) continue;
+      const code = String(g.kalshi.ev).slice(String(g.kalshi.ev).indexOf('-')+1);
+      const E = ev[g.eventId] = {ok:true, t:now, code, g:{}, p:{}};
+      const ab = {};
+      for (const s in g.kalshi.ml){ const q = g.kalshi.ml[s]; if (!q) continue; avPutGame(E, 'ml|'+s, {pt:null, ask:q.ask, fee:KALSHI_FEE}); if (q.tk && s!=='draw') ab[String(q.tk).split('-').pop().toUpperCase()] = s; }
+      E.ab = ab; E.series = []; byCode[code] = {g, E}; L.games++;
+    }
+    if (!L.games) continue;
+    const series = [['spread', cfg.p+'SPREAD'], ['total', cfg.p+'TOTAL']].concat(Object.entries(cfg.props||{}).map(([k,s])=>['prop:'+k, cfg.p+s]));
+    await pool(series.map(([what, sr])=>async()=>{
+      let ms; try{ ms = await kxPaged(sr, maxClose); okN++; }catch(e){ errs++; L.err = (L.err||0)+1; return; }
+      for (const m of ms){
+        const code = String(m.event_ticker||'').slice(String(m.event_ticker||'').indexOf('-')+1); const hit = byCode[code]; if (!hit) continue;
+        const E = hit.E, yes = avAsk(m.yes_ask_dollars), no = avAsk(m.no_ask_dollars), k = +m.floor_strike;
+        if (!isFinite(k)) continue;
+        L.mkts++; if (!E.series.includes(sr)) E.series.push(sr);
+        if (what==='spread'){
+          const ab = String(m.ticker||'').split('-').pop().toUpperCase().replace(/\d+$/,'');
+          const side = E.ab[ab]; if (!side) continue; const other = side==='home' ? 'away' : 'home';
+          avPutGame(E, 'spread|'+side, {pt:-k, ask:yes, fee:KALSHI_FEE, tk:m.ticker, y:1});
+          avPutGame(E, 'spread|'+other, {pt:k, ask:no, fee:KALSHI_FEE, tk:m.ticker, y:0});
+        } else if (what==='total'){
+          avPutGame(E, 'total|over', {pt:k, ask:yes, fee:KALSHI_FEE, tk:m.ticker, y:1});
+          avPutGame(E, 'total|under', {pt:k, ask:no, fee:KALSHI_FEE, tk:m.ticker, y:0});
+        } else {
+          const kind = what.slice(5); const nm = String(m.yes_sub_title||m.title||'').split(':')[0].trim(); if (!nm) continue;
+          avPutProp(X, lg, E, kind, nm, {eq:k, raw:k+0.5, txt:(k+0.5)+'+', over:yes, under:no, fee:KALSHI_FEE, tk:m.ticker});
+          L.kinds[kind] = (L.kinds[kind]||0) + 1;
+        }
+      }
+    }), 2);
+    await avSleep(200);
+  }
+  // avPutProp also wrote kinds into X.lg; keep the fresh per-league stats
+  X.lg = lgOut; X.ev = ev; avLearnTypes(X);
+  X.t = Date.now(); X.err = (errs && !okN) ? 'Kalshi unreachable' : null;
+}
 function avLearnTypes(X){ X.types = X.types || {}; for (const lg in X.lg){ const L = X.lg[lg]; if (!L || !L.kinds) continue; const T = X.types[lg] || (X.types[lg] = {}); for (const k in L.kinds) T[k] = Date.now(); } }
 function avWantVenues(){
   const b = (typeof selectedBooks==='function') ? selectedBooks() : [];
-  return {pm: b.includes('polymarket'), us: b.includes('polymarket_us')};
+  return {pm: b.includes('polymarket'), us: b.includes('polymarket_us'), ka: b.includes('kalshi') && (typeof S==='undefined' || S.kalshiOn!==false)};
 }
 function avLeaguesNow(){
   const now = Date.now(); const s = new Set();
@@ -15693,15 +15824,19 @@ function avLeaguesNow(){
 }
 async function avRefresh(force){
   const want = avWantVenues();
-  if (!want.pm && !want.us) return;
+  if (!want.pm && !want.us && !want.ka) return;
   if (AV.busy) return;
-  if (!force && Date.now() - AV.last < AV.every) return;
+  const dueMain = (want.pm || want.us) && (force || Date.now() - AV.last >= AV.every);
+  // Kalshi spreads/totals/props: every 3 minutes (the relay caches 15s; we stay well under any rate limit)
+  const dueKa = want.ka && (force || Date.now() - (AV.ka.t||0) >= 3*60000);
+  if (!dueMain && !dueKa) return;
   const lgs = avLeaguesNow(); if (!lgs.length) return;
-  AV.busy = true; AV.last = Date.now();
+  AV.busy = true; if (dueMain) AV.last = Date.now();
   try{
     const jobs = [];
-    if (want.us) jobs.push(avLoadUs(lgs).catch(e=>{ AV.us.err = String(e.message||e); AV.us.t = Date.now(); }));
-    if (want.pm) jobs.push(avLoadGlobal(lgs).catch(e=>{ AV.pm.err = String(e.message||e); AV.pm.t = Date.now(); }));
+    if (dueMain && want.us) jobs.push(avLoadUs(lgs).catch(e=>{ AV.us.err = String(e.message||e); AV.us.t = Date.now(); }));
+    if (dueMain && want.pm) jobs.push(avLoadGlobal(lgs).catch(e=>{ AV.pm.err = String(e.message||e); AV.pm.t = Date.now(); }));
+    if (dueKa) jobs.push(avLoadKalshi(lgs).catch(e=>{ AV.ka.err = String(e.message||e); AV.ka.t = Date.now(); }));
     await Promise.all(jobs);
     avSave();
   }finally{ AV.busy = false; }
@@ -15710,13 +15845,13 @@ async function avRefresh(force){
 function avSave(){
   try{
     const slim = X => ({t:X.t, err:X.err, lg:X.lg, types:X.types||{}, ev:Object.fromEntries(Object.entries(X.ev).filter(([k,E])=>E && E.ok))});
-    localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm)}));
+    localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm), ka:{types:AV.ka.types||{}}}));
   }catch(e){ try{ localStorage.removeItem(AV_LS); }catch(_){} }
 }
 function avLoadSaved(){
   try{
     const d = JSON.parse(localStorage.getItem(AV_LS)||'null'); if (!d || d.v!==1) return;
-    for (const v of ['us','pm']) if (d[v] && d[v].types) AV[v].types = d[v].types;
+    for (const v of ['us','pm','ka']) if (d[v] && d[v].types) AV[v].types = d[v].types;
     for (const v of ['us','pm']) if (d[v] && d[v].t && Date.now() - d[v].t < 30*60000){ AV[v].t = d[v].t; AV[v].lg = d[v].lg||{}; AV[v].ev = d[v].ev||{}; AV[v].err = d[v].err||null; }
   }catch(e){}
 }
@@ -15756,7 +15891,9 @@ function avPmPropType(v, item, g, L, E){
   let kind = item.kind || item.mk; if (kind==='hpts') kind = 'pts';
   const label = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[kind]) || kind;
   const learned = avTypesFor(v, lg);
-  const types = learned.size ? learned : new Set(AV_PROP_FALLBACK[AV_SPORT_OF[lg]||'basketball'] || []);
+  // Kalshi: the stat types it runs series for (props list on game day; lines may differ until then)
+  if (v==='ka' && typeof KX_EXTRA!=='undefined' && KX_EXTRA[lg] && KX_EXTRA[lg].props) for (const k in KX_EXTRA[lg].props) learned.add(k);
+  const types = (learned.size || v==='ka') ? learned : new Set(AV_PROP_FALLBACK[AV_SPORT_OF[lg]||'basketball'] || []);
   if (!types.has(kind)) return {ok:false, why:`${name} doesn't offer ${label} props for ${lgLab}${['pr','pa','ar'].includes(kind)?' (only single stats + PRA)':''}`};
   // game must be on the venue once its list has loaded (unknown/pending → prefer showing)
   if (!E && L && !L.err && !L.none && X_loaded(v)) return {ok:false, why:`${name} doesn't list this game`};
@@ -15834,8 +15971,8 @@ function avPmCheck(v, item){
 // prediction venue quote for a game play (used by "Bet on" / myBooks)
 function avPmGameQuote(p){
   const out = [];
-  for (const v of ['us','pm']){
-    const w = avWantVenues(); if (!(v==='us' ? w.us : w.pm)) continue;
+  for (const v of ['us','pm','ka']){
+    const w = avWantVenues(); if (!w[v]) continue;
     const r = avPmCheck(v, p); if (r.ok && r.q && r.q.exact) out.push({v, book:avVenueBook(v), ...r.q});
   }
   return out;
@@ -15887,14 +16024,17 @@ function avCheck(item, kind){
       if (avBookBlocked(b, sp, mt)){ whys.push(`You flagged ${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} ${isProp?((typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[mt])||mt):mt} as not offered`); continue; }
       if (b==='polymarket' || b==='polymarket_us'){
         const res = avPmCheck(b==='polymarket_us'?'us':'pm', item);
-        if (res.ok){ okBooks.push(b); if (isProp && res.q && (!pmq || res.q.ask < pmq.ask)) pmq = Object.assign({book:b}, res.q); if (isProp && !res.q && res.note) pmNote = pmNote || {book:b, txt:res.note}; }
+        if (res.ok){ okBooks.push(b); if (isProp && res.q && (!pmq || pmCost(res.q.ask, res.q.fee) < pmCost(pmq.ask, pmq.fee))) pmq = Object.assign({book:b}, res.q); if (isProp && !res.q && res.note) pmNote = pmNote || {book:b, txt:res.note}; }
         else { whys.push(res.why); if (res.pending) pending = true; }
         continue;
       }
       if (b==='kalshi'){
         const g = avGameOf(item); const mk = item.mk==='h2h'?'ml':item.mk;
-        if (!isProp && mk==='ml' && g && g.kalshi && g.kalshi.ml && g.kalshi.ml[item.side]) okBooks.push(b);
-        else whys.push(isProp ? 'Kalshi player props aren\'t loaded here' : (mk==='ml' ? 'Kalshi has no price on this game' : 'Kalshi spreads/totals aren\'t loaded here'));
+        if (!isProp && mk==='ml' && g && g.kalshi && g.kalshi.ml && g.kalshi.ml[item.side]){ okBooks.push(b); continue; }
+        // v51: Kalshi spreads, totals and player props through the relay (same rules as Polymarket)
+        const res = avPmCheck('ka', item);
+        if (res.ok){ okBooks.push(b); if (isProp && res.q && (!pmq || pmCost(res.q.ask, res.q.fee) < pmCost(pmq.ask, pmq.fee))) pmq = Object.assign({book:b}, res.q); if (isProp && !res.q && res.note) pmNote = pmNote || {book:b, txt:res.note}; }
+        else { whys.push(res.why); if (res.pending) pending = true; }
         continue;
       }
       if (avTradHas(b, item, isProp)) okBooks.push(b);
@@ -15903,7 +16043,7 @@ function avCheck(item, kind){
     if (isProp){
       item.pmNote = (!pmq && pmNote) ? pmNote : null;
       if (pmq) item.pmProp = {book:pmq.book, ask:pmq.ask, fee:pmq.fee, line:pmq.pt, txt:pmq.txt, exact:pmq.exact};
-      else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us')) delete item.pmProp;
+      else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us' || item.pmProp.book==='kalshi')) delete item.pmProp;
     }
     r = okBooks.length ? {ok:true, books:okBooks} : {ok:false, pending, why:[...new Set(whys)].slice(0,2).join(' · ') || 'Not on your books'};
   }
@@ -15925,7 +16065,7 @@ function avQuoteBooks(){
 function avBookHasData(b){
   if (b==='polymarket_us') return !!(AV.us.t && Object.keys(AV.us.ev).length);
   if (b==='polymarket') return !!(AV.pm.t && Object.keys(AV.pm.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.pm);
-  if (b==='kalshi') return ((typeof games!=='undefined' && games)||[]).some(g=>g && g.kalshi);
+  if (b==='kalshi') return !!(AV.ka.t && Object.keys(AV.ka.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.kalshi);
   return avQuoteBooks().has(b);
 }
 function avDataBooks(books){ return (books||[]).filter(avBookHasData); }
@@ -16059,6 +16199,175 @@ if (typeof renderSettings==='function'){
 }
 // keep the market index fresh while the app is open
 setInterval(()=>{ if (!document.hidden) avRefresh(false).catch(()=>{}); }, 60000);
+/* ================= v51: prop grading fix + re-grade, fast prediction-market prices ================= */
+// A tracker leg is a prop when it says so OR its market is a stat (single props tailed from the board carry mk:'ast' etc.)
+function isPropLeg(L){ return !!L && (L.kind==='prop' || !!L.isProp || (L.mk!=null && !['ml','spread','total','h2h','spreads','totals'].includes(L.mk))); }
+function propLegName(L, b){ return L.playerName || (b ? String(b.pick||'').replace(/\s*\(.*$/,'').replace(/\s+(over|under)\b.*$/i,'').replace(/^(over|under)\s+/i,'').trim() : ''); }
+async function gradePropLeg(L, b){
+  const lg = L.lg || L.league, ev = L.ev || L.eventId; if (!lg || !ev || typeof uniBoxFor!=='function') return null;
+  const kind = L.kind==='prop' ? (L.stat || L.mk) : (L.mk || L.stat); if (!kind) return null;
+  const line = L.line!=null ? +L.line : +L.point; if (!isFinite(line)) return null;
+  let bx; try{ bx = await uniBoxFor(lg, ev); }catch(e){ return null; }
+  if (!bx) return null;
+  const pid = String(L.pid || L.playerId || '');
+  const g = uniGradePropRow({l:lg, kind, pid, pn:propLegName(L, b), side:String(L.side||'').toLowerCase(), pt:line}, bx);
+  if (!g || g.res==='ungradeable') return null;
+  if (g.res==='void' && !bx.canc && !pid) return null;   // name-only match failed: leave it for a manual grade, never guess
+  return g.res;
+}
+function betResultFromLegs(legs){
+  let loss = false, allPush = true;
+  for (const L of legs){ if (!L.res) return null; if (L.res==='loss') loss = true; if (L.res!=='push' && L.res!=='void') allPush = false; }
+  if (loss) return 'loss';
+  if (allPush) return legs.every(L=>L.res==='void') ? 'void' : 'push';
+  return 'win';
+}
+/* One-time re-grade of everything graded with the old prop logic (runs on each device once; results sync like any edit). */
+var V51_REGRADE_LS = 'bl_v51_regrade';
+async function v51Regrade(){
+  const done = loadJSON(V51_REGRADE_LS, null); if (done && done.v===2) return done;
+  const log = {v:2, at:Date.now(), bets:{checked:0, flipped:[]}, snaps:{checked:0, flipped:0}, locked:{checked:0, flipped:0}, uni:{checked:0, flipped:0}};
+  // 1) Tracker bets that were auto-graded and have a prop leg
+  for (const b of (Array.isArray(bets) ? bets : [])){
+    if (!b || !b.autoGraded || !b.result || b.result==='pending') continue;
+    const legs = b.legs || (b.link ? [b.link] : null); if (!legs || !legs.some(isPropLeg)) continue;
+    log.bets.checked++;
+    const old = b.result; const saved = legs.map(L=>L.res);
+    for (const L of legs){ if (isPropLeg(L) && L.pg!==51){ const r = await gradePropLeg(L, b); L.res = r; if (r) L.pg = 51; } }
+    const nr = betResultFromLegs(legs);
+    if (!nr){ legs.forEach((L,i)=>{ if (!isPropLeg(L)) L.res = saved[i]; }); b.result = 'pending'; b.autoGraded = false; if (typeof touchBet==='function') touchBet(b); log.bets.flipped.push({pick:b.pick, date:b.date, old, now:'pending (re-checking)'}); continue; }
+    if (nr!==old){ b.result = nr; if (typeof touchBet==='function') touchBet(b); log.bets.flipped.push({pick:b.pick, date:b.date, odds:b.odds, old, now:nr}); }
+  }
+  if (log.bets.flipped.length && typeof saveBets==='function') saveBets();
+  // 2) Props learner snapshots (could be graded from a live box score) — last 60 days, finished games only
+  if (typeof PROP_SNAPS!=='undefined'){
+    const cut = Date.now() - 60*86400000, changed = [];
+    for (const x of [...PROP_SNAPS.values()]){
+      if (x.y==null || x.t < cut || !x.eventId || !x.league) continue;
+      log.snaps.checked++;
+      const r = await gradePropLeg({lg:x.league, ev:x.eventId, kind:'prop', stat:x.kind, pid:x.playerId, playerName:x.playerName, side:x.side, line:x.line});
+      if (!r || r==='void') continue;
+      const y = r==='win'?1:r==='loss'?0:-1;
+      if (y!==x.y){ x.y = y; x.res = r; x.regraded = Date.now(); changed.push(x); log.snaps.flipped++; }
+    }
+    if (changed.length && typeof boardSnapsSave==='function') boardSnapsSave('props', changed, []);
+  }
+  // 3) Locked / early-bird prop records (graded without the league before)
+  try{
+    const st = V41(); let n = 0;
+    for (const k of Object.keys(st.locked)){
+      const r = st.locked[k]; if (!r || !r.res || r.board!=='props') continue;
+      log.locked.checked++;
+      const nr = await gradePropLeg({lg:r.lg, ev:r.ev, kind:'prop', stat:r.kind||r.stat, pid:r.pid, playerName:r.playerName, side:r.side, line:r.line!=null?r.line:r.point});
+      if (!nr || nr===r.res) continue;
+      const unit = +r.unit || (+S.unit||25);
+      r.res = nr; r.regraded = Date.now(); r.profit = nr==='win' ? (r.price!=null ? unit*(amToDec(r.price)-1) : unit) : nr==='loss' ? -unit : 0; n++;
+    }
+    log.locked.flipped = n; if (n){ v41Save('locked'); if (typeof v42AfterGrade==='function') v42AfterGrade(); }
+  }catch(e){ console.warn('v51 regrade locked', e); }
+  // 4) Universe rows already required a finished box and used the right stat; re-check the recent graded ones
+  try{
+    if (typeof UNI_OUT!=='undefined' && Array.isArray(UNI_OUT)){
+      for (const r of UNI_OUT){
+        if (!r || r.k!=='props' && !(String(r.i||'').indexOf('p:')===0)) continue;
+        if (!(r.res==='win'||r.res==='loss'||r.res==='push') || !r.ev) continue;
+        log.uni.checked++;
+        const nr = await gradePropLeg({lg:r.l, ev:r.ev, kind:'prop', stat:r.kind, pid:r.pid, playerName:r.pn, side:r.side, line:r.pt});
+        if (nr && nr!=='void' && nr!==r.res){ r.res = nr; r.y = nr==='win'?1:nr==='loss'?0:-1; log.uni.flipped++; }
+      }
+    }
+  }catch(e){}
+  saveJSON(V51_REGRADE_LS, log);
+  console.log('[v51 regrade]', JSON.stringify(log));
+  const nb = log.bets.flipped.length;
+  if (nb && typeof toast==='function') toast(`Fixed ${nb} prop bet grade${nb===1?'':'s'}: ` + log.bets.flipped.slice(0,3).map(f=>`${f.pick} ${f.old} → ${f.now}`).join('; ') + (nb>3?` and ${nb-3} more`:''));
+  try{ if (typeof render==='function' && typeof ui!=='undefined' && (ui.tab==='tracker' || ui.tab==='results')) render(); }catch(e){}
+  return log;
+}
+setTimeout(()=>{ v51Regrade().catch(e=>console.warn('v51 regrade', e)); }, 20000);
+
+/* ---- fast prediction-market prices: every 15s while visible, only the prices on cards you can see ---- */
+var FP = {busy:false, rr:0, last:0, n:0};
+function fpWanted(){ const b = selectedBooks(); return !b.length || b.some(x=>PREDICTION_BOOKS.includes(x)); }
+function fpShown(){
+  const out = []; const seen = new Set();
+  for (const el of document.querySelectorAll('#view [data-log]')){
+    const id = el.dataset.log; if (!id || seen.has(id)) continue; seen.add(id);
+    const p = ((typeof plays!=='undefined' && plays) || []).find(x=>x.id===id) || ((typeof props!=='undefined' && props) || []).find(x=>x.id===id);
+    if (p && p.g) out.push(p);
+  }
+  return out;
+}
+function fpKalshiSeries(p){
+  const lg = p.g.league, cfg = typeof KX_EXTRA!=='undefined' && KX_EXTRA[lg]; const KE = AV.ka.ev[p.g.eventId];
+  if (!cfg || !KE || !KE.code) return null;
+  if (p.isProp){ const k = p.kind==='hpts' ? 'pts' : p.kind; return cfg.props && cfg.props[k] ? cfg.p+cfg.props[k]+'-'+KE.code : null; }
+  if (p.mk==='spread') return cfg.p+'SPREAD-'+KE.code; if (p.mk==='total') return cfg.p+'TOTAL-'+KE.code;
+  return null;
+}
+function fpApplyKalshi(g, markets){
+  let n = 0; const by = {}; for (const m of markets) by[m.ticker] = m;
+  if (g.kalshi && g.kalshi.ml) for (const s in g.kalshi.ml){ const q = g.kalshi.ml[s]; const m = q && by[q.tk]; if (!m) continue; const a = avAsk(m.yes_ask_dollars); if (a!=null && a!==q.ask){ q.ask = a; q.bid = avAsk(m.yes_bid_dollars); n++; } }
+  const E = AV.ka.ev[g.eventId];
+  if (E){
+    for (const key in E.g) for (const r of E.g[key]){
+      if (key.indexOf('ml|')===0 && g.kalshi && g.kalshi.ml){ const q = g.kalshi.ml[key.slice(3)]; if (q && q.ask!==r.ask){ r.ask = q.ask; n++; } continue; }
+      const m = r.tk && by[r.tk]; if (!m) continue; const a = avAsk(r.y ? m.yes_ask_dollars : m.no_ask_dollars); if (a!==r.ask){ r.ask = a; n++; }
+    }
+    for (const key in E.p) for (const r of E.p[key]){ const m = r.tk && by[r.tk]; if (!m) continue; const o = avAsk(m.yes_ask_dollars), u = avAsk(m.no_ask_dollars); if (o!==r.over || u!==r.under){ r.over = o; r.under = u; n++; } }
+  }
+  return n;
+}
+function fpPatchCards(items){
+  const tmp = document.createElement('div');
+  for (const p of items){
+    const btn = document.querySelector(`#view [data-log="${CSS.escape(p.id)}"]`); const card = btn && btn.closest('.card'); if (!card) continue;
+    let html = ''; try{ html = p.isProp ? propCard(p) : playCard(p); }catch(e){ continue; }
+    tmp.innerHTML = html; const nc = tmp.firstElementChild; if (!nc) continue;
+    const pairs = [['.price', '.price'], ['.beton', '.beton']];
+    for (const [a] of pairs){
+      const olds = card.querySelectorAll(a), news = nc.querySelectorAll(a);
+      olds.forEach((o, i)=>{ const nn = news[i]; if (nn && nn.innerHTML!==o.innerHTML){ o.innerHTML = nn.innerHTML; o.className = nn.className; o.classList.add('px-flash'); setTimeout(()=>o.classList.remove('px-flash'), 1200); } });
+    }
+  }
+}
+async function fpTick(){
+  if (document.hidden || FP.busy || !fpWanted()) return;
+  if (typeof busy!=='undefined' && busy) return;                      // full refresh running
+  const items = fpShown(); if (!items.length) return;
+  FP.busy = true; let changed = 0;
+  try{
+    const w = avWantVenues();
+    const gs = [...new Set(items.map(p=>p.g))];
+    const reqs = [];
+    // Kalshi (through the relay): game event + only the spread/total/prop events of cards on screen
+    if (S.kalshiOn!==false){
+      const ets = new Map();
+      for (const g of gs) if (g.kalshi && g.kalshi.ev) ets.set(g.kalshi.ev, g);
+      for (const p of items){ const et = fpKalshiSeries(p); if (et) ets.set(et, p.g); }
+      for (const [et, g] of ets) reqs.push(async()=>{ const r = await fetchJSON(`${kalshiBase()}/markets?event_ticker=${encodeURIComponent(et)}&limit=1000`, 10000); if (r.ok && r.data && Array.isArray(r.data.markets)) changed += fpApplyKalshi(g, r.data.markets); });
+    }
+    // Polymarket US / Polymarket: re-read the event of each game on screen
+    for (const g of gs){
+      if (w.us){ const E = AV.us.ev[g.eventId]; if (E && E.ok && E.slug) reqs.push(async()=>{ const r = await fetchJSON(`https://gateway.polymarket.us/v1/events/slug/${encodeURIComponent(E.slug)}`, 12000); if (r.ok && r.data){ avIngestUsEvent(AV.us, g, r.data.event || r.data); changed++; } }); }
+      if (w.pm){ const E = AV.pm.ev[g.eventId]; if (E && E.ok && E.slug) reqs.push(async()=>{ const r = await fetchJSON(`https://gamma-api.polymarket.com/events/slug/${encodeURIComponent(E.slug)}`, 12000); if (r.ok && r.data && r.data.markets){ avIngestGammaEvent(AV.pm, g, r.data); changed++; } }); }
+    }
+    // polite: at most 24 calls per tick, rotating through the rest on later ticks
+    const n = reqs.length, cap = 24; const pick = n <= cap ? reqs : Array.from({length:cap}, (_, i)=>reqs[(FP.rr + i) % n]); FP.rr = (FP.rr + cap) % Math.max(1, n);
+    await pool(pick.map(f=>async()=>{ try{ await f(); }catch(e){} }), 4);
+    if (changed){
+      AV.ver++;
+      for (const p of items){
+        try{ if (p.isProp){ p._av = null; avCheck(p, 'props'); } else if (typeof myBooks==='function'){ p.my = myBooks(p); } }catch(e){}
+      }
+      fpPatchCards(items);
+      try{ if (typeof checkLockedUrgent==='function') checkLockedUrgent(); }catch(e){}   // same rules/thresholds as the 60s refresh
+    }
+    FP.last = Date.now(); FP.n++;
+  } finally { FP.busy = false; }
+}
+setInterval(()=>{ fpTick().catch(()=>{}); }, 15000);
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) setTimeout(()=>fpTick().catch(()=>{}), 1500); });
 </script>
 </body>
 </html>
