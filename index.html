@@ -1291,21 +1291,24 @@ const SPORT_EMOJI = {nba:'🏀',nhl:'🏒',nfl:'🏈',mlb:'⚾',ncaaf:'🏈',nca
 function sportEmoji(id){ return SPORT_EMOJI[id]||'🏟️'; }
 function sportChipLabel(L){ return `<span class="sp-emo" aria-hidden="true">${sportEmoji(L.id)}</span>${L.label}`; }
 
-const BOOK_NAMES = {polymarket:'Polymarket',polymarket_us:'Polymarket US',kalshi:'Kalshi',draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
+const BOOK_NAMES = {prophetx:'ProphetX',cryptocom:'Crypto.com',polymarket:'Polymarket',polymarket_us:'Polymarket US',kalshi:'Kalshi',draftkings:'DraftKings',fanduel:'FanDuel',betmgm:'BetMGM',williamhill_us:'Caesars',pinnacle:'Pinnacle',betrivers:'BetRivers',bovada:'Bovada',betonlineag:'BetOnline',mybookieag:'MyBookie',lowvig:'LowVig',betus:'BetUS',espnbet:'ESPN BET',fanatics:'Fanatics',hardrockbet:'Hard Rock',ballybet:'Bally Bet',betparx:'betPARX',fliff:'Fliff',windcreek:'Wind Creek',betfair_ex_eu:'Betfair Ex',williamhill:'William Hill',unibet_eu:'Unibet',betsson:'Betsson',onexbet:'1xBet',marathonbet:'Marathon',sport888:'888sport',matchbook:'Matchbook'};
 const ALL_PROP_STATS = ['pts','reb','ast','threes','pra','pr','pa','ar','stl','blk','tov','sog','saves','goals','hpts','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td','ks'];
 const ALL_GAME_MKTS = ['h2h','spreads','totals','ml','spread','total'];
 // v52: only free books. DraftKings comes from ESPN's free feed; prediction markets from their own free feeds (Kalshi via the relay).
 // Everything that needed an Odds API key (Bovada, FanDuel, Pinnacle…) is gone. Old names stay in BOOK_NAMES only so hand-logged bets keep their label.
-const FREE_BOOKS = ['draftkings','polymarket_us','polymarket','kalshi'];
+const FREE_BOOKS = ['draftkings','polymarket_us','polymarket','kalshi','prophetx','cryptocom'];
+// v58: ProphetX + Crypto.com are free too, but stay off until picked in Settings
+const DEFAULT_BOOKS_ON = ['draftkings','polymarket_us','polymarket','kalshi'];
 const NO_ODDS_KEY = '';   // the Odds API is removed; every old "if key" path is off
 const TRAD_BOOKS = ['draftkings'];
 // v35: Settings groups. Prediction markets price from their own free public APIs (no Odds API credits).
-const PREDICTION_BOOKS = ['polymarket','polymarket_us','kalshi'];
+const PREDICTION_BOOKS = ['polymarket','polymarket_us','kalshi','cryptocom'];
 const POPULAR_BOOKS = TRAD_BOOKS.slice();
 const isPredictionBook = k => PREDICTION_BOOKS.includes(String(k||'').toLowerCase());
 const PM_BOOK_CAPS = { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] };
 const BOOK_CAPABILITIES = Object.assign(
-  { polymarket: Object.assign({}, PM_BOOK_CAPS), polymarket_us: Object.assign({}, PM_BOOK_CAPS) },
+  { polymarket: Object.assign({}, PM_BOOK_CAPS), polymarket_us: Object.assign({}, PM_BOOK_CAPS), cryptocom: Object.assign({}, PM_BOOK_CAPS),
+    prophetx: { games: ALL_GAME_MKTS.slice(), props: ['pass_yds','rush_yds','rec_yds','rec','pass_td','pts','reb','ast','threes','pra','sog','saves','ks'] } },
   Object.fromEntries(TRAD_BOOKS.concat(['kalshi']).map(k => [k, { games: ALL_GAME_MKTS.slice(), props: ALL_PROP_STATS.slice() }]))
 );
 
@@ -1493,8 +1496,9 @@ function polymarketOnlyFilterActive(){
   const books = selectedBooks();
   if (!books.length) return false;
   if (!books.every(b => PREDICTION_BOOKS.includes(b))) return false;
-  const pmSel = books.some(b=>b==='polymarket'||b==='polymarket_us'), kSel = books.includes('kalshi');
-  return (pmSel && polymarketFeedLive()) || (kSel && kalshiFeedLive());
+  const pmSel = books.some(b=>b==='polymarket'||b==='polymarket_us'), kSel = books.includes('kalshi'), cSel = books.includes('cryptocom');
+  const ccLive = cSel && typeof AV!=='undefined' && AV.cc && Object.keys(AV.cc.ev||{}).length>0;
+  return (pmSel && polymarketFeedLive()) || (kSel && kalshiFeedLive()) || ccLive;
 }
 function playHasPolymarketLine(p){
   if (!p || !p.g) return false;
@@ -1546,6 +1550,8 @@ const BOOK_HOME_URL = {
   polymarket:'https://polymarket.com/sports',
   polymarket_us:'https://polymarket.us/sports',
   kalshi:'https://kalshi.com/calendar/sports',
+  prophetx:'https://www.prophetx.co/lobby',
+  cryptocom:'https://web.crypto.com/explore/predict/sports',
   draftkings:'https://sportsbook.draftkings.com/',
   fanduel:'https://sportsbook.fanduel.com/',
   betmgm:'https://sports.betmgm.com/en/sports',
@@ -1654,6 +1660,7 @@ function bookOpenUrl(bookKey, item, kind){
   if (book==='kalshi'){
     return 'https://kalshi.com/calendar/sports';
   }
+  if ((book==='prophetx' || book==='cryptocom') && typeof v58BookUrl==='function') return v58BookUrl(book, g) || BOOK_HOME_URL[book];
   const mapped = BOOK_LEAGUE_URL[book] && lg && BOOK_LEAGUE_URL[book][lg];
   return mapped || BOOK_HOME_URL[book] || BOOK_HOME_URL.bovada;
 }
@@ -1672,6 +1679,7 @@ function bookPriceFor(item, kind, bookKey){
       const sd = item.side || (item.L && item.L.dir) || 'over';
       const bp = item.bookPrices && item.bookPrices[b];
       if (bp && bp[sd]!=null) return fmtAm(+bp[sd]);
+      if (item.pmProp && item.pmProp.book===b && item.pmProp.am!=null) return fmtAm(+item.pmProp.am);
       if (item.pmProp && item.pmProp.book===b && item.pmProp.ask!=null) return cents(item.pmProp.ask);
       if (b==='draftkings' && item.price!=null && /draftkings|espn/i.test(String(item.source||item.bookName||''))) return fmtAm(+item.price);
       if (item.bookName && BOOK_NAMES[b] && String(item.bookName).toLowerCase().indexOf(BOOK_NAMES[b].toLowerCase())===0 && item.price!=null) return fmtAm(+item.price);
@@ -1683,6 +1691,12 @@ function bookPriceFor(item, kind, bookKey){
       if (b==='polymarket_us') return null;
       const m = g.pm && g.pm[mk] && g.pm[mk][side];
       return m && (mk==='ml' || point==null || m.point===point) ? cents(m.ask) : null;
+    }
+    if ((b==='prophetx' || b==='cryptocom') && typeof avPmCheck==='function'){
+      const r = avPmCheck(b==='prophetx'?'px':'cc', {g, mk, side, sd:{point}, point});
+      if (!r.ok || !r.q) return null;
+      const pre = (mk!=='ml' && r.q.pt!=null && point!=null && r.q.pt!==point) ? (mk==='spread'?fmtPt(r.q.pt):r.q.pt)+' ' : '';
+      return pre + (r.q.am!=null ? fmtAm(+r.q.am) : cents(r.q.ask));
     }
     if (b==='kalshi'){
       const m = g.kalshi && g.kalshi[mk] && g.kalshi[mk][side];
@@ -1776,7 +1790,7 @@ function openInBookHTML(item, kind){
 })();
 
 
-const DEFAULT_ALL_BOOKS = FREE_BOOKS.join(',');
+const DEFAULT_ALL_BOOKS = DEFAULT_BOOKS_ON.join(',');
 const DEFAULTS = {
   refreshMin:1, refreshSec:60, lookaheadDays:3, enabled:LEAGUES.map(l=>l.id),
   oddsKey:'', oddsRegions:'us', oddsEveryMin:120, oddsBooks:'', sharpWeight:2,
@@ -1801,7 +1815,7 @@ let S = Object.assign({}, DEFAULTS, loadJSON(LS.settings, {}));
 // v52: drop removed books + the Odds API key from saved settings; an empty selection becomes all four free books
 function v52CleanBooks(s){
   const kept = String(s.myBooks||'').toLowerCase().split(',').map(x=>x.trim()).filter(b=>FREE_BOOKS.includes(b));
-  s.myBooks = (kept.length ? [...new Set(kept)] : FREE_BOOKS).join(','); s.oddsKey = ''; s.oddsBooks = ''; return s;
+  s.myBooks = (kept.length ? [...new Set(kept)] : DEFAULT_BOOKS_ON).join(','); s.oddsKey = ''; s.oddsBooks = ''; return s;
 }
 if (!(+S.v52 >= 1)){ v52CleanBooks(S); S.v52 = 1; try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
 // v6 (Nov 17 2026): NCAAB excluded, pickier. v5: singles range -150..+150, win-rate strict rules. Old saved strict values are replaced once.
@@ -3588,7 +3602,10 @@ function myBooks(p){
     out.quotes.push({book:BOOK_LABEL(k), price:q.price, edge: fair - imp(q.price), kind:'book'});
   }
   // v48: real Polymarket / Polymarket US market for this exact side + point (see 23_avail.js)
-  const pmQs = ((hasPm || list.includes('kalshi')) && typeof avPmGameQuote==='function') ? avPmGameQuote(p) : [];
+  const pmQs0 = ((hasPm || list.includes('kalshi') || list.includes('prophetx') || list.includes('cryptocom')) && typeof avPmGameQuote==='function') ? avPmGameQuote(p) : [];
+  // v58: ProphetX is an exchange priced in American odds — shown as a sportsbook price; value uses the price after its 2% commission
+  for (const m of pmQs0) if (m.am!=null) out.quotes.push({book:BOOK_LABEL(m.book), bk:m.book, price:+m.am, cost:m.ask, edge: fair - m.ask, kind:'book'});
+  const pmQs = pmQs0.filter(m=>m.am==null);
   for (const m of pmQs){ const cost = pmCost(m.ask, m.fee); out.quotes.push({book:BOOK_LABEL(m.book), bk:m.book, price:probToAm(cost), cents:m.ask, cost, edge: fair - cost, kind:'pm', thin:false, pm:{ask:m.ask, fee:m.fee, point:m.pt}}); }
   if (!pmQs.length && list.includes('polymarket') && g.pm && g.pm[mk] && g.pm[mk][p.side]){
     const m = g.pm[mk][p.side];
@@ -3652,7 +3669,9 @@ function propRecBook(p){
   const src = String(p.source||'') + ' ' + String(p.bookName||'');
   if (/draftkings|espn/i.test(src)) consider('draftkings', side==='over' ? (p.overPrice!=null?p.overPrice:main) : (p.underPrice!=null?p.underPrice:main));
   else if (p.bookName){ const k = bookKeyFromLabel(p.bookName); if (k) consider(k, main); }
-  if (p.pmProp && p.pmProp.ask!=null && bookIsPicked(p.pmProp.book)){
+  if (p.pmProp && p.pmProp.am!=null && p.pmProp.ask!=null && bookIsPicked(p.pmProp.book)){
+    if (!best || p.pmProp.ask < best.cost) best = {book:BOOK_LABEL(p.pmProp.book), bk:p.pmProp.book, price:+p.pmProp.am, cost:+p.pmProp.ask};
+  } else if (p.pmProp && p.pmProp.ask!=null && bookIsPicked(p.pmProp.book)){
     const c = pmCost(+p.pmProp.ask, p.pmProp.fee); if (!best || c < best.cost) best = {book:BOOK_LABEL(p.pmProp.book), bk:p.pmProp.book, price:probToAm(c), cents:+p.pmProp.ask, cost:c, pm:true, fee:p.pmProp.fee};
   }
   if (!best && !myBookList().length && main!=null) best = {book:(typeof propSourceLabel==='function'?propSourceLabel(p):'Sportsbook'), price:+main, cost:imp(+main)};
@@ -3664,7 +3683,7 @@ function recBookFor(p){
   const mb = p.my && p.my.best;
   if (mb) return mb.kind==='pm'
     ? {book:mb.book, bk:mb.bk, price:mb.price, cents:mb.cents, cost:mb.cost, pm:true, fee:mb.pm&&mb.pm.fee, thin:mb.thin}
-    : {book:mb.book, price:mb.price, cost:imp(mb.price)};
+    : {book:mb.book, bk:mb.bk, price:mb.price, cost:mb.cost!=null?mb.cost:imp(mb.price)};
   if (!myBookList().length && p.sd && p.sd.best) return {book:p.sd.best.book, price:p.sd.best.price, cost:imp(p.sd.best.price)};
   return {none:true};
 }
@@ -12318,7 +12337,7 @@ const PRESET_KEYS = ['strictMode','sMarkets','sMinWin','sModelMin','sModelEdge',
 function applyPreset(name){ const P = PRESETS[name]; if (!P) return; if (name==='relaxed'){ Object.assign(S, Object.fromEntries(PRESET_KEYS.map(k=>[k, PRESETS.super[k]]))); S.strictMode = false; } else for (const k of PRESET_KEYS) S[k] = P[k]; S.preset = name; }
 function detectPreset(){ if (!S.strictMode) return 'relaxed'; for (const n of ['super','picky']){ const P = PRESETS[n]; if (PRESET_KEYS.every(k=>String(S[k])===String(P[k]))) return n; } return 'custom'; }
 const MY_BOOK_CHOICES_OLD = [['bovada','Bovada'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi'],['draftkings','DraftKings'],['fanduel','FanDuel'],['betmgm','BetMGM'],['williamhill_us','Caesars'],['espnbet','ESPN BET'],['fanatics','Fanatics'],['betrivers','BetRivers'],['betonlineag','BetOnline']];
-const MY_BOOK_CHOICES = [['draftkings','DraftKings'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi']];
+const MY_BOOK_CHOICES = [['draftkings','DraftKings'],['prophetx','ProphetX'],['polymarket_us','Polymarket US'],['polymarket','Polymarket'],['kalshi','Kalshi'],['cryptocom','Crypto.com']];
 const BOOK_CHOICES_POPULAR = MY_BOOK_CHOICES.filter(([k])=>!PREDICTION_BOOKS.includes(k));
 const BOOK_CHOICES_PREDICTIONS = PREDICTION_BOOKS.map(k=>MY_BOOK_CHOICES.find(c=>c[0]===k)).filter(Boolean);
 function myBooksSummaryHTML(books){
@@ -12401,10 +12420,10 @@ function renderSettings(){
       <div class="s-note">Cards tell you where to bet among these, and the <b>Open book</b> menu lists them with their prices.</div>
       <div class="book-group"><div class="book-group-h">Sportsbooks</div>
         <div class="filters">${BOOK_CHOICES_POPULAR.map(([k,l])=>`<label class="chip ${books.includes(k)?'on':''}"><input type="checkbox" name="book_${k}" ${books.includes(k)?'checked':''} hidden>${l}</label>`).join('')}</div>
-        <div class="s-note">DraftKings prices come free from ESPN. You can still log bets from any book (Bovada, FanDuel…) in the Tracker by typing its name.</div></div>
+        <div class="s-note">DraftKings prices come free from ESPN. ProphetX is a betting exchange: its prices come from its free public feed and the app counts its 2% fee on winnings. You can still log bets from any book (Bovada, FanDuel…) in the Tracker by typing its name.</div></div>
       <div class="book-group"><div class="book-group-h">Prediction markets</div>
         <div class="filters">${BOOK_CHOICES_PREDICTIONS.map(([k,l])=>`<label class="chip ${books.includes(k)?'on':''}"><input type="checkbox" name="book_${k}" ${books.includes(k)?'checked':''} hidden>${l}</label>`).join('')}</div>
-        <div class="s-note">Polymarket, Polymarket US and Kalshi prices come from their own free public feeds and refresh about every 15 seconds on the cards you're looking at.${typeof kalshiErr!=='undefined' && kalshiErr && books.includes('kalshi') ? ` <b>${esc(kalshiErr)}</b>` : ''}</div></div>
+        <div class="s-note">Polymarket, Polymarket US, Kalshi and Crypto.com prices come from their own free public feeds and refresh about every 15 seconds on the cards you're looking at.${typeof kalshiErr!=='undefined' && kalshiErr && books.includes('kalshi') ? ` <b>${esc(kalshiErr)}</b>` : ''}</div></div>
       <div class="s-note">${esc(typeof refBookText==='function'?refBookText():'')}.</div></div>
 
     <div class="s-row"><div class="s-h">Refresh every</div>
@@ -12511,7 +12530,7 @@ function renderSettings(){
     S.enabled = LEAGUES.filter(L=>f.get('en_'+L.id)).map(L=>L.id);
     S.deepData = f.get('deepData')==='1'; S.pmOn = f.get('pmOn')==='1'; S.kalshiOn = f.get('kalshiOn')!=='0'; S.kalshiRelay = String(f.get('kalshiRelay')||'').trim(); if (typeof KALSHI_RELAY_DEFAULT!=='undefined' && S.kalshiRelay.replace(/\/+$/,'')===KALSHI_RELAY_DEFAULT) S.kalshiRelay = ''; if (typeof kalshiCache!=='undefined' && kalshiCache) kalshiCache.failT = 0;
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
-    S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).join(',') || FREE_BOOKS.join(',');
+    S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).join(',') || DEFAULT_BOOKS_ON.join(',');
     S.myBooksCustom = true;
     if ((ui.settingsBoard||'games')==='games'){ S.sNoSoccer = false; }
     S.alertNewPlays = !!f.get('alertNewPlays'); S.alertPulledPlays = !!f.get('alertPulledPlays');
@@ -14687,6 +14706,21 @@ function uniCaptureGames(){
         }
       }
     }
+    // v58: ProphetX + Crypto.com — moneylines always, spreads/totals only on the board's own lines (both list many alt lines)
+    for (const [v, src, lab] of [['px','px','ProphetX'], ['cc','cc','Crypto.com']]){
+      const VE = (typeof AV!=='undefined' && AV[v] && AV[v].ev) ? AV[v].ev[g.eventId] : null;
+      if (!VE || !VE.g) continue;
+      for (const key in VE.g){
+        const [mk, s] = key.split('|');
+        for (const q of VE.g[key]){
+          if (!q || !(q.ask>0 && q.ask<1)) continue;
+          const am = q.am!=null ? +q.am : decToAm(1/(typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask));
+          const pt = mk==='ml' ? null : q.pt;
+          const rowSb = UNI.get(`g:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`); if (mk!=='ml' && !rowSb) continue;
+          if (uniUpsert('games', src, `${src}:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:lab}, {price:am, v: rowSb ? rowSb.v : 'nocall', p: rowSb ? rowSb.p : null})) n++;
+        }
+      }
+    }
   }
   // every other game (sports off in Settings, or outside the board window): DraftKings lines from ESPN, no model call
   for (const gm of UNI_GAMES.values()){
@@ -15303,7 +15337,7 @@ function uniResultsHTML(){
       const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
       return `<div class="uni-row"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `${pct(hr)} hit · <b class="${cls}">${roiS(r)}</b> ROI` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
     }).join('');
-    const src = Object.entries(c.src).map(([k,v])=>`${({sb:'sportsbook',pm:'Polymarket',kalshi:'Kalshi',shown:'shown',shadow:'tracked quietly'})[k]||k} ${f(v)}`).join(' · ');
+    const src = Object.entries(c.src).map(([k,v])=>`${({sb:'sportsbook',pm:'Polymarket',kalshi:'Kalshi',px:'ProphetX',cc:'Crypto.com',shown:'shown',shadow:'tracked quietly'})[k]||k} ${f(v)}`).join(' · ');
     const extra = (c.un||c.vd||c.pu) ? ` Pushes ${f(c.pu)}, voids ${f(c.vd)} (did not play / postponed), ungradeable ${f(c.un)}.` : '';
     return `<div class="v42-b uni-b"><h3>${title}</h3>
       <div class="v42-kv"><span class="k">Tracked today</span><span class="v">${f(c.today)} markets</span></div><div class="hint">${tv}</div>
@@ -15613,7 +15647,7 @@ function photoBind(v){
    that market is treated as not offered by that book (undo in Settings). Flags also go (anonymous) to the pool.
    Picks that fail stay tracked by the universe scan, and tailed bets are never hidden. */
 var AV = {ver:1, bypass:false, busy:false, last:0, every:10*60000,
-  pm:{t:0, lg:{}, ev:{}, err:null}, us:{t:0, lg:{}, ev:{}, err:null}, ka:{t:0, lg:{}, ev:{}, err:null}};
+  pm:{t:0, lg:{}, ev:{}, err:null}, us:{t:0, lg:{}, ev:{}, err:null}, ka:{t:0, lg:{}, ev:{}, err:null}, px:{t:0, lg:{}, ev:{}, err:null}, cc:{t:0, lg:{}, ev:{}, err:null}};
 var AV_LS = 'bl_av_idx_v1', AV_FLAG_LS = 'bl_nob_v1';
 var AV_US_LEAGUE = {nba:'nba', nfl:'nfl', nhl:'nhl', mlb:'mlb', ncaab:'cbb', ncaaf:'cfb', wnba:'wnba', mls:'mls', epl:'epl', ucl:'ucl', ufc:'ufc', atp:'atp', wta:'wta'};
 var AV_PM_SERIES = {nba:10345, nhl:10346, nfl:12185, ncaaf:12756, ncaab:10470, wnba:10105, mlb:3, mls:10189, epl:10188, ucl:10204, laliga:10193, seriea:10203, bund:10194};
@@ -15625,8 +15659,9 @@ var AV_KIND = {
   baseball:{strikeouts:'ks', pitcher_strikeouts:'ks'}
 };
 var AV_SPORT_OF = {nba:'basketball', wnba:'basketball', ncaab:'basketball', nfl:'football', ncaaf:'football', nhl:'hockey', mlb:'baseball'};
-function avVenueName(v){ return v==='us' ? 'Polymarket US' : v==='ka' ? 'Kalshi' : 'Polymarket'; }
-function avVenueBook(v){ return v==='us' ? 'polymarket_us' : v==='ka' ? 'kalshi' : 'polymarket'; }
+function avVenueName(v){ return v==='us' ? 'Polymarket US' : v==='ka' ? 'Kalshi' : v==='px' ? 'ProphetX' : v==='cc' ? 'Crypto.com' : 'Polymarket'; }
+function avVenueBook(v){ return v==='us' ? 'polymarket_us' : v==='ka' ? 'kalshi' : v==='px' ? 'prophetx' : v==='cc' ? 'cryptocom' : 'polymarket'; }
+var AV_BOOK_VENUE = {polymarket:'pm', polymarket_us:'us', kalshi:'ka', prophetx:'px', cryptocom:'cc'};
 function avNameKey(n){ return (typeof norm==='function' ? norm(n) : String(n||'').toLowerCase()).replace(/\b(jr|sr|ii|iii|iv|v)\b/g,'').replace(/\s+/g,' ').trim(); }
 function avKindOf(lg, stat){
   const sp = AV_SPORT_OF[lg] || 'basketball';
@@ -15920,7 +15955,7 @@ async function avLoadKalshi(lgs){
 function avLearnTypes(X){ X.types = X.types || {}; for (const lg in X.lg){ const L = X.lg[lg]; if (!L || !L.kinds) continue; const T = X.types[lg] || (X.types[lg] = {}); for (const k in L.kinds) T[k] = Date.now(); } }
 function avWantVenues(){
   const b = (typeof selectedBooks==='function') ? selectedBooks() : [];
-  return {pm: b.includes('polymarket'), us: b.includes('polymarket_us'), ka: b.includes('kalshi') && (typeof S==='undefined' || S.kalshiOn!==false)};
+  return {pm: b.includes('polymarket'), us: b.includes('polymarket_us'), ka: b.includes('kalshi') && (typeof S==='undefined' || S.kalshiOn!==false), px: b.includes('prophetx'), cc: b.includes('cryptocom')};
 }
 function avLeaguesNow(){
   const now = Date.now(); const s = new Set();
@@ -15929,14 +15964,17 @@ function avLeaguesNow(){
 }
 async function avRefresh(force){
   const want = avWantVenues();
-  if (!want.pm && !want.us && !want.ka) return;
+  if (!want.pm && !want.us && !want.ka && !want.px && !want.cc) return;
   if (AV.busy) return;
   const dueMain = (want.pm || want.us) && (force || Date.now() - AV.last >= AV.every);
   // Kalshi spreads/totals/props: every 3 minutes (the relay caches 15s; we stay well under any rate limit)
   // v54: if the first pass ran before Kalshi moneylines had matched any game, retry as soon as they have (not 3 minutes later)
   const kaEmptyButReady = !Object.keys(AV.ka.ev||{}).length && ((typeof games!=='undefined' && games)||[]).some(g=>g && g.kalshi && g.kalshi.ev) && Date.now() - (AV.ka.t||0) >= 20000;
   const dueKa = want.ka && (force || kaEmptyButReady || Date.now() - (AV.ka.t||0) >= 3*60000);
-  if (!dueMain && !dueKa) return;
+  // v58: ProphetX + Crypto.com full reload every 3 minutes (prices on screen refresh every 15s in fpTick)
+  const duePx = want.px && (force || Date.now() - (AV.px.t||0) >= 3*60000);
+  const dueCc = want.cc && (force || Date.now() - (AV.cc.t||0) >= 3*60000);
+  if (!dueMain && !dueKa && !duePx && !dueCc) return;
   const lgs = avLeaguesNow(); if (!lgs.length) return;
   AV.busy = true; if (dueMain) AV.last = Date.now();
   try{
@@ -15944,6 +15982,8 @@ async function avRefresh(force){
     if (dueMain && want.us) jobs.push(avLoadUs(lgs).catch(e=>{ AV.us.err = String(e.message||e); AV.us.t = Date.now(); }));
     if (dueMain && want.pm) jobs.push(avLoadGlobal(lgs).catch(e=>{ AV.pm.err = String(e.message||e); AV.pm.t = Date.now(); }));
     if (dueKa) jobs.push(avLoadKalshi(lgs).catch(e=>{ AV.ka.err = String(e.message||e); AV.ka.t = Date.now(); }));
+    if (duePx && typeof avLoadPx==='function') jobs.push(avLoadPx(lgs).catch(e=>{ AV.px.err = String(e.message||e); AV.px.t = Date.now(); }));
+    if (dueCc && typeof avLoadCc==='function') jobs.push(avLoadCc(lgs).catch(e=>{ AV.cc.err = String(e.message||e); AV.cc.t = Date.now(); }));
     await Promise.all(jobs);
     avSave();
   }finally{ AV.busy = false; }
@@ -15952,13 +15992,13 @@ async function avRefresh(force){
 function avSave(){
   try{
     const slim = X => ({t:X.t, err:X.err, lg:X.lg, types:X.types||{}, ev:Object.fromEntries(Object.entries(X.ev).filter(([k,E])=>E && E.ok))});
-    localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm), ka:{types:AV.ka.types||{}}}));
+    localStorage.setItem(AV_LS, JSON.stringify({v:1, us:slim(AV.us), pm:slim(AV.pm), ka:{types:AV.ka.types||{}}, px:{types:AV.px.types||{}}, cc:{types:AV.cc.types||{}}}));
   }catch(e){ try{ localStorage.removeItem(AV_LS); }catch(_){} }
 }
 function avLoadSaved(){
   try{
     const d = JSON.parse(localStorage.getItem(AV_LS)||'null'); if (!d || d.v!==1) return;
-    for (const v of ['us','pm','ka']) if (d[v] && d[v].types) AV[v].types = d[v].types;
+    for (const v of ['us','pm','ka','px','cc']) if (d[v] && d[v].types) AV[v].types = d[v].types;
     for (const v of ['us','pm']) if (d[v] && d[v].t && Date.now() - d[v].t < 30*60000){ AV[v].t = d[v].t; AV[v].lg = d[v].lg||{}; AV[v].ev = d[v].ev||{}; AV[v].err = d[v].err||null; }
   }catch(e){}
 }
@@ -16015,7 +16055,7 @@ function avPmPropType(v, item, g, L, E){
     const rows = E.p[mine.find(k=>k.indexOf(kind+'|')===0) || ''] || [];
     const line = +item.line, side = String(item.side||'over').toLowerCase()==='under' ? 'under' : 'over';
     const hit = rows.find(r=>Math.abs(r.eq - line) < 1e-9);
-    if (hit && hit[side]!=null) q = {ask:hit[side], fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:true, tk:hit.tk||null, y:side==='over'?1:0};
+    if (hit && hit[side]!=null) q = {ask:hit[side], fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:true, tk:hit.tk||null, y:side==='over'?1:0, am:hit[side+'Am']!=null?hit[side+'Am']:undefined};
   }
   return {ok:true, q, note: q ? null : `${name} line may differ`};
 }
@@ -16062,7 +16102,7 @@ function avPmCheck(v, item){
     if (!hit){ const near = rows.slice().sort((a,b)=>Math.abs(a.eq-line)-Math.abs(b.eq-line)).slice(0,3).sort((a,b)=>a.eq-b.eq).map(r=>r.txt).join(', '); return {ok:false, why:`${name} lists ${item.playerName} ${label} at ${near}, not ${line}`}; }
     const ask = hit[side];
     if (ask==null) return {ok:false, why:`${name} has no ${side==='over'?'Over (Yes)':'Under (No)'} price on this line`};
-    return {ok:true, q:{ask, fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:Math.abs(hit.eq-line)<1e-9, tk:hit.tk||null, y:side==='over'?1:0}};
+    return {ok:true, q:{ask, fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:Math.abs(hit.eq-line)<1e-9, tk:hit.tk||null, y:side==='over'?1:0, am:hit[side+'Am']!=null?hit[side+'Am']:undefined}};
   }
   const mk = item.mk==='h2h' ? 'ml' : item.mk==='spreads' ? 'spread' : item.mk==='totals' ? 'total' : item.mk;
   if (!['ml','spread','total'].includes(mk)) return {ok:false, why:`${name} doesn't offer this market`};
@@ -16073,12 +16113,12 @@ function avPmCheck(v, item){
   const hit = mk==='ml' ? rows[0] : avNear(rows, point, false);
   if (!hit) return {ok:false, why:`${name} ${mkName} lines don't include ${point}`};
   if (hit.ask==null) return {ok:false, why:`${name} has no live price on this side`};
-  return {ok:true, q:{ask:hit.ask, fee:hit.fee, pt:hit.pt, exact: mk==='ml' || hit.pt===point, tk:hit.tk||null, y:hit.y}};
+  return {ok:true, q:{ask:hit.ask, fee:hit.fee, pt:hit.pt, exact: mk==='ml' || hit.pt===point, tk:hit.tk||null, y:hit.y, am:hit.am!=null?hit.am:undefined}};
 }
 // prediction venue quote for a game play (used by "Bet on" / myBooks)
 function avPmGameQuote(p){
   const out = [];
-  for (const v of ['us','pm','ka']){
+  for (const v of ['us','pm','ka','px','cc']){
     const w = avWantVenues(); if (!w[v]) continue;
     const r = avPmCheck(v, p); if (r.ok && r.q && r.q.exact) out.push({v, book:avVenueBook(v), ...r.q});
   }
@@ -16135,6 +16175,12 @@ function avCheck(item, kind){
         else { whys.push(res.why); if (res.pending) pending = true; }
         continue;
       }
+      if (b==='prophetx' || b==='cryptocom'){
+        const res = avPmCheck(AV_BOOK_VENUE[b], item);
+        if (res.ok){ okBooks.push(b); if (isProp && res.q && (!pmq || pmCost(res.q.ask, res.q.fee) < pmCost(pmq.ask, pmq.fee))) pmq = Object.assign({book:b}, res.q); if (isProp && !res.q && res.note) pmNote = pmNote || {book:b, txt:res.note}; }
+        else { whys.push(res.why); if (res.pending) pending = true; }
+        continue;
+      }
       if (b==='kalshi'){
         const g = avGameOf(item); const mk = item.mk==='h2h'?'ml':item.mk;
         if (!isProp && mk==='ml' && g && g.kalshi && g.kalshi.ml && g.kalshi.ml[item.side]){ okBooks.push(b); continue; }
@@ -16149,8 +16195,8 @@ function avCheck(item, kind){
     }
     if (isProp){
       item.pmNote = (!pmq && pmNote) ? pmNote : null;
-      if (pmq) item.pmProp = {book:pmq.book, ask:pmq.ask, fee:pmq.fee, line:pmq.pt, txt:pmq.txt, exact:pmq.exact};
-      else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us' || item.pmProp.book==='kalshi')) delete item.pmProp;
+      if (pmq) item.pmProp = {book:pmq.book, ask:pmq.ask, fee:pmq.fee, line:pmq.pt, txt:pmq.txt, exact:pmq.exact, am:pmq.am!=null?pmq.am:undefined};
+      else if (item.pmProp && (item.pmProp.book==='polymarket' || item.pmProp.book==='polymarket_us' || item.pmProp.book==='kalshi' || item.pmProp.book==='prophetx' || item.pmProp.book==='cryptocom')) delete item.pmProp;
     }
     r = okBooks.length ? {ok:true, books:okBooks} : {ok:false, pending, why:[...new Set(whys)].slice(0,2).join(' · ') || 'Not on your books'};
   }
@@ -16172,6 +16218,8 @@ function avQuoteBooks(){
 function avBookHasData(b){
   if (b==='polymarket_us') return !!(AV.us.t && Object.keys(AV.us.ev).length);
   if (b==='polymarket') return !!(AV.pm.t && Object.keys(AV.pm.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.pm);
+  if (b==='prophetx') return !!(AV.px.t && Object.keys(AV.px.ev).length);
+  if (b==='cryptocom') return !!(AV.cc.t && Object.keys(AV.cc.ev).length);
   if (b==='kalshi') return !!(AV.ka.t && Object.keys(AV.ka.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.kalshi);
   return avQuoteBooks().has(b);
 }
@@ -16396,7 +16444,7 @@ setTimeout(()=>{ v51Regrade().catch(e=>console.warn('v51 regrade', e)); }, 20000
 
 /* ---- fast prediction-market prices: every 15s while visible, only the prices on cards you can see ---- */
 var FP = {busy:false, rr:0, last:0, n:0};
-function fpWanted(){ const b = selectedBooks(); return !b.length || b.some(x=>PREDICTION_BOOKS.includes(x)); }
+function fpWanted(){ const b = selectedBooks(); return !b.length || b.some(x=>PREDICTION_BOOKS.includes(x) || x==='prophetx'); }
 function fpShown(){
   const out = []; const seen = new Set();
   for (const el of document.querySelectorAll('#view [data-log]')){
@@ -16460,6 +16508,8 @@ async function fpTick(){
       if (w.us){ const E = AV.us.ev[g.eventId]; if (E && E.ok && E.slug) reqs.push(async()=>{ const r = await fetchJSON(`https://gateway.polymarket.us/v1/events/slug/${encodeURIComponent(E.slug)}`, 12000); if (r.ok && r.data){ avIngestUsEvent(AV.us, g, r.data.event || r.data); changed++; } }); }
       if (w.pm){ const E = AV.pm.ev[g.eventId]; if (E && E.ok && E.slug) reqs.push(async()=>{ const r = await fetchJSON(`https://gamma-api.polymarket.com/events/slug/${encodeURIComponent(E.slug)}`, 12000); if (r.ok && r.data && r.data.markets){ avIngestGammaEvent(AV.pm, g, r.data); changed++; } }); }
     }
+    // v58: ProphetX (event markets via the relay) + Crypto.com (one ticker call per 50 contracts on screen)
+    if (typeof v58FastReqs==='function') for (const f of v58FastReqs(items, gs)) reqs.push(async()=>{ changed += (await f()) || 0; });
     // polite: at most 24 calls per tick, rotating through the rest on later ticks
     const n = reqs.length, cap = 24; const pick = n <= cap ? reqs : Array.from({length:cap}, (_, i)=>reqs[(FP.rr + i) % n]); FP.rr = (FP.rr + cap) % Math.max(1, n);
     await pool(pick.map(f=>async()=>{ try{ await f(); }catch(e){} }), 4);
@@ -16649,6 +16699,297 @@ function renderResults(){
   }catch(e){}
   try{ document.querySelectorAll('[data-board-parent="parlay"]').forEach(b=>b.remove()); }catch(e){}
 })();
+/* ================= v58: two more free venues — ProphetX (exchange, American odds) and Crypto.com Predict (cents) =================
+   ProphetX: its public market-data API (no login) through the Verdict relay (read-only, cached 15s). Prices are American odds;
+     ProphetX keeps 2% of net winnings, so value math uses the after-commission price while cards show the price you see there.
+   Crypto.com Predict: its public prediction API, called straight from the browser. Every contract is a YES contract
+     ("Rockets -4.5", "Over 228.5", "Jokic 25+ points"); the other side is bought as NO = 1 − the best YES bid.
+   Both plug into the same venue index as Polymarket / Kalshi (AV.px, AV.cc), so the pick-first "is it on my book?" check,
+   best price, the 15s price refresh and the Tracked universe all treat them like the others. Both are OFF until picked in Settings. */
+var PX_COMMISSION = 0.02;
+var PX_LG = {nfl:/^NFL$/i, nba:/^NBA$/i, nhl:/^NHL$/i, mlb:/^MLB$/i, ncaaf:/^(NCAAF|NCAA Football|College Football|NCAA FB)/i, ncaab:/^(NCAAB|NCAA Basketball|College Basketball|NCAA Men)/i, mls:/^(MLS|Major League Soccer)$/i, wnba:/^WNBA$/i,
+  epl:/Premier League/i, ucl:/Champions League/i, laliga:/La ?Liga/i, seriea:/^(Italian )?Serie A$/i, bund:/^Bundesliga$/i};
+var PX_PROP = {points:'pts', rebounds:'reb', assists:'ast', three_pointers_made:'threes', points_rebounds_assists:'pra', points_rebounds:'pr', points_assists:'pa', rebounds_assists:'ar',
+  steals:'stl', blocks:'blk', passing_yards:'pass_yds', rushing_yards:'rush_yds', receiving_yards:'rec_yds', receptions:'rec', passing_touchdowns:'pass_td',
+  shots_on_goal:'sog', saves:'saves', goals:'goals', strikeouts:'ks', pitcher_strikeouts:'ks'};
+var PX_STAT_WORDS = /\s+(total\s+)?(points|rebounds|assists|three pointers made|passing|rushing|receiving|receptions|shots|saves|goals|strikeouts|steals|blocks)\b.*$/i;
+function pxPlayerOf(name){ const n = String(name||'').replace(PX_STAT_WORDS, '').trim(); return n && n.split(' ').length>=2 ? n : null; }
+var CC_LG = {nba:'NBA', nhl:'NHL', nfl:'NFL', ncaaf:'CFB', ncaab:'CBB', mlb:'MLB', wnba:'WNBA', mls:'MLS', epl:'EPL', ucl:'UCL', laliga:'ESP', seriea:'ITSA', bund:'DEB'};
+var CC_SPORT_PATH = {basketball:'basketball', football:'football', hockey:'hockey', baseball:'baseball'};
+var CC_BASE = 'https://api.crypto.com/dcm/v1/public';
+var CC_INST = {};
+// Crypto.com rate-limits bursts (the browser sees it as a failed fetch): retry twice with a short pause
+async function ccGet(u){ for (let i=0; ; i++){ try{ const r = await fetchJSON(u, 15000); if (r.status!==429 || i>=2) return r; }catch(e){ if (i>=2) throw e; } await new Promise(res=>setTimeout(res, 700*(i+1))); } }   // event symbol → {t, list} (instrument lists change rarely; tickers are read separately)
+
+function pxDec(am){ am = +am; return !isFinite(am) || am===0 ? null : (am>0 ? 1 + am/100 : 1 + 100/(-am)); }
+// what one $1-payout share really costs after ProphetX's 2% commission on net winnings
+function pxNetProb(am){ const d = pxDec(am); if (!d) return null; const net = 1 + (d-1)*(1-PX_COMMISSION); return 1/net; }
+function pxBest(ladder){ let best = null; for (const s of (ladder||[])){ if (s && isFinite(+s.odds) && +s.odds!==0 && (best==null || +s.odds > best)) best = +s.odds; } return best; }
+function pxRow(am, pt){ const p = pxNetProb(am); return p==null ? null : {pt, ask:p, am, fee:0}; }
+function pxPropKind(lg, stat){
+  const k = PX_PROP[String(stat||'').toLowerCase()] || null; if (!k) return null;
+  const sp = (typeof AV_SPORT_OF!=='undefined' && AV_SPORT_OF[lg]) || '';
+  const ok = {football:['pass_yds','rush_yds','rec_yds','rec','pass_td'], basketball:['pts','reb','ast','threes','pra','pr','pa','ar','stl','blk'], hockey:['pts','sog','saves','goals','ast'], baseball:['ks']}[sp];
+  return ok && ok.includes(k) ? k : null;
+}
+// one ProphetX event's markets → venue entry {ok, g:{ml|home:[...]}, p:{kind|name:[...]}}
+function pxParseMarkets(X, g, markets, comps, pxId){
+  const lg = g.league;
+  const E = {ok:true, t:Date.now(), id:pxId, g:{}, p:{}};
+  const sideOf = {};
+  for (const c of (comps||[])){ const s = avSideByTeam(g, {abbreviation:c.abbreviation, name:c.name||c.displayName}, c.displayName||c.name) || (c.seq===0 ? 'home' : c.seq===1 ? 'away' : null); if (s) sideOf[c.id] = s; }
+  const put = (key, row) => { if (row) avPutGame(E, key, row); };
+  for (const m of (markets||[])){
+    if (!m || (m.status && m.status!=='active')) continue;
+    const name = String(m.name||'').trim(), st = String(m.subType||m.type||'').toLowerCase();
+    const lines = Array.isArray(m.marketLines) ? m.marketLines : [];
+    if (st==='moneyline' && Array.isArray(m.selections)){
+      for (const lad of m.selections){
+        if (!Array.isArray(lad) || !lad.length) continue; const s0 = lad[0];
+        const side = s0.competitorId!=null && sideOf[s0.competitorId] ? sideOf[s0.competitorId] : (/^(draw|tie)\b/i.test(String(s0.name||'')) ? 'draw' : avSideByTeam(g, null, String(s0.name||'').replace(/\s+[+-]?\d+$/,'')));
+        if (side) put('ml|'+side, pxRow(pxBest(lad), null));
+      }
+      continue;
+    }
+    if (st==='spread'){
+      for (const L of lines) for (const lad of (L.selections||[])){
+        if (!Array.isArray(lad) || !lad.length) continue; const s0 = lad[0]; const side = sideOf[s0.competitorId]; const pt = +s0.line;
+        if (side && isFinite(pt)) put('spread|'+side, pxRow(pxBest(lad), pt));
+      }
+      continue;
+    }
+    if (st==='total'){
+      for (const L of lines) for (const lad of (L.selections||[])){
+        if (!Array.isArray(lad) || !lad.length) continue; const s0 = lad[0]; const pt = +s0.line; const ou = /^over/i.test(s0.name) ? 'over' : /^under/i.test(s0.name) ? 'under' : null;
+        if (ou && isFinite(pt)) put('total|'+ou, pxRow(pxBest(lad), pt));
+      }
+      continue;
+    }
+    // player props: subType player_total_<stat>, over/under ladders per line
+    const pm = /^player_total_(.+)$/.exec(st);
+    if (pm && lines.length){
+      const kind = pxPropKind(lg, pm[1]); if (!kind) continue;
+      const player = pxPlayerOf(name); if (!player) continue;
+      for (const L of lines){
+        let o = null, u = null, ln = null;
+        for (const lad of (L.selections||[])){ if (!Array.isArray(lad) || !lad.length) continue; const s0 = lad[0]; ln = +s0.line; if (/^over/i.test(s0.name)) o = pxBest(lad); else if (/^under/i.test(s0.name)) u = pxBest(lad); }
+        if (ln==null){ const oc = (L.outcomes||[])[0]; ln = oc ? +oc.line : null; }
+        if (!isFinite(ln) || (o==null && u==null)) continue;
+        avPutProp(X, lg, E, kind, player, {eq:ln, raw:ln, txt:'O/U '+ln, over:o!=null?pxNetProb(o):null, under:u!=null?pxNetProb(u):null, overAm:o, underAm:u, fee:0});
+      }
+    }
+  }
+  return E;
+}
+async function avLoadPx(lgs){
+  const X = AV.px; const now = Date.now(); const base = kalshiBase()+'/px'; const lgOut = {}; const ev = {}; let errs = 0, okN = 0;
+  let tours = [];
+  try{
+    let next = null; const seen = new Set();
+    const allFound = () => lgs.every(lg=>!PX_LG[lg] || tours.some(t=>PX_LG[lg].test(String(t.name||''))));
+    for (let i=0; i<8; i++){
+      const r = await fetchJSON(`${base}/v1/tournaments${next!=null?'?next='+encodeURIComponent(next):''}`, 15000);
+      if (!r.ok || !r.data) throw new Error('HTTP '+r.status);
+      const d = r.data.data || {}; let fresh = 0; for (const t of (d.tournaments||[])) if (t && !seen.has(t.id)){ seen.add(t.id); tours.push(t); fresh++; }
+      next = r.data.next; if (!next || !fresh || allFound()) break;
+    }
+    okN++;
+  }catch(e){ errs++; }
+  const seenT = new Set();
+  for (const lg of lgs){
+    const re = PX_LG[lg]; const T = re ? tours.filter(t=>t && re.test(String(t.name||'')) && !seenT.has(t.id)) : [];
+    if (!T.length){ lgOut[lg] = {ok:true, none: !errs, err: errs?1:0, kinds:{}, t:now}; continue; }
+    const L = lgOut[lg] = {ok:true, kinds:{}, t:now, games:0, mkts:0};
+    for (const t of T){
+      seenT.add(t.id);
+      let evs = []; try{ const r = await fetchJSON(`${base}/v1/tournaments/${t.id}/events`, 15000); if (r.ok && r.data && Array.isArray(r.data.data)) evs = r.data.data; okN++; }catch(e){ errs++; L.err = 1; continue; }
+      const hits = [];
+      for (const e of evs){
+        const start = Date.parse(e.scheduled); if (!isFinite(start) || start - now > 48*3600000 || start < now - 4*3600000) continue;
+        const comps = e.competitors || []; const home = comps.find(c=>c.seq===0) || {}, away = comps.find(c=>c.seq===1) || {};
+        const g = avMatchGame(lg, `px-${String(away.abbreviation||'').toLowerCase()}-${String(home.abbreviation||'').toLowerCase()}`, start, e.name, comps.map(c=>c.name));
+        if (g && !ev[g.eventId]) hits.push({g, e});
+      }
+      await pool(hits.map(({g, e})=>async()=>{
+        try{
+          const r = await fetchJSON(`${base}/v2/events/${e.id}/markets`, 15000); if (!r.ok || !r.data) throw new Error('HTTP '+r.status);
+          const ms = (r.data.data && r.data.data.markets) || r.data.data || [];
+          ev[g.eventId] = pxParseMarkets(X, g, Array.isArray(ms) ? ms : [], e.competitors, e.id); ev[g.eventId].comps = e.competitors; L.games++; L.mkts += ev[g.eventId] ? Object.keys(ev[g.eventId].g).length + Object.keys(ev[g.eventId].p).length : 0; okN++;
+        }catch(err){ errs++; L.err = (L.err||0)+1; }
+      }), 3);
+    }
+  }
+  // kinds learned by avPutProp went into X.lg; keep them on the fresh per-league stats
+  for (const lg in lgOut){ const old = X.lg[lg]; if (old && old.kinds) for (const k in old.kinds) if (lgOut[lg].kinds) lgOut[lg].kinds[k] = (lgOut[lg].kinds[k]||0) + old.kinds[k]; }
+  // a failed pass never wipes good data from the last one
+  if (errs && !Object.keys(ev).length && Object.keys(X.ev||{}).length){ X.t = Date.now(); return; }
+  X.lg = lgOut; X.ev = ev; avLearnTypes(X);
+  X.t = Date.now(); X.err = (errs && !okN) ? 'ProphetX unreachable' : null;
+}
+
+/* ---- Crypto.com Predict ---- */
+var CC_PROP = {'total points':'pts', 'total rebounds':'reb', 'total assists':'ast', 'total 3-pointers made':'threes', 'total points, rebounds, & assists':'pra',
+  'total steals':'stl', 'total blocks':'blk', 'total passing yards':'pass_yds', 'total rushing yards':'rush_yds', 'total receiving yards':'rec_yds', 'total receptions':'rec',
+  'total passing touchdowns':'pass_td', 'total shots on goal':'sog', 'total saves':'saves', 'total strikeouts':'ks', 'pitcher strikeouts':'ks'};
+var CC_FULL = /^(Full-Game|90 Minutes and Stoppage Time|Regulation)$/;
+function ccMeta(i){ return (i && i.event_details && i.event_details.metaData) || {}; }
+// instruments (+ tickers by symbol) of one event → venue entry
+function ccParse(X, g, insts, tick){
+  const lg = g.league; const E = {ok:true, t:Date.now(), g:{}, p:{}, sym:null};
+  const yes = s => { const t = tick[s]; return t ? avAsk(t.k) : null; };
+  const no  = s => { const t = tick[s]; const b = t && t.b!=null ? +t.b : null; return b!=null && b>0 && b<1 ? avAsk(1 - b) : null; };
+  const homeN = String(ccMeta(insts[0]).HOME_PARTICIPANT||''), awayN = String(ccMeta(insts[0]).AWAY_PARTICIPANT||'');
+  for (const i of insts){
+    const m = ccMeta(i); const sym = i.symbol; E.sym = E.sym || i.underlying_symbol || null;
+    if (i.tradable===false || !CC_FULL.test(String(m.PREDICT_PERIOD_TYPE||''))) continue;
+    const mt = String(m.PREDICT_MARKET_TYPE||''), ct = String(m.PREDICT_CONTRACT_TYPE||''), ot = String(m.PREDICT_OUTCOME_TYPE||''); const v = m.PREDICT_VALUE!=null ? +m.PREDICT_VALUE : null;
+    if (mt==='Game Line'){
+      if (/^moneyline/i.test(ct)){
+        // soccer: the 3-way market is the app's moneyline (home / draw / away); the 2-way one is draw-no-bet
+        const soc = typeof SOCCER!=='undefined' && SOCCER.has(lg);
+        if (soc ? !/3-way/i.test(ct) : /3-way/i.test(ct)) continue;
+        const side = ot==='Home' ? 'home' : ot==='Away' ? 'away' : ot==='Draw' ? 'draw' : null;
+        if (side) avPutGame(E, 'ml|'+side, {pt:null, ask:yes(sym), fee:null, tk:sym, y:1});
+      } else if (ct==='Spread' && isFinite(v)){
+        const side = ot==='Home' ? 'home' : ot==='Away' ? 'away' : null; if (!side) continue; const other = side==='home' ? 'away' : 'home';
+        avPutGame(E, 'spread|'+side, {pt:v, ask:yes(sym), fee:null, tk:sym, y:1});
+        avPutGame(E, 'spread|'+other, {pt:-v, ask:no(sym), fee:null, tk:sym, y:0});
+      } else if (/^total/i.test(ct) && ot==='Over' && isFinite(v)){
+        avPutGame(E, 'total|over', {pt:v, ask:yes(sym), fee:null, tk:sym, y:1});
+        avPutGame(E, 'total|under', {pt:v, ask:no(sym), fee:null, tk:sym, y:0});
+      }
+      continue;
+    }
+    if (mt==='Player Prop' && ot==='Over' && isFinite(v) && m.PARTICIPANT){
+      let kind = CC_PROP[ct.toLowerCase()] || null;
+      if (!kind){ const L = X.lg[lg] || (X.lg[lg] = {ok:true, kinds:{}}); L.other = L.other || {}; L.other[ct] = (L.other[ct]||0)+1; continue; }
+      // "25+" is Over 24.5 (PREDICT_VALUE already holds the half-point line)
+      avPutProp(X, lg, E, kind, m.PARTICIPANT, {eq:v, raw:v+0.5, txt:Math.round(v+0.5)+'+', over:yes(sym), under:no(sym), fee:null, tk:sym});
+    }
+  }
+  if (homeN || awayN) E.names = [awayN, homeN];
+  return E;
+}
+// player props worth pricing: only players (by name) the props board has for this game — Crypto.com lists ~500 contracts per NBA game
+function ccWantProps(g){
+  const set = new Set(); for (const p of ((typeof props!=='undefined' && props) || [])){ if (!p || !p.playerName) continue; const pg = p.g || avGameOf(p); if (pg && pg.eventId===g.eventId) set.add(avNameKey(p.playerName)); }
+  return set;
+}
+function ccUseful(i, wantProps){
+  const m = ccMeta(i); if (!CC_FULL.test(String(m.PREDICT_PERIOD_TYPE||''))) return false;
+  const mt = String(m.PREDICT_MARKET_TYPE||'');
+  if (mt==='Game Line') return true;
+  if (!(mt==='Player Prop' && String(m.PREDICT_OUTCOME_TYPE||'')==='Over' && !!CC_PROP[String(m.PREDICT_CONTRACT_TYPE||'').toLowerCase()])) return false;
+  if (!(wantProps instanceof Set)) return true;
+  const k = avNameKey(m.PARTICIPANT||''); if (wantProps.has(k)) return true;
+  const a = k.split(' '); const last = a[a.length-1], fi = (a[0]||'')[0];
+  for (const w of wantProps){ const b = w.split(' '); if (b[b.length-1]===last && (b[0]||'')[0]===fi) return true; }
+  return false;
+}
+async function ccTickers(syms){
+  const out = {}; const chunks = []; for (let i=0; i<syms.length; i+=50) chunks.push(syms.slice(i, i+50));
+  let bad = 0;
+  await pool(chunks.map(c=>async()=>{ try{ const r = await ccGet(`${CC_BASE}/get-tickers?instrument_names=${c.map(encodeURIComponent).join(',')}`); if (r.ok && r.data && r.data.result) for (const t of (r.data.result.data||[])) out[t.i] = t; else bad++; }catch(e){ bad++; } }), 3);
+  if (bad && bad===chunks.length) throw new Error('tickers unavailable');
+  return out;
+}
+async function ccInstruments(sym){
+  const c = CC_INST[sym]; if (c && Date.now() - c.t < 20*60000) return c.list;
+  const list = []; let cur = '';
+  for (let i=0; i<4; i++){
+    const r = await ccGet(`${CC_BASE}/get-instruments?event_symbol=${encodeURIComponent(sym)}${cur?'&cursor='+encodeURIComponent(cur):''}`); 
+    if (!r.ok || !r.data || !r.data.result) throw new Error('HTTP '+r.status);
+    for (const x of (r.data.result.data||[])) list.push(x);
+    cur = r.data.result.next_cursor || ''; if (!cur || !(r.data.result.data||[]).length) break;
+  }
+  CC_INST[sym] = {t:Date.now(), list}; return list;
+}
+async function avLoadCc(lgs){
+  const X = AV.cc; const now = Date.now(); const lgOut = {}; const ev = {}; let errs = 0, okN = 0;
+  const want = lgs.filter(lg=>CC_LG[lg]); for (const lg of lgs) if (!CC_LG[lg]) lgOut[lg] = {ok:true, none:true, kinds:{}, t:now};
+  if (!want.length){ X.lg = lgOut; X.ev = {}; X.t = Date.now(); return; }
+  // one call per league-season series ("NBA2026"), from 8 hours ago on; seasons are labeled by start year, so ask this year and its neighbours
+  const events = []; const from = BigInt(now - 8*3600000) * 1000000n; const Y = new Date().getFullYear(), yrs = new Date().getMonth() >= 6 ? [Y, Y+1] : [Y-1, Y];
+  await pool(want.flatMap(lg=>yrs.map(y=>async()=>{
+    try{
+      let cur = '';
+      for (let i=0; i<4; i++){
+        const r = await ccGet(`${CC_BASE}/get-events?limit=500&series_symbol=${CC_LG[lg]}${y}&event_date=${from}${cur?'&cursor='+encodeURIComponent(cur):''}`);
+        if (r.status===400) return;   // that season's series doesn't exist (yet)
+        if (!r.ok || !r.data || !r.data.result) throw new Error('HTTP '+r.status);
+        for (const e of (r.data.result.data||[])){ const md = (e.event_details && e.event_details.metaData) || {}; const t = Date.parse(md.EVENT_DATE); if (isFinite(t) && t - now <= 48*3600000) events.push(e); }
+        cur = r.data.result.next_cursor || ''; if (!cur || !(r.data.result.data||[]).length) break;
+      }
+      okN++;
+    }catch(e){ errs++; }
+  })), 4);
+  const hits = [];
+  for (const lg of want){
+    const L = lgOut[lg] = {ok:true, kinds:{}, t:now, games:0, mkts:0, err: errs?1:0};
+    for (const e of events){
+      const md = (e.event_details && e.event_details.metaData) || {}; if (md.LEAGUE!==CC_LG[lg] || md.PREDICT_EVENT_TYPE!=='Game') continue;
+      const start = Date.parse(md.EVENT_DATE); if (!isFinite(start) || start < now - 4*3600000) continue;
+      // Crypto.com's soccer kickoff times run a few hours off ESPN's, so soccer matches on teams within the same 8-hour span
+      const soc = typeof SOCCER!=='undefined' && SOCCER.has(lg);
+      let g = avMatchGame(lg, '', soc ? NaN : start, md.NAME || e.name, [md.AWAY_PARTICIPANT, md.HOME_PARTICIPANT]);
+      if (g && soc && Math.abs(g.start.getTime() - start) > 8*3600000) g = null;
+      if (g && g.state!=='post' && g.start && g.start.getTime() - now < 36*3600000 && !hits.some(h=>h.g===g)) hits.push({g, e, lg});
+    }
+  }
+  // 1) contract lists (cached 20 min), 2) one batched price call per 50 contracts across all games, 3) parse
+  const got = [];
+  await pool(hits.map(({g, e, lg})=>async()=>{
+    try{ const want = ccWantProps(g); const insts = (await ccInstruments(e.symbol)).filter(i=>ccUseful(i, want)); if (insts.length) got.push({g, e, lg, insts}); }
+    catch(err){ errs++; lgOut[lg].err = (lgOut[lg].err||0)+1; }
+  }), 3);
+  let tick = {};
+  try{ tick = await ccTickers([...new Set(got.flatMap(x=>x.insts.map(i=>i.symbol)))]); okN++; }catch(err){ errs++; }
+  for (const {g, e, lg, insts} of got){
+    const L = lgOut[lg];
+    const E = ccParse(X, g, insts, tick); E.sym = e.symbol; E.sport = String(((e.event_details||{}).metaData||{}).SPORTS_GROUPING||'').toLowerCase();
+    ev[g.eventId] = E; L.games++; L.mkts += insts.length; okN++;
+  }
+  for (const lg in lgOut){ const old = X.lg[lg]; if (old && old.kinds) for (const k in old.kinds) if (lgOut[lg].kinds) lgOut[lg].kinds[k] = (lgOut[lg].kinds[k]||0) + old.kinds[k]; }
+  if (errs && !Object.keys(ev).length && Object.keys(X.ev||{}).length){ X.t = Date.now(); return; }
+  X.lg = lgOut; X.ev = ev; avLearnTypes(X);
+  X.t = Date.now(); X.err = (errs && !okN) ? 'Crypto.com unreachable' : null;
+}
+
+/* ---- 15s price refresh for the cards on screen (called from fpTick) ---- */
+function v58FastReqs(items, gs){
+  const reqs = []; const w = avWantVenues();
+  if (w.px){
+    for (const g of gs){ const E = AV.px.ev[g.eventId]; if (!E || !E.id) continue;
+      reqs.push(async()=>{ const r = await fetchJSON(`${kalshiBase()}/px/v2/events/${E.id}/markets`, 12000); if (!r.ok || !r.data) return 0;
+        const ms = (r.data.data && r.data.data.markets) || []; const keepP = E.p; const NE = pxParseMarkets({lg:{}}, g, ms, E.comps || null, E.id);
+        // keep the side mapping we learned on the full load when competitor info is missing here
+        if (!Object.keys(NE.g).length) return 0; NE.comps = E.comps; if (!Object.keys(NE.p).length) NE.p = keepP; AV.px.ev[g.eventId] = NE; return 1; }); }
+  }
+  if (w.cc){
+    const syms = new Set();
+    for (const p of items){ const E = AV.cc.ev[p.g.eventId]; if (!E) continue;
+      if (p.isProp){ let kind = p.kind==='hpts' ? 'pts' : p.kind; const rows = E.p[kind+'|'+avNameKey(p.playerName)] || []; for (const r of rows) if (r.tk) syms.add(r.tk); }
+      else { const mk = p.mk==='h2h'?'ml':p.mk; for (const key in E.g) if (key.indexOf(mk+'|')===0) for (const r of E.g[key]) if (r.tk) syms.add(r.tk); } }
+    const list = [...syms];
+    if (list.length) reqs.push(async()=>{ const tick = await ccTickers(list.slice(0, 200)); let n = 0;
+      for (const id in AV.cc.ev){ const E = AV.cc.ev[id];
+        for (const key in E.g) for (const r of E.g[key]){ const t = r.tk && tick[r.tk]; if (!t) continue; const a = r.y ? avAsk(t.k) : (t.b!=null && +t.b>0 ? avAsk(1-(+t.b)) : null); if (a!==r.ask){ r.ask = a; n++; } }
+        for (const key in E.p) for (const r of E.p[key]){ const t = r.tk && tick[r.tk]; if (!t) continue; const o = avAsk(t.k), u = (t.b!=null && +t.b>0) ? avAsk(1-(+t.b)) : null; if (o!==r.over || u!==r.under){ r.over = o; r.under = u; n++; } } }
+      return n; });
+  }
+  return reqs;
+}
+// deep links: the most specific public page each site has (neither exposes a per-market URL)
+function v58BookUrl(book, g){
+  if (book==='prophetx') return 'https://www.prophetx.co/lobby';
+  if (book==='cryptocom'){
+    const sp = (g && AV.cc && AV.cc.ev[g.eventId] && AV.cc.ev[g.eventId].sport) || ((typeof AV_SPORT_OF!=='undefined' && g && AV_SPORT_OF[g.league]) || '');
+    const SOC = typeof SOCCER!=='undefined' && g && SOCCER.has(g.league);
+    const path = SOC ? 'soccer' : (CC_SPORT_PATH[sp] || '');
+    return 'https://web.crypto.com/explore/predict/sports' + (path ? '/'+path : '');
+  }
+  return null;
+}
 </script>
 </body>
 </html>
