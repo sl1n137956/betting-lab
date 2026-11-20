@@ -16105,7 +16105,7 @@ function avPmCheck(v, item){
     for (const r of rows){ const d = Math.abs(r.eq - line); if (d < 1e-9 || (whole && d <= 0.5 + 1e-9)){ if (!hit || d < Math.abs(hit.eq - line)) hit = r; } }
     if (!hit){ const near = rows.slice().sort((a,b)=>Math.abs(a.eq-line)-Math.abs(b.eq-line)).slice(0,3).sort((a,b)=>a.eq-b.eq).map(r=>r.txt).join(', '); return {ok:false, why:`${name} lists ${item.playerName} ${label} at ${near}, not ${line}`}; }
     const ask = hit[side];
-    if (ask==null) return {ok:false, why:`${name} has no ${side==='over'?'Over (Yes)':'Under (No)'} price on this line`};
+    if (ask==null) return v==='nv' ? {ok:true, q:null, note:`${name} price loading`} : {ok:false, why:`${name} has no ${side==='over'?'Over (Yes)':'Under (No)'} price on this line`};
     return {ok:true, q:{ask, fee:hit.fee, pt:hit.eq, txt:hit.txt, exact:Math.abs(hit.eq-line)<1e-9, tk:hit.tk||null, y:side==='over'?1:0, am:hit[side+'Am']!=null?hit[side+'Am']:undefined}};
   }
   const mk = item.mk==='h2h' ? 'ml' : item.mk==='spreads' ? 'spread' : item.mk==='totals' ? 'total' : item.mk;
@@ -16116,7 +16116,8 @@ function avPmCheck(v, item){
   if (!rows || !rows.length) return {ok:false, why:`${name} has no ${mkName} market for this game`};
   const hit = mk==='ml' ? rows[0] : avNear(rows, point, false);
   if (!hit) return {ok:false, why:`${name} ${mkName} lines don't include ${point}`};
-  if (hit.ask==null) return {ok:false, why:`${name} has no live price on this side`};
+  // Novig prices lazily (book calls): a listed line with no price fetched yet is still on the book
+  if (hit.ask==null) return v==='nv' ? {ok:true, q:null, note:`${name} price loading`} : {ok:false, why:`${name} has no live price on this side`};
   return {ok:true, q:{ask:hit.ask, fee:hit.fee, pt:hit.pt, exact: mk==='ml' || hit.pt===point, tk:hit.tk||null, y:hit.y, am:hit.am!=null?hit.am:undefined}};
 }
 // prediction venue quote for a game play (used by "Bet on" / myBooks)
@@ -17090,7 +17091,7 @@ async function avLoadNv(lgs){
     const L = lgOut[lg] = {ok:true, kinds:{}, t:now, games:0, mkts:0, err:0}; const NL = NV_LG[lg];
     try{
       const P = await nvParticipants(NL); const sp = AV_SPORT_OF[lg] || '';
-      const ms = await nvPages(`league=${encodeURIComponent(NL)}&marketType=MONEY,SPREAD,TOTAL&startsBefore=${before}`, 3);
+      const ms = (await nvPages(`league=${encodeURIComponent(NL)}&marketType=MONEY&startsBefore=${before}`, 3)).concat(await nvPages(`league=${encodeURIComponent(NL)}&marketType=SPREAD,TOTAL&startsBefore=${before}`, 12));
       const pt = NV_PROPT[sp] && hadProps ? await nvPages(`league=${encodeURIComponent(NL)}&marketType=${NV_PROPT[sp]}&startsBefore=${before}`, 8).catch(()=>{ errs++; return []; }) : [];
       const byEv = {}; for (const m of ms.concat(pt)) (byEv[m.eventId] || (byEv[m.eventId] = [])).push(m);
       for (const id in byEv){
@@ -17104,7 +17105,8 @@ async function avLoadNv(lgs){
     }catch(e){ errs++; L.err = 1; }
   }), 3);
   // price: one book call per chosen market (relay caches 15s), capped so a full load stays polite
-  const ids = [...new Set(hits.flatMap(({g, E})=>nvWantIds(g, E)))].slice(0, 160);
+  const all = hits.flatMap(({g, E})=>nvWantIds(g, E)); const mlIds = new Set(hits.flatMap(({E})=>Object.keys(E.g).filter(k=>k.indexOf('ml|')===0).flatMap(k=>E.g[k].map(r=>r.mid))));
+  const ids = [...new Set([...mlIds, ...all])].slice(0, 220);
   if (ids.length){ const books = await nvBooks(ids); for (const {E} of hits) nvApply(E, books); }
   for (const lg in lgOut){ const old = X.lg[lg]; if (old && old.kinds) for (const k in old.kinds) if (lgOut[lg].kinds) lgOut[lg].kinds[k] = (lgOut[lg].kinds[k]||0) + old.kinds[k]; }
   if (errs && !Object.keys(ev).length && Object.keys(X.ev||{}).length){ X.t = Date.now(); return; }
