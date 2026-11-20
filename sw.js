@@ -1,7 +1,10 @@
 /* Verdict app-shell cache. Never caches live API responses.
    v2: HTML pages are network-first with cache: 'no-store' so a new
    deploy is not stuck behind GitHub Pages or a stale iOS shell. */
-const CACHE = 'betting-lab-shell-v46';
+const CACHE = 'betting-lab-shell-v47';
+// v47: the photo reader (Tesseract.js + its English model from jsDelivr) is cached once so later photo checks start fast
+const OCR_CACHE = 'verdict-ocr-v1';
+function isOcrAsset(url){ return url.hostname === 'cdn.jsdelivr.net' && /tesseract/i.test(url.pathname); }
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-512-maskable.png', './apple-touch-icon.png', './favicon-32.png'];
 
 self.addEventListener('install', event => {
@@ -20,7 +23,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await Promise.all(keys.filter(k => k !== CACHE && k !== OCR_CACHE).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -38,6 +41,17 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   // Cross-origin requests are ESPN, Open-Meteo, Polymarket, The Odds API, etc.
   // Leave them to the network and never put the responses in this cache.
+  if (isOcrAsset(url)){
+    event.respondWith((async () => {
+      const c = await caches.open(OCR_CACHE);
+      const hit = await c.match(req.url);
+      if (hit) return hit;
+      const fresh = await fetch(req);
+      if (fresh && fresh.ok && fresh.type !== 'opaque') c.put(req.url, fresh.clone());
+      return fresh;
+    })());
+    return;
+  }
   if (!isAppShell(url)) return;
   event.respondWith((async () => {
     const isPage = !url.pathname.split('/').pop() || url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');

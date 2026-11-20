@@ -670,6 +670,31 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .bet-par-tag{display:inline-block;vertical-align:2px;margin-right:4px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#c7d2fe;background:rgba(99,102,241,.2);border:1px solid rgba(129,140,248,.35)}
 .bet-legs{margin:4px 0 2px;font-size:13px;line-height:1.4;color:var(--txt2)}
 .kept-note{margin:8px 2px 0;color:#fde68a}
+.team .sc:empty{display:none}
+.sc-bump{animation:scBump .9s ease}
+@keyframes scBump{0%{color:#fde68a;transform:scale(1.18)}100%{transform:none}}
+.live-upd{font-size:12px;font-weight:500}
+.ph-card{margin:12px 0 4px;padding:12px 14px;border-radius:16px;background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.18)}
+.ph-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.ph-btn{cursor:pointer}
+.ph-prog{margin-top:10px;font-size:13.5px;color:var(--txt2,#c3d0e6)}
+.ph-body{display:flex;gap:12px;margin-top:12px;align-items:flex-start}
+.ph-thumb{width:84px;border-radius:10px;border:1px solid rgba(148,163,184,.25);flex:none}
+.ph-main{flex:1;min-width:0}
+.ph-ok{font-size:13px;color:#86efac;margin-bottom:8px}
+.ph-fail{font-size:13px;color:#fecaca;background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.28);border-radius:10px;padding:8px 10px;margin-bottom:8px}
+.ph-leg{display:grid;grid-template-columns:1fr 84px 30px;gap:6px;margin-bottom:6px;align-items:center}
+.ph-leg input{min-width:0;width:100%}
+.ph-card input{background:rgba(2,6,23,.55);color:var(--txt,#e8eef8);border:1px solid rgba(148,163,184,.3);border-radius:10px;padding:8px 10px;font:inherit;font-size:14px}
+.ph-card input:focus{outline:none;border-color:rgba(96,165,250,.7)}
+.ph-leg.bad input[data-ph-text]{border-color:rgba(245,158,11,.5)}
+.ph-why{grid-column:1/-1;font-size:12px;color:#fde68a;overflow-wrap:anywhere}
+.ph-x{background:none;border:0;color:var(--mut,#97a6bc);font-size:20px;cursor:pointer}
+.ph-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+.ph-stake{display:inline-flex;align-items:center;gap:4px;font-size:13px}
+.ph-stake input{width:70px}
+.ph-raw pre{white-space:pre-wrap;font-size:12px;max-height:180px;overflow:auto;color:var(--mut,#97a6bc)}
+@media (max-width:520px){.ph-body{flex-direction:column}.ph-thumb{width:64px}}
 .ag-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
 .ag-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:12px;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);color:var(--txt2,#c3d0e6)}
 .ag-chip b{color:var(--txt,#e8eef8)}
@@ -6052,11 +6077,14 @@ const MKN = {ml:'Moneyline', spread:'Spread', total:'Total'};
 function teamRow(g, side){
   const t = g[side];
   const logo = typeof teamLogoHTML==='function' ? teamLogoHTML(t) : (t.logo?`<img class="team-logo" src="${esc(t.logo)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">`:'');
-  return `<div class="team">${logo}${t.rank?`<span class="mut" style="font-size:11px">#${t.rank}</span>`:''}<span>${esc(t.name)}</span> <span class="rec">${esc(t.rec||'')}</span>${g.state!=='pre'&&t.score!==''?`<span class="sc">${esc(t.score)}</span>`:''}</div>`;
+  return `<div class="team">${logo}${t.rank?`<span class="mut" style="font-size:11px">#${t.rank}</span>`:''}<span>${esc(t.name)}</span> <span class="rec">${esc(t.rec||'')}</span><span class="sc" data-sc="${esc(g.id+'|'+side)}">${g.state!=='pre'&&t.score!==''?esc(t.score):''}</span></div>`;
+}
+function gameStatusInner(g){
+  return g.state==='in' ? `<span class="badge b-live">● Live ${esc(g.statusText)}</span>` : g.state==='post' ? `<span class="g-final">${esc(g.statusText||'Final')}</span>` : `<span>${fmtTime(g.start)}</span>`;
 }
 function gameHead(g, verdict){
   const L = LMAP[g.league];
-  const st = g.state==='in' ? `<span class="badge b-live">● Live ${esc(g.statusText)}</span>` : g.state==='post' ? `<span>${esc(g.statusText||'Final')}</span>` : `<span>${fmtTime(g.start)}</span>`;
+  const st = `<span class="gst" data-gst="${esc(g.id)}">${gameStatusInner(g)}</span>`;
   const first = g.ind ? 'home' : 'away', second = g.ind ? 'away' : 'home';
   const venue = !g.ind ? `<div class="mut venue">${g.neutral?'Neutral site':'@ '+esc(g.home.name)}</div>` : '';
   const teams = `<div class="teams">${teamRow(g, first)}${teamRow(g, second)}</div>`;
@@ -6284,10 +6312,10 @@ function allGamesHTML(list){
   const dayKey = g => { const d = new Date(g.start); const t = new Date(); const tm = new Date(); tm.setDate(t.getDate()+1);
     return d.toDateString()===t.toDateString() ? 'Today' : d.toDateString()===tm.toDateString() ? 'Tomorrow' : d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}); };
   const groups = []; for (const g of up){ const k = dayKey(g); let G = groups.find(x=>x.k===k); if (!G){ G = {k, list:[]}; groups.push(G); } G.list.push(g); }
-  const sec = (title, arr, cls) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span></h3><div class="grid">${arr.map(gameCard).join('')}</div></div>`;
+  const sec = (title, arr, cls, extra) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span>${extra||''}</h3><div class="grid">${arr.map(gameCard).join('')}</div></div>`;
   const off = LEAGUES.filter(L=>!(S.enabled||[]).includes(L.id)).map(L=>L.label);
   return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now${off.length?` · hidden because you turned them off in Settings: ${esc(off.join(', '))}`:''}. Board filters don't apply here. Odds show when the free feed has them; % = no-vig probability.</span></div>`
-    + (list.length ? `<div class="ag-chips">${chips}</div>` + (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live') : '') + groups.map(G=>sec(esc(G.k), G.list)).join('')
+    + (list.length ? `<div class="ag-chips">${chips}</div>` + (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live', ` <span class="live-upd mut" data-live-upd>${typeof liveAgoTxt==='function'?esc(liveAgoTxt()):''}</span>`) : '') + groups.map(G=>sec(esc(G.k), G.list)).join('')
       : `<div class="empty-state">No games in the next 24 hours for the sports you have on.</div>`);
 }
 function filtered(list, isPlay){
@@ -8430,10 +8458,12 @@ function renderPicks(){
       <button class="btn" id="btnPkClear">Clear</button>
       <span class="hint">${games.length?`${games.length} events loaded`:'Loading games…'}</span>
     </div>
+    ${typeof photoPanelHTML==='function' ? photoPanelHTML() : ''}
   </div>
   ${PK.busy && !PK.legs.length ? '<div class="pk-empty"><div class="big">Getting your verdict</div>Loading rosters, game pages and game logs…</div>' : ''}
   ${PK.legs.length ? parlaySummary() + `<div class="grid pk-grid">${PK.legs.map((l,i)=>legCard(l,i,l===weakest)).join('')}</div>` : (PK.busy?'':'<div class="pk-empty"><div class="big">Nothing checked yet</div>Type a pick, or tap an example, then hit <b>Get verdict</b>.</div>')}`;
   $('#pkText').oninput = e=>{ PK.text = e.target.value;  };
+  if (typeof photoBind==='function') photoBind(v);
   $('#btnCheck').onclick = runPicks;
   $('#btnPkClear').onclick = ()=>{ PK.text=''; PK.legs=[];  renderPicks(); };
   v.querySelectorAll('[data-ex]').forEach(c=>c.onclick=()=>{
@@ -8448,13 +8478,13 @@ function renderPicks(){
   // keep Verdict drawers the user opened open across re-renders (scoped keys) and fill lazy bodies
   v.querySelectorAll('.pk-grid details[data-dd^="verdict|"]').forEach(d=>{ if (ui.open.has(d.dataset.dd) && !d.open) d.open = true; if (d.open && typeof fillLazyDetails==='function') fillLazyDetails(d); });
   v.querySelectorAll('[data-logleg]').forEach(b=>b.onclick=()=>{ const l = PK.legs[+b.dataset.logleg];
-    setTab('tracker'); renderTracker({tailLock:'none', src:l.market==='Prop'?'prop':'game', date:isoDate(l.g?l.g.start:new Date()), sport:l.g?LMAP[l.g.league].label:'Other', market:l.market, pick:l.desc||l.raw, odds:l.price!=null?fmtAm(l.price):'', stake:S.unit, link:legLink(l)});
+    setTab('tracker'); renderTracker({tailLock:'none', src:l.market==='Prop'?'prop':'game', date:isoDate(l.g?l.g.start:new Date()), sport:l.g?LMAP[l.g.league].label:'Other', market:l.market, pick:l.desc||l.raw, odds:l.price!=null?fmtAm(l.price):'', stake:(PK.photoStake||S.unit), link:legLink(l)});
     if (typeof updateFilterChrome==='function') updateFilterChrome(); window.scrollTo({top:0}); toast('Pre-filled. Check the odds, then Add bet.'); });
   const lp = $('#btnLogParlay'); if (lp) lp.onclick = ()=>{ const legs = PK.legs.filter(l=>!l.err);
     const dec = legs.every(l=>l.price!=null) ? legs.reduce((a,l)=>a*amToDec(l.price),1) : null;
     const am = dec ? (dec>=2 ? (dec-1)*100 : -100/(dec-1)) : null;
     const sports = [...new Set(legs.map(l=>l.g?LMAP[l.g.league].label:'Other'))];
-    setTab('tracker'); renderTracker({tailLock:'none', src:'parlay', date:isoDate(new Date()), sport:sports.length===1?sports[0]:'Other', market:'Parlay', pick:`Parlay: ${legs.map(l=>l.desc||l.raw).join(' + ')}`, odds:am?fmtAm(am):'', stake:S.unit, legs:legs.every(l=>legLink(l))?legs.map(legLink):null});
+    setTab('tracker'); renderTracker({tailLock:'none', src:'parlay', date:isoDate(new Date()), sport:sports.length===1?sports[0]:'Other', market:'Parlay', pick:`Parlay: ${legs.map(l=>l.desc||l.raw).join(' + ')}`, odds:am?fmtAm(am):'', stake:(PK.photoStake||S.unit), legs:legs.every(l=>legLink(l))?legs.map(legLink):null});
     if (typeof updateFilterChrome==='function') updateFilterChrome(); window.scrollTo({top:0}); toast(am?'Pre-filled with the leg-price payout. Use your book\'s real parlay odds.':'Enter your book\'s parlay odds, then Add bet.'); };
 }
 
@@ -15079,6 +15109,275 @@ window.uniStats = () => ({open:UNI.size, sums:UNI_SUM.size, games:UNI_GAMES.size
     }
   }catch(e){ console.warn('universe hook', e); }
 })();
+/* v47: live score ticker. While any game is live (or just about to start) and the page is visible, re-read only the
+   ESPN scoreboards of those leagues every 30s and patch score, clock/period and the Live/Final badge in place.
+   No full re-render, so scroll position, open drawers and the tail draft are untouched. Paused while hidden. */
+const LIVE_EVERY = 30000;
+const LIVE = {at:0, busy:false, n:0, last:null, err:null};
+function liveCandidates(){
+  const now = Date.now();
+  return (games||[]).filter(g=>g && !g.pickOnly && g.league && (g.state==='in' || (g.state==='pre' && +g.start <= now + 2*60000 && +g.start >= now - 4*3600e3)));
+}
+async function liveTick(force){
+  if (LIVE.busy) return;
+  if (document.hidden && !force) return;
+  const cand = liveCandidates(); if (!cand.length) return;
+  const now = Date.now();
+  if (!force && now - LIVE.at < LIVE_EVERY) return;
+  // a full refresh just ran (it re-reads the same scoreboards) → count that as the update
+  if (!force && typeof lastUpdated!=='undefined' && lastUpdated && now - lastUpdated.getTime() < 15000 && LIVE.at < lastUpdated.getTime()){ LIVE.at = lastUpdated.getTime(); liveStampAll(); return; }
+  LIVE.busy = true;
+  try{
+    const want = new Map(); // league|date → L
+    for (const g of cand){ const L = LMAP[g.league]; if (!L) continue; const d = ymd(new Date(g.start)); want.set(g.league+'|'+d, {L, d}); const d0 = ymd(new Date()); if (d0!==d) want.set(g.league+'|'+d0, {L, d:d0}); }
+    const tasks = [...want.values()].map(({L, d})=>async()=>{ const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${d}${L.q?'&'+L.q:''}`, 12000); if (r.status===429 && typeof noteFeedRateLimit==='function') noteFeedRateLimit(); if (!r.ok || !r.data) throw new Error('live '+L.id+' '+r.status); return {L, data:r.data}; });
+    const res = await pool(tasks, 4);
+    const ok = res.filter(r=>r && !r.error);
+    const fresh = parseEspnGames(ok, {ignoreHorizon:true});
+    const byId = new Map(fresh.map(g=>[g.id, g]));
+    let changed = 0;
+    for (const g of (games||[])){
+      const f = byId.get(g.id); if (!f) continue;
+      const before = g.state+'|'+g.statusText+'|'+g.home.score+'|'+g.away.score;
+      g.state = f.state; g.statusText = f.statusText; g.home.score = f.home.score; g.away.score = f.away.score;
+      if (before !== g.state+'|'+g.statusText+'|'+g.home.score+'|'+g.away.score){ changed++; livePatch(g); }
+    }
+    LIVE.n = changed; LIVE.err = ok.length ? null : 'ESPN did not answer';
+    if (ok.length) LIVE.at = Date.now();
+  }catch(e){ LIVE.err = String(e.message||e); }
+  finally{ LIVE.busy = false; liveStampAll(); }
+}
+function livePatch(g){
+  const sel = v => (window.CSS && CSS.escape) ? CSS.escape(v) : String(v).replace(/"/g,'\\"');
+  document.querySelectorAll(`[data-gst="${sel(g.id)}"]`).forEach(el=>{ const h = gameStatusInner(g); if (el.innerHTML!==h) el.innerHTML = h; });
+  for (const side of ['home','away']){
+    const t = g[side]; const v = g.state!=='pre' && t.score!=='' && t.score!=null ? String(t.score) : '';
+    document.querySelectorAll(`[data-sc="${sel(g.id+'|'+side)}"]`).forEach(el=>{ if (el.textContent!==v){ el.textContent = v; el.classList.remove('sc-bump'); void el.offsetWidth; el.classList.add('sc-bump'); } });
+  }
+}
+function liveAgoTxt(){
+  if (!LIVE.at) return '';
+  const s = Math.max(0, Math.round((Date.now()-LIVE.at)/1000));
+  return s < 5 ? 'updated just now' : s < 90 ? `updated ${s}s ago` : `updated ${Math.round(s/60)}m ago`;
+}
+function liveStampAll(){
+  const t = liveAgoTxt() + (LIVE.err && Date.now()-LIVE.at > 90000 ? ' · retrying' : '');
+  document.querySelectorAll('[data-live-upd]').forEach(el=>{ if (el.textContent!==t) el.textContent = t; });
+}
+(function(){
+  setInterval(()=>{ try{ liveStampAll(); liveTick(false); }catch(e){} }, 5000);
+  document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) liveTick(true); });
+  window.addEventListener('pageshow', ()=>{ if (!document.hidden) liveTick(true); });
+})();
+/* v47: 📷 Upload pick photo → on-device OCR (Tesseract.js from a CDN, no key, the image never leaves the phone)
+   → bet-slip parser → editable rows → normal Verdict. If it can't tell what the pick is, it says so and never guesses. */
+const PHOTO = {busy:false, stage:'', pct:0, text:'', conf:null, rows:[], stake:'', fail:'', note:'', thumb:'', ran:false};
+const TESS_SRC = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+let _tessP = null, _tessW = null;
+function loadTesseract(){
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (_tessP) return _tessP;
+  _tessP = new Promise((res, rej)=>{ const s = document.createElement('script'); s.src = TESS_SRC; s.async = true; s.crossOrigin = 'anonymous';
+    s.onload = ()=> window.Tesseract ? res(window.Tesseract) : rej(new Error('photo reader failed to start'));
+    s.onerror = ()=>{ _tessP = null; rej(new Error('Could not download the photo reader (check your connection)')); };
+    document.head.appendChild(s); });
+  return _tessP;
+}
+async function ocrWorker(){
+  if (_tessW) return _tessW;
+  const T = await loadTesseract();
+  _tessW = await T.createWorker('eng', 1, {logger: m=>{ if (m && m.status){ PHOTO.stage = m.status; PHOTO.pct = Math.round((m.progress||0)*100); photoProgress(); } }});
+  try{ await _tessW.setParameters({preserve_interword_spaces:'1'}); }catch(e){}
+  return _tessW;
+}
+/* image → high-contrast canvas (dark-mode slips get inverted, small screenshots upscaled) */
+async function photoCanvas(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res, rej)=>{ const i = new Image(); i.onload = ()=>res(i); i.onerror = ()=>rej(new Error('That file is not an image I can open')); i.src = url; });
+    let w = img.naturalWidth, h = img.naturalHeight; if (!w || !h) throw new Error('empty image');
+    const scale = w < 900 ? Math.min(3, 1400/w) : w > 2400 ? 2400/w : 1;
+    w = Math.round(w*scale); h = Math.round(h*scale);
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', {willReadFrequently:true});
+    x.drawImage(img, 0, 0, w, h);
+    const t = document.createElement('canvas'); const tw = 220, th = Math.max(1, Math.round(220*h/w)); t.width = tw; t.height = th; t.getContext('2d').drawImage(img, 0, 0, tw, th);
+    PHOTO.thumb = t.toDataURL('image/jpeg', 0.7);
+    const d = x.getImageData(0, 0, w, h), p = d.data; let sum = 0;
+    for (let i=0;i<p.length;i+=4){ const l = 0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]; p[i]=p[i+1]=p[i+2]=l; sum += l; }
+    const mean = sum/(p.length/4), inv = mean < 128;
+    for (let i=0;i<p.length;i+=4){ let l = p[i]; if (inv) l = 255-l; l = Math.max(0, Math.min(255, (l-128)*1.35+128)); p[i]=p[i+1]=p[i+2]=l; }
+    x.putImageData(d, 0, 0);
+    return c;
+  } finally { URL.revokeObjectURL(url); }
+}
+/* ---------- bet-slip text → legs ---------- */
+const SLIP_JUNK = /^(cash ?out|share|bet ?slip|my bets|open bets?|settled|place bet|bet placed|accepted|receipt|ticket|id\b|bet id|to (pay|win|return)|potential|payout|total (payout|odds|wager|stake)|odds boost|profit boost|same game|sgp\b|keep|reuse|view|edit|done|close|parlay ?\+?|parlays?)$/i;
+const SLIP_WORDS = /\b(moneyline|money line|ml|spread|point spread|run line|puck line|handicap|total|totals|game total|over|under|alt|alternate|to win|winner|yes|no|buy|sell|odds|wager|stake|risk|bet|pick|parlay|leg|legs|single|straight|avg|price|shares|cost|amount|payout|potential|pay|return|pending|live|final|today|tomorrow|tonight|pm|am|et|pt|est|pst|cst|mon|tue|wed|thu|fri|sat|sun|vs|v|at|draftkings|fanduel|bovada|polymarket|kalshi|betmgm|caesars|espn ?bet|fanatics|hard rock)\b/gi;
+function slipOdds(s){
+  const m = s.match(/(?:^|[\s(@])([+\-−–]\s?\d{3,5})(?=[\s)]|$)/); if (m){ const v = parseInt(m[1].replace(/[−–]/,'-').replace(/\s/g,''), 10); if (Math.abs(v)>=100 && Math.abs(v)<=50000) return v; }
+  if (/(^|\s)(even|ev)(\s|$)/i.test(s)) return 100;
+  const c = s.match(/(\d{1,2}(?:\.\d)?)\s?[¢c](?=\s|$)/); if (c){ const p = +c[1]/100; if (p>0.01 && p<0.99) return Math.round(p>=0.5 ? -100*p/(1-p) : 100*(1-p)/p); }
+  return null;
+}
+function slipStake(lines){
+  for (const s of lines){ const m = s.match(/\b(wager|stake|risk|bet amount|amount|cost|to risk|bet)\b\s*:?\s*\$\s?(\d{1,6}(?:[.,]\d{1,2})?)/i) || s.match(/\$\s?(\d{1,6}(?:[.,]\d{1,2})?)\s*(?:wager|stake|bet|risk)\b/i);
+    if (m){ const v = parseFloat(String(m[m.length-1]).replace(',','.')); if (v>0) return String(v); } }
+  return '';
+}
+function slipStat(s){ const low = ' '+s.toLowerCase()+' '; for (const [re, st] of STAT_WORDS){ const m = low.match(re); if (m) return {st, word:m[0].trim()}; } return null; }
+const SLIP_STATS = /\b(points?|pts|rebounds?|rebs?|assists?|asts?|threes|3-?pointers?( made)?|3pm|shots on goal|sog|shots|saves|passing|rushing|receiving|yards|yds|receptions|pra|made|milestones?|player props?|props?|touchdowns?|strikeouts?|hits)\b/gi;
+function slipTeam(s){
+  if (typeof teamCandidates!=='function') return null;
+  const t = s.replace(/[+\-−–]\s?\d+(\.\d+)?/g,' ').replace(/\d+(\.\d+)?\s?[¢c%]?/g,' ').replace(SLIP_WORDS,' ').replace(SLIP_STATS,' ').replace(/[^A-Za-z.&' ]/g,' ').replace(/\s+/g,' ').trim();
+  if (t.length < 2) return null;
+  const c = teamCandidates(t); const top = c[0];
+  if (!top) return null;
+  if (top.fuzzy ? top.base < 4.6 : top.base < 6) return null;
+  return {name:top.g[top.side].name, short:top.g[top.side].short, g:top.g, side:top.side, txt:t};
+}
+function slipMatchup(s){
+  if (!/\s(@|vs\.?|v\.?|at)\s/i.test(' '+s+' ')) return null;
+  const parts = s.split(/\s(?:@|vs\.?|v\.?|at)\s/i); if (parts.length < 2) return null;
+  const a = slipTeam(parts[0]), b = slipTeam(parts[1]);
+  return (a && b) ? {a, b} : null;
+}
+function slipPlayerName(s){
+  const t = s.replace(/[+\-−–]\s?\d+(\.\d+)?/g,' ').replace(/\b\d+(\.\d+)?\+?/g,' ').replace(SLIP_WORDS,' ').replace(/\b(points?|pts|rebounds?|reb|assists?|ast|threes|3-?pointers?( made)?|3pm|shots on goal|sog|shots|passing yards|pass yds|rushing yards|rush yds|receiving yards|rec yds|pra|made|milestones?)\b/gi,' ').replace(/[-–—:|•·]/g,' ').replace(/\s+/g,' ').trim();
+  const m = t.match(/\b([A-Z][a-zA-Z'.]+(?:-[A-Z][a-zA-Z']+)?|[A-Z]\.)(\s+[A-Z][a-zA-Z'.-]+){1,2}\b/);
+  if (!m) return null;
+  if (slipTeam(m[0])) return null;
+  return m[0].trim();
+}
+function mkWordOf(raw){ return /\b(moneyline|money line|ml|to win|winner|win)\b/i.test(raw) ? 'ml' : /\b(spread|point spread|run line|puck line|handicap)\b/i.test(raw) ? 'spread' : /\b(total|totals|game total)\b/i.test(raw) ? 'total' : null; }
+function slipParse(text, conf){
+  const lines = String(text||'').replace(/[−–—]/g,'-').split(/\n+/).map(s=>s.replace(/\s+/g,' ').trim()).filter(s=>s.length>=2);
+  const stake = slipStake(lines);
+  const isPm = /polymarket|kalshi|\d\s?¢|avg\.? price|shares/i.test(text);
+  const isParlay = /parlay|\b\d\s*(leg|pick)s?\b/i.test(text);
+  const legs = []; let cur = null, pend = null;
+  const fresh = ()=>{ cur = {team:null, player:null, mk:null, dir:null, line:null, plus:false, stat:null, odds:null, matchup:pend, src:[]}; pend = null; legs.push(cur); return cur; };
+  for (const raw of lines){
+    if (SLIP_JUNK.test(raw)) continue;
+    if (/\b(wager|stake|to pay|to win|payout|potential|cost|amount)\b/i.test(raw) && /\$/.test(raw)) continue;
+    const mu = slipMatchup(raw);
+    if (mu){ if (cur && !cur.matchup) cur.matchup = mu; else pend = mu; continue; }
+    const low = raw.toLowerCase();
+    const stat = slipStat(raw);
+    const tot = raw.match(/\b(over|under|o|u)\s?(\d{1,3}(?:\.\d)?)\b/i);
+    const plus = raw.match(/\b(\d{1,3})\+/);
+    const spr = raw.match(/(?:^|\s)([+-]\d{1,2}(?:\.[05])?)(?=\s|$)/);
+    const odds = slipOdds(raw);
+    const caps = raw.replace(/[^A-Za-z]/g,''); const allCaps = caps.length>3 && caps===caps.toUpperCase();
+    let player = (stat || tot || plus) ? slipPlayerName(raw) : null;
+    let team = player ? null : slipTeam(raw);
+    if (!player && !team && !allCaps && !mkWordOf(raw)) player = slipPlayerName(raw);   // a name on its own line ("LeBron James")
+    const mkWord = mkWordOf(raw);
+    const startsSel = !!(team || player);
+    if (startsSel && cur && (cur.team || cur.player)) fresh();
+    else if (!cur && (startsSel || tot || stat || mkWord)) fresh();
+    else if (cur && tot && !startsSel && !stat && (cur.dir || (cur.team && !cur.player && (cur.mk || cur.line!=null)))) fresh();   // "Over 216.5" after a finished team leg = next leg
+    if (!cur) continue;
+    cur.src.push(raw);
+    if (player && !cur.player) cur.player = player;
+    if (team && !cur.team) cur.team = team;
+    if (stat && !cur.stat) cur.stat = stat;
+    if (tot && !cur.dir){ cur.dir = /^u/i.test(tot[1]) ? 'under' : 'over'; cur.line = +tot[2]; }
+    else if (plus && !cur.dir && (cur.stat || stat)){ cur.dir = 'over'; cur.line = +plus[1]; cur.plus = true; }
+    if (spr && !tot && cur.line==null && Math.abs(+spr[1]) <= 60 && !/\d{3}/.test(spr[1])){ cur.line = +spr[1]; if (!cur.mk) cur.mk = 'spread'; }
+    if (mkWord && !cur.mk) cur.mk = mkWord;
+    if (odds!=null && cur.odds==null) cur.odds = odds;
+    if (/\b(yes|buy yes)\b/i.test(low) && isPm && cur.team && !cur.mk) cur.mk = 'ml';
+  }
+  // finish each leg: market and the text Verdict reads; incomplete legs are kept but flagged, never guessed
+  const rows = [];
+  for (const L of legs){
+    let mk = L.mk;
+    if (L.player && L.stat && L.dir) mk = 'prop';
+    else if (L.dir && !L.player) mk = 'total';
+    else if (!mk && L.team && isPm) mk = 'ml';
+    let txt = '', why = '';
+    if (mk==='prop'){ txt = `${L.player} ${L.plus ? L.line+'+' : (L.dir==='under'?'Under ':'Over ')+L.line} ${L.stat.word}`; }
+    else if (mk==='total'){
+      const m = L.matchup || (L.team && L.team.g ? {a:{name:L.team.g.away.name}, b:{name:L.team.g.home.name}} : null);
+      if (m) txt = `${m.a.name}/${m.b.name} ${L.dir==='under'?'Under':'Over'} ${L.line}`; else why = 'no teams found for this total';
+    }
+    else if (mk==='spread' && L.team && L.line!=null) txt = `${L.team.name} ${L.line>0?'+':''}${L.line}`;
+    else if (mk==='ml' && L.team) txt = `${L.team.name} ML`;
+    else if (L.player && L.dir && !L.stat) why = 'a player line, but the stat is not one Verdict checks yet';
+    else if (L.team) why = 'found the team but not the bet type (ML, spread, total)';
+    else if (L.player) why = 'found the player but not the stat and line';
+    else why = 'no team, player or market found';
+    if (!txt && !L.team && !L.player && !L.dir) continue;   // stray fragments
+    rows.push({text:txt, odds:L.odds!=null ? (L.odds>0?'+':'')+L.odds : '', ok:!!txt, why, read:L.src.join(' · ')});
+  }
+  const okRows = rows.filter(r=>r.ok);
+  let fail = '';
+  if (conf!=null && conf < 45) fail = 'The photo is too blurry or small to read reliably';
+  else if (!okRows.length) fail = rows.length ? 'It found pieces of a bet but not a full pick' : 'No team, player or market found';
+  return {rows, stake, fail, isParlay, lines};
+}
+/* ---------- UI ---------- */
+function photoPanelHTML(){
+  const P = PHOTO;
+  const head = `<div class="ph-row"><label class="btn ph-btn" for="pkPhoto">📷 Upload pick photo</label><input type="file" id="pkPhoto" accept="image/*" hidden><span class="hint">Bet slip screenshot or a photo. Read on your phone; the picture is never uploaded.</span></div>`;
+  if (P.busy) return `<div class="ph-card">${head}<div class="ph-prog">Reading the photo… <span id="phStage">${esc(photoStageTxt())}</span></div></div>`;
+  if (!P.text && !P.fail) return `<div class="ph-card">${head}</div>`;
+  const rows = P.rows.map((r,i)=>`<div class="ph-leg ${r.ok?'':'bad'}"><input data-ph-text="${i}" value="${esc(r.text)}" placeholder="${esc(r.ok?'':'Type this pick, e.g. Lakers ML')}" aria-label="Pick ${i+1}"><input data-ph-odds="${i}" class="ph-odds" value="${esc(r.odds)}" placeholder="Odds" aria-label="Odds"><button type="button" class="ph-x" data-ph-del="${i}" aria-label="Remove">×</button>${r.ok || !r.read ? '' : `<div class="ph-why">Couldn't tell: ${esc(r.why)}. Read: “${esc(r.read.slice(0,120))}”</div>`}</div>`).join('');
+  const failBox = P.fail ? `<div class="ph-fail"><b>Couldn't read a pick from this photo.</b> ${esc(P.fail)}. Type or fix it below, then tap Check.</div>` : `<div class="ph-ok">Read ${P.rows.filter(r=>r.ok).length} pick${P.rows.filter(r=>r.ok).length===1?'':'s'} from the photo${P.conf!=null?` (text confidence ${Math.round(P.conf)}%)`:''}. Fix anything that looks wrong, then Check again.</div>`;
+  return `<div class="ph-card">${head}
+    <div class="ph-body">${P.thumb?`<img class="ph-thumb" src="${P.thumb}" alt="Your photo">`:''}<div class="ph-main">${failBox}
+      <div class="ph-legs">${rows || ''}</div>
+      <div class="ph-acts"><button type="button" class="btn sm" id="phAdd">+ Add a pick</button><label class="ph-stake">Stake $<input id="phStake" inputmode="decimal" value="${esc(P.stake)}" placeholder="—"></label><button type="button" class="btn primary sm" id="phRun">Check ${P.rows.length>1?'these picks':'this pick'}</button><button type="button" class="more-link" id="phClear">Clear photo</button></div>
+      <details class="dd ph-raw"><summary>What the photo said</summary><pre>${esc(P.text.slice(0,2000)||'(no text found)')}</pre></details>
+    </div></div></div>`;
+}
+function photoStageTxt(){ const s = PHOTO.stage||''; return /load|initial/i.test(s) ? 'getting the reader ready (first time only)…' : /recogniz/i.test(s) ? `${PHOTO.pct||0}%` : ''; }
+function photoProgress(){ const el = document.getElementById('phStage'); if (el) el.textContent = photoStageTxt(); }
+function photoRowsToText(){ return PHOTO.rows.map(r=>[String(r.text||'').trim(), String(r.odds||'').trim()].filter(Boolean).join(' ')).filter(x=>x && /[a-z]/i.test(x)).join('\n'); }
+function photoSyncInputs(){
+  document.querySelectorAll('[data-ph-text]').forEach(el=>{ const r = PHOTO.rows[+el.dataset.phText]; if (r){ r.text = el.value; r.ok = !!el.value.trim(); } });
+  document.querySelectorAll('[data-ph-odds]').forEach(el=>{ const r = PHOTO.rows[+el.dataset.phOdds]; if (r) r.odds = el.value; });
+  const st = document.getElementById('phStake'); if (st) PHOTO.stake = st.value;
+  PK.photoStake = parseFloat(PHOTO.stake) > 0 ? +parseFloat(PHOTO.stake) : null;
+}
+function photoRun(){
+  photoSyncInputs();
+  const txt = photoRowsToText();
+  if (!txt){ toast('Type the pick first'); return; }
+  PK.text = txt; const ta = document.getElementById('pkText'); if (ta) ta.value = txt;
+  PHOTO.ran = true; runPicks();
+}
+async function photoHandle(file){
+  if (!file) return;
+  if (!/^image\//.test(file.type||'') && !/\.(png|jpe?g|webp|heic|gif|bmp)$/i.test(file.name||'')){ toast('Pick an image file'); return; }
+  Object.assign(PHOTO, {busy:true, stage:'loading', pct:0, text:'', conf:null, rows:[], stake:'', fail:'', thumb:'', ran:false});
+  renderPicks();
+  try{
+    const canvas = await photoCanvas(file);
+    const w = await ocrWorker();
+    const {data} = await w.recognize(canvas);
+    PHOTO.text = String(data && data.text || '').trim();
+    PHOTO.conf = data && isFinite(+data.confidence) ? +data.confidence : null;
+    const r = slipParse(PHOTO.text, PHOTO.conf);
+    PHOTO.rows = r.rows.length ? r.rows : [{text:'', odds:'', ok:false, why:'nothing readable', read:''}];
+    PHOTO.stake = r.stake; PHOTO.fail = r.fail;
+    if (!PHOTO.text) PHOTO.fail = 'No readable text in this image';
+  }catch(e){ PHOTO.fail = String(e && e.message || e); PHOTO.rows = [{text:'', odds:'', ok:false, why:'could not read the image', read:''}]; }
+  PHOTO.busy = false;
+  if (PHOTO.fail){ PHOTO.rows = PHOTO.rows.map(r=>r.ok ? r : r); renderPicks(); return; }
+  // confident read: drop unreadable rows only if they had nothing useful, then run the normal Verdict
+  PK.photoStake = parseFloat(PHOTO.stake) > 0 ? +parseFloat(PHOTO.stake) : null;
+  PK.text = photoRowsToText(); PHOTO.ran = true;
+  renderPicks(); runPicks();
+}
+function photoBind(v){
+  const inp = v.querySelector('#pkPhoto'); if (inp) inp.onchange = e=>{ const f = e.target.files && e.target.files[0]; e.target.value = ''; photoHandle(f); };
+  v.querySelectorAll('[data-ph-text],[data-ph-odds],#phStake').forEach(el=>el.oninput = photoSyncInputs);
+  v.querySelectorAll('[data-ph-del]').forEach(b=>b.onclick = ()=>{ photoSyncInputs(); PHOTO.rows.splice(+b.dataset.phDel, 1); renderPicks(); });
+  const add = v.querySelector('#phAdd'); if (add) add.onclick = ()=>{ photoSyncInputs(); PHOTO.rows.push({text:'', odds:'', ok:false, why:'', read:''}); renderPicks(); const last = v.querySelectorAll('[data-ph-text]'); if (last.length) last[last.length-1].focus(); };
+  const run = v.querySelector('#phRun'); if (run) run.onclick = photoRun;
+  const clr = v.querySelector('#phClear'); if (clr) clr.onclick = ()=>{ Object.assign(PHOTO, {busy:false, text:'', conf:null, rows:[], stake:'', fail:'', thumb:'', ran:false}); PK.photoStake = null; renderPicks(); };
+}
 </script>
 </body>
 </html>
