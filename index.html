@@ -1136,7 +1136,7 @@ details.av-hid>summary::-webkit-details-marker{display:none}
 details.av-hid>summary::after{content:' ▾';color:var(--mut)}
 details.av-hid[open]>summary::after{content:' ▴'}
 .av-note{font-size:12.5px;color:var(--mut);margin:0 0 10px}
-.av-off,.av-off *{opacity:1 !important;filter:none !important}
+.av-tag,.av-tag *{opacity:1 !important;filter:none !important}
 .av-off .btn-tail,.av-off .btn-nob{pointer-events:none}
 .av-tag{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;padding:5px 11px;border-radius:12px;font-size:12.5px;font-weight:750;line-height:1.35;color:#ffe4e6;background:rgba(225,29,72,.32);border:1px solid rgba(244,63,94,.7);filter:none;overflow-wrap:anywhere}
 .av-why{font-weight:600;color:#fecdd3}
@@ -1223,14 +1223,65 @@ a, button, label, summary, input, select, textarea, .btn, .chip{touch-action:man
   input, select, textarea{font-size:16px !important}
 }
 
-/* v72: hidden / not-on-book cards at full strength with real colors */
-.av-off, .av-off > *, .av-off .card-status, .av-hid .card, .av-pull-sec .card{opacity:1 !important;filter:none !important;-webkit-filter:none !important;backdrop-filter:none !important}
+/* v73: hidden card stays dimmed; only the 'Not on your books' box is sharp */
+.av-off > *:not(.card-status):not(.av-tag), .av-off > .card-status > *:not(.av-tag){opacity:.5;filter:grayscale(.85)}
 .av-tag, .card-status > .av-tag{opacity:1 !important;filter:none !important;color:#fff !important;font-weight:800;background:rgba(255,92,92,.14) !important;border:1px solid rgba(255,92,92,.55) !important;gap:8px}
 .av-tag > span[aria-hidden], details.av-hid > summary .av-x{color:#ff5c5c;font-size:14px;filter:none !important;opacity:1 !important}
 .av-tag .av-why{color:var(--txt) !important;font-weight:600;opacity:1 !important}
 .av-tag .av-ok-btn, .av-tag .av-undo{opacity:1 !important;background:var(--accent,#3b82f6) !important;border:1px solid var(--accent,#3b82f6) !important;color:#fff !important;font-weight:750;border-radius:var(--btn-r,10px) !important;min-height:30px;padding:0 14px !important;box-shadow:none}
 .av-tag .av-ok-btn:active{filter:brightness(.92) !important}
 .av-note{color:var(--txt2,#cbd5e1)}
+.av-tag, .card-status > .av-tag{display:flex !important;flex-wrap:nowrap !important;align-items:center !important;justify-content:space-between;gap:8px;width:100%;flex:1 1 100%;box-sizing:border-box;min-height:44px;padding:6px 6px 6px 10px !important;border-radius:14px !important;font-size:13.5px !important}
+.av-tag > span[aria-hidden]{flex:0 0 auto;line-height:1}
+.av-tag .av-ttl{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:800;color:#fff}
+.av-tag .av-ok-btn{flex:0 0 auto;white-space:nowrap;margin-left:auto;padding:0 11px !important;font-size:13px !important;min-height:32px}
+.av-tag .av-why{display:none !important}
+@media (max-width:400px){
+  details.av-hid{padding:4px 8px}
+  .av-tag, .card-status > .av-tag{gap:6px;padding:6px 5px 6px 9px !important;font-size:13px !important}
+  .av-tag > span[aria-hidden]{font-size:12px}
+  .av-tag .av-ok-btn{padding:0 9px !important;font-size:12.5px !important}
+}
+.tm-dd>summary{flex-wrap:nowrap !important;min-width:0}
+.tm-dd>summary .tm-sum{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm-pill{white-space:nowrap;flex-shrink:0}
+
+/* v73: Matchup block */
+.tm-dd>summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tm-pill{display:inline-flex;align-items:center;height:22px;padding:0 10px;border-radius:999px;font-size:11.5px;font-weight:800;letter-spacing:.02em}
+.tm-pill.tm-low{background:rgba(52,211,153,.16);color:#4ade80;border:1px solid rgba(52,211,153,.45)}
+.tm-pill.tm-medium{background:rgba(245,158,11,.16);color:#fbbf24;border:1px solid rgba(245,158,11,.45)}
+.tm-pill.tm-high{background:rgba(248,113,113,.16);color:#f87171;border:1px solid rgba(248,113,113,.5)}
+.tm-dd .tm-body{padding:12px 0 2px;gap:12px;font-size:13px}
+.tm-chip{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:24px;padding:0 8px;border-radius:8px;font-size:12px;font-weight:800;letter-spacing:.03em;color:#fff;background:var(--tc);box-shadow:0 0 0 1px rgba(255,255,255,.14) inset;text-shadow:0 1px 1px rgba(0,0,0,.45)}
+.tm-wp,.tm-risk,.tm-team{border:1px solid var(--line2);border-radius:14px;background:rgba(255,255,255,.025);padding:12px}
+.tm-wp-lab{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:800;font-variant-numeric:tabular-nums;margin-bottom:8px}
+.tm-wp-lab>span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex-shrink:0}
+.tm-wp-lab>span.mut{flex:1 1 auto;flex-shrink:1;min-width:0;white-space:normal;justify-content:center}
+.tm-wp-lab .mut{font-size:11px;font-weight:650;text-align:center}
+.tm-wp-bar{display:flex;height:10px;border-radius:999px;overflow:hidden;gap:2px;background:rgba(255,255,255,.06)}
+.tm-wp-bar>i{display:block;height:100%}
+.tm-risk-lab{display:flex;justify-content:space-between;align-items:center;font-weight:750;margin-bottom:8px}
+.tm-r.tm-low{color:#4ade80}.tm-r.tm-medium{color:#fbbf24}.tm-r.tm-high{color:#f87171}
+.tm-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.tm-seg>i{display:block;height:8px;border-radius:999px;background:rgba(255,255,255,.08)}
+.tm-seg>i.on.s0{background:#22c55e}.tm-seg>i.on.s1{background:#f59e0b}.tm-seg>i.on.s2{background:#ef4444}
+.tm-risk .tm-line{margin-top:10px;padding:0;border:0;background:none;color:var(--txt);line-height:1.45}
+.tm-teams{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:10px}
+.tm-dots{flex-wrap:nowrap !important}
+.tm-team{border-left:4px solid var(--tc);display:flex;flex-direction:column;gap:8px}
+.tm-team.mine{box-shadow:0 0 0 1px rgba(96,165,250,.35) inset}
+.tm-team-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tm-rec{font-weight:800;font-variant-numeric:tabular-nums}
+.tm-you{margin-left:auto;font-size:11px;font-weight:700;color:#93c5fd;background:rgba(59,130,246,.14);border-radius:999px;padding:2px 8px}
+.tm-stat{display:flex;align-items:center;gap:8px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.tm-stat>span:first-child{flex:0 0 86px;color:var(--mut)}
+.tm-stat b.pos{color:#4ade80}.tm-stat b.neg{color:#f87171}
+.tm-dots{display:inline-flex;gap:3px;flex-wrap:wrap}
+.tm-dots>i{width:10px;height:10px;border-radius:50%;display:block}
+.tm-dots>i.w{background:#22c55e}.tm-dots>i.l{background:#ef4444}.tm-dots>i.t{background:#94a3b8}
+.tm-mini{flex:1;max-width:120px;height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+.tm-mini>i{display:block;height:100%;border-radius:999px}.tm-mini>i.g{background:#22c55e}.tm-mini>i.r{background:#ef4444}
 </style>
 </head>
 <body>
@@ -2607,7 +2658,7 @@ function splitOf(c, type){
 function wlPct(sum){ if(!sum) return null; const p = String(sum).split('-').map(Number); if (p.length<2||p.some(isNaN)) return null; const w=p[0], l=p[1], t=p[2]||0; const n=w+l+t; return n ? (w+t/2)/n : null; }
 function teamObj(c, nm){
   const pr = Array.isArray(c.probables) && c.probables.length ? c.probables[0] : null;
-  return {nick: c.team ? (c.team.name||c.team.shortDisplayName||'') : '', loc: c.team ? (c.team.location||'') : '', id: c.team ? String(c.team.id) : (c.athlete ? String(c.athlete.id||c.id) : String(c.id||'')), name:nm.name, short:nm.short, logo:nm.logo,
+  return {nick: c.team ? (c.team.name||c.team.shortDisplayName||'') : '', loc: c.team ? (c.team.location||'') : '', id: c.team ? String(c.team.id) : (c.athlete ? String(c.athlete.id||c.id) : String(c.id||'')), name:nm.name, short:nm.short, logo:nm.logo, color: c.team && c.team.color ? '#'+String(c.team.color).replace('#','') : '', alt: c.team && c.team.alternateColor ? '#'+String(c.team.alternateColor).replace('#','') : '',
     rec:recordOf(c), homeRec:splitOf(c,'home'), roadRec:splitOf(c,'road'), score:scoreOf(c),
     rank:c.curatedRank&&c.curatedRank.current<=25?c.curatedRank.current:null,
     wrank:c.curatedRank&&isFinite(+c.curatedRank.current)&&+c.curatedRank.current>0?+c.curatedRank.current:null, wrec:recordOf(c),
@@ -5636,7 +5687,9 @@ function priceMath(p, E){
 const pctTxt = x => `${(Math.abs(x)*100).toFixed(Math.abs(x)<0.1?1:0)}%`;
 const outOf10 = p => (Math.round(p*100)/10).toFixed(1).replace(/\.0$/,'');
 function confStarsN(v){ return v>=90?5:v>=75?4:v>=60?3:v>=45?2:1; }
-function confDots(v){ const n = confStarsN(v); return `<span class="stars" title="Confidence ${n} out of 5" aria-label="Confidence ${n} out of 5">${'★'.repeat(n)}<span class="off">${'★'.repeat(5-n)}</span></span>`; }
+// v73: stars = bet strength and always agree with the verdict: Bet 3–5 (by confidence), Watch / Maybe later 2, Skip / Pass / Avoid 1
+function betStarsN(v, vk){ const k = String(vk||'').toUpperCase(); if (/^(BET|GOOD)$/.test(k)) return v>=75?5:v>=60?4:3; if (/^(WATCH|WATCHLIST|MAYBE LATER)$/.test(k)) return 2; if (/^(SKIP|PASS|AVOID|LEAN_NO)$/.test(k)) return 1; return null; }
+function confDots(v, vk){ const b = vk!=null ? betStarsN(v, vk) : null; if (vk!=null && /^FINAL$/i.test(String(vk))) return ''; const n = b!=null ? b : confStarsN(v); const lab = b!=null ? `Bet strength ${n} of 5` : `Confidence ${n} out of 5`; return `<span class="stars" title="${lab}" aria-label="${lab}">${'★'.repeat(n)}<span class="off">${'★'.repeat(5-n)}</span></span>`; }
 const PLAIN_NOTE = {
   'ESPN model not available for this game':"ESPN's computer pick is missing for this game",
   'only one sportsbook priced (edge n/a)':'Only DraftKings priced this (prediction markets checked when they list it)',
@@ -6088,7 +6141,7 @@ function courtroomHTML(p, C){
     ${chanceBarHTML(p, C)}
     <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way.</li>'}</ul></div>
     <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.map(li).join('')}</ul></div>
-    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v):''}</div>
+    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
       <div class="c-sent">${esc(C.sentence)}</div>
       ${unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game")}<div class="wr-inline">${esc(hitRateText(wr))}</div></div>
     ${matchupTableHTML(p, C)}
@@ -8535,7 +8588,7 @@ async function resolveLeg(raw, override){
           if (imported && imported.length){
             evaluateAll();
             const again = await playerCandidates(L.nameText);
-            const retry = again.find(x=>x.a && pick.c.a && String(x.a.id)===String(pick.c.a.id) && x.g) || again.find(x=>x.g);
+            const retry = again.find(x=>x.a && pick.c.a && String(x.a.id)===String(pick.c.a.id) && x.g);   // v73: never borrow another player's game
             if (retry){ pick = {key:`p:${retry.a.id}:${retry.g.id}`, label:`${retry.a.name} · ${retry.g[retry.side].short} (${retry.g.away.short} @ ${retry.g.home.short}, ${fmtTime(retry.g.start)})`, c:retry}; leg.cands.unshift(pick); leg.player = retry.a; leg.g = retry.g; leg.side = retry.side; }
           }
         }catch(e){ console.warn('import player game', e); }
@@ -8782,7 +8835,7 @@ ${resultBan}
     <div class="court2">
       ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul></div>
       <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.slice(0,4).map(legItem).join('')}`; })()}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul></div>
-      <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf):''}</div>
+      <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf, leg.verdict):''}</div>
         <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
         ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: ''}</div>
     </div></details>`}
@@ -10120,78 +10173,54 @@ function buildPropPlay(raw, side, feat, est){
   const win = [], lose = [];
   const f = feat||{};
   const isUnder = side==='under';
-  const l10n = f.l10n||0, nSzn = f.n||0;
-  const avgTxt = f.l10avg!=null ? f.l10avg.toFixed(1)+' avg' : '—';
-  if (f.l10hit!=null && l10n){
-    const overN = Math.round(f.l10hit*l10n), underN = l10n-overN;
-    if (isUnder){
-      if ((1-f.l10hit)>=0.6) win.push({txt:`Stayed under in ${underN}/${l10n} (${avgTxt})`});
-      else if (f.l10hit>=0.6) lose.push({txt:`Went over in ${overN}/${l10n} (${avgTxt})`});
-      else win.push({txt:`Stayed under in ${underN}/${l10n} (${avgTxt})`});
-    } else {
-      const txt = `Hit the over in ${overN}/${l10n} (${avgTxt})`;
-      (f.l10hit>=0.6?win:f.l10hit<0.5?lose:win).push({txt});
+  // v73: every stat is judged from the bet's side and lands in exactly one column.
+  //  rate for the side > 55% → win · < 45% → lose · 45–55% → one combined "coin flip" note · fewer than 5 games → dropped
+  const sw = isUnder ? 'under' : 'over', L0 = +raw.line;
+  const neutral = [];
+  const rateRow = (label, hit, n, extra) => {
+    if (hit==null || !n || n<5) return;
+    const k = Math.round((isUnder ? 1-hit : hit)*n), r = k/n;
+    const txt = `${label}: ${sw} in ${k} of ${n}${extra||''}`;
+    if (r>0.55) win.push({txt, kind:'rate'}); else if (r<0.45) lose.push({txt, kind:'rate'}); else neutral.push(`${label.toLowerCase()} ${k} of ${n}`);
+  };
+  const avgLean = a => { if (a==null || !L0) return 0; const d = (a-L0)/L0; const s2 = isUnder ? -d : d; return s2>=0.08 ? 1 : s2<=-0.08 ? -1 : 0; };
+  // last 10 (hit rate, with the average)
+  rateRow((f.l10n||0)>=10 ? 'Last 10' : `Last ${f.l10n||0}`, f.l10hit, f.l10n||0, f.l10avg!=null ? ` (avg ${f.l10avg.toFixed(1)})` : '');
+  // last 5 average vs the line: only when it clearly leans (8%+ off the line)
+  if (f.l5avg!=null && (f.l5n||5)>=5){ const lean = avgLean(f.l5avg); const txt = `Last 5: averaging ${f.l5avg.toFixed(1)} vs the ${L0} line`; if (lean>0) win.push({txt}); else if (lean<0) lose.push({txt}); }
+  // season: hit rate first; if that's a coin flip, the average decides only when it clearly leans
+  if (f.seasonHit!=null && (f.n||0)>=5 && (f.n||0) > (f.l10n||0)){   // season = the same games as the last 10 → skip (no repeats)
+    const k = Math.round((isUnder ? 1-f.seasonHit : f.seasonHit)*f.n), r = k/f.n;
+    const rl = r>0.55 ? 1 : r<0.45 ? -1 : 0;
+    if (rl){ const txt = `Season: ${sw} in ${k} of ${f.n}${f.seasonAvg!=null?` (avg ${f.seasonAvg.toFixed(1)})`:''}`; (rl>0?win:lose).push({txt, kind:'rate'}); }
+    else {
+      // hit rate is a coin flip: only the average can lean, and then we quote the average, not the coin-flip count
+      const al = avgLean(f.seasonAvg);
+      if (al){ (al>0?win:lose).push({txt:`Season: averaging ${f.seasonAvg.toFixed(1)} vs the ${L0} line`}); }
+      else neutral.push(`season ${k} of ${f.n}`);
     }
   }
-  if (f.l5avg!=null){
-    const txt = `Last 5 average ${f.l5avg.toFixed(1)} vs the line ${raw.line}`;
-    const below = f.l5avg < raw.line, above = f.l5avg > raw.line;
-    if (isUnder ? below : above) win.push({txt});
-    else if (isUnder ? above : below) lose.push({txt});
-    else win.push({txt});
+  // minutes: only a real change (1+ minute) counts
+  if (f.minL5!=null && f.minSzn!=null && Math.abs(f.minL5-f.minSzn)>=1){
+    const up = f.minL5 > f.minSzn; const txt = `Minutes ${up?'up':'down'}: ${f.minL5.toFixed(1)} over the last 5 vs ${f.minSzn.toFixed(1)} on the season`;
+    ((up !== isUnder) ? win : lose).push({txt});
   }
-  if (f.seasonAvg!=null){
-    const below = f.seasonAvg <= raw.line;
-    const overN = (f.seasonHit!=null && nSzn) ? Math.round(f.seasonHit*nSzn) : null;
-    const extra = overN==null ? '' : (isUnder ? ` · stayed under in ${nSzn-overN}/${nSzn}` : ` · over in ${overN}/${nSzn}`);
-    const txt = `Season average ${f.seasonAvg.toFixed(1)}${extra}`;
-    ((isUnder?below:f.seasonAvg>=raw.line)?win:lose).push({txt});
+  // home / road split
+  rateRow(f.home ? 'Home games' : 'Road games', f.splitHit, f.splitN||0);
+  // vs this opponent (needs 5+ games, so usually skipped)
+  rateRow(`Vs ${((raw.opp&&raw.opp.short)||'this opponent')}`, f.h2hhit, f.h2hn||0);
+  if (neutral.length) lose.push({txt:`No clear edge from ${neutral.join(', ')}: close to a coin flip`, kind:'neutral'});
+  // blowout: one short line (details live in the Matchup block)
+  if (bx && bx.lvl>=1 && bx.fav){
+    const favNm = (raw.g && raw.g[bx.fav] && (raw.g[bx.fav].short || raw.g[bx.fav].nick)) || 'The favorite';
+    (isUnder ? win : lose).push({txt:`Blowout risk ${bx.risk.toLowerCase()}: ${favNm} favored${bx.sp!=null?` by about ${bx.sp}`:''}, so starters could sit late (see Matchup)`});
   }
-  if (f.minL5!=null && f.minSzn!=null){
-    const down = f.minL5 < f.minSzn-0.3, up = f.minL5 > f.minSzn+0.3;
-    if (isUnder){
-      if (down) win.push({txt:`Minutes down to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
-      else if (up) lose.push({txt:`Minutes up to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season — more usage is over upside`});
-      else win.push({txt:`Minutes trending ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
-    } else {
-      if (up) win.push({txt:`Minutes up to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
-      else if (down) lose.push({txt:`Minutes down to ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
-      else win.push({txt:`Minutes trending ${f.minL5.toFixed(1)} over last 5 vs ${f.minSzn.toFixed(1)} on the season`});
-    }
-  }
-  if (f.splitN>=3 && f.splitHit!=null){
-    const overN = Math.round(f.splitHit*f.splitN), underN = f.splitN-overN;
-    const place = f.home?'At home':'On the road';
-    if (isUnder){
-      const underRate = 1-f.splitHit;
-      (underRate>=0.55?win:lose).push({txt: underRate>=0.55 ? `${place}, stayed under in ${underN}/${f.splitN}` : `${place}, went over in ${overN}/${f.splitN}`});
-    } else {
-      (f.splitHit>=0.55?win:lose).push({txt:`${place}, hit the over in ${overN}/${f.splitN}`});
-    }
-  }
-  if (bx && bx.lvl>=1 && bx.fav) (side==='under' ? win : lose).push({txt:`Blowout risk ${bx.risk.toLowerCase()}: ${bx.line}`});
-  if (f.rest!=null && f.rest<=1){
-    const t = 'Short rest / back-to-back — usage and counting stats often dip';
-    (isUnder?win:lose).push({txt:t});
-  }
-  if (f.rest!=null && f.rest>=3){
-    if (isUnder) lose.push({txt:`${f.rest} days of rest can mean a fuller workload and more scoring upside`});
-    else win.push({txt:`${f.rest} days of rest`});
-  }
-  if (f.h2hn>=2 && f.h2hhit!=null){
-    const overN = Math.round(f.h2hhit*f.h2hn), underN = f.h2hn-overN;
-    const opp = ((raw.opp&&raw.opp.short)||'this opponent');
-    if (isUnder){
-      const underRate = 1-f.h2hhit;
-      (underRate>=0.55?win:lose).push({txt: underRate>=0.55 ? `Vs ${opp}: stayed under in ${underN}/${f.h2hn}` : `Vs ${opp}: went over in ${overN}/${f.h2hn}`});
-    } else {
-      (f.h2hhit>=0.55?win:lose).push({txt:`Vs ${opp}: over in ${overN}/${f.h2hn}`});
-    }
-  }
-  if (f.l10sd!=null && raw.line && f.l10sd>raw.line*0.45) lose.push({txt:'The last 10 are streaky, so a single line is a coin flip more often than it looks'});
+  if (f.rest!=null && f.rest<=1) (isUnder?win:lose).push({txt:'Back-to-back / short rest: usage and counting stats often dip'});
+  if (f.rest!=null && f.rest>=3) (isUnder?lose:win).push({txt:`${f.rest} days of rest: fresh legs, normal or bigger workload`});
+  if (f.l10sd!=null && raw.line && f.l10sd>raw.line*0.45) lose.push({txt:'The last 10 swing a lot game to game, so one line is less predictable than it looks'});
   if (price!=null && price<PROP_ODDS_LO) lose.push({txt:`Juice is heavy (${fmtAm(price)})`});
-  if (isUnder) lose.push({txt:'A hot shooting night, a teammate injury that opens usage, or a soft opponent defense can push this over the line'});
-  else lose.push({txt:'A blowout, foul trouble, or a cold shooting night can leave this under the line'});
+  if (isUnder) lose.push({txt:'A hot shooting night or extra usage from a teammate injury can push this over the line'});
+  else lose.push({txt:'Foul trouble or a cold shooting night can leave this under the line'});
   const J = gates.verdict==='good'?'BET':gates.verdict==='watch'?'MAYBE LATER':'SKIP';
   const sentence = pSide==null
     ? 'We still need this player’s recent game log before the judge can speak with any confidence.'
@@ -10199,7 +10228,7 @@ function buildPropPlay(raw, side, feat, est){
       ? `${raw.playerName} has a real, repeatable lean ${side} ${raw.line} ${PROP_KIND_LABEL[raw.kind]||''}. The estimate is ${fmtPct(pSide,0)} and the price stays inside our singles range.`
       : gates.verdict==='watch'
         ? `There is a lean, but it is not clean enough to bet as a single yet — ${gates.fails[0]||'close enough to watch, not to fire'}.`
-        : `The judge passes. ${gates.fails[0]||'Not enough of an edge, or the sample is too thin.'}`);
+        : `The judge passes. ${(t=>t.charAt(0).toUpperCase()+t.slice(1))(String(gates.fails[0]||'Not enough of an edge, or the sample is too thin.'))}`);
   const confV = Math.max(30, Math.min(90, 40 + (f.n||0) + (f.l10n||0)*2 + (pSide!=null?Math.abs(pSide-0.5)*80:0)));
   return {
     id: propPlayId(raw, side), isProp:true, mk:raw.kind, kind:raw.kind, side, label,
@@ -10505,7 +10534,7 @@ function propCourtroomHTML(p){
     ${bar}
     ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way yet.</li>'}</ul></div>
     <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.length?DD.lose.map(li).join(''):'<li class="mut">No red flags recorded.</li>'}</ul></div>`; })()}
-    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span> ${p.j&&p.j.conf&&typeof confDots==='function'?confDots(p.j.conf.v):''}</div>
+    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span> ${p.j&&p.j.conf&&typeof confDots==='function'?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
       <div class="c-sent">${esc(C.sentence||'')}</div>
       ${unitJudgeLineHTML(p,"prop")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
     ${propStatTableHTML(p)}
@@ -16491,7 +16520,7 @@ function avHiddenHTML(board, tab){
   const open = !!(window.__avOpen && window.__avOpen[board+':'+tab]);
   const cards = list.slice(0, 60).map(x=>{
     const r = avCheck(x, kind) || {};
-    const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> Not on your books${r.why?` <span class="av-why">· ${esc(r.why)}</span>`:''}${typeof avOkBtnHTML==='function' ? avOkBtnHTML(board, x, r.user) : (r.user?` <button type="button" class="av-undo" data-nob-undo="${esc(board+'|'+avItemId(x, board))}">Undo</button>`:'')}</div>`;
+    const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> <span class="av-ttl">Not on your books</span>${typeof avOkBtnHTML==='function' ? avOkBtnHTML(board, x, r.user) : (r.user?` <button type="button" class="av-undo" data-nob-undo="${esc(board+'|'+avItemId(x, board))}">Undo</button>`:'')}</div>`;
     let html = ''; try{ html = cardFn(x); }catch(e){ return ''; }
     return String(html).replace(/^\s*<div class="([^"]*)"/, (m, c)=>`<div class="${c} av-off"`).replace(/^(\s*<div [^>]*>)/, `$1${tag}`);
   }).join('');
@@ -17343,7 +17372,7 @@ function v60FastReqs(items, gs){
    blowout-risk line tied to the prop. Blowout risk nudges the prop estimate a little (basketball/football only). */
 var TM_BIG = {nba:15, wnba:15, ncaab:15, nfl:17, ncaaf:21, nhl:3, mlb:5};
 var TM_SIT = {nba:1, wnba:1, ncaab:1, nfl:1, ncaaf:1};   // sports where starters sit late in a blowout
-var TM = {}; var TM_LS = 'bl_tm_v1'; var TM_BUSY = false;
+var TM = {}; var TM_LS = 'bl_tm_v2'; var TM_BUSY = false;
 try{ const d = JSON.parse(localStorage.getItem(TM_LS)||'{}'); for (const k in d) if (d[k] && Date.now()-d[k].t < 6*3600000) TM[k] = d[k]; }catch(e){}
 function tmSave(){ try{ localStorage.setItem(TM_LS, JSON.stringify(TM)); }catch(e){} }
 function tmParse(lg, id, data){
@@ -17353,11 +17382,12 @@ function tmParse(lg, id, data){
     const me = (c.competitors||[]).find(k=>String(k.team && k.team.id)===String(id)), op = (c.competitors||[]).find(k=>String(k.team && k.team.id)!==String(id));
     if (!me || !op) continue; const sv = x => x && x.score!=null ? +(typeof x.score==='object' ? x.score.value : x.score) : NaN;
     const a = sv(me), b = sv(op); if (!isFinite(a) || !isFinite(b)) continue;
-    out.push({d:Date.parse(e.date), m:a-b});
+    out.push({d:Date.parse(e.date), m:a-b}); if (me.team && me.team.color) out.color = '#'+String(me.team.color).replace('#',''); if (me.team && me.team.alternateColor) out.alt = '#'+String(me.team.alternateColor).replace('#','');
   }
   out.sort((x,y)=>x.d-y.d);
   const n = out.length, w = out.filter(x=>x.m>0).length, l = out.filter(x=>x.m<0).length; const l10 = out.slice(-10);
-  return {t:Date.now(), n, w, l, l10w:l10.filter(x=>x.m>0).length, l10l:l10.filter(x=>x.m<0).length,
+  const tt = (data && data.team) || {}; const col = tt.color ? '#'+String(tt.color).replace('#','') : (out.color||''), alt = tt.alternateColor ? '#'+String(tt.alternateColor).replace('#','') : (out.alt||'');
+  return {t:Date.now(), color:col, alt, n, w, l, l10s: l10.map(x=>x.m>0?'W':x.m<0?'L':'T').join(''), l10w:l10.filter(x=>x.m>0).length, l10l:l10.filter(x=>x.m<0).length,
     avg: n ? out.reduce((s,x)=>s+x.m,0)/n : null, bigW: n ? out.filter(x=>x.m>=thr).length/n : null, bigL: n ? out.filter(x=>x.m<=-thr).length/n : null};
 }
 async function tmPrefetch(){
@@ -17384,6 +17414,7 @@ function tmWinProb(g){
 // raw/play → {fav, favP, spread, rows, risk:'Low'|'Medium'|'High', line, dOver}
 function tmBlowout(raw, side){
   const g = raw && raw.g; if (!g || !g.home || !g.away || !TM_BIG[g.league]) return null;
+  if (typeof tmTeamCheck==='function' && tmTeamCheck(raw)===false) return null;   // v73: player isn't on either team
   const lg = g.league, thr = TM_BIG[lg];
   const mine = raw.home ? 'home' : 'away', theirs = mine==='home' ? 'away' : 'home';
   const wp = tmWinProb(g);
@@ -17417,20 +17448,70 @@ function tmBlowout(raw, side){
   const dOver = TM_SIT[lg] ? (lvl===2 ? -0.02 : lvl===1 ? -0.01 : 0) : 0;
   return {fav, dog, favP, sp, risk, lvl, line, dOver, rows:[['away', T('away')], ['home', T('home')]], wpSrc: wp && wp.src};
 }
+// v73: the player must be confirmed on one of the two teams (ESPN roster), else no matchup block
+var TM_RQ = new Set(), TM_RQ_BUSY = false;
+function tmRosterQueue(lg, ids){
+  for (const id of ids) if (id) TM_RQ.add(lg+':'+id);
+  if (TM_RQ_BUSY) return; TM_RQ_BUSY = true;
+  setTimeout(async ()=>{
+    const list = [...TM_RQ]; TM_RQ.clear(); let got = 0;
+    try{ await pool(list.slice(0, 40).map(k=>async()=>{ const [l, id] = k.split(':'); try{ await loadRoster(l, id); got++; }catch(e){} }), 4); }catch(e){}
+    TM_RQ_BUSY = false; if (got && typeof softRender==='function') softRender();
+  }, 50);
+}
+function tmTeamCheck(raw){
+  const g = raw && raw.g; if (!g || !g.home || !g.away || !LMAP[g.league]) return null;
+  const mine = raw.home ? 'home' : 'away', other = mine==='home' ? 'away' : 'home';
+  const pid = String(raw.playerId||''), pn = raw.playerName||'';
+  const R = s => { const c = typeof rosterCache!=='undefined' && rosterCache[g.league+':'+(g[s] && g[s].id)]; return c && Array.isArray(c.list) ? c.list : null; };
+  const has = list => list.some(a => (pid && String(a.id)===pid) || (pn && nameScore(pn, a.name)>=10));
+  const m = R(mine), o = R(other);
+  if (m && has(m)) return true;
+  if (o && has(o)) return false;
+  if (m && o) return false;
+  tmRosterQueue(g.league, [!m && g[mine].id, !o && g[other].id]);
+  return null;
+}
+function tmColor(t, fallback){
+  let c = (t && (t.color||'')) || '';
+  const dark = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h||''); if (!m) return true; const n = parseInt(m[1],16); const r=n>>16&255, g2=n>>8&255, b=n&255; return (0.299*r+0.587*g2+0.114*b) < 60 || (r>225&&g2>225&&b>225); };
+  if (dark(c)) c = (t && t.alt && !dark(t.alt)) ? t.alt : fallback;
+  return c.charAt(0)==='#' ? c : '#'+c;
+}
 function tmBlockHTML(p){
-  const bx = p && (p.bx || tmBlowout(p.raw || p, p.side)); if (!bx) return '';
-  const g = (p.raw && p.raw.g) || p.g; const nm = s => (g[s] && (g[s].nick || g[s].short || g[s].name)) || '';
+  const raw = p && (p.raw || p);
+  if (tmTeamCheck(Object.assign({}, raw, {playerId: raw.playerId||p.playerId, playerName: raw.playerName||p.playerName, home: raw.home!=null?raw.home:p.home, g: raw.g||p.g})) !== true) return '';
+  const bx = p && (p.bx || tmBlowout(raw, p.side)); if (!bx) return '';
+  const g = (p.raw && p.raw.g) || p.g; const thr = TM_BIG[g.league];
+  const ab = s => (g[s] && (g[s].short || g[s].nick || g[s].name)) || '';
+  const T = s => TM[g.league+':'+(g[s] && g[s].id)] || null;
+  const col = { away: tmColor(Object.assign({}, g.away, T('away')), '#60a5fa'), home: tmColor(Object.assign({}, g.home, T('home')), '#f59e0b') };
+  { const rgb = h => { const n = parseInt(String(h).replace('#',''),16); return [n>>16&255, n>>8&255, n&255]; }; const a = rgb(col.away), h = rgb(col.home);
+    if (Math.hypot(a[0]-h[0], a[1]-h[1], a[2]-h[2]) < 130) col.home = (Math.hypot(a[0]-245, a[1]-158, a[2]-11) < 130) ? '#60a5fa' : '#f59e0b'; }
   const pct = x => Math.round(x*100)+'%'; const sgn = x => (x>0?'+':x<0?'−':'')+Math.abs(x).toFixed(1);
-  const head = bx.fav ? `${esc(nm(bx.fav))}${bx.favP!=null?' '+pct(bx.favP):''}` : 'Even';
-  const thr = TM_BIG[g.league];
-  const row = ([s, t]) => `<div class="tm-row"><b>${esc((g[s]&&g[s].short)||nm(s))}</b> ${t ? `${t.w}-${t.l} · last 10 ${t.l10w}-${t.l10l} · avg margin ${t.avg!=null?sgn(t.avg):'—'} · win by ${thr}+ ${t.bigW!=null?pct(t.bigW):'—'} · lose by ${thr}+ ${t.bigL!=null?pct(t.bigL):'—'}` : `<span class="mut">${esc((g[s]&&g[s].rec)||'record loading…')}</span>`}</div>`;
+  const wp = tmWinProb(g);
+  const mineSide = (raw.home!=null ? raw.home : p.home) ? 'home' : 'away';
+  const chip = s => `<span class="tm-chip" style="--tc:${col[s]}">${esc(ab(s))}</span>`;
+  const head = bx.fav ? `${esc(ab(bx.fav))}${bx.favP!=null?' '+pct(bx.favP):''}` : 'Even';
+  const bar = wp ? `<div class="tm-wp"><div class="tm-wp-lab"><span>${chip('away')} ${pct(wp.away)}</span><span class="mut">Win chance${bx.sp!=null?` · spread ${bx.sp}`:''}</span><span>${pct(wp.home)} ${chip('home')}</span></div>
+      <div class="tm-wp-bar"><i style="width:${(wp.away*100).toFixed(1)}%;background:${col.away}"></i><i style="width:${(wp.home*100).toFixed(1)}%;background:${col.home}"></i></div></div>`
+    : `<div class="tm-wp-lab"><span>${chip('away')}</span><span class="mut">${bx.fav?`${esc(ab(bx.fav))} favored${bx.sp!=null?` by about ${bx.sp}`:''}`:'No clear favorite yet'}</span><span>${chip('home')}</span></div>`;
+  const lv = bx.lvl;
+  const meter = `<div class="tm-risk"><div class="tm-risk-lab"><span>Blowout risk</span><b class="tm-r tm-${bx.risk.toLowerCase()}">${bx.risk}</b></div>
+      <div class="tm-seg">${[0,1,2].map(i=>`<i class="${i<=lv?'on s'+lv:''}"></i>`).join('')}</div>
+      <div class="tm-line">${esc(bx.line)}</div></div>`;
+  const dots = t => { const s2 = (t && t.l10s) || ''; if (s2) return `<span class="tm-dots" aria-label="Last 10: ${t.l10w} wins, ${t.l10l} losses">${s2.split('').map(c=>`<i class="${c==='W'?'w':c==='L'?'l':'t'}"></i>`).join('')}</span>`; return t ? `<span class="mut">${t.l10w}-${t.l10l}</span>` : ''; };
+  const mini = (v, cls) => v==null ? '<span class="mut">—</span>' : `<span class="tm-mini"><i class="${cls}" style="width:${Math.max(3, Math.min(100, v*100*2)).toFixed(0)}%"></i></span><b>${pct(v)}</b>`;
+  const team = s => { const t = T(s); return `<div class="tm-team${s===mineSide?' mine':''}" style="--tc:${col[s]}">
+      <div class="tm-team-h">${chip(s)}<span class="tm-rec">${t ? `${t.w}-${t.l}` : esc((g[s]&&g[s].rec)||'')}</span>${s===mineSide?`<span class="tm-you">Player's team</span>`:''}</div>
+      ${t ? `<div class="tm-stat"><span>Last 10</span>${dots(t)}</div>
+      <div class="tm-stat"><span>Avg margin</span><b class="${t.avg>0?'pos':t.avg<0?'neg':''}">${t.avg!=null?sgn(t.avg):'—'}</b></div>
+      <div class="tm-stat"><span>Win by ${thr}+</span>${mini(t.bigW,'g')}</div>
+      <div class="tm-stat"><span>Lose by ${thr}+</span>${mini(t.bigL,'r')}</div>` : '<div class="tm-stat mut">Team form loading…</div>'}
+    </div>`; };
   const did = (p.id||'')+'|tm';
-  return `<details class="dd tm-dd" data-dd="${esc(did)}" ${ui.open.has(did)?'open':''}><summary>🏟️ Team matchup · ${head} · Blowout risk <span class="tm-r tm-${bx.risk.toLowerCase()}">${bx.risk}</span></summary>
-    <div class="tm-body">
-      <div class="tm-row">${bx.fav ? `<b>${esc(nm(bx.fav))}</b> favored${bx.favP!=null?` · ${pct(bx.favP)} to win`:''}${bx.sp!=null?` · by about ${bx.sp}`:''}` : 'No clear favorite yet'}</div>
-      ${bx.rows.map(row).join('')}
-      <div class="tm-line">${esc(bx.line)}</div>
-    </div></details>`;
+  return `<details class="dd tm-dd" data-dd="${esc(did)}" ${ui.open.has(did)?'open':''}><summary><span class="tm-sum">🏟️ Matchup · ${head} · Blowout</span><span class="tm-pill tm-${bx.risk.toLowerCase()}">${bx.risk}</span></summary>
+    <div class="tm-body">${bar}${meter}<div class="tm-teams">${team('away')}${team('home')}</div></div></details>`;
 }
 /* ================= v70 ================= */
 /* 1) Card status row: every status pill (Not locked yet, Locked, Tailed, Back in, Pulled, locks-in timer…)
@@ -17501,7 +17582,7 @@ function avRestore(board, id){
   if (typeof softRender==='function') softRender(); else if (typeof render==='function') render();
 }
 function avOkBtnHTML(board, item, user){
-  return `<button type="button" class="btn sm av-ok-btn" data-av-ok="${esc(board+'|'+avItemId(item, board))}" title="Put this pick back and stop hiding it">${user?'Undo':'It\u2019s on my book'}</button>`;
+  return `<button type="button" class="btn sm av-ok-btn" data-av-ok="${esc(board+'|'+avItemId(item, board))}" title="Put this pick back and stop hiding it">It\u2019s on my book</button>`;
 }
 // Pulled tab: every pick hidden as not on your book (auto or by you), with a count and the restore button
 function avPulledSectionHTML(){
@@ -17514,7 +17595,7 @@ function avPulledSectionHTML(){
       const kind = board==='props' ? 'props' : 'games'; const cardFn = board==='props' ? propCard : playCard;
       parts.push(`<div class="av-pull-grp"><div class="mut av-pull-h">${lab} · ${tab==='good'?'Picks':'Watchlist'} (${list.length})</div><div class="pulled-list">${list.slice(0,40).map(x=>{
         const r = avCheck(x, kind) || {}; let html=''; try{ html = cardFn(x); }catch(e){ return ''; }
-        const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> Not on your books${r.why?` <span class="av-why">· ${esc(r.why)}</span>`:''}${avOkBtnHTML(board, x, r.user)}</div>`;
+        const tag = `<div class="av-tag"><span aria-hidden="true">❌</span> <span class="av-ttl">Not on your books</span>${avOkBtnHTML(board, x, r.user)}</div>`;
         return String(html).replace(/^\s*<div class="([^"]*)"/, (m, c)=>`<div class="${c} av-off"`).replace(/^(\s*<div [^>]*>)/, `$1${tag}`);
       }).join('')}</div></div>`);
     }
