@@ -1132,6 +1132,7 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .av-off-lab{color:var(--avoid)}
 .av-set{margin:12px 0}
 .ag-tailed{display:inline-flex;align-items:center;gap:5px;margin:0 0 8px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:750;color:var(--logged-hi);background:var(--logged-dim);border:1px solid rgba(34,211,238,.5)}
+.av-nodata{margin:6px 2px 10px;font-size:12.5px;color:var(--mut)}
 </style>
 </head>
 <body>
@@ -2366,7 +2367,13 @@ function parseEspnGames(results, opts){
 }
 function pushQ(g, mk, side, q){ (g.quotes[mk][side] = g.quotes[mk][side] || []).push(q); }
 function addEspnOdds(g, oddsArr){
-  if (!Array.isArray(oddsArr) || !oddsArr.length) return;
+  // v50: ESPN sometimes sends null entries in competitions[].odds — one bad row must never take down the whole feed
+  try{ return addEspnOdds0(g, oddsArr); }catch(e){ console.warn('espn odds', g && g.eventId, e); }
+}
+function addEspnOdds0(g, oddsArr){
+  if (!Array.isArray(oddsArr)) return;
+  oddsArr = oddsArr.filter(x=>x && typeof x==='object');
+  if (!oddsArr.length) return;
   const o = oddsArr.find(x=>x.moneyline||x.pointSpread||x.total) || oddsArr[0];
   const book = (o.provider && (o.provider.displayName||o.provider.name)) || 'ESPN line';
   const bk = book.toLowerCase().replace(/[^a-z]/g,'') || 'espn';
@@ -3367,7 +3374,7 @@ function strictGates(p, opts){
     if (neo) F.push('key player ruled out: '+(neo.n||'a key player'));
     const E = estimate(p), P = priceMath(p, E); p.E = E; p.P = P;
     if (+S.sMinEV > -99 && P.edge*100 < +S.sMinEV) F.push(`the price at ${P.book} (${P.pm?Math.round(P.cents*100)+'¢':fmtAm(P.am)}) is worse than what it's worth (${fmtAm(probToAm(E.final))})`);
-    const mb = p.my; if (mb){ if (mb.best && mb.best.thin) F.push(`${mb.best.book||'Prediction'} market is thin (wide spread or low money)`); if (!mb.best && S.oddsKey && mb.required) F.push(`none of your books (${mb.names}) has this line`); }
+    const mb = p.my; if (mb){ if (mb.best && mb.best.thin) F.push(`${mb.best.book||'Prediction'} market is thin (wide spread or low money)`); /* v50: a book with no live price never vetoes a pick (reference price is used) */ }
   }
   return F;
 }
@@ -3514,7 +3521,8 @@ function betOnText(p){
   const r = recBookFor(p);
   if (r.none){
     const hint = (!S.oddsKey && my && my.required) ? ' (add an Odds API key in Settings to see your sportsbooks)' : '';
-    return {line:NO_BOOK_LINE+hint, max:`Fair price ${fmtAm(Math.round(fair))} · ${refTxt}`, ok:false, none:true};
+    const ref = sd && sd.best && sd.best.price!=null ? sd.best.price : null;
+    return {line: ref!=null ? `Best price: ${fmtAm(ref)} (reference line)` : 'Reference line only', max:`Fair price ${fmtAm(Math.round(fair))} · ${refTxt}`, ok:false, none:true};
   }
   const line = (r.pm ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${r.book} at ${Math.round(r.cents*100)}¢ (≈ ${fmtAm(r.price)} after fee)` : `Bet on: ${r.book} at ${fmtAm(r.price)}`) + missingBovadaHint(my);
   return {line, max:`${maxPayText(estP, r)} · ${refTxt}`, ok:(estP - r.cost)>=0, thin:r.thin, rec:r};
@@ -6820,11 +6828,11 @@ function render(){
   if (ui.tab==='results') return renderResults();
   if (!lastUpdated && !(ui.board==='props' && (props||[]).length) && !(ui.board==='parlay' && (parlays||[]).length)){ v.innerHTML = busy ? `<div class="empty-state">Loading the slate…</div>` : `<div class="empty-state">No data yet.</div>${errs}`; return; }
   if ((ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && ui.board==='parlay' && typeof renderParlayBoard==='function'){
-    v.innerHTML = renderParlayBoard(ui.tab, errs) + (typeof avHiddenHTML==='function' ? avHiddenHTML('parlay', ui.tab) : '');
+    v.innerHTML = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'') + renderParlayBoard(ui.tab, errs) + (typeof avHiddenHTML==='function' ? avHiddenHTML('parlay', ui.tab) : '');
     return;
   }
   if ((ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && ui.board==='props' && typeof renderPropsBoard==='function'){
-    v.innerHTML = renderPropsBoard(ui.tab, errs) + (typeof avHiddenHTML==='function' ? avHiddenHTML('props', ui.tab) : '');
+    v.innerHTML = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'') + renderPropsBoard(ui.tab, errs) + (typeof avHiddenHTML==='function' ? avHiddenHTML('props', ui.tab) : '');
     return;
   }
   if (ui.tab==='good'){
@@ -6832,16 +6840,16 @@ function render(){
     const body = (typeof picksBoardHTML==='function')
       ? picksBoardHTML('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'), (typeof withPulledTailed==='function' ? withPulledTailed(good.concat(typeof lockedKeepItems==='function' ? lockedKeepItems('games', good) : []), 'games') : good), 'games', playCard)
       : section('<span class="h-emo" aria-hidden="true">🎯</span>Picks', '', good, sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.'));
-    v.innerHTML = slateLayout('good', body + errs, counts) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'good') : '');
+    v.innerHTML = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'') + slateLayout('good', body + errs, counts) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'good') : '');
   }
   else if (ui.tab==='watch'){
     const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test(p.reasons[0]||'');
     const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
     const watchMain = section('<span class="h-emo" aria-hidden="true">👀</span>Watchlist', 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, sportFilterEmpty(over.length?'No other watchlist items.':'Nothing on the watchlist.'))
       + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '') + errs;
-    v.innerHTML = slateLayout('watch', watchMain, {good:good.length, watch:watch.length, avoid:avoid.length}) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'watch') : '');
+    v.innerHTML = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'') + slateLayout('watch', watchMain, {good:good.length, watch:watch.length, avoid:avoid.length}) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'watch') : '');
   }
-  else if (ui.tab==='avoid') v.innerHTML = slateLayout('avoid', section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length}) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'avoid') : '');
+  else if (ui.tab==='avoid') v.innerHTML = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'') + slateLayout('avoid', section('<span class="h-emo" aria-hidden="true">🚫</span>Avoid', 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, sportFilterEmpty('Nothing flagged to avoid.')) + errs, {good:good.length, watch:watch.length, avoid:avoid.length}) + (typeof avHiddenHTML==='function' ? avHiddenHTML('games', 'avoid') : '');
   else if (ui.tab==='pulled'){
     const list = typeof visiblePulled==='function' ? visiblePulled('good') : [];
     const items = list.length ? `<div class="pulled-list">${list.map(pulledCard).join('')}</div>` : `<div class="empty-state">None of the bets you tailed has flipped to Avoid.</div>`;
@@ -10172,7 +10180,7 @@ function propCard(p){
   const recLine = (p.price==null || !rec) ? '' : (rec.none && p.pmNote)
     ? `<div class="beton"><div>Bet on: ${esc(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book)} <span class="mut av-differ">· Polymarket line may differ</span></div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}reference line from ${esc(propRefLabel(p))}</div></div>`
     : rec.none
-    ? `<div class="beton bad"><div>${esc(NO_BOOK_LINE)}</div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}fair line from ${esc(propRefLabel(p))}</div></div>`
+    ? `<div class="beton"><div>Best price: ${p.price!=null?esc(fmtAm(p.price)):'—'} <span class="mut">(reference line)</span></div><div class="mut">${fairAm!=null?`Fair price ${esc(fmtAm(Math.round(fairAm)))} · `:''}fair line from ${esc(propRefLabel(p))}</div></div>`
     : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(rec.pm?`Buy on ${rec.book} at ${Math.round(rec.cents*100)}¢`:`Bet on: ${rec.book} at ${fmtAm(rec.price)}`)}</div>${p.p!=null?`<div class="mut">${esc(maxPayText(p.p, rec))} · fair line from ${propRefLabel(p)}</div>`:''}</div>`;
   const lazy = (id, sum, kind, body) => {
     const open = ui.open.has(id);
@@ -10182,7 +10190,7 @@ function propCard(p){
     ${logMarks}
     ${propHead(p)}
     ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
-    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.price==null||propSourceLabel(p)==='line'?'Research':(rec&&!rec.none)?rec.book:(p.pmNote?(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book):'Not at your books yet'))}</div><div class="what">${esc(p.label)}</div></div>
+    <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.price==null||propSourceLabel(p)==='line'?'Research':(rec&&!rec.none)?rec.book:(p.pmNote?(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book):'Reference line'))}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${price}</div></div>
     ${recLine}
     ${p.tailedKeep?`<div class="hint kept-note">📌 Kept on your board because you tailed it. It is no longer in today's Prop Picks, but nothing says to pull it. Your bet is unchanged.</div>`:''}
@@ -15870,11 +15878,12 @@ function avCheck(item, kind){
     }
   }
   else if (!books.length) r = {ok:true, books:[]};
+  else if (!avDataBooks(books).length) r = {ok:true, books:[], noData:true};
   else {
     const isProp = kind==='props';
     const sp = avSport(item), mt = avMtype(item);
     const okBooks = [], whys = []; let pending = false; let pmq = null, pmNote = null;
-    for (const b of books){
+    for (const b of avDataBooks(books)){
       if (avBookBlocked(b, sp, mt)){ whys.push(`You flagged ${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} ${isProp?((typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[mt])||mt):mt} as not offered`); continue; }
       if (b==='polymarket' || b==='polymarket_us'){
         const res = avPmCheck(b==='polymarket_us'?'us':'pm', item);
@@ -15888,8 +15897,8 @@ function avCheck(item, kind){
         else whys.push(isProp ? 'Kalshi player props aren\'t loaded here' : (mk==='ml' ? 'Kalshi has no price on this game' : 'Kalshi spreads/totals aren\'t loaded here'));
         continue;
       }
-      if (bookSupportsMarket([b], isProp?'props':'games', item)) okBooks.push(b);
-      else whys.push(`${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} doesn't offer this market`);
+      if (avTradHas(b, item, isProp)) okBooks.push(b);
+      else whys.push(`${(typeof bookLabelOf==='function'?bookLabelOf(b):b)} doesn't list this ${isProp?((typeof PROP_KIND_LABEL!=='undefined'&&PROP_KIND_LABEL[mt])||'prop'):'market'}`);
     }
     if (isProp){
       item.pmNote = (!pmq && pmNote) ? pmNote : null;
@@ -15901,6 +15910,38 @@ function avCheck(item, kind){
   item._av = {sig, r};
   return r;
 }
+/* v50: only books that actually have live data decide what's offered. A selected book with no data
+   (Bovada, FanDuel… without a working Odds API key) is ignored — it never vetoes a pick or empties a board.
+   DraftKings always has data (the free ESPN feed is DraftKings). */
+function avQuoteBooks(){
+  if (AV._qb && AV._qb.ver===AV.ver && AV._qb.n===((typeof games!=='undefined'&&games.length)||0) && AV._qb.pn===((typeof props!=='undefined'&&props&&props.length)||0)) return AV._qb.set;
+  const set = new Set(['draftkings']);
+  for (const g of ((typeof games!=='undefined' && games) || [])){ if (!g || !g.quotes) continue;
+    for (const mk in g.quotes) for (const sd in g.quotes[mk]) for (const q of (g.quotes[mk][sd]||[])) if (q && q.src==='oa' && q.bk) set.add(String(q.bk).toLowerCase()); }
+  for (const p of ((typeof props!=='undefined' && props) || [])) if (p && p.bookPrices) for (const k in p.bookPrices) set.add(String(k).toLowerCase());
+  AV._qb = {ver:AV.ver, n:(typeof games!=='undefined'&&games.length)||0, pn:(typeof props!=='undefined'&&props&&props.length)||0, set};
+  return set;
+}
+function avBookHasData(b){
+  if (b==='polymarket_us') return !!(AV.us.t && Object.keys(AV.us.ev).length);
+  if (b==='polymarket') return !!(AV.pm.t && Object.keys(AV.pm.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.pm);
+  if (b==='kalshi') return ((typeof games!=='undefined' && games)||[]).some(g=>g && g.kalshi);
+  return avQuoteBooks().has(b);
+}
+function avDataBooks(books){ return (books||[]).filter(avBookHasData); }
+function avNoDataNow(){ const b = selectedBooks(); return b.length>0 && !avDataBooks(b).length; }
+function avTradHas(b, item, isProp){
+  if (isProp){
+    if (b==='draftkings') return /draftkings|espn/i.test(String(item.source||'')+' '+String(item.bookName||'')) || !item.bookPrices || !!(item.bookPrices && item.bookPrices.draftkings);
+    return !!(item.bookPrices && item.bookPrices[b]);
+  }
+  const g = avGameOf(item); if (!g || !g.quotes) return false;
+  const mk = item.mk==='h2h'?'ml':item.mk==='spreads'?'spread':item.mk==='totals'?'total':item.mk;
+  const qs = (g.quotes[mk] && g.quotes[mk][item.side]) || [];
+  if (b==='draftkings') return qs.some(q=>q && (q.src==='espn' || String(q.bk||'').toLowerCase()==='draftkings'));
+  return qs.some(q=>q && String(q.bk||'').toLowerCase()===b);
+}
+function avNoDataNoteHTML(){ return avNoDataNow() ? `<div class="av-nodata">Live prices unavailable for your books; showing reference lines.</div>` : ''; }
 function avBypassed(){ return !!AV.bypass; }
 function avWithBypass(fn){ const was = AV.bypass; AV.bypass = true; try{ return fn(); } finally { AV.bypass = was; } }
 
