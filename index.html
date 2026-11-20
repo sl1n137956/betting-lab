@@ -670,6 +670,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .bet-par-tag{display:inline-block;vertical-align:2px;margin-right:4px;padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#c7d2fe;background:rgba(99,102,241,.2);border:1px solid rgba(129,140,248,.35)}
 .bet-legs{margin:4px 0 2px;font-size:13px;line-height:1.4;color:var(--txt2)}
 .kept-note{margin:8px 2px 0;color:#fde68a}
+.bet-when{font-size:12.5px;color:var(--mut, #8b97a8);margin-top:3px;letter-spacing:.01em;font-variant-numeric:tabular-nums}
 .bet-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
 .sport-pill,.res-pill,.meta-pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11.5px;font-weight:700;letter-spacing:.02em}
 .sport-pill{background:var(--acc-dim);color:var(--acc-hi);border:1px solid rgba(59,130,246,.3)}
@@ -6702,7 +6703,7 @@ function render(){
   const errs = (feedErrors.length||shownOddsErrs.length) ? `<div class="err-list">${feedErrors.slice(0,4).map(esc).join('<br>')}${feedErrors.length>4?`<br>…and ${feedErrors.length-4} more feed errors`:''}${shownOddsErrs.length?'<br>Odds API: '+shownOddsErrs.map(esc).join('<br>'):''}</div>` : '';
   // v39: Pulled is a bottom-bar tab now, so an empty Pulled tab shows its empty state instead of bouncing away
   if (ui.tab==='results' && !(typeof canOpenResults==='function' && canOpenResults())){ ui.tab = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks'; }
-  if (ui.tab==='tracker') return renderTracker();
+  if (ui.tab==='tracker'){ const ae = document.activeElement; if (ae && ae.closest && ae.closest('#betForm') && $('#betForm')){ if (typeof tailDraftCapture==='function') tailDraftCapture(); return; } return renderTracker(); }
   if (ui.tab==='picks') return renderPicks();
   if (ui.tab==='settings') return renderSettings();
   if (ui.tab==='results') return renderResults();
@@ -7030,6 +7031,24 @@ function profitSeries(period){
   return {kind:'bars', net, title, caption, bars};
 }
 function resultLabel(r){ return r==='win'?'Won':r==='loss'?'Lost':r==='push'?'Push':r==='void'?'Void':'Pending'; }
+/* v44: one quiet date/time line on each bet: game start (earliest leg for parlays), else when it was placed */
+function betStartMs(b){
+  const xs = [];
+  if (b && b.link && isFinite(+b.link.start) && +b.link.start>0) xs.push(+b.link.start);
+  for (const l of (b && Array.isArray(b.legs) ? b.legs : [])){ const st = l && (l.start!=null ? l.start : (l.link && l.link.start)); if (isFinite(+st) && +st>0) xs.push(+st); }
+  return xs.length ? Math.min(...xs) : null;
+}
+function fmtBetWhen(ms){
+  const d = new Date(ms);
+  return `${d.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'})} · ${d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`;
+}
+function betWhenHTML(b){
+  const st = betStartMs(b);
+  if (st) return `<div class="bet-when" title="${st>Date.now()?'Starts':'Started'}">${esc(fmtBetWhen(st))}</div>`;
+  const pl = +b.created || 0;
+  if (pl) return `<div class="bet-when">Placed ${esc(fmtBetWhen(pl))}</div>`;
+  return b.date ? `<div class="bet-when">${esc(b.date)}</div>` : '';
+}
 function betIsPulled(b){
   const k = typeof betPlayKey==='function' ? betPlayKey(b) : null;
   return !!(k && typeof pulledNoteForKey==='function' && pulledNoteForKey(k));
@@ -7041,8 +7060,44 @@ function readLogForm(){
   const typEl=f.querySelector('input[name="oddsType"]:checked');
   return {date:g('date'), sport:g('sport'), market:g('market'), pick:g('pick'), odds:g('odds'), stake:g('stake'), result:g('result'), oddsType:(typEl&&typEl.value)||'american'};
 }
+/* v44: the tail form keeps its draft through re-renders, refreshes, swipes, tab-outs and page reloads in the same session.
+   Cleared only when the bet is added, a different pick is tailed, or the app is fully closed (sessionStorage ends with the session). */
+const TAIL_DRAFT_KEY = 'bl_tail_draft';
+let tailDraft = (function(){ try{ return JSON.parse(sessionStorage.getItem(TAIL_DRAFT_KEY)||'null'); }catch(e){ return null; } })();
+function tailDraftKeyOf(pf, pl){
+  const L = (pl && pl.link) || pf.link || null;
+  return String((pl && pl.playKey) || pf.playKey || (L && (L.id || L.playKey || [L.ev||'', L.mk||'', L.side||'', L.point!=null?L.point:'', L.pid||''].join('|'))) || ('pick:'+(pf.pick||'')));
+}
+function tailDraftSave(d){ tailDraft = d; try{ if (d) sessionStorage.setItem(TAIL_DRAFT_KEY, JSON.stringify(d)); else sessionStorage.removeItem(TAIL_DRAFT_KEY); }catch(e){} }
+function tailDraftClear(){ tailDraftSave(null); }
+function tailDraftCapture(){ // read what's typed right now into the draft
+  if (!$('#betForm')) return;
+  const f = readLogForm();
+  const hasAny = (f.pick||'').trim() || (f.odds||'').trim() || pendingLink;
+  if (!hasAny && !tailDraft) return;
+  const pl = pendingLink ? {link:pendingLink.link||null, legs:pendingLink.legs||null, fee:pendingLink.fee, playKey:pendingLink.playKey||null} : (tailDraft && tailDraft.pl) || null;
+  tailDraftSave({key: tailDraft && tailDraft.key ? tailDraft.key : tailDraftKeyOf(f, pl), pf:f, pl, more:!!trackerUI.more, at:Date.now()});
+}
+function trkKeep(){ const keep = readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; keep.playKey=pendingLink&&pendingLink.playKey; keep._keep=1; return keep; }
 function renderTracker(pf){
-  pf = pf || {}; if (pf.link || pf.legs || pf.playKey) pendingLink = {link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null};
+  pf = pf || {};
+  const isEmpty = !Object.keys(pf).some(k=>pf[k]!=null && pf[k]!=='' && k!=='_keep');
+  if (isEmpty){
+    // plain re-render (refresh, sync, tab switch, focus): bring back the draft instead of a blank form
+    if (tailDraft && tailDraft.pf){
+      pf = Object.assign({}, tailDraft.pf);
+      if (tailDraft.pl && !pendingLink) pendingLink = Object.assign({}, tailDraft.pl);
+      if (tailDraft.more) trackerUI.more = true;
+    }
+  } else if (pf._keep){
+    // internal re-render that already read the form
+  } else {
+    // a new Tail: same pick keeps what was typed, a different pick replaces the draft
+    const key = tailDraftKeyOf(pf, null);
+    if (tailDraft && tailDraft.key===key && tailDraft.pf){ pf = Object.assign({}, pf, tailDraft.pf); }
+    else { tailDraftSave({key, pf:Object.assign({}, pf, {link:undefined, legs:undefined}), pl:(pf.link||pf.legs||pf.playKey)?{link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null}:null, more:false, at:Date.now()}); }
+  }
+  if (pf.link || pf.legs || pf.playKey) pendingLink = {link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null};
   const st = trackerStats();
   const wr = (st.W+st.Lo) ? st.W/(st.W+st.Lo) : null, roi = st.staked ? st.net/st.staked : null;
   const period = trackerUI.period||'all';
@@ -7067,6 +7122,7 @@ function renderTracker(pf){
     const segBtn = (r, lab) => `<button type="button" class="res-seg-btn r-${r}${res===r?' on':''}" data-setres="${esc(b.id)}" data-r="${r}" aria-pressed="${res===r?'true':'false'}">${lab}</button>`;
     return `<article class="${cls}" data-bet="${esc(b.id)}">
       <div class="bet-top"><div class="bet-name" title="${esc(b.pick||'')}">${isPar?'<span class="bet-par-tag">Parlay</span> ':''}${esc(shortBetName(b))}</div><span class="res-pill ${pill}">${esc(pillTxt)}</span></div>
+      ${betWhenHTML(b)}
       ${isPar && parNames.length>2 ? `<div class="bet-legs">${parNames.map(x=>`<div>• ${esc(x)}</div>`).join('')}</div>` : ''}
       <div class="bet-meta">
         <span class="sport-pill">${esc(b.sport||'Other')}</span>
@@ -7202,8 +7258,10 @@ function renderTracker(pf){
   const moreBtn=$('#btnLogMore'), moreBox=$('#logMore');
   if (moreBtn && moreBox) moreBtn.onclick=()=>{ trackerUI.more=!trackerUI.more; moreBox.classList.toggle('open', trackerUI.more); moreBtn.textContent=trackerUI.more?'Less':'More'; };
   const per=$('#profitPeriod');
-  if (per) per.onchange=()=>{ trackerUI.period=per.value||'all'; saveTrackerPeriod(); const keep=readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; keep.oddsType=keep.oddsType; renderTracker(keep); };
+  if (per) per.onchange=()=>{ trackerUI.period=per.value||'all'; saveTrackerPeriod(); renderTracker(trkKeep()); };
   refreshOddsPreview();
+  { const bf = $('#betForm'); if (bf){ bf.addEventListener('input', tailDraftCapture); bf.addEventListener('change', tailDraftCapture); } }
+  if (tailDraft) tailDraftCapture();
   $('#betForm').onsubmit = e=>{
     e.preventDefault(); const f = new FormData(e.target);
     const typ = f.get('oddsType')||'american';
@@ -7233,7 +7291,7 @@ function renderTracker(pf){
     if (cents!=null){ nb.oddsCents=cents; nb.oddsFee=fee; }
     if (mult!=null) nb.oddsMult = mult;
     if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; pendingLink = null; }
-    bets.push(nb);
+    bets.push(nb); tailDraftClear(); pendingLink = null;
     saveBets(); toast('Bet logged'); renderTracker();
   };
   $('#view').querySelectorAll('[data-setres]').forEach(btn=>btn.onclick=()=>{
@@ -7241,7 +7299,7 @@ function renderTracker(pf){
     if(!(b && r && b.result!==r)) return;
     const wasPending = !b.result || b.result==='pending';
     b.result=r; if (typeof touchBet==='function') touchBet(b); saveBets();
-    const rerender = ()=>{ if (ui.tab!=='tracker') return; const keep=readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; renderTracker(keep); };
+    const rerender = ()=>{ if (ui.tab!=='tracker') return; renderTracker(trkKeep()); };
     if (wasPending && r!=='pending'){
       // v40: settle → show the choice, toast, then the bet slides out of the Pending list
       const card = btn.closest('.bet-row');
@@ -7251,7 +7309,7 @@ function renderTracker(pf){
     } else rerender();
   });
   const stg = $('#view').querySelector('[data-toggle-settled]');
-  if (stg) stg.onclick = ()=>{ trackerUI.showSettled = !trackerUI.showSettled; const keep=readLogForm(); keep.link=pendingLink&&pendingLink.link; keep.legs=pendingLink&&pendingLink.legs; keep.fee=pendingLink&&pendingLink.fee; renderTracker(keep); };
+  if (stg) stg.onclick = ()=>{ trackerUI.showSettled = !trackerUI.showSettled; renderTracker(trkKeep()); };
   $('#view').querySelectorAll('[data-del]').forEach(s=>s.onclick=()=>{ if(!confirm('Delete this bet?')) return; if (typeof tombstoneBet==='function') tombstoneBet(s.dataset.del); bets=bets.filter(x=>x.id!==s.dataset.del); saveBets(); renderTracker(); });
   const allDet = $('#view').querySelector('details.trk-allbets');
   if (allDet) allDet.addEventListener('toggle', ()=>{ trackerUI.allOpen = !!allDet.open; });
@@ -7319,6 +7377,26 @@ function oddsHistoryTable(){
     <div class="mut" style="margin-top:6px">${recN} graded result${recN===1?'':'s'} in the book.</div>
   </div>`;
 }
+
+/* v44: save the tail draft whenever the app is backgrounded or the page may be discarded */
+(function(){
+  const save = ()=>{ try{ if (typeof ui!=='undefined' && ui.tab==='tracker') tailDraftCapture(); }catch(e){} };
+  document.addEventListener('visibilitychange', ()=>{ if (document.hidden) save(); });
+  window.addEventListener('pagehide', save);
+  window.addEventListener('blur', save);
+})();
+// after iOS drops the page in the background and reloads it, reopen the Tracker with the draft (same session only, within 2 hours)
+function tailDraftResumeOnBoot(){
+  try{
+    if (!tailDraft || !tailDraft.pf || Date.now()-(tailDraft.at||0) > 2*3600e3) return false;
+    const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+    const t = nav && nav.type;
+    if (t!=='reload' && t!=='back_forward' && !(document.wasDiscarded)) return false;
+    if (typeof setTab==='function') setTab('tracker'); if (typeof render==='function') render();
+    return true;
+  }catch(e){ return false; }
+}
+window.addEventListener('pageshow', e=>{ if (e.persisted && typeof ui!=='undefined' && ui.tab==='tracker' && !$('#betForm') && typeof render==='function') render(); });
 /* ================= CHECK MY PICKS (rule-based courtroom for user legs) ================= */
 try{ localStorage.removeItem('bl_picks_input'); }catch(e){}
 const PK = {text: '', legs: [], busy:false, ran:false};
@@ -12492,6 +12570,7 @@ attachHttpLinks();
 registerAppSW();
 showInstallTip();
 if (typeof initPullToRefresh==="function") initPullToRefresh();
+if (typeof tailDraftResumeOnBoot==="function") setTimeout(tailDraftResumeOnBoot, 0);
 if (typeof setTab==='function') setTab('picks');
 try{
   const qp = new URLSearchParams(location.search||'');
