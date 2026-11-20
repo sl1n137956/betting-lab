@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1211,6 +1211,17 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .av-pull-sec{margin-top:var(--s4,16px)}
 .av-pull-grp + .av-pull-grp{margin-top:var(--s3,12px)}
 .av-pull-h{margin:var(--s3,12px) 0 var(--s2,8px)}
+
+/* v71: paste-photo button next to the camera */
+.pk-paste-btn{position:absolute;right:58px;bottom:10px;width:40px;height:40px;border-radius:var(--btn-r,10px);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--acc-hi,#93c5fd);background:rgba(59,130,246,.14);border:1px solid rgba(96,165,250,.35);padding:0}
+.pk-paste-btn:hover{background:rgba(59,130,246,.26)}
+
+/* v71: no accidental zoom on phones */
+html, body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+a, button, label, summary, input, select, textarea, .btn, .chip{touch-action:manipulation}
+@media (max-width: 820px), (pointer: coarse){
+  input, select, textarea{font-size:16px !important}
+}
 </style>
 </head>
 <body>
@@ -4530,7 +4541,7 @@ function playMoveTag(p){
   if (!p || !p.g || !p.g.eventId || !TAB_RANK[p.verdict]) return null;
   const t = playTabs[playResultKey(p)]; if (!t) return null;
   if (t.readdedAt && t.readdedAt >= PAGE_STARTED && t.tab===p.verdict)
-    return {kind:'up', text:'Back in'};
+    return {kind:'up', text: t.upgradedFrom && TAB_NAME[t.upgradedFrom] ? `Back in ${TAB_NAME[p.verdict]||'Picks'} · was dropped to ${TAB_NAME[t.upgradedFrom]}` : `Back in ${TAB_NAME[p.verdict]||'Picks'} after being pulled`};
   if (t.upgradedFrom && t.tab===p.verdict && TAB_RANK[p.verdict] > (TAB_RANK[t.upgradedFrom]||0))
     return {kind:'up', text:'Upgraded from '+(TAB_NAME[t.upgradedFrom]||t.upgradedFrom)};
   if (t.pulledFrom && t.tab===p.verdict && TAB_RANK[p.verdict] < (TAB_RANK[t.pulledFrom]||99))
@@ -16549,11 +16560,7 @@ function avSettingsHTML(){
   }, true);
   document.addEventListener('toggle', e=>{ const d = e.target; if (d && d.matches && d.matches('details.av-hid')){ window.__avOpen = window.__avOpen || {}; window.__avOpen[d.getAttribute('data-av-sec')] = d.open; } }, true);
 })();
-// Settings: add the flag list under My books
-if (typeof renderSettings==='function'){
-  const _rsAv = renderSettings;
-  renderSettings = function(){ const r = _rsAv.apply(this, arguments); try{ const v = $('#view'); if (v && !$('#avSetCard')){ const sel = $('#myBooksSel'); const anchor = sel ? (sel.closest('.s-row') || sel) : null; const html = avSettingsHTML(); if (anchor) anchor.insertAdjacentHTML('afterend', html); else v.insertAdjacentHTML('beforeend', html); } }catch(e){ console.warn('av settings', e); } return r; };
-}
+// v71: no Settings card for book flags; they're learned in the background (see 30_v71.js)
 // keep the market index fresh while the app is open
 setInterval(()=>{ if (!document.hidden) avRefresh(false).catch(()=>{}); }, 60000);
 /* ================= v51: prop grading fix + re-grade, fast prediction-market prices ================= */
@@ -17512,6 +17519,98 @@ document.addEventListener('click', e=>{
   e.preventDefault(); e.stopPropagation();
   const v = t.getAttribute('data-av-ok'); const i = v.indexOf('|'); avRestore(v.slice(0,i), v.slice(i+1));
 }, true);
+/* ================= v71 ================= */
+/* 1) "Not on my book" learning runs in the background (no Settings card).
+      Flags push a sport + bet type toward "not offered"; "It's on my book" pushes it back.
+      A learned block hides picks only while flags outnumber restores by 2+, and the per-pick
+      restore always wins (see the avCheck wrapper in 29_v70.js). */
+function avNetFlags(f){ return f ? (f.n||0) - (f.ok||0) : 0; }
+avBookBlocked = function(book, sport, mtype){ const f = avFlags().f[avFlagKey(book, sport, mtype)]; return avNetFlags(f) >= 2; };
+function avLearnOk(item, board){
+  try{
+    const d = avFlags(); const sp = avSport(item), mt = board==='parlay' ? 'parlay' : avMtype(item);
+    const books = (typeof selectedBooks==='function' ? selectedBooks() : []); const list = books.length ? books : ['any'];
+    for (const b of list){ const k = avFlagKey(b, sp, mt); const f = d.f[k] || {n:0}; f.ok = (f.ok||0) + 1; f.okAt = Date.now(); d.f[k] = f; }
+    avSaveFlags(d);
+  }catch(e){ console.warn('av learn ok', e); }
+}
+(function wrapRestore(){
+  if (typeof avRestore!=='function') return;
+  const orig = avRestore;
+  avRestore = function(board, id){
+    const item = typeof avFindByKey==='function' ? avFindByKey(board, id) : null;
+    if (item) avLearnOk(item, board);
+    return orig.apply(this, arguments);
+  };
+})();
+
+/* 2) Paste a copied photo into the Verdict box. The textarea handler alone missed images on some phones
+      (iOS hands over files with no type, or nothing at all), and a paste outside the box did nothing. */
+function v71ImgFrom(list){
+  for (const it of (list ? [...list] : [])){
+    if (!it) continue;
+    if (it.getAsFile){ if (it.kind==='file' && (/^image\//.test(it.type||'') || !it.type)){ const f = it.getAsFile(); if (f && (/^image\//.test(f.type||'') || /\.(png|jpe?g|webp|heic|heif|gif|bmp)$/i.test(f.name||'') || !f.type)) return v71AsImage(f); } }
+    else if (/^image\//.test(it.type||'') || /\.(png|jpe?g|webp|heic|heif|gif|bmp)$/i.test(it.name||'')) return v71AsImage(it);
+  }
+  return null;
+}
+function v71AsImage(f){ try{ if (f && !f.type) return new File([f], f.name||'pasted.png', {type:'image/png'}); }catch(e){} return f; }
+async function v71ClipboardImage(){
+  if (!navigator.clipboard || !navigator.clipboard.read) return null;
+  const items = await navigator.clipboard.read();
+  for (const it of items){ const t = (it.types||[]).find(x=>/^image\//.test(x)); if (t){ const blob = await it.getType(t); return new File([blob], 'pasted.'+(t.split('/')[1]||'png'), {type:t}); } }
+  return null;
+}
+function v71OnPicksTab(){ return typeof ui!=='undefined' && ui.tab==='picks' && !!document.getElementById('pkText'); }
+function v71HandlePaste(e){
+  if (!v71OnPicksTab()) return;
+  const t = e.target; const inBox = t && t.closest && t.closest('#pkInput');
+  // only take pastes into the picks box, or pastes with nothing focused (not other inputs)
+  if (!inBox && t && t.closest && t.closest('input,textarea,select,[contenteditable="true"]')) return;
+  const cd = e.clipboardData; const f = cd && (v71ImgFrom(cd.items) || v71ImgFrom(cd.files));
+  if (f){ e.preventDefault(); e.stopImmediatePropagation(); photoHandle(f); return; }
+  // no image in the event (iOS sometimes): if the clipboard has no text either, ask the async clipboard
+  const txt = cd ? cd.getData('text/plain') : '';
+  if (!txt && inBox){ e.preventDefault(); v71ClipboardImage().then(img=>{ if (img) photoHandle(img); }).catch(()=>{}); }
+}
+document.addEventListener('paste', v71HandlePaste, true);
+// a small "Paste photo" button in the box for phones where long-press Paste only offers text
+(function wrapPhotoBind(){
+  if (typeof photoBind!=='function') return;
+  const orig = photoBind;
+  photoBind = function(v){
+    const r = orig.apply(this, arguments);
+    try{
+      const ta = v.querySelector('#pkText'); if (ta) ta.onpaste = null; // handled by the document listener above
+      const box = v.querySelector('#pkInput');
+      if (box && !box.querySelector('.pk-paste-btn') && navigator.clipboard && navigator.clipboard.read){
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'pk-paste-btn'; b.title = 'Paste a copied photo'; b.setAttribute('aria-label','Paste a copied photo');
+        b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>';
+        b.onclick = async ()=>{ try{ const img = await v71ClipboardImage(); if (img) photoHandle(img); else toast('No photo on your clipboard. Copy a screenshot first.'); }catch(e){ toast('Allow paste to use a copied photo, or tap the camera to upload it.'); } };
+        box.appendChild(b);
+      }
+      if (box){ // drag & drop: also accept files with no type
+        box.ondrop = e=>{ box.classList.remove('drag'); const f = e.dataTransfer && (v71ImgFrom(e.dataTransfer.files) || v71ImgFrom(e.dataTransfer.items)); if (f){ e.preventDefault(); photoHandle(f); } };
+      }
+    }catch(e){ console.warn('v71 photo bind', e); }
+    return r;
+  };
+})();
+
+/* 3) "Not on my book" after an earlier "It's on my book": drop the saved override so the pick moves down again */
+(function wrapFlag(){
+  if (typeof avFlagItem!=='function') return;
+  const orig = avFlagItem;
+  avFlagItem = function(board, id){
+    try{ const item = avFindItem(board, id) || (typeof avFindByKey==='function' ? avFindByKey(board, id) : null);
+      if (item){ const s = avOkStore(); delete s[avOkKey(item, board)]; avOkSave(s); item._av = null; } }catch(e){}
+    return orig.apply(this, arguments);
+  };
+})();
+
+/* 4) iOS ignores user-scalable=no in Safari, so block pinch gestures directly */
+['gesturestart','gesturechange','gestureend'].forEach(ev=>document.addEventListener(ev, e=>{ e.preventDefault(); }, {passive:false}));
+document.addEventListener('touchmove', e=>{ if (e.touches && e.touches.length>1) e.preventDefault(); }, {passive:false});
 </script>
 </body>
 </html>
