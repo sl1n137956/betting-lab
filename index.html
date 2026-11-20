@@ -280,6 +280,7 @@ code{background:var(--inset);border:1px solid var(--line2);border-radius:5px;pad
 .trend-list li:first-child{border-top:0;padding-top:0}
 .trend-list b{color:var(--mut);font-size:11px;letter-spacing:.03em;text-transform:uppercase;margin-right:4px}
 
+.stars{display:inline-block;margin-left:6px;color:#fbbf24;letter-spacing:1px;font-size:15px;line-height:1;vertical-align:middle;white-space:nowrap}.stars .off{color:rgba(255,255,255,.18)}
 .dots{display:inline-flex;gap:4px;vertical-align:middle;margin-left:6px}.dots i{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.1)}.dots i.on{background:var(--acc)}
 .strict-banner{border-color:rgba(63,182,139,.25);background:var(--good-bg)}
 .mtab tr.mrow td{border-bottom:0;padding-bottom:1px}.mtab tr.mhow td{color:var(--mut);font-size:11px;padding-top:0}.mtab td:nth-child(2),.mtab td:nth-child(3){white-space:nowrap;text-align:right}
@@ -927,6 +928,8 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 @media (max-width:520px){ .vc-pill{border-radius:16px} }
 
 .unit-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.01em;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--txt);white-space:nowrap}
+.unit-pill.u-2{background:rgba(168,85,247,.24);border-color:rgba(192,132,252,.6);color:#f3e8ff}
+.unit-pill.u-15{background:rgba(99,102,241,.22);border-color:rgba(129,140,248,.55);color:#e0e7ff}
 .unit-pill.u-1{background:rgba(59,130,246,.22);border-color:rgba(96,165,250,.55);color:#dbeafe}
 .unit-pill.u-half{background:rgba(34,197,94,.16);border-color:rgba(74,222,128,.42);color:#dcfce7}
 .unit-pill.u-qtr{background:rgba(245,158,11,.16);border-color:rgba(251,191,36,.42);color:#fef3c7}
@@ -1154,7 +1157,6 @@ details.av-hid[open]>summary::after{content:' ▴'}
       <button data-tab="picks" class="on"><span class="tab-emo" aria-hidden="true">⚖️</span>Verdict</button>
       <button type="button" class="tab-parent" data-board-parent="games"><span class="tab-emo" aria-hidden="true">🏟️</span>Games<span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></button>
       <button type="button" class="tab-parent" data-board-parent="props"><span class="tab-emo" aria-hidden="true">🏀</span>Props<span class="cnt" data-cnt="props-good">0</span></button>
-      <button type="button" class="tab-parent" data-board-parent="parlay"><span class="tab-emo" aria-hidden="true">🎟️</span>Parlay<span class="cnt" data-cnt="parlay-good">0</span></button>
       <button data-tab="tracker"><span class="tab-emo" aria-hidden="true">📊</span>Tracker</button>
       <button data-tab="all"><span class="tab-emo" aria-hidden="true">📋</span>All Games<span class="cnt" id="c-all" data-cnt="all">0</span></button>
       <button data-tab="results" aria-label="Results and Backtest" hidden><span class="tab-emo" aria-hidden="true">🧪</span>Results</button>
@@ -1241,7 +1243,6 @@ details.av-hid[open]>summary::after{content:' ▴'}
   <button type="button" data-tab="picks" class="on" aria-label="Verdict"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 9.4l6.2-6.2 2.8 2.8-6.2 6.2z"/><path d="M6.2 7.8l2.8 2.8"/><path d="M12.4 11.2L20 20"/><path d="M3.5 19.8h8"/></svg></span><span class="tab-lab">Verdict</span></button>
   <button type="button" data-board-parent="games" aria-label="Games"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7l6-3 6 3 4-2v12l-4 2-6-3-6 3z"/><path d="M10 4v12"/><path d="M16 7v12"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Games</span></button>
   <button type="button" data-board-parent="props" aria-label="Props"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/><circle cx="12" cy="10" r="7" opacity=".0"/></svg><span class="cnt" data-cnt="props-good">0</span></span><span class="tab-lab">Props</span></button>
-  <button type="button" data-board-parent="parlay" aria-label="Parlay"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14.2a3.8 3.8 0 0 1 0-5.4l1.7-1.7a3.8 3.8 0 0 1 5.4 5.4l-.8.8"/><path d="M14 9.8a3.8 3.8 0 0 1 0 5.4l-1.7 1.7a3.8 3.8 0 1 1-5.4-5.4l.8-.8"/></svg><span class="cnt" data-cnt="parlay-good">0</span></span><span class="tab-lab">Parlay</span></button>
   <button type="button" data-tab="pulled" aria-label="Pulled: bets you tailed that flipped to Avoid"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2z"/><path d="M8.5 12h7"/></svg><span class="cnt pull-cnt" data-cnt="pulled" hidden>0</span></span><span class="tab-lab">Pulled</span></button>
   <button type="button" id="btnMore" aria-haspopup="true" aria-expanded="false" aria-label="More"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg><span class="tab-dot" data-more-pull hidden></span></span><span class="tab-lab">More</span></button>
 </nav>
@@ -1360,8 +1361,15 @@ function fmtUnitDollars(u){
   const d = Math.round(u * base * 100) / 100;
   return '$' + (Number.isInteger(d) ? d.toFixed(0) : d.toFixed(2).replace(/0$/,''));
 }
+/* v55 unit tiers (Stanley): never more than 2u. 2u = nuke, 1.5u = strong, 1u = solid, 0.5u = light. Skip = 0.
+   Strength = the judge's confidence (0–100) or, if missing, our win chance. Watch-list leans are always 0.5u. */
+const UNIT_TIERS = [
+  {u:2,   cls:'u-2',    txt:'2u',   note:'2 units: nuke, the strongest spots only', conf:90, p:0.72},
+  {u:1.5, cls:'u-15',   txt:'1.5u', note:'1.5 units: strong spot',                  conf:75, p:0.66},
+  {u:1,   cls:'u-1',    txt:'1u',   note:'1 unit: solid spot',                      conf:60, p:0.60},
+  {u:0.5, cls:'u-half', txt:'0.5u', note:'0.5 units: light spot',                   conf:0,  p:0}
+];
 function recommendedUnits(item, kind){
-  const isParlay = kind==='parlay' || !!(item && item.legs && item.legs.length>1);
   const rawV = String((item && (item.verdict || item.J)) || '').toLowerCase();
   const isGood = rawV==='good' || rawV==='bet';
   const isWatch = rawV==='watch' || rawV==='watchlist' || rawV==='maybe later';
@@ -1371,27 +1379,14 @@ function recommendedUnits(item, kind){
     (typeof item.conf==='number' ? (item.conf<=5 ? item.conf*20 : item.conf) : null)
   );
   if (!isGood && !isWatch){
-    return {u:0, label:'0u (Skip)', short:'Skip (0u)', dollars:0, cls:'u-skip', note:'Skip — pass on this spot'};
+    return {u:0, label:'0u (Skip)', short:'Skip (0u)', dollars:0, cls:'u-skip', note:'Skip: pass on this spot'};
   }
-  let u = 0.25;
-  if (isParlay){
-    if (isGood && ((p!=null && p>=0.48) || (conf!=null && conf>=75))) u = 0.5;
-    else u = 0.25;
-  } else {
-    if (isGood){
-      if ((conf!=null && conf>=75) || (p!=null && p>=0.68)) u = 1;
-      else if ((conf!=null && conf>=55) || (p!=null && p>=0.62) || (conf==null && p==null)) u = 0.5;
-      else u = 0.25;
-    } else {
-      u = 0.25;
-    }
+  let T = UNIT_TIERS[3];
+  if (isGood){
+    T = UNIT_TIERS.find(t => conf!=null ? conf>=t.conf : (p!=null ? p>=t.p : t.u===1)) || UNIT_TIERS[3];
   }
-  const base = (typeof S!=='undefined' && +S.unit>0) ? +S.unit : 25;
-  const dollars = Math.round(u * base * 100) / 100;
-  const uTxt = (u===1?'1u':u===0.5?'0.5u':'0.25u');
-  const cls = u===1 ? 'u-1' : u===0.5 ? 'u-half' : 'u-qtr';
-  const note = u===1 ? 'Full unit — high confidence' : u===0.5 ? 'Half unit — solid confidence' : (isWatch ? 'Quarter unit — light lean only' : 'Quarter unit — smaller spot');
-  return {u, label:`${uTxt} (${fmtUnitDollars(u)})`, short:uTxt, dollars, cls, note};
+  const dollars = Math.round(T.u * ((typeof S!=='undefined' && +S.unit>0) ? +S.unit : 25) * 100) / 100;
+  return {u:T.u, label:`${T.txt} (${fmtUnitDollars(T.u)})`, short:T.txt, dollars, cls:T.cls, note: isWatch ? '0.5 units: light lean only' : T.note};
 }
 function unitPillHTML(item, kind){
   const r = recommendedUnits(item, kind);
@@ -3982,7 +3977,7 @@ function checkLockAlerts(board){
   // v41: record official locks and run the urgent-only check even when alerts are off
   try{ for (const b0 of (board ? [board] : ['games','props','parlay'])){ if (typeof recordLocks==='function') recordLocks(b0); if (typeof v42RecordPolicy==='function') v42RecordPolicy(b0); } if (typeof checkLockedUrgent==='function') checkLockedUrgent(); }catch(e){ console.warn('locks', e); }
   if (!canAlert('new')) return;
-  const boards = board ? [board] : ['games','props','parlay'];
+  const boards = (board ? [board] : ['games','props']).filter(b=>b!=='parlay');   // v55: no parlay board, no parlay alerts
   for (const b of boards){
     const lm = typeof boardLockMins==='function' ? boardLockMins(b) : (b==='parlay'?null:b==='props'?120:60);
     let src = [];
@@ -5327,7 +5322,6 @@ function wrLineHTML(p, C){
   const hr = C.wr || hitRateFor(am, p.g && p.g.league, p.mk);
   const a = outOf10(est), b = outOf10(need);
   return `<div class="wr-line">
-    <div>These odds break even at about <b>${b} wins in 10</b> (${fmtPct(need,0)}). We estimate <b>${a} in 10</b> (${fmtPct(est,0)}).</div>
     <div class="mut">App record: ${esc(hitRateText(hr))}</div>
   </div>`;
 }
@@ -5419,7 +5413,8 @@ function priceMath(p, E){
 }
 const pctTxt = x => `${(Math.abs(x)*100).toFixed(Math.abs(x)<0.1?1:0)}%`;
 const outOf10 = p => (Math.round(p*100)/10).toFixed(1).replace(/\.0$/,'');
-function confDots(v){ const n = v>=90?5:v>=75?4:v>=60?3:v>=45?2:1; return `<span class="dots" title="confidence ${Math.round(v)}/100">${[1,2,3,4,5].map(i=>`<i class="${i<=n?'on':''}"></i>`).join('')}</span>`; }
+function confStarsN(v){ return v>=90?5:v>=75?4:v>=60?3:v>=45?2:1; }
+function confDots(v){ const n = confStarsN(v); return `<span class="stars" title="Confidence ${n} out of 5" aria-label="Confidence ${n} out of 5">${'★'.repeat(n)}<span class="off">${'★'.repeat(5-n)}</span></span>`; }
 const PLAIN_NOTE = {
   'ESPN model not available for this game':"ESPN's computer pick is missing for this game",
   'only one sportsbook priced (edge n/a)':'Only DraftKings priced this (prediction markets checked when they list it)',
@@ -6347,7 +6342,6 @@ function playCard(p){
     ${typeof wrLineHTML==='function'?wrLineHTML(p, C):''}
     ${lazy(cid, '⚖️ Courtroom', 'court', courtBody, ' court-dd')}
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(p):''}
-    ${lazy(mid, '📐 Numbers', 'nums', numsBody)}
     <div class="cfoot"><span class="cfoot-meta">${confBadge(p.j.conf)}${unitPillHTML(p,"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'game'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'games'):''}</span></div>
   </div>`;
 }
@@ -7393,7 +7387,7 @@ function renderTracker(pf){
     if (tailDraft && tailDraft.key===key && tailDraft.pf){ pf = Object.assign({}, pf, tailDraft.pf); }
     else { tailDraftSave({key, pf:Object.assign({}, pf, {link:undefined, legs:undefined}), pl:(pf.link||pf.legs||pf.playKey)?{link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null, tailLock:pf.tailLock||null, src:pf.src||null}:null, more:false, at:Date.now()}); }
   }
-  if (pf.link || pf.legs || pf.playKey) pendingLink = {link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null, tailLock:pf.tailLock||(pendingLink&&pendingLink.tailLock)||null, src:pf.src||(pendingLink&&pendingLink.src)||null};
+  if (pf.link || pf.legs || pf.playKey) pendingLink = {recU:pf.recU!=null?pf.recU:(pendingLink&&pendingLink.recU), link:pf.link||null, legs:pf.legs||null, fee:pf.fee, playKey:pf.playKey||null, tailLock:pf.tailLock||(pendingLink&&pendingLink.tailLock)||null, src:pf.src||(pendingLink&&pendingLink.src)||null};
   const st = trackerStats();
   const wr = (st.W+st.Lo) ? st.W/(st.W+st.Lo) : null, roi = st.staked ? st.net/st.staked : null;
   const period = trackerUI.period||'all';
@@ -7464,8 +7458,7 @@ function renderTracker(pf){
           <input name="stake" id="betStake" type="number" step="0.01" min="0" value="${esc(pf.stake!=null?pf.stake:S.unit)}" required>
           <div class="stake-chips" id="stakeChips">
             ${[10,25,50].map(n=>`<span class="chip ${+((pf.stake!=null?pf.stake:S.unit))===n?'on':''}" data-stake="${n}">$${n}</span>`).join('')}
-            <span class="chip ${+((pf.stake!=null?pf.stake:S.unit))===unit?'on':''}" data-stake="${unit}">1u</span>
-            <span class="chip ${+((pf.stake!=null?pf.stake:S.unit))===unit*2?'on':''}" data-stake="${unit*2}">2u</span>
+            ${[0.5,1,1.5,2].map(m=>`<span class="chip ${+((pf.stake!=null?pf.stake:S.unit))===unit*m?'on':''}" data-stake="${unit*m}">${m}u</span>`).join('')}
           </div>
         </label>
       </div>
@@ -7586,7 +7579,8 @@ function renderTracker(pf){
     const nb = {id:'b'+Date.now()+Math.random().toString(36).slice(2,6), created:Date.now(), updatedAt:Date.now(), date, sport, market, pick:String(f.get('pick')||'').trim(), odds:o, stake:+f.get('stake'), result, oddsType:typ, oddsEntered:entered};
     if (cents!=null){ nb.oddsCents=cents; nb.oddsFee=fee; }
     if (mult!=null) nb.oddsMult = mult;
-    if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; if (pendingLink.tailLock) nb.tailLock = pendingLink.tailLock; if (pendingLink.src) nb.src = pendingLink.src; pendingLink = null; }
+    if (pendingLink){ if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; } if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey; if (pendingLink.legs) nb.legs = pendingLink.legs; if (pendingLink.tailLock) nb.tailLock = pendingLink.tailLock; if (pendingLink.src) nb.src = pendingLink.src; if (pendingLink.recU!=null) nb.recU = pendingLink.recU; pendingLink = null; }
+    { const un = (+S.unit)||25; nb.units = Math.round((+nb.stake||0)/un*100)/100; }   // v55: units tracked per bet
     bets.push(nb); tailDraftClear(); pendingLink = null;
     saveBets(); toast('Bet logged'); renderTracker();
   };
@@ -8244,11 +8238,7 @@ function sharedGameResearchHTML(pl, keyPrefix){
   return `${typeof wrLineHTML==='function'?wrLineHTML(pl, C):''}
     <details class="dd court-dd" data-dd="${esc(cid)}" ${ui.open.has(cid)?'open':''}><summary>⚖️ Courtroom</summary>${courtroomHTML(pl, C)}</details>
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(pl):''}
-    <details class="dd" data-dd="${esc(mid)}" ${ui.open.has(mid)?'open':''}><summary>📐 Numbers</summary>${typeof numbersHTML==='function'?numbersHTML(pl,C):''}${typeof mathHTML==='function'?mathHTML(pl, C):''}
-      ${typeof factorsHTML==='function'?`<div class="ct" style="margin-top:10px">Rule factors (used by the strict checks)</div>${factorsHTML(pl)}`:''}
-      ${sd&&A?`<div class="stats" style="margin-top:8px"><div class="stat"><div class="k">No-vig</div><div class="v">${fmtPct(sd.nv)}</div></div><div class="stat"><div class="k">Implied</div><div class="v">${fmtPct(sd.impBest)}</div></div><div class="stat"><div class="k">Move</div><div class="v ${sd.adverse?'neg':sd.support?'pos':''}">${typeof moveCell==='function'?moveCell(pl.mk, sd):''}</div></div><div class="stat"><div class="k">Books</div><div class="v">${A.booksFull||''}</div></div></div>
-      <div class="books">${sd.openTxt?`Open ${esc(sd.openTxt)} · `:''}${esc(allBooks.join(' · '))}${pmq?` · Polymarket ask ${Math.round(pmq.cents*100)}¢`:''} · hold ${fmtPct(A.hold)} · fair from ${esc(A.truth)}</div>`:''}
-      ${typeof checksHTML==='function'?checksHTML(g):''}</details>`;
+    `;
 }
 
 /* v35: live priced props for one player in one game, from the Props board (ESPN DraftKings feed + any
@@ -8563,7 +8553,7 @@ ${resultBan}
       <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.slice(0,4).map(legItem).join('')}`; })()}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul></div>
       <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf):''}</div>
         <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
-        ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: (leg.p!=null&&leg.implied!=null?`<div class="wr-inline">These odds break even at about ${outOf10(leg.implied)} of 10; we estimate ${outOf10(leg.p)}.</div>`:'')}</div>
+        ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: ''}</div>
     </div></details>`}
     ${!research ? `<details class="dd" data-dd="verdict|${i}|math" ${ui.open.has('verdict|'+i+'|math')?'open':''}><summary>📐 Nerd stats / Show the math</summary><div style="margin-top:6px">
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
@@ -10255,14 +10245,12 @@ function propCourtroomHTML(p){
   const li = x => `<li><span>${esc(x.txt||x)}</span></li>`;
   const cls = C.J==='BET'?'b-good':C.J==='MAYBE LATER'?'b-watch':'b-avoid';
   const be = p.implied, est = p.p;
-  const wr = (be!=null && est!=null)
-    ? `These odds break even at about ${typeof outOf10==='function'?outOf10(be):Math.round(be*10)} wins in 10. We estimate ${typeof outOf10==='function'?outOf10(est):Math.round(est*10)} in 10.`
-    : '';
+  const wr = '';   // v55: break-even line removed (Stanley)
   return `<div class="court2">
     ${bar}
     ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way yet.</li>'}</ul></div>
     <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.length?DD.lose.map(li).join(''):'<li class="mut">No red flags recorded.</li>'}</ul></div>`; })()}
-    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span></div>
+    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span> ${p.j&&p.j.conf&&typeof confDots==='function'?confDots(p.j.conf.v):''}</div>
       <div class="c-sent">${esc(C.sentence||'')}</div>
       ${unitJudgeLineHTML(p,"prop")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
     ${propStatTableHTML(p)}
@@ -10349,7 +10337,6 @@ function propCard(p){
     ${p.strictFails && p.strictFails.length && p.verdict!=='good' ? `<div class="hint" style="margin:6px 2px 0">Missed: ${esc(p.strictFails[0])}${p.strictFails.length>1?` (+${p.strictFails.length-1} more)`:''}</div>`:''}
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
     ${lazy(nid, '🩺 Injuries, lineups &amp; news', 'inj', propInjBody(p))}
-    ${lazy(mid, '📐 Numbers', 'nums', propNumbersHTML(p))}
     <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}">Confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'props'):''}</span></div>
   </div>`;
 }
@@ -12372,7 +12359,7 @@ function renderSettings(){
   <form id="setForm">
   <div class="panel simple">
     <div class="s-row"><div class="s-h">Which board?</div>
-      <div class="board-seg" id="settingsBoardSeg">${['games','props','parlay'].map(b=>`<button type="button" data-set-board="${b}" class="${sb===b?'on':''}">${boardLabs[b]}</button>`).join('')}</div>
+      <div class="board-seg" id="settingsBoardSeg">${['games','props'].map(b=>`<button type="button" data-set-board="${b}" class="${sb===b?'on':''}">${boardLabs[b]}</button>`).join('')}</div>
       <div class="s-note">Pickiness and lock time are picked by the model for each board separately, based on which is making more money. Your odds range is yours. Shared settings (sports, books, refresh, alerts, bet size) stay below.</div></div>
     ${typeof v42AutoSettingsHTML==='function' ? v42AutoSettingsHTML(sb) : ''}
     ${oddsRow}
@@ -12811,7 +12798,7 @@ $('#view').addEventListener('click', e=>{
   const mb = rb.none ? null : Object.assign({}, rb, {kind: rb.pm ? 'pm' : 'book'});
   const usePm = !!(mb && mb.kind==='pm' && mb.cents!=null);
   const fee = typeof defaultPmFeeRate==='function' ? defaultPmFeeRate(p) : +S.pmFeeRate;
-  const pf = {src:p.isProp?'prop':'game', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p, p.isProp?'props':'games'))?'early':'locked', date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:S.unit, oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime(), pid:p.isProp?(p.playerId||''):undefined, kind:p.isProp?'prop':undefined, stat:p.isProp?p.kind:undefined, playerName:p.isProp?(p.playerName||''):undefined}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
+  const pf = {src:p.isProp?'prop':'game', tailLock:(typeof isEarlyPreview==='function' && isEarlyPreview(p, p.isProp?'props':'games'))?'early':'locked', date:isoDate(p.g.start), sport:LMAP[p.g.league].label, market:p.isProp?'Prop':MKN[p.mk], pick:`${p.label} (${p.g.away.name} vs ${p.g.home.name})`, stake:(typeof recommendedUnits==='function' && recommendedUnits(p, p.isProp?'prop':'game').dollars) || S.unit, recU:(typeof recommendedUnits==='function' ? recommendedUnits(p, p.isProp?'prop':'game').u : null), oddsType: usePm?'polymarket':'american', link:{ev:p.g.eventId, lg:p.g.league, mk:p.isProp?p.kind:p.mk, side:p.side, point:p.isProp?p.line:(p.sd&&p.sd.point), start:p.g.start.getTime(), pid:p.isProp?(p.playerId||''):undefined, kind:p.isProp?'prop':undefined, stat:p.isProp?p.kind:undefined, playerName:p.isProp?(p.playerName||''):undefined}, fee:(usePm && mb.fee!=null)?mb.fee:fee};
   if (usePm) pf.odds = String(Math.round(mb.cents*100));
   else { const td = tailOddsDefault(mb ? mb.price : (p.isProp ? p.price : (p.sd && p.sd.best && p.sd.best.price))); pf.oddsType = td.oddsType; pf.odds = td.odds; }
   if (mb && mb.book) pf.book = mb.book;
@@ -13775,16 +13762,18 @@ function legRecOf(l){
 }
 function makeLockRec(board, x, extra){
   const now = Date.now();
-  const unit = (+S.unit||25);
+  // v55: each locked single is staked at its recommended units (2u / 1.5u / 1u / 0.5u), so profit is in real units
+  const u = (board!=='parlay' && typeof recommendedUnits==='function') ? (recommendedUnits(x, board==='props'?'prop':'game').u || 1) : 1;
+  const unit = (+S.unit||25) * u;
   if (board==='parlay'){
     return Object.assign({board, k:x.id, at:now, start:itemStartMs(x), label:x.label||'Parlay', n:x.n, dec:x.dec, am:x.am, p:x.p, minLegP:(x.legs||[]).reduce((m,l)=>l&&l.p!=null?Math.min(m,+l.p):m, 1), legs:(x.legs||[]).map(legRecOf), unit}, extra||{});
   }
   if (board==='props'){
     const g = x.g;
-    return Object.assign({board, k:propKeyOf(x), at:now, start:itemStartMs(x), label:x.label||`${x.playerName} ${x.side} ${x.line}`, ev:(g&&g.eventId)||x.eventId, lg:x.league||(g&&g.league), pid:x.playerId||'', playerName:x.playerName||'', kind:x.kind, side:x.side, line:x.line, price:x.price, p:x.p, unit}, extra||{});
+    return Object.assign({board, k:propKeyOf(x), at:now, start:itemStartMs(x), label:x.label||`${x.playerName} ${x.side} ${x.line}`, ev:(g&&g.eventId)||x.eventId, lg:x.league||(g&&g.league), pid:x.playerId||'', playerName:x.playerName||'', kind:x.kind, side:x.side, line:x.line, price:x.price, p:x.p, unit, u}, extra||{});
   }
   const g = x.g, price = (x.my && x.my.best) ? x.my.best.price : (x.sd && x.sd.best ? x.sd.best.price : null);
-  return Object.assign({board:'games', k:playResultKey(x), at:now, start:itemStartMs(x), label:x.label, game:g&&g.away&&g.home?`${g.away.short} @ ${g.home.short}`:'', ev:g.eventId, lg:g.league, mk:x.mk, side:x.side, point:x.sd?x.sd.point:null, price, p:x.est!=null?x.est:null, outs:curOuts(g), unit}, extra||{});
+  return Object.assign({board:'games', k:playResultKey(x), at:now, start:itemStartMs(x), label:x.label, game:g&&g.away&&g.home?`${g.away.short} @ ${g.home.short}`:'', ev:g.eventId, lg:g.league, mk:x.mk, side:x.side, point:x.sd?x.sd.point:null, price, p:x.est!=null?x.est:null, outs:curOuts(g), unit, u}, extra||{});
 }
 // record every item that is officially locked right now (runs whether or not alerts are on)
 function recordLocks(board){
@@ -14478,7 +14467,7 @@ function v42GroupOff(list){
 }
 function v42ResultsHTML(){
   const A = AUTO();
-  const cards = ['games','props','parlay'].map(b=>{
+  const cards = ['games','props'].map(b=>{
     const B = A.boards[b];
     const offs = v42GroupOff(v42SportsOffList(b).filter(x=>!x.hard));
     const sp = offs.length ? offs.map(g=>`<div class="v42-v"><b>${esc(g.labs.join(', '))}</b></div><div class="hint">${esc(g.why)}.</div>`).join('') : '<div class="v42-v mut">None. Every sport you have on in Settings is in play.</div>';
@@ -14563,8 +14552,9 @@ function uniUpsert(b, src, id, base, snap){
   }
   r.at = now; r.price = snap.price; r.v = snap.v || 'nocall'; r.p = snap.p!=null ? Math.round(snap.p*10000)/10000 : null; r.mins = mins;
   if (snap.shown) r.shown = 1;
+  if (snap.u!=null) r.u = snap.u; else delete r.u;
   if (snap.X) r.X = snap.X;
-  if (lockNow) r.lk = {price:r.price, v:r.v, p:r.p, at:now};
+  if (lockNow) r.lk = {price:r.price, v:r.v, p:r.p, u:r.u, at:now};
   if (closeNow) r.cl = {price:r.price, v:r.v, p:r.p, at:now};
   UNI_DIRTY.add(id);
   return r;
@@ -14642,7 +14632,7 @@ function uniCaptureGames(){
         if (v==='none' || v==='started' || !v) v = 'avoid';
         if (typeof isFinalPulled==='function' && play && play.side===s && isFinalPulled(play.id)) v = 'avoid';
         const id = `g:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`;
-        if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
+        if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, u: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').u : null, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
       }
     }
     // Kalshi moneylines (loaded through the Verdict relay whenever Kalshi prices are on)
@@ -14808,7 +14798,7 @@ async function uniCaptureProps(){
         if (m.need) needLog.add(gm.l+':'+x.pid);
         const a = propAthleteCache[gm.l+':'+x.pid];
         if (!a || !a.name) needAth.add(gm.l+':'+x.pid);
-        if (uniUpsert('props', 'sb', id, {l:gm.l, ev:gm.ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {price:x.price, v:m.v, p:m.p, shown: bp && (bp.verdict==='good'||bp.verdict==='watch') ? 1 : 0})) n++;
+        if (uniUpsert('props', 'sb', id, {l:gm.l, ev:gm.ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {price:x.price, v:m.v, p:m.p, u: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').u : null, shown: bp && (bp.verdict==='good'||bp.verdict==='watch') ? 1 : 0})) n++;
       }
     }catch(e){ UNI_ST.evAt[gm.ev] = Date.now(); uniErr('props '+gm.ev, e); }
   }), 2);
@@ -15293,7 +15283,7 @@ function uniResultsHTML(){
   const nt = Object.entries(UNI_ST.notTracked).sort((a,b)=>b[1]-a[1]).slice(0, 4).map(([k,v])=>`${k} (${f(v)})`).join('; ');
   return `<div class="card uni-card">
     <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</span></div>
-    <div class="v42-grid">${card('games','Games')}${card('props','Props')}${card('parlay','Parlays')}</div>
+    <div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>
     <div class="hint" style="margin-top:10px">Sources: ESPN scoreboards (DraftKings main lines, every league), ESPN's DraftKings prop feed (every player market, alt lines included), and every Polymarket game and player market that matches a game. "No call" means the model had no read (a sport off in Settings, or a stat it does not model yet). ${UNI_ST.lastTick ? `Last scan ${new Date(UNI_ST.lastTick).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.'}${nt ? ` Not tracked: ${esc(nt)}.` : ''}</div>
   </div>`;
 }
@@ -16456,6 +16446,147 @@ async function fpTick(){
 }
 setInterval(()=>{ fpTick().catch(()=>{}); }, 15000);
 document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) setTimeout(()=>fpTick().catch(()=>{}), 1500); });
+/* ================= v55: one combined Results page · "Is it making money?" that is never blank · Games + Props only =================
+   Why the money table was blank: it only counted "lock records", and a lock record is written only if the app happens to be
+   open in the last 30 minutes before a game starts (and only on that device). On a phone that is rarely true, so most picks
+   never got one. Now the table also counts every board Pick the Tracked universe saw before its game started (the universe
+   snapshots the board every few minutes whenever the app is open, freezes at tip-off and grades from finals). One pick is
+   counted once (lock record first, universe second). Each pick is staked at its recommended units (old picks: 1u). */
+const MONEY = {rows:[], at:0, busy:false};
+const v55Dec = am => (am==null || !isFinite(+am) || +am===0) ? null : (+am>0 ? 1 + (+am)/100 : 1 + 100/(-am));
+function v55KeyG(ev, mk, side){ return `g|${ev}|${mk}|${String(side||'').toLowerCase()}`; }
+function v55KeyP(ev, who, kind, side){ return `p|${ev}|${String(who||'').toLowerCase()}|${kind}|${String(side||'').toLowerCase()}`; }
+function v55UniPick(r){
+  if (!r || r.src!=='sb' || (r.b!=='games' && r.b!=='props')) return false;
+  if (uniV(r)!=='good') return false;
+  return r.b==='games' ? true : !!r.shown;      // props: only the board's own Picks (the model also scores every other prop quietly)
+}
+function v55UniRow(r){
+  const res = r.res || null;
+  return {src:'uni', b:r.b, key: r.b==='games' ? v55KeyG(r.ev, r.mk, r.side) : v55KeyP(r.ev, r.pid, r.kind, r.side),
+    start:+r.t||0, res, price:uniPrice(r), u:+((r.lk && r.lk.u) || r.u) || 1};
+}
+async function moneyLoad(force){
+  if (MONEY.busy) return MONEY.rows;
+  if (!force && Date.now() - MONEY.at < 90000) return MONEY.rows;
+  MONEY.busy = true; const out = [];
+  try{
+    if (typeof idbOpen==='function' && typeof UNI_ST!=='undefined' && UNI_ST.idb!==false){
+      const d = await idbOpen();
+      const lo = uniDay(Date.now() - 30*86400000);
+      await new Promise((res, rej)=>{
+        const req = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound(lo));
+        req.onsuccess = ()=>{ const c = req.result; if (!c) return res(); if (v55UniPick(c.value)) out.push(v55UniRow(c.value)); c.continue(); };
+        req.onerror = ()=>rej(req.error);
+      });
+    }
+  }catch(e){ console.warn('money load', e); }
+  try{ for (const r of (typeof UNI_OUT!=='undefined' ? UNI_OUT : [])) if (v55UniPick(r)) out.push(v55UniRow(r)); }catch(e){}
+  try{ for (const r of (typeof UNI!=='undefined' ? UNI.values() : [])) if (v55UniPick(r) && +r.t <= Date.now()) out.push(v55UniRow(r)); }catch(e){}
+  MONEY.rows = out; MONEY.at = Date.now(); MONEY.busy = false;
+  return out;
+}
+function moneyRowsFor(board){
+  const st = typeof V41==='function' ? V41() : {locked:{}};
+  const seen = new Map();
+  for (const r of Object.values(st.locked||{})){
+    if (!r || r.board!==board || r.tailedOnly || r.shadow || r.pulled) continue;
+    const key = board==='games' ? v55KeyG(r.ev, r.mk, r.side) : v55KeyP(r.ev, r.pid || r.playerName, r.kind, r.side);
+    const base = +S.unit||25; const u = +r.u || ((+r.unit||base)/base) || 1;
+    seen.set(key, {src:'lock', b:board, key, start:+r.start||0, res:r.res||null, price:r.price, u, profitU: r.profit!=null ? (+r.profit)/base : null});
+    if (board==='props' && r.playerName && r.pid) seen.set(v55KeyP(r.ev, r.playerName, r.kind, r.side), seen.get(key));
+  }
+  for (const r of MONEY.rows){ if (r.b!==board || seen.has(r.key)) continue; seen.set(r.key, r); }
+  return [...new Set(seen.values())];
+}
+function moneyTally(rows){
+  const T = {w:0, l:0, p:0, v:0, wait:0, staked:0, net:0};
+  const now = Date.now();
+  for (const r of rows){
+    if (r.res==='win' || r.res==='loss'){
+      const u = +r.u || 1; T.staked += u;
+      if (r.res==='win'){ T.w++; T.net += r.profitU!=null && r.src==='lock' ? r.profitU : (v55Dec(r.price) ? u*(v55Dec(r.price)-1) : u); }
+      else { T.l++; T.net -= (r.profitU!=null && r.src==='lock') ? -r.profitU : u; }
+    } else if (r.res==='push') T.p++;
+    else if (r.res==='void') T.v++;
+    else if (r.start && r.start <= now) T.wait++;
+  }
+  T.n = T.w + T.l; T.wr = T.n ? T.w/T.n : null; T.roi = T.staked ? T.net/T.staked : null;
+  return T;
+}
+function moneyDayRows(rows, dayOffset){
+  const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - dayOffset);
+  const a = d.getTime(), b = a + 86400000;
+  return rows.filter(r=>r.start>=a && r.start<b);
+}
+function moneySectionHTML(){
+  const fmtU = x => `${x>=0?'+':'−'}${Math.abs(x).toFixed(2).replace(/\.?0+$/,'')}u`;
+  const rec = T => T.n||T.p ? `${T.w}–${T.l}${T.p?'–'+T.p:''}` : '—';
+  const day = T => T.n ? `${rec(T)} <span class="${T.net>=0?'pos':'neg'}">${fmtU(T.net)}</span>` : (T.wait ? `<span class="mut">${T.wait} waiting</span>` : '<span class="mut">none</span>');
+  const G = moneyRowsFor('games'), P = moneyRowsFor('props'), A = G.concat(P);
+  const line = (lab, rows, cls) => {
+    const T = moneyTally(rows), t0 = moneyTally(moneyDayRows(rows, 0)), t1 = moneyTally(moneyDayRows(rows, 1));
+    const verdict = T.n<10 ? 'Too early to tell' : T.roi>0.02 ? 'Making money' : T.roi<-0.02 ? 'Losing money' : 'About break-even';
+    return `<tr class="${cls||''}"><td><b>${lab}</b></td><td>${rec(T)}</td><td>${T.wr==null?'—':Math.round(T.wr*100)+'%'}</td>
+      <td class="${T.net>0?'pos':T.net<0?'neg':''}">${T.n?fmtU(T.net):'—'}</td><td class="${(T.roi||0)>0?'pos':(T.roi||0)<0?'neg':''}">${T.roi==null?'—':(T.roi>=0?'+':'−')+Math.abs(T.roi*100).toFixed(1)+'%'}</td>
+      <td>${day(t0)}</td><td>${day(t1)}</td><td>${T.wait}</td><td>${verdict}</td></tr>`;
+  };
+  const any = A.length;
+  return `<div class="card v41-score v55-money">
+    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money?</h2><span class="hint">Every Pick the board made (Games and Props), graded automatically from finals. Each pick counts at its recommended size (2u, 1.5u, 1u or 0.5u; older picks 1u). Not just the bets you tailed.</span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Board</th><th>W–L</th><th>Win rate</th><th>Profit</th><th>ROI</th><th>Today</th><th>Yesterday</th><th>Waiting</th><th>So far</th></tr></thead>
+    <tbody>${line('Games', G)}${line('Props', P)}${line('Both', A, 'v55-total')}</tbody></table></div>
+    ${any ? '' : `<div class="hint" style="margin-top:8px">${MONEY.at ? 'No board Picks have started yet on this device. Picks show up here once their game starts, and get graded after the final.' : 'Loading graded picks…'}</div>`}
+    <div class="hint" style="margin-top:8px">Profit is in units (1u = $${(+S.unit||25).toFixed(0)}). Pushes don't count as wins or losses. Pulled picks are left out.</div>
+  </div>`;
+}
+/* ---------- the combined Results page ---------- */
+function v55Scope(html, k){ return String(html||'').replace(/\sid="([^"]+)"/g, (m, id)=>` id="${id}__${k}"`); }
+function v55BindScoped(k, fn){
+  const els = [...document.querySelectorAll(`#view [id$="__${k}"]`)];
+  els.forEach(e=>{ e.id = e.id.slice(0, -(k.length+2)); });
+  try{ fn(); }catch(e){ console.warn('bind', k, e); } finally { els.forEach(e=>{ e.id = e.id + '__' + k; }); }
+}
+function v55DD(key, title, inner){
+  const open = ui.open && ui.open.has(key);
+  return `<details class="dd v55-dd" data-dd="${key}" ${open?'open':''}><summary>${title}</summary><div class="v55-dd-body">${inner}</div></details>`;
+}
+function renderResults(){
+  const safe = f => { try{ return f() || ''; }catch(e){ console.warn('results part', e); return ''; } };
+  const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results</h2><span class="hint">Games, Props and Verdict checks on one page.</span></div>`;
+  const uni = safe(()=>typeof uniResultsHTML==='function' ? uniResultsHTML() : '');
+  const money = safe(moneySectionHTML);
+  const learnV = safe(()=>typeof verdictLearnPanelHTML==='function' ? verdictLearnPanelHTML() : '');
+  const learnG = safe(()=>typeof learnPanelHTML==='function' ? learnPanelHTML() : '');
+  const learnP = safe(()=>typeof propsLearnPanelHTML==='function' ? propsLearnPanelHTML() : '');
+  const learning = `<div class="card v55-learn"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning</h2><span class="hint">How each model is tuning itself from graded results.</span></div>
+    ${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}</div>`;
+  const auto = safe(()=>typeof v42ResultsHTML==='function' ? v42ResultsHTML() : '');
+  const picked = `<div class="card v55-wrap">${v55DD('v55-auto', '🤖 What the model picked (automatic)', auto.replace(/^<div class="card v42-auto">/, '<div class="v42-auto">'))}</div>`;
+  const recs = `<div class="card v55-wrap">${v55DD('v55-records', '📋 Board picks and your tailed bets (by type)',
+    `<h3 class="v55-h">Games</h3>${v55Scope(safe(()=>liveRecordHTML('games')), 'rg')}<h3 class="v55-h">Props</h3>${v55Scope(safe(()=>liveRecordHTML('props')), 'rp')}<h3 class="v55-h">Verdict checks</h3>${v55Scope(safe(()=>liveRecordHTML('verdict')), 'rv')}`)}</div>`;
+  $('#view').innerHTML = title + uni + money + learning + picked + recs;
+  v55BindScoped('rg', ()=>bindLiveRecordGrade('games'));
+  v55BindScoped('rp', ()=>bindLiveRecordGrade('props'));
+  v55BindScoped('rv', ()=>bindLiveRecordGrade('verdict'));
+  v55BindScoped('lg', ()=>{ if (typeof learnBind==='function') learnBind(); });
+  v55BindScoped('lp', ()=>{ if (typeof boardLearnBind==='function') boardLearnBind('props'); });
+  v55BindScoped('lv', ()=>{ if (typeof boardLearnBind==='function') boardLearnBind('verdict'); });
+  if (Date.now() - MONEY.at >= 90000 && !MONEY.busy){
+    moneyLoad().then(()=>{ if (ui.tab==='results'){ const el = document.querySelector('#view .v55-money'); if (el){ const t = document.createElement('div'); t.innerHTML = moneySectionHTML(); el.replaceWith(t.firstElementChild); } } }).catch(()=>{});
+  }
+}
+/* ---------- Parlay board removed (Stanley: too risky). Tracked parlay bets in history are untouched. ---------- */
+(function v55NoParlayBoard(){
+  try{ if (typeof ui!=='undefined'){ if (ui.board==='parlay') ui.board = 'games'; if (ui.settingsBoard==='parlay') ui.settingsBoard = 'games'; if (ui.resultsBoard==='parlay') ui.resultsBoard = 'games'; } }catch(e){}
+  try{
+    if (typeof setTab==='function'){
+      const orig = setTab;
+      setTab = function(t, opts){ if (opts && opts.board==='parlay') opts = Object.assign({}, opts, {board:'games'}); if (typeof ui!=='undefined' && ui.board==='parlay') ui.board = 'games'; return orig.call(this, t, opts); };
+    }
+  }catch(e){}
+  try{ document.querySelectorAll('[data-board-parent="parlay"]').forEach(b=>b.remove()); }catch(e){}
+})();
 </script>
 </body>
 </html>
