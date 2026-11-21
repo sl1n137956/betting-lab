@@ -14042,9 +14042,11 @@ async function authBoot(){
     await loadScriptOnce(base+'firebase-app-compat.js');
     await Promise.all([loadScriptOnce(base+'firebase-auth-compat.js'), loadScriptOnce(base+'firebase-firestore-compat.js')]);
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    // v96: let Firestore fall back to long polling when a browser, extension or network blocks its streaming channel
+    try{ firebase.firestore().settings({experimentalAutoDetectLongPolling:true, merge:true}); }catch(e){ console.warn('firestore settings', e); }
     // local testing only: ?emu=1 on localhost talks to the Firebase emulators, never the real account data
     if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && /[?&]emu=1\b/.test(location.search)){ try{ firebase.auth().useEmulator('http://127.0.0.1:9099', {disableWarnings:true}); firebase.firestore().useEmulator('127.0.0.1', 8080); }catch(e){} }
-    try{ if (firebase.firestore && firebase.firestore.setLogLevel) firebase.firestore.setLogLevel('silent'); }catch(e){}
+    try{ if (firebase.firestore && firebase.firestore.setLogLevel) firebase.firestore.setLogLevel('error'); }catch(e){}
     try{ await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
     AUTH.ready = true; AUTH.loading = false;
     // Finish a full-page Google sign-in first. If Safari/iOS dropped the cross-site redirect state, say so clearly.
@@ -14387,9 +14389,9 @@ function accountCardHtml(){
     <div class="acct-row"><div class="acct-txt"><b>Sign in to sync across PC &amp; phone</b><span class="hint">Your settings, filters, and tailed bets follow your account. Nothing on this device is lost.</span></div>
     <button type="button" class="btn primary acct-pill" data-acct-open>${AUTH.loading?'Loading…':'Sign in'}</button></div>${AUTH.failed?'<div class="acct-note">Can\'t reach the sign-in service right now. It will retry when you\'re back online.</div>':''}</div></div>`;
   return `<div class="panel simple acct-card" id="acctCard"><div class="s-row"><div class="s-h">☁️ Account &amp; sync</div>
-    <div class="acct-row">${avatarHtml(u,'acct-av lg')}<div class="acct-txt"><b>${esc(u.displayName||shortName(u))}${isAdminUser()?' <span class="acct-badge">Admin</span>':''}</b><span class="hint">${esc(u.email||'')}</span><span class="acct-sync" data-sync-status>${esc(syncStatusText())}</span></div></div>
+    <div class="acct-row">${avatarHtml(u,'acct-av lg')}<div class="acct-txt"><b>${esc(u.displayName||shortName(u))}${isAdminUser()?' <span class="acct-badge">Admin</span>':''}</b></div></div>
     ${isAdminUser()?'<div class="acct-note">Admin access enabled — Results &amp; Backtest unlocked</div>':''}
-    <div class="acct-actions"><button type="button" class="btn acct-pill" data-sync-now>↻ Sync now</button><button type="button" class="btn acct-pill" data-sign-out>Sign out</button></div></div></div>`;
+    ${typeof acctSyncBlockHTML==='function'?acctSyncBlockHTML():''}<div class="acct-actions"><button type="button" class="btn acct-pill" data-sync-now>↻ Sync now</button><button type="button" class="btn acct-pill" data-sign-out>Sign out</button></div></div></div>`;
 }
 function bindAccountCard(){
   const c = $('#acctCard'); if (!c) return;
@@ -14417,10 +14419,10 @@ function openAuthModal(mode){
   } else if (mode==='account'){
     const u = AUTH.user;
     body = `<div class="auth-title">Your account</div>
-      <div class="acct-row">${avatarHtml(u,'acct-av lg')}<div class="acct-txt"><b>${esc(u.displayName||shortName(u))}${isAdminUser()?' <span class="acct-badge">Admin</span>':''}</b><span class="hint">${esc(u.email||'')}</span><span class="acct-sync" data-sync-status>${esc(syncStatusText())}</span></div></div>
+      <div class="acct-row">${avatarHtml(u,'acct-av lg')}<div class="acct-txt"><b>${esc(u.displayName||shortName(u))}${isAdminUser()?' <span class="acct-badge">Admin</span>':''}</b></div></div>
       <div class="auth-sub">Settings, filters, and tailed bets sync live between your PC and phone.</div>
       ${isAdminUser()?'<div class="acct-note">Admin access enabled — Results &amp; Backtest unlocked</div>':''}
-      <div class="acct-actions"><button type="button" class="btn acct-pill" data-sync-now>↻ Sync now</button><button type="button" class="btn acct-pill" data-sign-out>Sign out</button></div>`;
+      ${typeof acctSyncBlockHTML==='function'?acctSyncBlockHTML():''}<div class="acct-actions"><button type="button" class="btn acct-pill" data-sync-now>↻ Sync now</button><button type="button" class="btn acct-pill" data-sign-out>Sign out</button></div>`;
   } else {
     const up = mode==='create';
     body = `<div class="auth-title"><span class="h-emo" aria-hidden="true">⚖️</span>${up?'Create your Verdict account':'Sign in to Verdict'}</div>
@@ -17746,9 +17748,11 @@ function renderResults(){
   const learnG = safe(()=>typeof learnPanelHTML==='function' ? learnPanelHTML() : '');
   const learnP = safe(()=>typeof propsLearnPanelHTML==='function' ? propsLearnPanelHTML() : '');
   const learning = `<div class="card v55-learn"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning</h2><span class="hint">How each model is tuning itself from graded results.</span></div>
-    ${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}${v55DD('v55-learn-uni', '🌐 Tracked universe', uni)}${v55DD('v55-learn-check', '🩺 Weekly model check', chk)}</div>`;
+    ${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}${v55DD('v55-learn-check', '🩺 Weekly model check', chk)}</div>`;
   const picked = safe(()=>typeof modelResultsHTML==='function' ? modelResultsHTML() : '');
-  $('#view').innerHTML = title + picked + learning;
+  // v96: Tracked universe is its own section again, between What the model picked and Model learning
+  const uniCard = `<div class="card v55-learn uni-card"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</span></div>${uni}</div>`;
+  $('#view').innerHTML = title + picked + uniCard + learning;
   try{ if (typeof mrBind==='function') mrBind(); }catch(e){}
   v55BindScoped('lg', ()=>{ if (typeof learnBind==='function') learnBind(); });
   v55BindScoped('lp', ()=>{ if (typeof boardLearnBind==='function') boardLearnBind('props'); });
@@ -19483,6 +19487,9 @@ function sync2BetsPending(){
   if ((Array.isArray(bets)?bets:[]).some(b=>b && b.id && sync2BetStamp(b) > (+sync2.bp[b.id]||0))) return true;
   return Object.keys(syncMeta.deleted||{}).some(id=>(+syncMeta.deleted[id]||0) > (+sync2.dp[id]||0));
 }
+/* v96 ROOT CAUSE FIX: with set(..., {merge:true}) an EMPTY map is written as a value, so a settings-only push
+   (bets:{}) wiped every bet in the cloud and a bets-only push (kv:{}) wiped every setting. Never send empty maps. */
+function sync2NoEmpty(o){ for (const k of ['kv','bets','del']) if (o[k] && typeof o[k]==='object' && !Object.keys(o[k]).length) delete o[k]; return o; }
 function sync2Ref(){ return (AUTH.user && typeof firebase!=='undefined') ? fs().collection('users').doc(AUTH.user.uid).collection('sync').doc('v2') : null; }
 function sync2Schedule(ms){
   if (!AUTH.user || !SYNC2.live) return;
@@ -19516,9 +19523,12 @@ async function sync2Push(){
     };
     const online = (typeof navigator==='undefined' || navigator.onLine!==false);
     if (online){
-      await fs().runTransaction(async tx=>{ const snap = await tx.get(ref); tx.set(ref, build(snap.exists ? snap.data() : null), {merge:true}); });
+      await fs().runTransaction(async tx=>{ const snap = await tx.get(ref); const out = build(snap.exists ? snap.data() : null);
+        // v96: nothing newer than the cloud: don't write (a write with only a new 'at' re-fires every device's listener)
+        if (snap.exists && !Object.keys(out.kv).length && !Object.keys(out.bets).length && !Object.keys(out.del).length) return;
+        tx.set(ref, sync2NoEmpty(out), {merge:true}); });
     } else {
-      await ref.set(build(null), {merge:true});
+      await ref.set(sync2NoEmpty(build(null)), {merge:true});
     }
     for (const k of Object.keys(kv)) SYNC2_DIRTY.delete(k);
     for (const id of Object.keys(bt)) sync2.bp[id] = bt[id].t;
@@ -19560,7 +19570,10 @@ function sync2Apply(d){
       const e = sync2.kv[k] || {t:0, d:''};
       const same = sync2Hash(r.v)===sync2Hash(L[k]);
       if (same){ if (sync2Wins(r, e)){ sync2.kv[k] = {t:+r.t||0, d:r.d||'', h:sync2Hash(r.v)}; SYNC2_DIRTY.delete(k); } else if (sync2Wins(e, r)) SYNC2_DIRTY.delete(k); continue; }
-      if (sync2Wins(r, e)){ sync2ApplyKey(k, r.v, A); sync2.kv[k] = {t:+r.t||0, d:r.d||'', h:sync2Hash(r.v)}; SYNC2_DIRTY.delete(k); }
+      // v96: a tie (same stamp, e.g. two devices' untouched defaults both at t:0) used to leave both sides 'winning' forever
+      // (settings never converged and the devices re-wrote the doc in a loop). The cloud copy settles a tie.
+      const tie = !sync2Wins(r, e) && !sync2Wins(e, r);
+      if (tie || sync2Wins(r, e)){ sync2ApplyKey(k, r.v, A); sync2.kv[k] = {t:+r.t||0, d:r.d||'', h:sync2Hash(r.v)}; SYNC2_DIRTY.delete(k); }
       else if (L[k]!=null){ SYNC2_DIRTY.add(k); push = true; }      // this device's edit is newer: send it (repairs a stale overwrite)
     }
     for (const k of Object.keys(L)) if (!rk[k]){ SYNC2_DIRTY.add(k); push = true; }   // the cloud doesn't have it yet
@@ -19639,7 +19652,9 @@ async function sync2Start(uid){
     if (!snap.exists || snap.metadata.hasPendingWrites) return;
     sync2Apply(snap.data());
     if (!SYNC2.pushT && !SYNC2.pushing){ AUTH.status = 'synced'; AUTH.lastSync = Date.now(); try{ renderAuthStatusOnly(); }catch(e){} }
-  }, err=>{ AUTH.status = 'error'; AUTH.err = (err && err.code) || 'listen failed'; try{ renderAuthStatusOnly(); }catch(e){} });
+  }, err=>{ AUTH.status = 'error'; AUTH.err = (err && err.code) || 'listen failed'; try{ renderAuthStatusOnly(); }catch(e){}
+    // v96: keep syncing anyway: poll every 60s and retry the live listener with backoff
+    try{ if (typeof sync2ListenFailed==='function') sync2ListenFailed(uid, err); }catch(e){} });
 }
 function sync2Stop(keepLive){
   if (SYNC2.unsub){ try{ SYNC2.unsub(); }catch(e){} SYNC2.unsub = null; }
@@ -19906,7 +19921,8 @@ async function mlogLoad(force, fromDay){
     // raw: every day in range that has no final summary, plus the days the list shows
     const need = new Set();
     const top = mlogDay(Date.now() + 8*86400000);
-    for (let t = mlogDT(want); mlogDay(t) <= top; t += 86400000){ const d = mlogDay(t); const s = MLOG.sums.get(d); if (!s || !s.final || d >= listFrom) need.add(d); }
+    const rawFrom = mlogDay(Date.now() - 32*86400000);   // older days come from their day summaries only (Year / All time stay small)
+    for (let t = mlogDT(want > rawFrom ? want : rawFrom); mlogDay(t) <= top; t += 86400000){ const d = mlogDay(t); const s = MLOG.sums.get(d); if (!s || !s.final || d >= listFrom) need.add(d); }
     const days = [...need].sort();
     if (days.length){
       const lo = days[0];
@@ -19953,7 +19969,7 @@ async function mlogPush(){
       }catch(e){ console.warn('model log backfill', e); }
     }
     if (typeof UNI!=='undefined') for (const r of UNI.values()) if (!r._cloud) mlogQueue(r);
-    if (!MLOG.queue.size){ if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; } return 0; }
+    if (!MLOG.queue.size){ MLOG.lastPushAt = Date.now(); if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; } return 0; }
     // make sure we know what the cloud already holds for these days
     let lo = null; for (const o of MLOG.queue.values()){ const d = mlogDay(o.t); if (!lo || d < lo) lo = d; }
     if (lo && (!MLOG.loadedFrom || lo < MLOG.loadedFrom || Date.now() - MLOG.at > 10*60000)) await mlogLoad(true, lo < mlogDay(Date.now() - 32*86400000) ? mlogDay(Date.now() - 32*86400000) : lo);
@@ -19972,7 +19988,7 @@ async function mlogPush(){
       await batch.commit();
     }
     for (const [, body] of docs){ let m = MLOG.raw.get(body.d); if (!m){ m = new Map(); MLOG.raw.set(body.d, m); } for (const id in body.r){ m.set(id, body.r[id]); MLOG.up.set(id, mlogRank(body.r[id])); } }
-    MLOG.queue.clear(); MLOG.uploaded += n; if (n) MLOG.ver++;
+    MLOG.queue.clear(); MLOG.uploaded += n; MLOG.lastPushAt = Date.now(); if (n) MLOG.ver++;
     if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; }
     return n;
   }catch(e){ MLOG.err = (e && (e.code||e.message)) || 'upload failed'; console.warn('model log push', MLOG.err); return 0; }
@@ -20138,8 +20154,8 @@ function mrRefresh(){
 }
 function mrBind(){
   const el = document.querySelector('#view .mr-card'); if (!el || el.__b) return; el.__b = 1;
-  el.addEventListener('change', e=>{ const s = e.target.closest('[data-mr]'); if (!s) return; const k = s.dataset.mr; MR[k] = (k==='range') ? +s.value : s.value; MR.show = 120;
-    if (k==='range' && MR.range===30){ mlogLoad(false, mlogDay(Date.now() - 30*86400000)).then(mrRefresh); }
+  el.addEventListener('change', e=>{ const s = e.target.closest('[data-mr]'); if (!s) return; const k = s.dataset.mr; MR[k] = (k==='range') ? (isNaN(+s.value) ? s.value : +s.value) : s.value; MR.show = 120;
+    if (k==='range'){ const from = MR.range==='all' ? '20200101' : (typeof mrRangeFrom==='function' ? mrRangeFrom() : mlogDay(Date.now() - 30*86400000)); if (!MLOG.loadedFrom || from < MLOG.loadedFrom) mlogLoad(true, from).then(mrRefresh); }
     mrRefresh(); });
   el.addEventListener('click', e=>{
     if (e.target.closest('[data-mr-more]')){ MR.show += 200; mrRefresh(); return; }
@@ -20411,44 +20427,43 @@ window.mchkStatus = () => ({week:mchkWeek(Date.now()), doc:MCHK.doc && {wk:MCHK.
 
 /* ---------- What the model picked (replaces the Model results card) ---------- */
 modelResultsHTML = function(){
+  // v96: ranges Today / 7 / 30 days / This year / All time; no pick list (every pick is still logged and graded in the background)
+  if (!['today', 7, 30, 'year', 'all'].includes(MR.range)) MR.range = 7;
   const autoSig = (typeof AUTO==='function') ? (+AUTO().at||0) : 0;
-  const sig = ['v95', MLOG.ver, MR.range, MR.board, MR.sport, MR.res, MR.show, typeof pxMode==='function'?pxMode():'', mlogDay(Date.now()), autoSig, MLOG.err, !!MLOG.at, ui.open && ui.open.has('v55-auto') ? 1 : 0, ui.open && ui.open.has('v95-picks') ? 1 : 0].join('|');
+  const sig = ['v96', MLOG.ver, MR.range, MR.board, typeof pxMode==='function'?pxMode():'', mlogDay(Date.now()), autoSig, MLOG.err, !!MLOG.at, MLOG.uploaded, ui.open && ui.open.has('v55-auto') ? 1 : 0].join('|');
   if (MR_CACHE.sig===sig && MR_CACHE.html) return MR_CACHE.html;
   const head = `<div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🤖</span>What the model picked</h2><span class="hint">Pickiness, lock time and sports, chosen automatically from graded results.</span></div>`;
   let autoBody = '';
   try{ const auto = typeof v42ResultsHTML==='function' ? v42ResultsHTML() : ''; autoBody = auto.replace(/^<div class="card v42-auto">/, '<div class="v42-auto">').replace(/<div class="section-title"[\s\S]*?<\/h2>[\s\S]*?<\/div>/, ''); }catch(e){}
   const settingsDD = v55DD('v55-auto', '⚙️ Games and Props settings', autoBody);
   if (!mlogOn()){ const h = `<div class="card v55-learn v55-auto mr-card">${head}${settingsDD}</div>`; MR_CACHE.sig = sig; MR_CACHE.html = h; return h; }
-  const days = mrDays(MR.range);
+  const days = mrRangeDays();
   const all = mrSum(days, (v, dim)=>dim==='all');
   const vt = v => all.get(`${v}|all|all`) || mrT();
   const byVerdict = ['good','watch','avoid'].map(v=>mrRow(MLOG_VN[v], vt(v), v)).join('');
-  const lgLab = id => (typeof LMAP!=='undefined' && LMAP[id] && LMAP[id].label) || id;
+  let logged = 0, waiting = 0;
+  for (const d of days){ const m = MLOG.raw.get(d); if (m){ for (const o of m.values()){ if (MR.board!=='all' && o.b!==MR.board) continue; logged++; if (!o.res) waiting++; } } else { const s = MLOG.sums.get(d); if (s && s.n) logged += s.n; } }
   const sel = (id, opts, cur, lab) => `<label class="mr-f"><span>${lab}</span><select data-mr="${id}">${opts.map(([v, l])=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`).join('')}</select></label>`;
-  const filters = `<div class="mr-filters">${sel('range', [[7,'Last 7 days'],[30,'Last 30 days']], MR.range, 'Range')}${sel('board', [['all','Games + Props'],['games','Games'],['props','Props']], MR.board, 'Board')}</div>`;
-  const L = []; const sports = new Set();
-  for (const d of days){ const m = MLOG.raw.get(d); if (!m) continue; for (const [id, o] of m){ if (MR.board!=='all' && o.b!==MR.board) continue; sports.add(o.l); if (MR.sport!=='all' && o.l!==MR.sport) continue; if (MR.res==='open' ? !!o.res : MR.res==='graded' ? !o.res || o.res==='ungradeable' : false) continue; if (MR.res!=='open' && MR.res!=='graded' && MR.res!=='all' && o.v!==MR.res) continue; L.push([id, o]); } }
-  L.sort((a,b)=>b[1].t - a[1].t);
-  const listFrom = MLOG.listFrom || mlogDay(Date.now() - 3*86400000);
-  const rows = L.slice(0, MR.show).map(([id, o])=>{
-    const res = o.res==='win' ? (o.v==='avoid' ? ['Won', 'neg'] : ['Won', 'pos']) : o.res==='loss' ? (o.v==='avoid' ? ['Lost', 'pos'] : ['Lost', 'neg']) : o.res==='push' ? ['Push', ''] : o.res==='void' ? ['Void', 'mut'] : o.res ? ['No grade', 'mut'] : ['Waiting', 'mut'];
-    const px = o.pr!=null && typeof fmtPx==='function' ? fmtPx(o.pr) : '—';
-    const when = new Date(o.t); const dt = `${when.getMonth()+1}/${when.getDate()}`;
-    return `<div class="mr-li"><span class="mr-v mr-${o.v}">${MLOG_VN[o.v]}</span><div class="yb-l"><div class="yb-k mr-pick">${esc(mrLabel(o))}</div><div class="yb-s">${dt} · ${esc(lgLab(o.l))} · ${esc(mlogVenue(o))} · ${esc(px)}${o.p!=null?` · est ${Math.round(o.p*100)}%`:''}</div></div><b class="mr-res ${res[1]}">${res[0]}</b></div>`;
-  }).join('');
-  const listFilters = `<div class="mr-filters">${sel('sport', [['all','All sports']].concat([...sports].filter(Boolean).sort().map(s=>[s, lgLab(s)])), MR.sport, 'Sport')}${sel('res', [['all','All'],['good','BET'],['watch','WATCH'],['avoid','AVOID'],['graded','Graded'],['open','Waiting']], MR.res, 'Show')}</div>`;
-  const more = L.length > MR.show ? `<button type="button" class="btn sm" data-mr-more>Show more (${(L.length-MR.show).toLocaleString()} left)</button>` : '';
-  const older = listFrom > days[days.length-1] ? `<button type="button" class="btn sm" data-mr-older>Load older picks</button>` : '';
+  const filters = `<div class="mr-filters">${sel('range', [['today','Today'],[7,'Last 7 days'],[30,'Last 30 days'],['year','This year'],['all','All time']], MR.range, 'Range')}${sel('board', [['all','Games + Props'],['games','Games'],['props','Props']], MR.board, 'Board')}</div>`;
   const err = MLOG.err ? `<div class="hint mr-err">Couldn't reach the pick log (${esc(String(MLOG.err))}). Showing what's loaded.</div>` : '';
-  const picksDD = v55DD('v95-picks', `📋 Every pick (${L.length.toLocaleString()})`, `<div class="hint mr-since">Since ${esc(mlogFmt(listFrom))}, newest first.</div>${listFilters}
-    <div class="mr-list">${rows || '<div class="hint" style="padding:12px">No picks logged for these filters yet.</div>'}</div>${more||older ? `<div class="mr-more">${more}${older}</div>` : ''}`);
+  const up = MLOG.lastPushAt ? ` Last upload from this device ${mchkAgo(MLOG.lastPushAt)}.` : '';
+  const note = `<div class="hint mr-logline">Every BET, WATCH and AVOID is logged and graded in the background: ${logged.toLocaleString()} picks in this range, ${waiting.toLocaleString()} waiting on a final.${up}</div>`;
   const html = `<div class="card v55-learn v55-auto mr-card">${head}${filters}${err}${!MLOG.at ? '<div class="hint">Loading the model\'s pick log…</div>' : ''}
     <div class="v42-b yb-b mr-verdicts"><h3>⚖️ By verdict</h3>${byVerdict}<div class="hint yb-note">AVOID is right when the side it warned about lost.</div></div>
-    ${picksDD}${settingsDD}</div>`;
+    ${note}${settingsDD}</div>`;
   MR_CACHE.sig = sig; MR_CACHE.html = html;
   return html;
 };
-
+function mchkAgo(t){ const s = Math.max(0, Math.round((Date.now() - t)/1000)); return s < 45 ? 'just now' : s < 3600 ? Math.round(s/60) + ' min ago' : s < 172800 ? Math.round(s/3600) + ' hr ago' : Math.round(s/86400) + ' days ago'; }
+/* the days in the chosen range (Year / All time use day summaries; see mlogLoad) */
+function mrRangeFrom(){
+  const now = new Date();
+  if (MR.range==='today') return mlogDay(Date.now());
+  if (MR.range==='year') return mlogDay(new Date(now.getFullYear(), 0, 1, 12).getTime());
+  if (MR.range==='all'){ let lo = mlogDay(Date.now() - 30*86400000); for (const k of MLOG.sums.keys()) if (k < lo) lo = k; for (const k of MLOG.raw.keys()) if (k < lo) lo = k; return lo; }
+  return mlogDay(Date.now() - (MR.range - 1)*86400000);
+}
+function mrRangeDays(){ const out = []; const lo = mrRangeFrom(); for (let t = Date.now(); ; t -= 86400000){ const d = mlogDay(t); if (d < lo) break; out.push(d); if (out.length > 4000) break; } return out; }
 /* ---------- account-synced Tracked universe ---------- */
 var USH = {docs:[], at:0, busy:false, pushAt:0, pushSig:'', err:''};
 var USH_MAX_KEYS = 6000;
@@ -20524,7 +20539,7 @@ function uniInnerHTML(){
   };
   const when = B.lastTick ? `Last scan ${new Date(B.lastTick).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.';
   const loading = mlogOn() && !USH.at ? ' Loading from your account…' : '';
-  return `<div class="uni-card uni-in"><div class="hint uni-intro">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</div>
+  return `<div class="uni-in">
     <div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>
     <div class="hint" style="margin-top:10px">Synced across ${B.devs} signed-in device${B.devs===1?'':'s'}. ${when}${loading}${USH.err ? ` Couldn't reach the account copy (${esc(String(USH.err))}).` : ''}</div></div>`;
 }
@@ -20620,7 +20635,7 @@ document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState
     const st = document.createElement('style');
     st.textContent = `.mr-card .mr-verdicts{margin:0 0 12px}
 .mr-card > .v55-dd + .v55-dd{margin-top:10px}
-.mr-since{margin:0 0 10px}
+.mr-logline{margin:0 0 12px;line-height:1.45}
 .uni-in .uni-intro,.mchk-intro{margin:0 0 12px}
 .uni-in .v42-grid{margin-top:0}
 .mchk-card .yb-grid{margin-top:0}`;
@@ -20628,6 +20643,144 @@ document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState
   }catch(e){}
 })();
 window.v95Status = () => ({ush:{docs:USH.docs.length, at:USH.at, err:USH.err, pushAt:USH.pushAt}, lsh:{at:LSH.at, adopted:LSH.adopted, err:LSH.err}});
+/* ================= v96: sync you can see + always-current devices =================
+   - Firestore auto-detects long polling (set in authBoot) and the live listener falls back to polling + backoff retry.
+   - Every signed-in device registers itself (users/{uid}/devices/{device}) with its app version, last seen and
+     last upload, so Settings › Account shows exactly which device is behind and why.
+   - Sync now = full pull + push of everything (settings, bets, filters, Tracked universe, learning, pick log).
+   - Auto-update: an open tab (e.g. the always-on VPS) reloads itself into a new version when it's idle. */
+var APP_BUILD = 96;
+MR.range = 7;
+var DEVS = {list:[], at:0, err:'', busy:false};
+function devLabel(){ return (typeof mchkDev==='function') ? mchkDev() : {id:AUTH.deviceId, lab:'a device'}; }
+function devRef(id){ return AUTH.user ? firebase.firestore().collection('users').doc(AUTH.user.uid).collection('devices').doc(id) : null; }
+async function devBeat(){
+  if (!AUTH.user || typeof firebase==='undefined') return;
+  const d = devLabel(); const ref = devRef(d.id); if (!ref) return;
+  const body = {id:d.id, lab:d.lab, ver:APP_BUILD, seen:Date.now(), ua:String(navigator.userAgent||'').slice(0, 160), brave:!!navigator.brave,
+    admin:typeof isAdminUser==='function' && isAdminUser(), status:String(AUTH.status||''), err:String(AUTH.err||'').slice(0, 80),
+    uniAt:(typeof USH!=='undefined' && USH.pushAt) || 0, uniN:(typeof UNI_SUM!=='undefined' ? UNI_SUM.size : 0) + (typeof UNI!=='undefined' ? UNI.size : 0),
+    logAt:(typeof MLOG!=='undefined' && MLOG.lastPushAt) || 0, learnAt:(typeof LSH!=='undefined' && LSH.at) || 0};
+  try{ await ref.set(body, {merge:true}); }catch(e){ DEVS.err = (e && (e.code||e.message)) || 'device write failed'; }
+}
+async function devList(force){
+  if (!AUTH.user || DEVS.busy) return DEVS.list;
+  if (!force && DEVS.at && Date.now() - DEVS.at < 60000) return DEVS.list;
+  DEVS.busy = true;
+  try{ const qs = await firebase.firestore().collection('users').doc(AUTH.user.uid).collection('devices').get(); const out = []; qs.forEach(x=>{ const v = x.data(); if (v && v.id) out.push(v); });
+    out.sort((a,b)=>(+b.seen||0)-(+a.seen||0)); DEVS.list = out; DEVS.at = Date.now(); DEVS.err = ''; }
+  catch(e){ DEVS.err = (e && (e.code||e.message)) || 'device list failed'; }
+  finally{ DEVS.busy = false; }
+  return DEVS.list;
+}
+/* ---- live listener fallback: poll every 60s and retry the stream with backoff ---- */
+var SYNCFB = {poll:0, retry:0, tries:0};
+function sync2ListenFailed(uid, err){
+  clearInterval(SYNCFB.poll); clearTimeout(SYNCFB.retry);
+  SYNCFB.poll = setInterval(async ()=>{
+    if (!AUTH.user || AUTH.user.uid!==uid) return clearInterval(SYNCFB.poll);
+    try{ const snap = await sync2Ref().get(); if (snap.exists) sync2Apply(snap.data()); if (typeof sync2Scan==='function' && sync2Scan()) await sync2Push(); AUTH.status = 'synced'; AUTH.err = ''; AUTH.lastSync = Date.now(); AUTH.mode = 'polling'; renderAuthStatusOnly(); }
+    catch(e){ AUTH.status = 'error'; AUTH.err = (e && e.code) || 'unreachable'; renderAuthStatusOnly(); }
+  }, 60000);
+  const wait = Math.min(15*60000, 15000 * Math.pow(2, SYNCFB.tries++));
+  SYNCFB.retry = setTimeout(()=>{ if (AUTH.user && AUTH.user.uid===uid){ clearInterval(SYNCFB.poll); try{ sync2Start(uid); }catch(e){} } }, wait);
+}
+/* plain-English reason for a sync error code */
+function syncReason(code){
+  const c = String(code||'');
+  if (/permission-denied/.test(c)) return 'the account isn\'t allowed to read this data (sign out and back in)';
+  if (/unavailable|failed-precondition|network|unreachable/.test(c)) return 'can\'t reach the sync server (a blocker, VPN or no connection)';
+  if (/unauthenticated/.test(c)) return 'signed out: sign in again';
+  if (/resource-exhausted/.test(c)) return 'the sync server is busy, retrying';
+  return c || 'unknown problem';
+}
+syncStatusText = function(){
+  if (!AUTH.user) return '';
+  if (AUTH.status==='error') return 'Sync problem: ' + syncReason(AUTH.err);
+  if (AUTH.status==='syncing' || AUTH.status==='pending') return 'Syncing…';
+  if (!AUTH.lastSync) return 'Connecting…';
+  return 'Synced · ' + mchkAgo(AUTH.lastSync) + (AUTH.mode==='polling' ? ' (backup mode)' : '');
+};
+function maskEmail(e){ e = String(e||''); const [a, b] = e.split('@'); if (!b) return ''; const keep = a.length <= 3 ? a.slice(0,1) : a.slice(0,2); return keep + '•'.repeat(Math.max(3, Math.min(6, a.length - keep.length - 2))) + (a.length > 4 ? a.slice(-2) : '') + '@' + b; }
+function devicesHTML(){
+  const L = DEVS.list || []; const me = devLabel().id;
+  if (!L.length) return `<div class="hint">${DEVS.err ? 'Couldn\'t load this account\'s devices (' + esc(syncReason(DEVS.err)) + ').' : 'Loading this account\'s devices…'}</div>`;
+  return `<ul class="acct-devs">${L.slice(0, 8).map(d=>{
+    const old = (+d.ver||0) < APP_BUILD; const stale = Date.now() - (+d.seen||0) > 2*86400000;
+    const parts = [`v${esc(String(d.ver||'?'))}`, 'seen ' + mchkAgo(+d.seen||0)];
+    if (d.admin && d.uniAt) parts.push('universe uploaded ' + mchkAgo(+d.uniAt));
+    const warn = old ? ' <span class="neg">· old version, reload it</span>' : (d.status==='error' ? ` <span class="neg">· ${esc(syncReason(d.err))}</span>` : '');
+    return `<li><b>${esc(d.lab||'Device')}${d.id===me ? ' (this one)' : ''}</b> <span class="mut">${parts.join(' · ')}</span>${warn}${stale && !old ? ' <span class="mut">· not open lately</span>' : ''}</li>`;
+  }).join('')}</ul>`;
+}
+function acctSyncBlockHTML(){
+  if (!AUTH.user) return '';
+  const n = (DEVS.list||[]).length;
+  return `<div class="acct-syncbox" data-acct-sync>
+    <div class="acct-line"><span class="mut">Signed in as</span> <b>${esc(maskEmail(AUTH.user.email))}</b> <span class="mut">· ${n ? n + ' device' + (n===1?'':'s') + ' on this account' : 'checking devices'}</span></div>
+    <div class="acct-line acct-sync ${AUTH.status==='error'?'bad':''}" data-sync-status>${esc(syncStatusText())}</div>
+    ${devicesHTML()}</div>`;
+}
+function acctRefresh(){ document.querySelectorAll('[data-acct-sync]').forEach(el=>{ const t = document.createElement('div'); t.innerHTML = acctSyncBlockHTML(); el.replaceWith(t.firstElementChild); }); }
+/* Sync now: full pull + push of everything this account syncs */
+syncNow = async function(){
+  if (!AUTH.user){ openAuthModal('signin'); return; }
+  AUTH.status = 'syncing'; renderAuthStatusOnly();
+  const fails = [];
+  const step = async (name, f, errOf) => { try{ await f(); const e = errOf && errOf(); if (e) fails.push(name + ' (' + syncReason(e) + ')'); }catch(e){ fails.push(name + ' (' + syncReason(e && (e.code||e.message)) + ')'); } };
+  await step('settings and bets', async ()=>{ const snap = await sync2Ref().get(); if (snap.exists) sync2Apply(snap.data()); if (typeof sync2Scan==='function') sync2Scan(); await sync2Push(); const r = await userDoc().get(); if (r.exists) applyRemote(r.data()); await cloudPush(); });
+  if (typeof mlogOn==='function' && mlogOn()){
+    await step('pick log', async ()=>{ await mlogPush(); await mlogLoad(true); }, ()=>MLOG.err);
+    await step('Tracked universe', async ()=>{ await ushPush(true); await ushLoad(true); }, ()=>USH.err);
+    await step('model learning', ()=>lshSync(), ()=>LSH.err);
+    await step('weekly check', async ()=>{ await mchkRead(true); });
+  }
+  await devBeat(); await devList(true);
+  if (fails.length){ AUTH.status = 'error'; AUTH.err = 'Sync now: ' + fails.join(', '); toast('Sync problem: ' + fails.join(', ')); }
+  else { AUTH.status = 'synced'; AUTH.err = ''; AUTH.lastSync = Date.now(); toast('Synced everything'); }
+  renderAuthStatusOnly(); acctRefresh();
+  try{ if (ui.tab==='results') renderResults(); }catch(e){}
+};
+/* ---- device heartbeat ---- */
+setTimeout(function devKick(){ if (AUTH.user){ devBeat().then(()=>devList(true)).then(acctRefresh); } else setTimeout(devKick, 15000); }, 8000);
+setInterval(()=>{ if (AUTH.user) devBeat().then(()=>devList(true)).then(acctRefresh); }, 10*60000);
+(function(){ try{ const base = onAuthUser; onAuthUser = async function(u){ const r = await base.apply(this, arguments); if (u){ DEVS.list = []; DEVS.at = 0; setTimeout(()=>devBeat().then(()=>devList(true)).then(acctRefresh), 1500); } return r; }; }catch(e){} })();
+/* ---- auto-update: reload into a newer version when the tab is idle ---- */
+var UPD = {next:0, lastInput:Date.now(), pending:0};
+['pointerdown','keydown','wheel','touchstart'].forEach(ev=>window.addEventListener(ev, ()=>{ UPD.lastInput = Date.now(); }, {passive:true, capture:true}));
+async function updCheck(){
+  if (!/^https?:$/.test(location.protocol) || /[?&]emu=1\b/.test(location.search)) return;
+  try{
+    const r = await fetch('./sw.js?u=' + Date.now(), {cache:'no-store'}); if (!r.ok) return;
+    const m = /betting-lab-shell-v(\d+)/.exec(await r.text()); const v = m ? +m[1] : 0;
+    if (v > APP_BUILD) UPD.pending = v;
+  }catch(e){}
+  if (UPD.pending) updMaybeReload();
+}
+async function updMaybeReload(){
+  const idle = Date.now() - UPD.lastInput > 3*60000;
+  const typing = document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (!(document.visibilityState==='hidden' || idle) || typing) return;
+  try{ if (typeof sync2Flush==='function') await sync2Flush(); }catch(e){}
+  try{ if (typeof mlogPush==='function' && mlogOn()) await mlogPush(); }catch(e){}
+  try{ if (typeof ushPush==='function' && mlogOn()) await ushPush(true); }catch(e){}
+  location.reload();
+}
+setTimeout(updCheck, 60000);
+setInterval(updCheck, 15*60000);
+setInterval(()=>{ if (UPD.pending) updMaybeReload(); }, 60000);
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') updCheck(); });
+(function(){
+  const st = document.createElement('style');
+  st.textContent = `.acct-syncbox{margin:10px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(8,16,30,.35);font-size:13px;line-height:1.45}
+.acct-syncbox .acct-line{margin:0 0 4px;overflow-wrap:anywhere}
+.acct-syncbox .acct-sync{display:block;font-weight:700;color:#86efac}
+.acct-syncbox .acct-sync.bad{color:#fca5a5}
+.acct-devs{margin:6px 0 0;padding-left:18px}
+.acct-devs li{margin:0 0 4px}`;
+  document.head.appendChild(st);
+})();
+window.syncDiag = () => ({status:AUTH.status, err:AUTH.err, mode:AUTH.mode||'live', lastSync:AUTH.lastSync, devices:(DEVS.list||[]).map(d=>({lab:d.lab, ver:d.ver, seen:d.seen, uniAt:d.uniAt})), build:APP_BUILD, pendingUpdate:UPD.pending});
 </script>
 </body>
 </html>
