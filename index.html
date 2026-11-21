@@ -1325,6 +1325,10 @@ table.ftab th,.ftab th{white-space:nowrap;overflow-wrap:normal;word-break:normal
 .ui-dots{grid-area:viz;justify-self:end;display:inline-flex;gap:3px;flex-wrap:nowrap}.ui-dots>i{width:9px;height:9px;border-radius:50%;display:block}.ui-dots>i.w{background:var(--ui-g)}.ui-dots>i.l{background:var(--ui-r)}.ui-dots>i.p{background:#64748b}
 @media (max-width:380px){ .ui-seq{gap:2px} .ui-seq>i{width:8px;height:8px} }
 .ui-seq{display:grid;gap:3px;align-self:center}.ui-seq2{align-self:start;margin-top:2px}
+.cx-rate{grid-area:viz;justify-self:end;align-self:start;display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.05}
+.cx-rate .pc{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap}
+.cx-rate .sub{font-size:10.5px;color:var(--mut);font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cx-rate .cx-hi{color:#4ade80}.cx-rate .cx-mid{color:#fbbf24}.cx-rate .cx-lo{color:#f87171}
 .ui-rec>i{display:block;height:100%}.ui-rec>i.w{background:var(--ui-g)}.ui-rec>i.l{background:var(--ui-r)}
 /* Judge */
 .court2 .c-judge,.c-judge{border:1px solid rgba(96,165,250,.35);border-radius:var(--ui-rad);background:linear-gradient(180deg,rgba(37,99,235,.14),rgba(15,32,64,.28));padding:12px;gap:8px}
@@ -18278,9 +18282,14 @@ function uiReasonLi(x, side){
   const P = uiReasonParts(raw);
   const sideCls = side==='lose' ? 'lose' : side==='win' ? 'win' : 'neu';
   let viz = '';
-  const seq = (x && typeof x==='object' && Array.isArray(x.seq) && x.seq.length) ? x.seq.slice(-20) : null;
-  if (seq){ const nm = {w:'hit', l:'miss', p:'push'}; const isRec = !P.frac; const cols = Math.min(10, seq.length);
-    viz = `<span class="ui-dots ui-seq${seq.length>10?' ui-seq2':''}" style="grid-template-columns:repeat(${cols},auto)" title="${(P.frac && P.frac[1]>seq.length)?`Last ${seq.length} games, `:''}oldest → newest: ${seq.map(s=>isRec?({w:'W',l:'L',p:'T'}[s]):nm[s]).join(', ')}">${seq.map(s=>`<i class="${s}"></i>`).join('')}</span>`; }
+  // v84 (Stanley picked option C): count rows show a big colored hit rate with "X of N" under it, colored by what it means for the pick
+  let k = null, n = null;
+  if (P.frac){ k = P.frac[0]; n = P.frac[1]; } else if (P.rec){ k = P.rec[0]; n = P.rec[0]+P.rec[1]; }
+  const seq = (x && typeof x==='object' && Array.isArray(x.seq) && x.seq.length) ? x.seq : null;
+  if (k==null && seq){ k = seq.filter(c=>c==='w').length; n = seq.length; }
+  if (k!=null && n>0){ const r = k/n;
+    const cls = side==='lose' ? (r>=0.55 ? 'cx-lo' : 'cx-mid') : (r>=0.6 ? 'cx-hi' : r>=0.45 ? 'cx-mid' : 'cx-lo');
+    viz = `<span class="cx-rate" title="${k} of ${n}"><span class="pc ${cls}">${Math.round(r*100)}%</span><span class="sub">${k} of ${n}</span></span>`; }
   // v83: no progress bars or wins-first dots in reason rows: per-game circles or plain text only
   const val = uiColorNums(esc(P.value));
   return `<li class="rs-row rs-${sideCls}${P.label?'':' rs-nolab'}">${P.label?`<span class="rs-lab">${esc(P.label)}</span>`:''}<span class="rs-val">${val}${tag?` <em>(${esc(tag)})</em>`:''}</span>${viz}</li>`;
