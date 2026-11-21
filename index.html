@@ -934,7 +934,7 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
   .auth-modal{align-items:flex-end;padding:0}
   .auth-card{max-width:none;border-radius:22px 22px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));max-height:92vh}
 }
-@media (max-width:380px){ .acct-btn:not(.signed) svg{display:none} }
+@media (max-width:380px){ .acct-btn:not(.signed) svg{display:none} .topbar .top-actions{gap:4px} }
 @media (max-width:430px){ .acct-btn.signed .acct-name{display:none} .acct-btn.signed{padding:0 6px} }
 /* Verdict+ : smart guessing chips, community learning pill, Safari redirect notice */
 .pk-assume{font-size:12.5px;color:var(--txt2);margin:8px 2px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 8px;line-height:1.45}
@@ -1181,7 +1181,7 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .live-tag-final{color:var(--txt);background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}
 .settle-cue{display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:10px 14px;border-radius:16px;background:linear-gradient(180deg,rgba(8,187,214,.28),#13364d);border:1px solid rgba(34,211,238,.5);color:var(--txt);font-weight:700;font-size:14px;line-height:1.35;box-shadow:0 0 18px -6px rgba(34,211,238,.45)}
 .settle-cue-x{margin-left:auto;flex:none;background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:2px 10px;font-size:16px;line-height:1;cursor:pointer;min-width:32px;min-height:32px}
-.trk-settled{margin:18px 0 8px}
+.trk-settled .trk-settled-hint{padding:0 4px 2px}
 .trk-settled .bet-cards{margin-top:10px}
 .trk-settled-more{margin-top:12px}
 .av-nodata{margin:6px 2px 10px;font-size:12.5px;color:var(--mut)}
@@ -7945,6 +7945,8 @@ const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false, spor
   const t = (typeof loadJSON==='function') ? loadJSON(TRACKER_LS, null) : null;
   if (t && typeof t==='object' && ['day','week','month','year','all'].includes(t.period)) trackerUI.period = t.period;
 })();
+var TRK_SETTLED_LS = 'bl_trk_settled_open';
+try{ trackerUI.settledOpen = localStorage.getItem(TRK_SETTLED_LS)==='1'; }catch(e){}
 function saveTrackerPeriod(){ try{ saveJSON(TRACKER_LS, {period:trackerUI.period||'all'}); }catch(e){} }
 function resetTrackerOpen(){
   // v89: do not collapse Pending or reset Settled when leaving the tab
@@ -8218,11 +8220,14 @@ function renderTracker(pf){
       ${betCards ? `<div class="bet-cards">${betCards}</div>` : `<div class="bet-empty">${bets.length ? 'No pending bets right now.' : 'No bets yet. Tail one above, or use <b>Tail</b> on a play card.'}</div>`}
     </div>
   </details>
-  ${settledN ? `<div class="trk-settled">
-    <div class="section-title"><h2><span class="h-emo" aria-hidden="true">✅</span>Settled</h2><span class="hint">${showAllSettled?'Every settled bet, newest first. Already counted in your record.' : 'Last 7 days, newest first. Already counted in your record.'}</span></div>
+  ${settledN ? `<details class="dd trk-dd trk-settled" id="settledBets" ${trackerUI.settledOpen?'open':''}>
+    <summary>✅ Settled (${settledAll.length})</summary>
+    <div class="trk-dd-body">
+    <div class="trk-settled-hint hint">${showAllSettled?'Every settled bet, newest first. Already counted in your record.' : 'Last 7 days, newest first. Already counted in your record.'}</div>
     ${settledCards ? `<div class="bet-cards settled-cards">${settledCards}</div>` : `<div class="bet-empty">No settled bets in the last 7 days.</div>`}
     ${settledAll.length>settledRecent.length ? `<button type="button" class="btn sm trk-settled-more" data-toggle-settled-all aria-expanded="${showAllSettled?'true':'false'}">${showAllSettled?'Show last 7 days':'Show all'} (${settledAll.length})</button>` : ''}
-  </div>` : ''}`;
+    </div>
+  </details>` : ''}`;
   function currentOddsType(){
     const el = document.querySelector('#betForm input[name="oddsType"]:checked');
     return (el && el.value) || 'american';
@@ -8323,6 +8328,8 @@ function renderTracker(pf){
   $('#view').querySelectorAll('[data-del]').forEach(s=>s.onclick=()=>{ if(!confirm('Delete this bet?')) return; if (typeof tombstoneBet==='function') tombstoneBet(s.dataset.del); bets=bets.filter(x=>x.id!==s.dataset.del); saveBets(); renderTracker(); });
   const allDet = $('#view').querySelector('details.trk-allbets');
   if (allDet) allDet.addEventListener('toggle', ()=>{ trackerUI.allOpen = !!allDet.open; });
+  const setDet = $('#view').querySelector('details.trk-settled');
+  if (setDet) setDet.addEventListener('toggle', ()=>{ const o = !!setDet.open; if (o===!!trackerUI.settledOpen) return; trackerUI.settledOpen = o; try{ localStorage.setItem(TRK_SETTLED_LS, o?'1':'0'); }catch(e){} });
   const sportDet = $('#view').querySelector('details[data-trk="sport"]');
   if (sportDet) sportDet.addEventListener('toggle', ()=>{ trackerUI.sportOpen = !!sportDet.open; });
   const oddsDet = $('#view').querySelector('details[data-trk="odds"]');
@@ -19284,7 +19291,7 @@ function sync2Hash(s){ s = String(s==null?'':s); let h = 0; for (let i=0;i<s.len
 var SYNC2_SKIP_S = new Set(['ntfyOn']);   // notifications are a per-device permission
 var SYNC2_WATCH = null;
 function sync2Watch(){
-  if (!SYNC2_WATCH) SYNC2_WATCH = new Set([LS.settings, LS.filters, LS.filterViews, AG_SEL_LS, SPORT_SEL_LS, TRACKER_LS, AV_FLAG_LS, LS.pulledDismiss].filter(Boolean));
+  if (!SYNC2_WATCH) SYNC2_WATCH = new Set([LS.settings, LS.filters, LS.filterViews, AG_SEL_LS, SPORT_SEL_LS, TRACKER_LS, TRK_SETTLED_LS, AV_FLAG_LS, LS.pulledDismiss].filter(Boolean));
   return SYNC2_WATCH;
 }
 /* current local value (JSON string) of every synced key */
@@ -19298,6 +19305,7 @@ function sync2Local(){
   if (typeof AG_SEL!=='undefined' && Array.isArray(AG_SEL)) out['ag'] = JSON.stringify(AG_SEL.slice().sort());
   if (typeof SPORT_SEL!=='undefined' && SPORT_SEL) out['sport'] = JSON.stringify({sel:(SPORT_SEL.sel||[]).slice().sort(), en:(SPORT_SEL.en||[]).slice().sort()});
   if (typeof trackerUI!=='undefined') out['period'] = JSON.stringify(trackerUI.period||'all');
+  if (typeof trackerUI!=='undefined') out['tsOpen'] = JSON.stringify(!!trackerUI.settledOpen);
   out['nob'] = JSON.stringify(loadJSON(AV_FLAG_LS, null) || {f:{}, h:{}});
   out['pdismiss'] = JSON.stringify(loadJSON(LS.pulledDismiss, {}) || {});
   return out;
@@ -19401,6 +19409,7 @@ function sync2ApplyKey(k, v, A){
   if (k==='ag'){ if (Array.isArray(val)){ AG_SEL = val.filter(id=>LMAP[id]); A.ag = true; } return; }
   if (k==='sport'){ if (val && Array.isArray(val.sel) && typeof SPORT_SEL!=='undefined'){ SPORT_SEL.sel = val.sel.filter(id=>LMAP[id]); if (Array.isArray(val.en)) SPORT_SEL.en = val.en.slice(); A.sport = true; } return; }
   if (k==='period'){ if (typeof trackerUI!=='undefined' && typeof val==='string'){ trackerUI.period = val; A.period = true; } return; }
+  if (k==='tsOpen'){ if (typeof trackerUI!=='undefined'){ trackerUI.settledOpen = !!val; A.tsOpen = true; } return; }
   if (k==='nob'){ A.nob = val; A.board = true; return; }
   if (k==='pdismiss'){ A.pdismiss = val; A.board = true; return; }
 }
@@ -19457,6 +19466,7 @@ function sync2Apply(d){
     if (A.ag) sync2Set(AG_SEL_LS, AG_SEL);
     if (A.sport) sync2Set(SPORT_SEL_LS, SPORT_SEL);
     if (A.period){ sync2Set(TRACKER_LS, {period:trackerUI.period}); _lastPeriodStr = localStorage.getItem(TRACKER_LS); }
+    if (A.tsOpen){ sync2Set(TRK_SETTLED_LS, trackerUI.settledOpen?'1':'0'); if (ui.tab==='tracker'){ const sd = document.querySelector('#view details.trk-settled'); if (sd) sd.open = !!trackerUI.settledOpen; } }
     if (A.nob){ sync2Set(AV_FLAG_LS, A.nob); try{ AV.flags = null; AV.fver = (AV.fver||0) + 1; }catch(e){} }
     if (A.pdismiss) sync2Set(LS.pulledDismiss, A.pdismiss);
     // re-hash so these applied values don't look like local edits
