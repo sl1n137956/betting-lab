@@ -2572,7 +2572,10 @@ function fmtPx(am, c){
   const cc = (c!=null && isFinite(+c)) ? +c : (a!=null ? imp(a) : null);
   if (a==null && cc==null) return '—';
   const m = pxMode();
-  if (m==='am') return a!=null ? fmtAmRaw(a) : fmtCents(cc);
+  // v78: long shots / heavy favorites (cents would round to <=5¢ or >=95¢) read better as American odds, e.g. +21,972 / -2,400
+  const amK = x => { const r = Math.round(+x); return (r>0?'+':r<0?'-':'')+Math.abs(r).toLocaleString('en-US'); };
+  if (cc!=null && cc>0 && cc<1 && (cc<=0.055 || cc>=0.945)){ const a2 = a!=null ? a : (cc>=0.5 ? -100*cc/(1-cc) : 100*(1-cc)/cc); return amK(a2); }
+  if (m==='am') return a!=null ? amK(a) : fmtCents(cc);
   if (m==='c' || a==null) return fmtCents(cc);
   return fmtCents(cc)+' / '+fmtAmRaw(a);
 }
@@ -18201,7 +18204,7 @@ var UI_PRICEISH = /no side wins every night|priced this|prediction markets|break
 function uiFactorText(x, who){
   let t = String((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x || '').trim();
   if (!t || UI_PRICEISH.test(t)) return '';
-  t = t.replace(/\s*\((?:see Matchup|worth about[^)]*|rule points[^)]*|can't be measured[^)]*)\)\s*/gi, ' ').replace(/\s+/g,' ').trim();
+  t = t.replace(/\s*\((?:see Matchup|burden [^)]*|worth about[^)]*|rule points[^)]*|can't be measured[^)]*)\)\s*/gi, ' ').replace(/\s+/g,' ').trim();
   let m;
   if ((m = t.match(/^Last (\d+): (over|under) in (\d+) of (\d+)(.*)$/i))) t = `${m[2].toLowerCase()} in ${m[3]} of the last ${m[4]}${m[5]}`;
   else if ((m = t.match(/^Season: (over|under) in (\d+) of (\d+)(.*)$/i))) t = `${m[1].toLowerCase()} in ${m[2]} of ${m[3]} this season${m[4]}`;
