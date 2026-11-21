@@ -20741,7 +20741,7 @@ window.v95Status = () => ({ush:{docs:USH.docs.length, at:USH.at, err:USH.err, pu
      last upload, so Settings › Account shows exactly which device is behind and why.
    - Sync now = full pull + push of everything (settings, bets, filters, Tracked universe, learning, pick log).
    - Auto-update: an open tab (e.g. the always-on VPS) reloads itself into a new version when it's idle. */
-var APP_BUILD = 103;
+var APP_BUILD = 104;
 MR.range = 7;
 var DEVS = {list:[], at:0, err:'', busy:false};
 function devLabel(){ return (typeof mchkDev==='function') ? mchkDev() : {id:AUTH.deviceId, lab:'a device'}; }
@@ -21182,6 +21182,401 @@ setTimeout(function lbKick(){ if (typeof UNI_ST!=='undefined' && UNI_ST.ready) l
   };
 })();
 window.lockStatus103 = () => ({backfill:LOCK_BF, legacyOpen:[...UNI.values()].filter(r=>r.lk && r.lk.L).length});
+/* ===== v104: capper-style courtroom (Stanley: "its gotta be detailed and correct").
+   "Why this could win" / "Why this could lose" / "The Judge says" now read like a sharp capper's write-up:
+   short bullets, each built on one real number from the app's own data, with a quick "so what".
+   Rules: every number comes from data already loaded (game logs, team last-5 rows, injury report, season
+   scoring, spread/total for game script). No price talk. If a fact can't be checked it is left out.
+   Strongest signal first; the same stat never shows on both sides. Labels and layout are unchanged. */
+APP_BUILD = 104;
+var CAP4_MAX = 5;
+function cap4Up(s){ s = String(s||''); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+function cap4Rs(k, n){ return n>0 ? Math.abs(k/n-0.5)*Math.sqrt(n)*2 : 0; }
+function cap4F(x, d){ return (+x).toFixed(d==null?1:d); }
+function cap4Num(v){ return Number.isInteger(+v) ? String(+v) : cap4F(v,1); }
+function cap4Cnt(xs, fn){ return (xs||[]).filter(fn).length; }
+function cap4Day(d){ const t = new Date(d); return isFinite(+t) ? t : null; }
+function cap4Txt(x){ return String((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : (x==null?'':x)).trim(); }
+function cap4Head(t){ return String(t||'').replace(/^[A-Za-z][A-Za-z0-9 '’/+.-]{1,24}:\s+/,'').split(/\s+—\s+/)[0].split(/;\s+/)[0].trim(); }
+function cap4Lc(t){ t = String(t||''); return /^(The|These|Over|Under|Both|Just|Averaging|Nothing|No|His|Second|Only|A|An|It|He|They|Even|Fresh|Up)\b/.test(t) ? t.charAt(0).toLowerCase()+t.slice(1) : t; }
+function cap4J(x){ return (x && x.j) || cap4Head(x && x.txt); }
+var CAP4_DROP = /^(?:Lineup confirmed|Lineups? (?:not|are not)|Home and road records weren'?t|Season scoring averages weren'?t|No head-to-head results|The injury report hasn'?t|Starting goalies are not confirmed|Probable pitchers are not|Weather looks fine)/i;
+var CAP4_STAT = {pts:'points', reb:'rebounds', ast:'assists', threes:'3s', stl:'steals', blk:'blocks', pra:'PRA', pr:'pts+reb', pa:'pts+ast', ar:'reb+ast', to:'turnovers', sog:'shots on goal', goals:'goals', pass_yds:'passing yards', rush_yds:'rushing yards', rec_yds:'receiving yards', rec:'catches'};
+function cap4LgLabel(lg){ return (typeof LMAP!=='undefined' && LMAP[lg] && LMAP[lg].label) || String(lg||'').toUpperCase(); }
+function cap4Basket(lg){ return /^(nba|wnba|ncaab|ncaaw)$/.test(lg||''); }
+function cap4Foot(lg){ return /^(nfl|ncaaf)$/.test(lg||''); }
+function cap4Soccer(lg){ return !!(typeof LMAP!=='undefined' && LMAP[lg] && /^soccer\//.test(LMAP[lg].path||'')); }
+function cap4Lines(g){
+  // the spread and total the books are hanging on this game (used only for game script, never as price talk)
+  try{
+    const A = g && g.analysis; if (!A) return null;
+    const sp = A.spread && A.spread.sides || {}, to = A.total && A.total.sides || {};
+    let hp = sp.home && sp.home.best && sp.home.best.point, ap = sp.away && sp.away.best && sp.away.best.point;
+    if (hp==null && ap!=null) hp = -ap; if (ap==null && hp!=null) ap = -hp;
+    const tot = (to.over && to.over.best && to.over.best.point) ?? (to.under && to.under.best && to.under.best.point);
+    if (hp==null || tot==null || !isFinite(+hp) || !isFinite(+tot)) return null;
+    return {home:+hp, away:+ap, total:+tot};
+  }catch(e){ return null; }
+}
+function cap4Item(label, txt, s, kind, j){ return {txt: label ? `${label}: ${txt}` : txt, s: s||0, kind: kind||'cap', cap4:true, j: j||''}; }
+function cap4Finish(win, lose){
+  // strongest first, no repeats (same text or same stat kind on both sides), at most 5 per side
+  const norm = x => cap4Head(x.txt).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const seen = new Set(), seenK = new Set();
+  const pick = arr => arr.slice().sort((a,b)=>(b.s||0)-(a.s||0)).filter(x=>{ const k = norm(x); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+  const W = pick(win), L = pick(lose);
+  // a stat key (e.g. 'p-l10') belongs to one side only: keep it where its signal is stronger
+  const keyed = {}; for (const x of W.concat(L)) if (x.key){ if (!keyed[x.key] || (x.s||0) > (keyed[x.key].s||0)) keyed[x.key] = x; }
+  const ok = x => !x.key || keyed[x.key]===x;
+  const inj2 = arr => { let n = 0; return arr.filter(x=>x.kind!=='inj' || ++n<=2); };
+  return {win: inj2(W.filter(ok)).slice(0, CAP4_MAX), lose: inj2(L.filter(ok)).slice(0, CAP4_MAX)};
+}
+function cap4Call(v, pick, fail, ws, ls){
+  const V = String(v||'').toUpperCase();
+  if (fail){ const m = /turned (.+?) off for strict picks/i.exec(String(fail)); if (m) fail = `the app has ${m[1]} switched off for picks after it lost in testing`; }
+  fail = fail && !(typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(fail)) && (typeof uiCleanTxt!=='function' || uiCleanTxt(fail)) ? String(fail).replace(/\.$/,'') : '';
+  if (/^(BET|GOOD)$/.test(V)) return `I like ${pick} here, so it’s a bet.`;
+  if (/^(WATCH|WATCHLIST|MAYBE LATER)$/.test(V)) return fail ? `It’s close, but ${uiLc(fail)}, so wait and look again before the game.` : `Lean ${pick}, but it’s close, so wait and look again before the game.`;
+  if (ws > ls && fail) return `The case is there, but ${uiLc(fail)}, so skip it.`;
+  if (ls >= ws && ls > 0) return `The case against is stronger, so skip it.`;
+  return `Not enough here to bet ${pick}, so skip it.`;
+}
+function cap4Judge(o){
+  // 1–2 sentences: the 2 strongest reasons for, the biggest worry, then the call
+  let w = (o.win||[]).map(cap4J).filter(Boolean), l = (o.lose||[]).map(cap4J).filter(Boolean);
+  if (o.who){ // name the player once, then "he"
+    const esc4 = String(o.who).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), re = new RegExp('^'+esc4+"('s)?\\s");
+    let named = false; const he = t => { if (!re.test(t)) return t; if (!named){ named = true; return t; } return t.replace(re, (m0, s1)=> s1 ? 'his ' : 'he '); };
+    w = w.map(he); l = l.map(he);
+  }
+  const ws = (o.win||[]).slice(0,3).reduce((s,x)=>s+(x.s||0),0), ls = (o.lose||[]).slice(0,3).reduce((s,x)=>s+(x.s||0),0);
+  const call = cap4Call(o.v, o.pick, o.fail, ws, ls);
+  if (o.started) return 'The game already started, so this one is off the table.';
+  if (!w.length && !l.length) return 'Nothing in the numbers stands out either way. ' + call;
+  let first;
+  const W2 = w.slice(0,2).map((x,i)=>i?cap4Lc(x):x);
+  if (w.length && l.length){
+    first = `${W2.join(', and ')}${W2.length>1?'':''}; the worry is ${cap4Lc(l[0])}.`;
+    if (first.length > 260) first = `${W2[0]}; the worry is ${cap4Lc(l[0])}.`;
+  } else if (w.length) first = `${W2.join(', and ')}, and nothing big works against it.`;
+  else first = `Nothing strong in its favor, and ${cap4Lc(l[0])}.`;
+  return cap4Up(first) + ' ' + call;
+}
+
+/* ---------- props ---------- */
+function cap4PropMissed(p){
+  // team games since this player's last logged game, counted only up to the newest game any teammate on the board has logged
+  try{
+    const g = p.g, rows = (p.raw && p.raw.rows) || [];
+    if (!g || !g.fx || !g.fx.sides || !rows.length) return null;
+    const tk = p.home ? 'home' : 'away', l5 = (g.fx.sides[tk] && g.fx.sides[tk].l5) || [];
+    const last = cap4Day(rows[rows.length-1].date); if (!last || !l5.length) return null;
+    let feed = last;
+    for (const q of (typeof props!=='undefined' && props) || []){
+      if (!q || q===p || !q.raw || q.raw.teamId==null || String(q.raw.teamId)!==String(p.raw.teamId) || !q.raw.rows || !q.raw.rows.length) continue;
+      const d = cap4Day(q.raw.rows[q.raw.rows.length-1].date); if (d && d > feed) feed = d;
+    }
+    const start = g.start ? +new Date(g.start) : Date.now();
+    const missed = l5.filter(x=>{ const d = cap4Day(x.d); return d && +d > +last + 6*3600e3 && +d <= +feed + 6*3600e3 && +d < start; });
+    return {n: missed.length, all5: missed.length>=l5.length && l5.length>=5, team: (g[tk] && g[tk].short) || p.team || ''};
+  }catch(e){ return null; }
+}
+function cap4PropInj(p){
+  try{
+    const g = p.g, tk = p.home ? 'home' : 'away';
+    const list = (g && g.fx && g.fx.inj && g.fx.inj[tk]) || [];
+    const nm = String(p.playerName||'').toLowerCase().replace(/[^a-z ]/g,'').trim();
+    const i = list.find(x=>String(x.n||'').toLowerCase().replace(/[^a-z ]/g,'').trim()===nm);
+    if (!i) return null;
+    const st = typeof prettyInjStatus==='function' ? prettyInjStatus(i.st) : String(i.st||'');
+    return {st, typ: i.typ ? String(i.typ).toLowerCase() : ''};
+  }catch(e){ return null; }
+}
+function capProp(p){
+  if (!p || !p.feat || p.line==null) return null;
+  const f = p.feat, L = +p.line, under = p.side==='under', g = p.g || {}, lg = p.league || g.league;
+  const SD = under ? 'under' : 'over', OT = under ? 'over' : 'under', SDc = cap4Up(SD), OTc = cap4Up(OT);
+  const hit = v => under ? v < L : v > L, miss = v => under ? v > L : v < L;
+  const who = typeof shortPlayerName==='function' ? shortPlayerName(p.playerName) : (p.playerName||'He');
+  const win = [], lose = [];
+  const put = (good, it) => (good ? win : lose).push(it);
+  const opp = p.opp || ((p.home ? g.away : g.home) || {}).short || '';
+  // availability first: it changes everything else
+  const ms = cap4PropMissed(p), inj = cap4PropInj(p);
+  const out = inj && /^out$/i.test(inj.st);
+  if (ms && ms.n>=2 && !out){
+    const it = cap4Item('Return', `${who} hasn't played in ${ms.team}'s last ${ms.n}${ms.all5?'+':''} games, so if he goes tonight it's his first game back — minutes could be capped`, 2.6, 'avail', `${who} hasn't played in ${ms.team}'s last ${ms.n}${ms.all5?'+':''} games`);
+    it.key = 'p-ret'; put(under, it);
+  }
+  if (inj && /questionable|doubtful|day-to-day/i.test(inj.st)){
+    put(under, Object.assign(cap4Item('Injuries', `${who} is listed ${inj.st.toLowerCase()}${inj.typ?` (${inj.typ})`:''} — even if he plays, the workload could be limited`, 1.8, 'avail', `${who} is listed ${inj.st.toLowerCase()}`), {key:'p-inj'}));
+  }
+  // season hit rate on this exact line
+  if (f.n>=8){
+    let k, ko, n, where = 'this season';
+    if (f.n<=(f.seasonVals||[]).length){ const xs = f.seasonVals||[]; n = xs.length; k = cap4Cnt(xs, hit); ko = cap4Cnt(xs, miss); }
+    else if (!Number.isInteger(L) && f.seasonHit!=null){ n = f.n; const ov = Math.round(f.seasonHit*n); k = under ? n-ov : ov; ko = n-k; }
+    else { const xs = f.seasonVals||[]; n = xs.length; k = cap4Cnt(xs, hit); ko = cap4Cnt(xs, miss); where = `in his last ${n}`; }
+    if (n>=8){
+      const r = k/n;
+      if (r>=0.6) put(true, Object.assign(cap4Item('Season', `${SDc} ${L} in ${k}/${n} games ${where}${f.seasonAvg!=null?` (avg ${cap4F(f.seasonAvg)})`:''} — ${r>=0.7?'a strong base rate on this exact number':'it cashes more often than not'}`, cap4Rs(k,n)+0.3, 'season', `${who} is ${k}/${n} on the ${SD} ${where}`), {key:'p-szn'}));
+      else if (ko/n>=0.6) put(false, Object.assign(cap4Item('Season', `${OTc} ${L} in ${ko}/${n} games ${where}${f.seasonAvg!=null?` (avg ${cap4F(f.seasonAvg)})`:''} — this number usually goes the other way`, cap4Rs(ko,n)+0.3, 'season', `${who} is ${ko}/${n} on the ${OT} ${where}`), {key:'p-szn'}));
+    }
+  }
+  // last 10 with the floor / ceiling (consistency)
+  const t10 = f.l10vals || [];
+  if (t10.length>=5){
+    const n = t10.length, k = cap4Cnt(t10, hit), ko = cap4Cnt(t10, miss), lo = Math.min(...t10), hi = Math.max(...t10);
+    if (k/n>=0.6){
+      const ext = k>=Math.ceil(n*0.8) ? (under ? `, highest ${cap4Num(hi)}` : `, lowest ${cap4Num(lo)}`) : '';
+      const so = k===n ? 'hasn’t missed this number once' : k>=Math.ceil(n*0.8) ? 'very consistent' : 'trending the right way';
+      put(true, Object.assign(cap4Item('Last 10', `${SDc} ${L} in ${k} of his last ${n} (avg ${cap4F(f.l10avg)}${ext}) — ${so}`, cap4Rs(k,n)+0.4, 'l10', `${who} has gone ${SD} in ${k} of his last ${n}`), {key:'p-l10'}));
+    } else if (ko/n>=0.6){
+      put(false, Object.assign(cap4Item('Last 10', `${OTc} ${L} in ${ko} of his last ${n} (avg ${cap4F(f.l10avg)}) — recent form points the other way`, cap4Rs(ko,n)+0.4, 'l10', `${who} has gone ${OT} in ${ko} of his last ${n}`), {key:'p-l10'}));
+    }
+    if (f.l10sd!=null && f.l10n>=6 && L && f.l10sd > L*0.45 && hi-lo >= Math.max(2, L*0.8))
+      lose.push(Object.assign(cap4Item('Swings', `His last ${n} range from ${cap4Num(lo)} to ${cap4Num(hi)} — one big or quiet night decides this`, 0.8, 'var', `his last ${n} swing from ${cap4Num(lo)} to ${cap4Num(hi)}`), {key:'p-var'}));
+  }
+  // current streak on this line
+  const sv = f.seasonVals || [];
+  if (sv.length>=3){
+    let a = 0; for (let i=sv.length-1;i>=0 && hit(sv[i]);i--) a++;
+    let b = 0; for (let i=sv.length-1;i>=0 && miss(sv[i]);i--) b++;
+    if (a>=3) put(true, Object.assign(cap4Item('Streak', `${SDc} ${L} in ${a} STRAIGHT games — he's locked in on this number`, 0.35*a+0.3, 'streak', `${who} has gone ${SD} in ${a} STRAIGHT`), {key:'p-str'}));
+    else if (b>=3) put(false, Object.assign(cap4Item('Streak', `${OTc} ${L} in ${b} STRAIGHT games — the recent run goes the other way`, 0.35*b+0.3, 'streak', `${who} has gone ${OT} in ${b} STRAIGHT`), {key:'p-str'}));
+  }
+  // last 5 average vs the line
+  if (f.l5n>=3 && f.l5avg!=null){
+    const d = f.l5avg - L, good = under ? d<0 : d>0, gap = Math.abs(d);
+    if (gap >= Math.max(0.5, L*0.08)) put(good, Object.assign(cap4Item('Last 5', `Averaging ${cap4F(f.l5avg)} over his last ${f.l5n} vs the ${L} line — ${good?`${cap4F(gap)} ${under?'under':'clear of'} the number lately`:`running ${cap4F(gap)} ${under?'over':'short of'} the number lately`}`, Math.min(2, gap/Math.max(1, L*0.15)), 'l5', `${who} is averaging ${cap4F(f.l5avg)} over his last ${f.l5n} against a ${L} line`), {key:'p-l5'}));
+  }
+  // minutes
+  if (f.minL5!=null && f.minSzn!=null && f.minSzn>=10 && Math.abs(f.minL5-f.minSzn)>=2 && !(ms && ms.n>=2)){
+    const up = f.minL5 > f.minSzn;
+    put(up !== under, Object.assign(cap4Item('Minutes', `${cap4F(f.minL5)} a game over his last 5 vs ${cap4F(f.minSzn)} on the season — ${up?'more run, more chances':'less run, fewer chances'}`, Math.min(1.6, Math.abs(f.minL5-f.minSzn)/3), 'min', `${who}'s minutes are ${up?'up':'down'} (${cap4F(f.minL5)} over his last 5 vs ${cap4F(f.minSzn)})`), {key:'p-min'}));
+  }
+  // home / road split
+  const spv = f.splitVals || [];
+  if (spv.length>=5){
+    const n = spv.length, k = cap4Cnt(spv, hit), ko = cap4Cnt(spv, miss), where = f.home ? 'home' : 'road';
+    if (k/n>=0.6) put(true, Object.assign(cap4Item(f.home?'Home games':'Road games', `${SDc} ${L} in ${k} of ${n} ${where} games — the setting suits it`, cap4Rs(k,n), 'split', `${who} has gone ${SD} in ${k} of ${n} ${where} games`), {key:'p-split'}));
+    else if (ko/n>=0.6) put(false, Object.assign(cap4Item(f.home?'Home games':'Road games', `${OTc} ${L} in ${ko} of ${n} ${where} games`, cap4Rs(ko,n), 'split', `${who} has gone ${OT} in ${ko} of ${n} ${where} games`), {key:'p-split'}));
+  }
+  // this opponent
+  const hv = f.h2hVals || [];
+  if (hv.length>=2 && opp){
+    const n = hv.length, k = cap4Cnt(hv, hit), ko = cap4Cnt(hv, miss), avg = hv.reduce((s,x)=>s+x,0)/n;
+    if (k/n>=0.65) put(true, Object.assign(cap4Item(`Vs ${opp}`, `${SDc} ${L} in ${k} of ${n} games vs ${opp} this season (avg ${cap4F(avg)})`, cap4Rs(k,n)+0.2, 'h2h'), {key:'p-h2h'}));
+    else if (ko/n>=0.65) put(false, Object.assign(cap4Item(`Vs ${opp}`, `${OTc} ${L} in ${ko} of ${n} games vs ${opp} this season (avg ${cap4F(avg)})`, cap4Rs(ko,n)+0.2, 'h2h'), {key:'p-h2h'}));
+  }
+  // game script from the spread and implied team total
+  const LN = cap4Lines(g), tk = p.home ? 'home' : 'away';
+  if (LN && (cap4Basket(lg) || cap4Foot(lg))){
+    const pt = LN[tk], itt = LN.total/2 - pt/2, team = (g[tk] && g[tk].short) || p.team || '';
+    const comp = cap4Foot(lg) ? 7 : 7.5, blow = cap4Foot(lg) ? 11.5 : (lg==='ncaab' ? 14 : 11);
+    const sp = Math.abs(pt);
+    const base = pt===0 ? `${team} are in a pick’em with a ${cap4F(itt)} implied team total` : `${team} are ${cap4Num(sp)}-point ${pt<0?'favorites':'underdogs'} with a ${cap4F(itt)} implied team total`;
+    if (sp<=comp) put(!under, Object.assign(cap4Item('Game script', `${base} — should be competitive enough for full minutes`, 0.6, 'script', `a ${cap4Num(sp)}-point spread should keep it competitive for full minutes`), {key:'p-script'}));
+    else if (sp>=blow) put(under, Object.assign(cap4Item('Game script', `${base} — blowout risk, so starters could sit late`, 1.2, 'script', `a ${cap4Num(sp)}-point spread brings blowout risk`), {key:'p-script'}));
+  }
+  // opponent defense (points allowed) for scoring props
+  if (cap4Basket(lg) && /^(pts|pra|pr|pa)$/.test(p.kind||'') && typeof slateRanks==='function'){
+    const ra = slateRanks(lg), ok = p.home ? 'away' : 'home', O = g[ok];
+    const r = ra && O && ra.byId[String(O.id)];
+    if (r && ra.n>=8){
+      if (r.def <= Math.ceil(ra.n/4)) put(under, Object.assign(cap4Item('Matchup', `${O.short} allow just ${cap4F(r.pa)} points a game, ${ordN(r.def)}-fewest of the ${ra.n} ${cap4LgLabel(lg)} teams on today's board — a tough defense to score on`, 1.0, 'opp', `${O.short} allow just ${cap4F(r.pa)} a game (${ordN(r.def)}-fewest on today's board)`), {key:'p-opp'}));
+      else if (r.def > ra.n - Math.ceil(ra.n/4)) put(!under, Object.assign(cap4Item('Matchup', `${O.short} allow ${cap4F(r.pa)} points a game, ${ordN(ra.n - r.def + 1)}-most of the ${ra.n} ${cap4LgLabel(lg)} teams on today's board — a soft spot to score`, 1.0, 'opp', `${O.short} allow ${cap4F(r.pa)} a game (${ordN(ra.n - r.def + 1)}-most on today's board)`), {key:'p-opp'}));
+    }
+  }
+  // rest
+  if (!(ms && ms.n>=2) && f.rest!=null){
+    if (f.rest<=1) put(under, Object.assign(cap4Item('Rest', `Second night of a back-to-back — legs and minutes can dip`, 0.9, 'rest', `${who} is on the second night of a back-to-back`), {key:'p-rest'}));
+    else if (f.rest>=3 && f.rest<=6) put(!under, Object.assign(cap4Item('Rest', `${f.rest} days of rest coming in — fresh legs`, 0.4, 'rest', `${who} has had ${f.rest} days of rest`), {key:'p-rest'}));
+  }
+  const R = cap4Finish(win, lose);
+  const C = p.C || {};
+  const fail = ((p.strictFails||p._fails||[]).find(x=>!(typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(String(x))) && !(typeof UI_BANNED!=='undefined' && UI_BANNED.test(String(x)))) || '');
+  const v = C.J==='BET' ? 'BET' : C.J==='MAYBE LATER' ? 'WATCH' : (p.verdict==='good'?'BET':p.verdict==='watch'?'WATCH':'SKIP');
+  R.sentence = !((p.raw && p.raw.rows) || []).length ? (C.sentence || '') : cap4Judge({v, win:R.win, lose:R.lose, pick:`the ${SD}`, fail, who});
+  return R;
+}
+
+/* ---------- games ---------- */
+function cap4UnitWord(lg){ return cap4Soccer(lg) || lg==='nhl' ? 'goals' : lg==='mlb' ? 'runs' : 'points'; }
+function cap4GameRewrite(x, good, ctx){
+  const raw = cap4Txt(x); const kind = x && x.kind;
+  if (!raw) return null;
+  if (kind==='price' || kind==='move' || kind==='atodds' || kind==='oddsrec' || kind==='lineup') return null;
+  if ((typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(raw)) || (typeof UI_NOISE!=='undefined' && UI_NOISE.test(raw)) || CAP4_DROP.test(raw)) return null;
+  const t = typeof uiCleanTxt==='function' ? uiCleanTxt(raw) : raw; if (!t || /\bsince open\b/i.test(t)) return null;
+  const us = ctx.us, unit = ctx.unit; let m;
+  const mood = (X, hot) => X===us ? (hot ? 'they’re rolling right now' : 'the form just isn’t there') : (hot ? 'they come in hot' : 'they’re in a rut');
+  if ((m = t.match(/^(.+?) are (\d+)–(\d+)(?:–(\d+))? in their last 5, (winning|losing) by ([\d.]+) (\w+) a game/))){
+    const X = m[1], g = ctx.g || {}, sk = g.home && g.home.short===X ? 'home' : g.away && g.away.short===X ? 'away' : null;
+    const rows = sk && g.fx && g.fx.sides && g.fx.sides[sk] && g.fx.sides[sk].l5 || [];
+    if (rows.length>=3){
+      const n = rows.length, w = cap4Cnt(rows, r=>r.pf>r.pa), l = cap4Cnt(rows, r=>r.pf<r.pa), d = n-w-l, sum = rows.reduce((a,r)=>a+(+r.pf)-(+r.pa),0);
+      const pl = (k, a, b) => `${k} ${k===1?a:b}`;
+      const rec = d ? `have ${pl(w,'win','wins')}, ${pl(d,'draw','draws')} and ${pl(l,'loss','losses')} in their last ${n}` : `are ${w}–${l} in their last ${n}`;
+      const mg = ctx.soccer ? `, ${sum>0?'+':sum<0?'−':''}${Math.abs(sum)} goal difference` : `, ${sum>=0?'winning':'losing'} by ${cap4F(Math.abs(sum)/n)} a game`;
+      return cap4Item('Form', `${X} ${rec}${mg} — ${mood(X, w>l)}`, cap4Rs(Math.max(w,l), n)+0.3, 'l5', `${X} ${rec}`);
+    }
+    return cap4Item('Form', `${t} — ${mood(X, +m[2] > +m[3])}`, cap4Rs(Math.max(+m[2],+m[3]), 5), 'l5');
+  }
+  if ((m = t.match(/^(.+?) are (\d+)–(\d+)(?:–(\d+))? in their last 10$/))){
+    const X = m[1], w = +m[2], l = +m[3];
+    if (ctx.soccer) return null;   // soccer last-10 strings fold draws into losses; the last-5 rows above are exact
+    return cap4Item('Form', `${X} are ${w}–${l}${m[4]?'–'+m[4]:''} in their last 10 — ${mood(X, w>l)}`, cap4Rs(Math.max(w,l), w+l+(+(m[4]||0))), 'l10');
+  }
+  if ((m = t.match(/^(.+?) have (won|lost) (\d+) in a row/))){
+    const X = m[1], won = m[2]==='won', n = +m[3];
+    const so = X===us ? (won ? 'the momentum is real' : 'they need to snap it') : (won ? 'a hot team to go against' : 'they can’t buy a win');
+    return cap4Item('Streak', `${X} have ${m[2]} ${n} STRAIGHT — ${so}`, 0.35*n+0.2, 'streak');
+  }
+  if ((m = t.match(/^(.+?) score ([\d.]+) (\w+) a game and allow ([\d.]+); (.+?) score ([\d.]+) and allow ([\d.]+)/))){
+    const A = m[1], af = +m[2], aa = +m[4], B = m[5], bf = +m[6], ba = +m[7];
+    const da = Math.round((af-aa)*10)/10, db = Math.round((bf-ba)*10)/10, gap = Math.round((da-db)*10)/10;
+    const sg = v => (v>0?'+':v<0?'−':'')+cap4F(Math.abs(v));
+    const better = gap>0 ? A : B;
+    return cap4Item('Scoring', `${A} are ${sg(da)} a game this season (${m[2]} scored, ${m[4]} allowed); ${B} are ${sg(db)} (${m[6]}, ${m[7]}) — ${better} have the better margin by ${cap4F(Math.abs(gap))} ${m[3]} a game`, Math.min(2, Math.abs(gap)/(m[3]==='points'?6:0.6)), 'scoring', `${better} have the better scoring margin by ${cap4F(Math.abs(gap))} ${m[3]} a game`);
+  }
+  if ((m = t.match(/^(.+?) is (\d+)\w\w in offense and (\d+)\w\w in defense among (\d+) (.+?) teams on the board; (.+?) is (\d+)\w\w and (\d+)\w\w/))){
+    const A = m[1], ao = +m[2], ad = +m[3], n = +m[4], B = m[6], bo = +m[7], bd = +m[8];
+    const both = ao<bo && ad<bd ? `${A} are better on both ends` : bo<ao && bd<ad ? `${B} are better on both ends` : ao<bo ? `${A} have the better offense, ${B} the better defense` : `${A} have the better defense, ${B} the better offense`;
+    return cap4Item('Ranks', `${A}: ${ordN(ao)} in offense, ${ordN(ad)} in defense; ${B}: ${ordN(bo)} and ${ordN(bd)} (of ${n} ${m[5]} teams on today's board) — ${both}`, Math.min(1.6, Math.abs((ao+ad)-(bo+bd))/n*2), 'rank', `${both} by today's ranks`);
+  }
+  if ((m = t.match(/^(.+?) are (\d+)-(\d+)(?:-(\d+))? (at home|on the road); (.+?) are (\d+)-(\d+)(?:-(\d+))? (at home|on the road)/))){
+    const aw = +m[2], al = +m[3]+(+(m[4]||0)), bw = +m[7], bl = +m[8]+(+(m[9]||0));
+    const pa = aw/Math.max(1,aw+al), pb = bw/Math.max(1,bw+bl);
+    let so = '';
+    if (bw===0 && bw+bl>=4) so = ` — ${m[6]} haven't won ${m[10]} yet`;
+    else if (aw===0 && aw+al>=4) so = ` — ${m[1]} haven't won ${m[5]} yet`;
+    else if (Math.abs(pa-pb)>=0.2) so = ` — the split leans ${pa>pb?m[1]:m[6]}`;
+    return cap4Item('Venue', `${t}${so}`, Math.min(1.5, Math.abs(pa-pb)*1.6), 'split', so ? so.replace(/^ — /,'') : '');
+  }
+  if ((m = t.match(/^(.+?) are (\d+)–(\d+) against (.+?) in the games we have(?:\. Last meeting(?: \(([^)]+)\))?: (.+?) won(?: (\d+)–(\d+))?)?$/))){
+    const A = m[1], w = +m[2], l = +m[3], B = m[4];
+    let s = `${A} are ${w}–${l} vs ${B} in the meetings we have`; const j = `${A} are ${w}–${l} against ${B}`;
+    if (m[6]) s += `, and ${m[6]} won the last one${m[7]?` ${m[7]}–${m[8]}`:''}${m[5]?` (${m[5]})`:''}`;
+    if (w>=2 && l===0) s += ` — ${A} have had ${B}'s number`; else if (l>=2 && w===0) s += ` — ${B} own this matchup`;
+    return cap4Item('Head to head', s, cap4Rs(Math.max(w,l), w+l)+0.2, 'h2h', j);
+  }
+  if ((m = t.match(/^(.+?) is without (.+?) \(out(?:, ([^)]+))?\)\. In the (\d+) games (\S+) has missed, (.+?) are (\d+)–(\d+)(?:–(\d+))? and score ([\d.]+) (\w+) a game \(allow ([\d.]+)\)/))){
+    const w = +m[7], l = +m[8];
+    return cap4Item('Injuries', `No ${m[2]}${m[3]?` (${m[3]})`:''} for ${m[1]} — they're ${w}–${l}${m[9]?'–'+m[9]:''} in the ${m[4]} games he's missed, scoring ${m[10]} and allowing ${m[12]} a game`, 1.6 + cap4Rs(Math.max(w,l), w+l), 'inj', `${m[1]} are ${w}–${l} without ${m[2]}`);
+  }
+  if ((m = t.match(/^(.+?) is without (.+?) \(out(?:, ([^)]+))?\)\.?$/))) return cap4Item('Injuries', `${m[1]} are without ${m[2]}${m[3]?` (${m[3]})`:''}`, 0.7, 'inj');
+  if ((m = t.match(/^(.+?) has a question on (.+?) \(([^,)]+)(?:, ([^)]+))?\)/))) return cap4Item('Injuries', `${m[2]} is ${m[3]}${m[4]?` (${m[4]})`:''} for ${m[1]} — worth checking before the game`, 0.6, 'inj');
+  if ((m = t.match(/^Season averages for these two land around ([\d.]+) total (\w+); the line is ([\d.]+)/))){
+    const avg = +m[1], line = +m[3], d = Math.round((avg-line)*10)/10;
+    const so = (ctx.side==='over') === (d>0) ? (ctx.side==='over' ? 'the scoring is there' : 'these two don’t score enough to get there') : (ctx.side==='over' ? 'season scoring sits below this number' : 'season scoring runs above this number');
+    return cap4Item('Total', `These two average a combined ${m[1]} ${m[2]} this season, ${cap4F(Math.abs(d))} ${d>=0?'above':'below'} the ${m[3]} line — ${so}`, Math.min(1.8, Math.abs(d)/(m[2]==='points'?5:0.4)), 'total', `these two average ${m[1]} combined against a ${m[3]} line`);
+  }
+  if ((m = t.match(/^(.+?) played yesterday \(back-to-back\); (.+?) had (\d+) days? off/))) return cap4Item('Rest', `${m[1]} played yesterday (back-to-back); ${m[2]} had ${m[3]} day${m[3]==='1'?'':'s'} off — tired legs vs fresh ones`, 1.0, 'rest');
+  if ((m = t.match(/^(.+?) had (\d+) days of rest vs (\d+)$/))) return cap4Item('Rest', `${t} — the fresher team`, 0.4, 'rest');
+  if (/is playing the \d+\w\w game in \d+ nights|is on a back-to-back/i.test(t)) return cap4Item('Rest', `${t} — tired legs`, 0.7, 'spot');
+  if ((m = t.match(/^(.+?) are (\d+)–(\d+) as (a favorite|an underdog) this season/))){ const w=+m[2], l=+m[3]; return cap4Item('Role', `${t}${w>l?' — they handle this role':' — this role hasn’t gone well'}`, cap4Rs(Math.max(w,l), w+l), 'favdog'); }
+  if (/^Weather:/i.test(t)) return cap4Item('', t + (ctx.mk==='total' ? ' — rough weather tends to slow scoring' : ''), 0.5, 'wx');
+  if (/^(Goalies|Pitchers):/i.test(t)) return cap4Item('', t, 0.3, 'starter');
+  if (/^Against the spread:|^Over\/under trend:/i.test(t)) return /—;|—$/.test(t) ? null : cap4Item('', t, 0.4, 'ats');
+  // anything else from the model (rest steps, goalie unknown, etc.): keep as is
+  return Object.assign(cap4Item('', t, /\d/.test(t) ? 0.5 : 0.15, kind||'other'), {orig:true});
+}
+function cap4GameExtra(p, ctx){
+  // new bullets straight from each team's last-5 rows (scores and dates the app already loaded)
+  const g = p.g || {}, fx = g.fx, out = [];
+  if (!fx || !fx.sides) return out;
+  const rows = s => ((fx.sides[s] && fx.sides[s].l5) || []).filter(r=>r && isFinite(+r.pf) && isFinite(+r.pa));
+  const nm = s => (g[s] && g[s].short) || s;
+  if (p.mk==='spread' && (p.side==='home' || p.side==='away') && p.sd && p.sd.point!=null && !ctx.soccer){
+    const pt = +p.sd.point, R = rows(p.side);
+    if (R.length>=4 && isFinite(pt)){
+      const k = cap4Cnt(R, r => (r.pf - r.pa) + pt > 0), n = R.length, lbl = pt>0 ? `+${cap4Num(pt)}` : cap4Num(pt);
+      if (k/n>=0.6) out.push({good:true, it: cap4Item('Cover check', `${nm(p.side)} would have covered ${lbl} in ${k} of their last ${n} — they've been winning by enough`, cap4Rs(k,n)+0.2, 'cover')});
+      else if (k/n<=0.4) out.push({good:false, it: cap4Item('Cover check', `${nm(p.side)} would have missed ${lbl} in ${n-k} of their last ${n} — the margins haven't been there`, cap4Rs(n-k,n)+0.2, 'cover')});
+    }
+  }
+  if (p.mk==='total' && (p.side==='over' || p.side==='under') && p.sd && p.sd.point!=null){
+    const line = +p.sd.point, A = rows('away'), B = rows('home');
+    if (A.length>=4 && B.length>=4 && isFinite(line)){
+      const ov = r => r.pf + r.pa > line, un = r => r.pf + r.pa < line;
+      const fn = p.side==='over' ? ov : un, fo = p.side==='over' ? un : ov;
+      const ka = cap4Cnt(A, fn), kb = cap4Cnt(B, fn), n = A.length + B.length, k = ka + kb;
+      const oa = cap4Cnt(A, fo), ob = cap4Cnt(B, fo);
+      const SDc = cap4Up(p.side), OTc = p.side==='over' ? 'Under' : 'Over';
+      if (k/n>=0.6) out.push({good:true, it: cap4Item('Recent totals', `${SDc} ${line} hit in ${k} of ${n} recent games (${ka} of ${A.length} for ${nm('away')}, ${kb} of ${B.length} for ${nm('home')}) — both teams' games have been landing ${p.side==='over'?'high':'low'}`, cap4Rs(k,n)+0.3, 'rtot', `the ${p.side} hit in ${k} of ${n} recent games`)});
+      else if ((oa+ob)/n>=0.6) out.push({good:false, it: cap4Item('Recent totals', `${OTc} ${line} hit in ${oa+ob} of ${n} recent games (${oa} of ${A.length} for ${nm('away')}, ${ob} of ${B.length} for ${nm('home')})`, cap4Rs(oa+ob,n)+0.3, 'rtot', `the ${p.side==='over'?'under':'over'} hit in ${oa+ob} of ${n} recent games`)});
+      if (ctx.soccer){
+        const bt = R => cap4Cnt(R, r => r.pf>0 && r.pa>0), cs = R => cap4Cnt(R, r => r.pa===0);
+        const b = bt(A)+bt(B), c = cs(A)+cs(B);
+        if (b/n>=0.6) out.push({good:p.side==='over', it: cap4Item('Both scored', `Both teams scored in ${b} of ${n} recent games (${bt(A)} for ${nm('away')}, ${bt(B)} for ${nm('home')}) — goals at both ends`, cap4Rs(b,n), 'btts', `both teams scored in ${b} of ${n} recent games`)});
+        if (c<=1 && n>=8) out.push({good:p.side==='over', it: cap4Item('Clean sheets', `Just ${c} clean sheet${c===1?'':'s'} between them in ${n} recent games — neither defense is shutting teams out`, 0.9, 'cs')});
+        else if (c/n>=0.5) out.push({good:p.side==='under', it: cap4Item('Clean sheets', `${c} clean sheets between them in ${n} recent games (${cs(A)} for ${nm('away')}, ${cs(B)} for ${nm('home')}) — tight defenses`, 0.9, 'cs')});
+      }
+    }
+  }
+  if (ctx.soccer && (p.side==='home' || p.side==='away') && p.mk!=='total'){
+    const o = p.side==='home' ? 'away' : 'home', R = rows(o), c = cap4Cnt(R, r => r.pa===0);
+    if (R.length>=5 && c===0) out.push({good:true, it: cap4Item('Clean sheets', `${nm(o)} haven't kept a clean sheet in their last ${R.length} — ${nm(p.side)} should find the net`, 0.8, 'cs')});
+  }
+  return out;
+}
+function capGame(p, C){
+  if (!p || !p.g || !C) return null;
+  const g = p.g, lg = g.league, team = p.side==='home' || p.side==='away';
+  const ctx = {g, us: team ? (g[p.side] && g[p.side].short) : '', unit: cap4UnitWord(lg), soccer: cap4Soccer(lg), side: p.side, mk: p.mk};
+  const win = [], lose = [];
+  for (const x of (C.win||[])){ const it = cap4GameRewrite(x, true, ctx); if (it) win.push(it); }
+  for (const x of (C.lose||[])){ const it = cap4GameRewrite(x, false, ctx); if (it) lose.push(it); }
+  // facts the old top-5 cut left out, when they clearly point one way
+  const had = new Set((C.win||[]).concat(C.lose||[]).map(x=>cap4Txt(x)));
+  for (const f of (C.facts||[])){ if (f.good==null || had.has(f.txt)) continue; const it = cap4GameRewrite(f, f.good, ctx); if (it) (f.good ? win : lose).push(it); }
+  for (const e of cap4GameExtra(p, ctx)) (e.good ? win : lose).push(e.it);
+  const R = cap4Finish(win, lose);
+  const who = C.who || p.label || 'this side';
+  const pick = p.mk==='spread' && p.sd && p.sd.point!=null ? `${who} ${p.sd.point>0?'+':''}${cap4Num(p.sd.point)}` : who;
+  const fail = (p.strictFails || []).map(String).find(x=>x && !(typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(x)) && !(typeof UI_BANNED!=='undefined' && UI_BANNED.test(x))) || '';
+  R.sentence = p.verdict==='started' ? 'The game already started, so this one is off the table.' : cap4Judge({v: C.J==='BET'?'BET':C.J==='MAYBE LATER'?'WATCH':'SKIP', win:R.win, lose:R.lose, pick, fail: typeof softFail==='function' && fail ? softFail(fail) : fail});
+  return R;
+}
+
+/* ---------- hook into the three courtroom paths (games, props, Verdict legs) ---------- */
+(function(){
+  if (typeof courtroomHTML==='function'){
+    const _cr = courtroomHTML;
+    courtroomHTML = function(p, C){
+      C = C || courtModel(p);
+      try{ const K = capGame(p, C); if (K) C = Object.assign({}, C, {win:K.win, lose:K.lose, sentence:K.sentence}); }catch(e){ console.warn('v104 game courtroom', e); }
+      return _cr(p, C);
+    };
+  }
+  if (typeof propCourtroomHTML==='function'){
+    const _pc = propCourtroomHTML;
+    propCourtroomHTML = function(p){
+      try{ const K = capProp(p); if (K) p = Object.assign({}, p, {C: Object.assign({}, p.C||{}, {win:K.win, lose:K.lose, sentence:K.sentence})}); }catch(e){ console.warn('v104 prop courtroom', e); }
+      return _pc(p);
+    };
+  }
+  if (typeof legJudgeText==='function'){
+    const _lj = legJudgeText;
+    legJudgeText = function(leg){
+      try{
+        const c = leg && leg._card;
+        if (c && !leg.err && !leg.final && !leg.out && leg.p!=null){
+          const K = c.isProp ? capProp(c) : capGame(c, courtModel(c));
+          if (K && K.sentence) return K.sentence;
+        }
+      }catch(e){ console.warn('v104 leg judge', e); }
+      return _lj(leg);
+    };
+  }
+})();
+window.cap4Debug = function(n){
+  const out = {games:[], props:[]};
+  for (const p of (plays||[]).filter(x=>x.g && x.g.state==='pre').slice(0, n||5)){ const C = courtModel(p), K = capGame(p, C); out.games.push({label:p.label, win:K.win.map(x=>x.txt), lose:K.lose.map(x=>x.txt), judge:K.sentence}); }
+  for (const p of (props||[]).slice(0, n||5)){ const K = capProp(p); if (K) out.props.push({label:(p.playerName||'')+' '+p.label, win:K.win.map(x=>x.txt), lose:K.lose.map(x=>x.txt), judge:K.sentence}); }
+  return out;
+};
 </script>
 </body>
 </html>
