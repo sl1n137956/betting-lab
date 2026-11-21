@@ -1435,6 +1435,7 @@ th,.k,.kpi .k,.trk-kpi .k{overflow-wrap:normal !important;word-break:normal !imp
 .mkt-table{width:100%;table-layout:auto}.mkt-table td:last-child{text-align:right;width:1%}
 @media (max-width:440px){ .mkt-table td{padding:6px 3px} .mkt-table td:first-child{width:54px;letter-spacing:.03em} .mkt-table .badge{font-size:10.5px;padding:2px 7px;gap:3px;min-height:0} .mkt-table td:nth-child(2) div{white-space:normal !important} .mkt-table td:nth-child(2) b{white-space:nowrap} }
 input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
+.ui-edge-track>i.mid{background:linear-gradient(90deg,#b45309,#f59e0b)}
 </style>
 </head>
 <body>
@@ -4997,7 +4998,7 @@ function isExcluded(lg, userOnly){ if (!userOnly && typeof learnOff==='function'
 function pullTagText(n){
   if (!n) return 'Pulled';
   if (n.legLabel) return `Pulled · ${n.legLabel} — ${n.reason||'flipped to Avoid'}`;
-  return `Pulled · ${n.reason||n.pullReason||'flipped to Avoid'}`;
+  return `Pulled · ${typeof uiPullWhy==='function'?uiPullWhy(n.reason||n.pullReason||'flipped to Avoid'):(n.reason||n.pullReason||'flipped to Avoid')}`;
 }
 function pulledTailedItems(board){
   const out = [], seen = new Set();
@@ -5745,13 +5746,13 @@ function hitRateText(hr){
   return hr.text || 'Not enough history yet';
 }
 function wrLineHTML(p, C){
+  return ''; // v79: 'App record' line removed from cards (still tracked in the background)
   C = C || (typeof courtModel==='function' ? courtModel(p) : null);
   if (!C || !C.P || C.E==null || C.E.final==null) return '';
   const need = C.P.need, est = C.E.final, am = C.P.am;
   const hr = C.wr || hitRateFor(am, p.g && p.g.league, p.mk);
   const a = outOf10(est), b = outOf10(need);
   return `<div class="wr-line">
-    <div class="mut">App record: ${esc(hitRateText(hr))}</div>
   </div>`;
 }
 
@@ -6267,12 +6268,13 @@ function courtroomHTML(p, C){
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
       <div class="c-sent">${esc(C.sentence)}</div>
       ${uiEdgeBarHTML(C.E&&C.E.final, C.P&&C.P.need)}
-      ${unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game")}<div class="wr-inline">${esc(hitRateText(wr))}</div></div>
+      ${unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game")}</div>
     ${matchupTableHTML(p, C)}
     ${marginChartsHTML(p)}
   </div>`;
 }
 function chanceCaptionHTML(C){
+  return ''; // v79: no 'odds imply' caption under the win-chance bar
   const E = C && C.E, P = C && C.P;
   if (!E || E.final==null || !P || P.need==null) return '';
   const est = E.final, need = P.need, gap = est - need;
@@ -6296,7 +6298,7 @@ function chanceBarHTML(p, C){
     const be = C.P && C.P.need;
     return `<div class="chance">
       <div class="chance-meta"><span class="wc-left">Our estimate ${fmtPct(E.final,0)}</span><span class="est-lab">Win chance</span><span class="wc-right">Odds ${be!=null?fmtPct(be,0):''}</span></div>
-      <div class="chance-track">${be!=null?`<span class="chance-be" style="left:${(be*100).toFixed(1)}%" title="Odds imply ${fmtPct(be,0)}"></span>`:''}<i style="width:${(E.final*100).toFixed(1)}%"></i></div>
+      <div class="chance-track"><i style="width:${(E.final*100).toFixed(1)}%"></i></div>
       ${cap}
     </div>`;
   }
@@ -6309,7 +6311,7 @@ function chanceBarHTML(p, C){
   return `<div class="chance">
     ${heads}
     <div class="chance-meta"><span class="wc-left"><b>${esc(left.short)}</b> ${fmtPct(leftP,0)}</span><span class="est-lab">Win chance</span><span class="wc-right">${fmtPct(1-leftP,0)} <b>${esc(right.short)}</b></span></div>
-    <div class="chance-track">${beLeft!=null?`<span class="chance-be" style="left:${(beLeft*100).toFixed(1)}%" title="Odds imply ${fmtPct(be,0)}"></span>`:''}<i style="width:${(leftP*100).toFixed(1)}%"></i></div>
+    <div class="chance-track"><i style="width:${(leftP*100).toFixed(1)}%"></i></div>
     ${cap}
   </div>`;
 }
@@ -6691,9 +6693,9 @@ function courtHTML(p){
   const j = p.j, verdict = p.verdict==='good' ? 'BET' : p.verdict==='watch' ? 'WATCHLIST' : 'PASS';
   const forL = j.forL.map(x=>x.txt), ag = j.agL.map(x=>x.txt).concat(j.conf.notes.map(n=>'Missing/uncertain: '+n));
   ag.push('Rule engine only: motivation and tactics are not researched');
-  return `<div class="court"><div><div class="ct pos">Case FOR</div><ul>${forL.length?forL.map(x=>`<li>${esc(x)}</li>`).join(''):'<li class="mut">No factor supports this side</li>'}</ul></div>
-    <div><div class="ct neg">Case AGAINST</div><ul>${ag.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
-    <div class="judge"><span class="ct">Verdict</span> <span class="badge ${verdict==='BET'?'b-good':verdict==='WATCHLIST'?'b-watch':'b-avoid'}">${verdict}</span> <span class="mut">${esc(p.reasons.find(r=>!/^[+−]/.test(r))||'')}</span></div></div>`;
+  return `<div class="court"><div><div class="ct pos">Case FOR</div><ul>${forL.length?forL.map(uiCleanTxt).filter(Boolean).map(x=>`<li>${esc(x)}</li>`).join(''):'<li class="mut">No factor supports this side</li>'}</ul></div>
+    <div><div class="ct neg">Case AGAINST</div><ul>${ag.map(uiCleanTxt).filter(Boolean).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div class="judge"><span class="ct">Verdict</span> <span class="badge ${verdict==='BET'?'b-good':verdict==='WATCHLIST'?'b-watch':'b-avoid'}">${verdict}</span> <span class="mut">${esc((p.reasons||[]).map(uiCleanTxt).find(r=>r && !/^[+−]/.test(r))||'')}</span></div></div>`;
 }
 function confBadge(c){ return `<span class="conf conf-${c.label.toLowerCase()}" title="${esc(c.notes.join('; ')||'all key data present')}">Verdict confidence ${c.label} ${Math.round(c.v)}</span>`; }
 // v36: the big price on a card is always from one of your books (or the fair price when none of them has it)
@@ -6740,7 +6742,7 @@ function playCard(p){
     <div class="pick"><div><div class="mk">${MKN[p.mk]}${p.rank?` · #${p.rank}`:''}</div><div class="what">${esc(p.label)}</div></div>
       ${recPriceHTML(p, bo)}</div>
     <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div>${uiValueBarHTML(C.E&&C.E.final, (bo.rec&&bo.rec.cost!=null)?bo.rec.cost:(sd.best&&sd.best.price!=null?imp(sd.best.price):null))}<div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
-    ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return `<div class="hint" style="margin:6px 2px 0">${/^excluded/.test(f[0]) ? '<b>No picks for this sport</b> (turned off in Settings)' : `Strict mode: missed "${esc(f[0])}"${f.length>1?` (+${f.length-1} more)`:''}`}</div>`; })() : ''}
+    ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return /^excluded/.test(f[0]) ? `<div class="hint" style="margin:6px 2px 0"><b>No picks for this sport</b> (turned off in Settings)</div>` : ''; })() : ''}
     ${typeof wrLineHTML==='function'?wrLineHTML(p, C):''}
     ${lazy(cid, '⚖️ Courtroom', 'court', courtBody, ' court-dd')}
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(p):''}
@@ -6853,8 +6855,8 @@ function marketCell(g, mk){
     const lbl = mk==='total' ? (sd.side==='over'?'O ':'U ')+sd.point : mk==='spread' ? `${nm} ${sd.point===0?'PK':fmtPt(sd.point)}` : nm;
     return `<div style="white-space:nowrap">${lbl} <b>${fmtAm(sd.best.price)}</b> <span class="mut" style="font-size:11px">${fmtPct(sd.nv,0)}</span></div>`;
   }).join('');
-  const why = p.verdict==='started' ? '' : (p.reasons[0]||'');
-  return `<td>${sidesTxt}</td><td title="${esc(p.reasons.join('\n'))}">${badge(p.verdict)}<div style="font-size:12px;margin-top:3px">${esc(p.verdict==='started'?'':p.label)}</div><div class="mut" style="font-size:11px">${esc(why)}</div></td>`;
+  const why = p.verdict==='started' ? '' : ((p.reasons||[]).map(uiCleanTxt).find(Boolean)||'');
+  return `<td>${sidesTxt}</td><td title="${esc((p.reasons||[]).map(uiCleanTxt).filter(Boolean).join('\n'))}">${badge(p.verdict)}<div style="font-size:12px;margin-top:3px">${esc(p.verdict==='started'?'':p.label)}</div><div class="mut" style="font-size:11px">${esc(why)}</div></td>`;
 }
 function gameCard(g){
   const rows = ['ml','spread','total'].map(mk=>`<tr><td>${MKN[mk]}</td>${marketCell(g,mk)}</tr>`).join('');
@@ -6952,7 +6954,7 @@ function pulledSidebarHTML(fromTab, counts){
       <div class="what">${esc(r.legLabel ? r.legLabel+' → now Avoid' : r.label)}</div>
       <div class="hop">${esc(r.legLabel ? 'From your parlay: '+(r.betLabel||'') : hopTxt(r))}</div>
       ${b?`<div class="logged-line">${esc(loggedBadgeText(b))}</div>`:''}
-      <div class="why">${esc(r.reason||r.pullReason||'no longer passes the filters')}${r.start?' · '+esc(fmtTime(new Date(r.start))):''}</div>
+      <div class="why">${esc(uiPullWhy(r.reason||r.pullReason||'no longer passes the filters'))}${r.start?' · '+esc(fmtTime(new Date(r.start))):''}</div>
       <div class="side-acts"><button type="button" class="side-untrack" data-untrack="${esc(r.k)}">Untrack</button></div>
     </div>`;
     }).join('')}</div>` : '';
@@ -7026,7 +7028,7 @@ function pulledCard(r){
   const betLabel = r.betLabel || (parNames.length ? parNames.join(' + ') : '') || r.label;
   const head = r.legLabel ? `${r.legLabel} → now Avoid` : `${isPar ? 'Parlay' : r.label} → now Avoid`;
   const sub = r.legLabel ? `From your parlay: ${betLabel}` : isPar ? `Your parlay: ${betLabel}` : (r.game||'');
-  const why = r.reason || r.pullReason || 'no longer passes the filters';
+  const why = uiPullWhy(r.reason || r.pullReason || 'no longer passes the filters');
   const tailed = b ? `You tailed $${typeof fmtStake==='function'?fmtStake(b.stake):b.stake} @ ${typeof fmtBetOdds==='function'?fmtBetOdds(b):b.odds}` : '';
   const starts = r.start ? `Starts ${fmtTime(new Date(r.start))}` : '';
   return `<div class="card logged-pulled pulled-item">
@@ -9058,11 +9060,11 @@ ${resultBan}
     ${resultBan}
     ${research || `<details class="dd court-dd" data-dd="verdict|${i}|court" ${ui.open.has('verdict|'+i+'|court')?'open':''}><summary>⚖️ Courtroom</summary>
     <div class="court2">
-      ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win.slice(0,4),'win','Nothing measurable pushes this up.')}</ul></div>
-      <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.slice(0,4).map(x=>uiReasonLi(x,'lose')).join('')}`; })()}${leg.p!=null?uiReasonLi('No side wins every night — even a good look will lose sometimes','lose'):''}</ul></div>
+      ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win.filter(x=>uiCleanTxt(x&&x.txt!=null?x.txt:x)).slice(0,4),'win')}</ul></div>
+      <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(DD.lose.filter(x=>uiCleanTxt(x&&x.txt!=null?x.txt:x)).slice(0,4),'lose')}`; })()}${leg.p!=null?uiReasonLi('No side wins every night — even a good look will lose sometimes','lose'):''}</ul></div>
       <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf, leg.verdict):''}</div>
         <div class="c-sent">${esc(legJudgeText(leg))}</div>${uiEdgeBarHTML(leg.p, leg.implied)}${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
-        ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: ''}</div>
+        </div>
     </div></details>`}
     ${!research ? `<details class="dd" data-dd="verdict|${i}|math" ${ui.open.has('verdict|'+i+'|math')?'open':''}><summary>📐 Nerd stats / Show the math</summary><div style="margin-top:6px">
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
@@ -9103,8 +9105,8 @@ function ticketJudgeText(legs, ranked, pAll, bookDec, safe, drop){
   const nm = l => legShortDesc(l), pc = l => fmtPct(l.p,0);
   const strong = live[live.length-1].l, weak = live[0].l;
   const parts = [];
-  if (live.length>1) parts.push(`${nm(strong)} is the strongest leg (${pc(strong)}) and ${nm(weak)} the weakest (${pc(weak)}).`);
-  else parts.push(`${nm(strong)} is the only live leg (${pc(strong)}).`);
+  if (live.length>1) parts.push(`${nm(strong)} is the strongest leg and ${nm(weak)} the weakest.`);
+  else parts.push(`${nm(strong)} is the only live leg.`);
   const wf = (weak.no||[]).map(x=>uiFactorText(x)).find(Boolean);
   if (wf && live.length>1) parts.push(`The weak link's main problem: ${uiLc(wf)}.`);
   const nb = legs.filter(l=>l.verdict==='BET').length, ns = legs.filter(l=>l.verdict==='PASS').length;
@@ -9113,8 +9115,7 @@ function ticketJudgeText(legs, ranked, pAll, bookDec, safe, drop){
   let concl;
   if (pAll!=null && pAll>=0.40 && nb===legs.length) concl = 'The ticket is playable';
   else if (safe && safe.length && drop && drop.length) concl = 'Skip the full ticket; the safer version below is the better play';
-  else concl = pAll!=null ? `All ${legs.length} hit only about ${fmtPct(pAll,pAll<0.1?1:0)} of the time, so skip the full ticket` : 'Skip the full ticket';
-  if (pAll!=null && bookDec) concl += pAll*bookDec>=1 ? ', and the payout is fair for the risk' : ', and the payout doesn’t make up for it';
+  else concl = legs.length>2 ? `With ${legs.length} legs that all have to land and no strong case on most of them, skip the full ticket` : 'Skip the full ticket';
   parts.push(concl + '.');
   return parts.join(' ');
 }
@@ -9151,7 +9152,7 @@ function parlaySummary(){
       <div class="kpi"><div class="k">Payout from prices</div><div class="v">${bookAm!=null?fmtAm(bookAm):'—'}</div></div>
       <div class="kpi"><div class="k">Weakest leg</div><div class="v" style="font-size:15px">${weakest?esc(legShortDesc(weakest.l))+' ('+fmtPct(weakest.l.p,0)+')':'—'}</div></div>
     </div>
-    ${pAll!=null && bookAm!=null ? `<div class="ui-ev ${pAll*bookDec>=1?'pos':'neg'}"><span class="ui-ev-k">Parlay EV</span><b>${fmtEdge(pAll*bookDec-1)}</b><span class="mut">per $1 at the leg prices</span></div><div class="hint">Your book's actual parlay price may differ: worth it only if it pays better than ${fmtAm(probToAm(pAll))}.</div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'} Fair odds = what the ticket should pay if the estimates are right.</div>`}
+    ${pAll!=null && bookAm!=null ? `<div class="ui-ev ${pAll*bookDec>=1?'pos':'neg'}"><span class="ui-ev-k">Parlay EV</span><b>${fmtEdge(pAll*bookDec-1)}</b><span class="mut">per $1 at the leg prices</span></div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'}</div>`}
     <h3 style="margin-top:12px">Most likely to miss → least</h3>
     <ol class="why">${ranked.map(x=>`<li><span class="tk-row"><span class="tk-name"><b>${esc(legShortDesc(x.l))}</b></span><span class="tk-p">${uiChanceMini(x.l.p)}<b>${fmtPct(x.l.p,0)}</b></span><span class="tk-badge">${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</span></span></li>`).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(legShortDesc(l))).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(legShortDesc(l))).join(', ')}.</div>` : ''}
@@ -10800,7 +10801,6 @@ function propCourtroomHTML(p){
     const capSide = (p.side==='under'?'Under':'Over');
     const gap = p.implied==null ? null : p.p-p.implied;
     const gapTxt = gap==null ? '' : (Math.abs(gap)<0.005 ? 'even' : ((gap>=0?'+':'−')+(Math.abs(gap)*100).toFixed(1)+' pts'));
-    bar += `<div class="wc-cap">Our estimate <b>${fmtPct(p.p,0)} ${capSide}</b>${p.implied!=null?` · Odds imply <b>${fmtPct(p.implied,0)}</b>`:''}${gapTxt?` · <span class="cmp-gap ${gap>=0?'pos':'neg'}">${gapTxt}</span>`:''}</div>`;
   }
   const li = x => `<li><span>${esc(x.txt||x)}</span></li>`;
   const cls = C.J==='BET'?'b-good':C.J==='MAYBE LATER'?'b-watch':'b-avoid';
@@ -10813,7 +10813,7 @@ function propCourtroomHTML(p){
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span> ${p.j&&p.j.conf&&typeof confDots==='function'?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
       <div class="c-sent">${esc(C.sentence||'')}</div>
       ${uiEdgeBarHTML(p.p, p.implied, p.side==='under'?'Under':'Over')}
-      ${unitJudgeLineHTML(p,"prop")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
+      ${unitJudgeLineHTML(p,"prop")}</div>
     ${propStatTableHTML(p)}
     ${l10PropChartHTML(p)}
   </div>`;
@@ -11438,8 +11438,7 @@ function parlayChanceBarHTML(pl){
   const hit=pl.p, miss=1-hit, be=pl.implied;
   return `<div class="chance parlay-chance">
     <div class="chance-meta"><span class="wc-left"><b>Hit</b> ${fmtPct(hit,0)}</span><span class="est-lab">Win chance</span><span class="wc-right">${fmtPct(miss,0)} <b>Miss</b></span></div>
-    <div class="chance-track">${be!=null?`<span class="chance-be" style="left:${(be*100).toFixed(1)}%" title="Break-even ${fmtPct(be,0)}"></span>`:''}<i style="width:${(hit*100).toFixed(1)}%"></i></div>
-    <div class="wc-cap">Our estimate <b>${fmtPct(hit,0)} hit</b>${be!=null?` · Odds imply <b>${fmtPct(be,0)}</b>`:''}${pl.edge!=null?` · <span class="cmp-gap ${pl.edge>=0?'pos':'neg'}">${pl.edge>=0?'+':''}${(pl.edge*100).toFixed(1)} pts</span>`:''}</div>
+    <div class="chance-track"><i style="width:${(hit*100).toFixed(1)}%"></i></div>
   </div>`;
 }
 function parlayLegLabel(l){
@@ -11498,13 +11497,13 @@ function parlayCourtroomHTML(pl){
 
   const J = (pl.C&&pl.C.J)||'SKIP';
   const cls = J==='BET'?'b-good':J==='MAYBE LATER'?'b-watch':'b-avoid';
-  const strongTxt = strongest ? `${legTitle(strongest)} (${fmtPct(strongest.p,0)})` : 'the top leg';
-  const weakTxt = weakest ? `${legTitle(weakest)} (${fmtPct(weakest.p,0)})` : 'the weakest leg';
+  const strongTxt = strongest ? `${legTitle(strongest)}` : 'the top leg';
+  const weakTxt = weakest ? `${legTitle(weakest)}` : 'the weakest leg';
   const sentence = J==='BET'
-    ? `Every leg clears our favorite-leg filters, anchored by ${strongTxt}, with ${weakTxt} as the leg to watch closest, and at ${fmtAm(pl.am)} the ${pl.n}-leg payout is fair.`
+    ? `Every leg clears our favorite-leg filters. It's anchored by ${strongTxt}, with ${weakTxt} as the leg to watch closest.`
     : J==='MAYBE LATER'
-      ? `There is a real lean here led by ${strongTxt}, but ${weakTxt} or the combined juice keeps this on the watchlist rather than a full play.`
-      : `Pass on this combo. ${strongTxt} is solid, but ${weakTxt} is the weak link, so the case against wins out, and the juice compounds over ${pl.n} legs.`;
+      ? `There is a real lean here led by ${strongTxt}, but ${weakTxt} is shaky enough to keep this on the watchlist rather than a full play.`
+      : `Pass on this combo. ${strongTxt} is solid, but ${weakTxt} is the weak link, and with ${pl.n} legs that all have to land, the case against wins out.`;
   const wr = (pl.implied!=null && pl.p!=null)
     ? `This ${fmtDecX(pl.dec)} parlay breaks even at about ${typeof outOf10==='function'?outOf10(pl.implied):(pl.implied*10).toFixed(1)} wins in 10 (${fmtPct(pl.implied,0)}). We estimate ${typeof outOf10==='function'?outOf10(pl.p):(pl.p*10).toFixed(1)} in 10 (${fmtPct(pl.p,0)}).`
     : '';
@@ -11520,8 +11519,8 @@ function parlayCourtroomHTML(pl){
       ? ((typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[l.kind]) || 'Prop')
       : (MKN[l.mk] || 'Game');
     { const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(d.win||[], d.lose||[]) : null; if (DD){ d.win = DD.win; d.lose = DD.lose; } }
-    const lWin = d.win.length ? d.win.map(x=>uiReasonLi(x,'win')).join('') : '<li class="mut">Supported mainly by market strength and team baseline.</li>';
-    const lLose = d.lose.length ? d.lose.map(x=>uiReasonLi(x,'lose')).join('') : '<li class="mut">No major red flags logged — normal game variance still applies.</li>';
+    const lWin = uiReasonList(d.win, 'win');
+    const lLose = uiReasonList(d.lose, 'lose', 'No major red flags logged; normal game variance still applies.');
     const candleChart = d.isProp
       ? (typeof l10PropChartHTML==='function' ? l10PropChartHTML(l) : '')
       : (typeof marginChartsHTML==='function' ? marginChartsHTML(l) : '');
@@ -11558,7 +11557,7 @@ function parlayCourtroomHTML(pl){
     <div class="pl-court-legs">${legCards}</div>
     <div class="c-judge" style="margin-top:12px"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(J)}</span></div>
       <div class="c-sent">${esc(sentence)}</div>
-      ${unitJudgeLineHTML(pl,"parlay")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
+      ${unitJudgeLineHTML(pl,"parlay")}</div>
   </div>`;
 }
 function parlayInjBody(pl){
@@ -18109,8 +18108,8 @@ function uiColorNums(html){
              .replace(/(^|[\s(])([−-])(\d+(?:\.\d+)?)(\s?(?:pts|points|%))(?=[\s),.;]|$)/g, '$1<b class="ui-neg">−$3$4</b>');
 }
 function uiReasonLi(x, side){
-  const raw = (x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x;
-  if (raw==null || raw==='') return '';
+  const raw = uiCleanTxt((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x);
+  if (!raw) return '';
   const tag = (x && typeof x==='object' && x.tag && / /.test(x.tag) && !/^rule points|^context$/i.test(x.tag)) ? x.tag : '';
   const P = uiReasonParts(raw);
   const sideCls = side==='lose' ? 'lose' : side==='win' ? 'win' : 'neu';
@@ -18124,17 +18123,16 @@ function uiReasonLi(x, side){
 }
 function uiReasonList(list, side, emptyTxt){
   const rows = (list||[]).map(x=>uiReasonLi(x, side)).filter(Boolean);
-  return rows.length ? rows.join('') : `<li class="rs-row rs-empty"><span class="rs-val mut">${esc(emptyTxt||'Nothing measurable here.')}</span></li>`;
+  return rows.length ? rows.join('') : `<li class="rs-row rs-empty"><span class="rs-val mut">${esc(uiCleanTxt(emptyTxt) || UI_NEUTRAL_WHY)}</span></li>`;
 }
 // Judge: our estimate vs what the price needs (break-even), one track with a marker, plus the gap as a colored pill
 function uiEdgeBarHTML(est, need, sideTxt){
+  // v79: just our read on the bet, no "needs X%" / break-even marker
   if (est==null || !isFinite(est)) return '';
-  const e = Math.max(0, Math.min(1, est)), n = need!=null && isFinite(need) ? Math.max(0, Math.min(1, need)) : null;
-  const gap = n==null ? null : e - n, good = gap==null ? null : gap >= 0;
-  const gapTxt = gap==null ? '' : Math.abs(gap) < 0.005 ? 'even' : `${gap>=0?'+':'−'}${(Math.abs(gap)*100).toFixed(1)} pts`;
+  const e = Math.max(0, Math.min(1, est)), cls = e>=0.55 ? 'pos' : e>=0.45 ? 'mid' : 'neg';
   return `<div class="ui-edge">
-    <div class="ui-edge-lab"><span class="l">We have <b>${fmtPct(e,0)}</b>${sideTxt?` <span class="mut">${esc(sideTxt)}</span>`:''}</span>${n!=null?`<span class="ui-gap ${good?'pos':'neg'}">${gapTxt}</span><span class="r">Needs <b>${fmtPct(n,0)}</b></span>`:'<span class="mut r">no price to compare</span>'}</div>
-    <div class="ui-edge-track"><i class="${good==null?'':good?'pos':'neg'}" style="width:${(e*100).toFixed(1)}%"></i>${n!=null?`<span class="ui-edge-need" style="left:${(n*100).toFixed(1)}%"></span>`:''}</div>
+    <div class="ui-edge-lab"><span class="l">Our read <b>${fmtPct(e,0)}</b>${sideTxt?` <span class="mut">${esc(sideTxt)}</span>`:''}</span></div>
+    <div class="ui-edge-track"><i class="${cls}" style="width:${(e*100).toFixed(1)}%"></i></div>
   </div>`;
 }
 // Pick cards: price you pay vs what it's worth, as two short bars (cents of $1)
@@ -18202,7 +18200,7 @@ function betStrengthPillHTML(conf, verdict){
    2 strongest reasons each way and which side wins out, then ends with at most one short clause on price. */
 var UI_PRICEISH = /no side wins every night|priced this|prediction markets|break-?even|odds pay|odds imply|implied|the price|price is|prices? (?:stays?|built)|wins in 10|fair shake|overpay|asked to be right|at your [+−-]?\d|juice|we couldn'?t get|haven'?t loaded|not loaded|nothing (measurable|clear)|no red flags|not enough history|app record|ranking-only/i;
 function uiFactorText(x, who){
-  let t = String((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x || '').trim();
+  let t = uiCleanTxt((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x || '').trim();
   if (!t || UI_PRICEISH.test(t)) return '';
   t = t.replace(/\s*\((?:see Matchup|burden [^)]*|worth about[^)]*|rule points[^)]*|can't be measured[^)]*)\)\s*/gi, ' ').replace(/\s+/g,' ').trim();
   let m;
@@ -18221,7 +18219,7 @@ function uiFactorText(x, who){
 function uiLc(s){ if (!s) return s; return /^[A-Z]{2,}\b|^[A-Z][a-z]+ [A-Z]/.test(s) || /^[A-Z]\.\s/.test(s) ? s : s.charAt(0).toLowerCase()+s.slice(1); }
 function uiAnd(list){ list = list.filter(Boolean).map((x,i)=>i ? uiLc(x) : x); return list.length<=1 ? (list[0]||'') : list.slice(0,-1).join(', ') + ' and ' + list[list.length-1]; }
 function uiJudgeText(o){
-  const v = String(o.v||'').toUpperCase();
+  const v = String(o.v||'').toUpperCase(); if (o.fail && !uiCleanTxt(o.fail)) o = Object.assign({}, o, {fail:''});
   if (o.started) return 'The game already started, so this one is off the table.';
   const win = [], lose = [];
   const INJ = /is without|are missing|\(out\b|ruled out/i;
@@ -18235,19 +18233,28 @@ function uiJudgeText(o){
   let concl;
   if (/^(BET|GOOD)$/.test(v)) concl = lose.length ? 'The case for it is stronger, so it’s a bet' : 'The case is clean, so it’s a bet';
   else if (/^(WATCH|WATCHLIST|MAYBE LATER)$/.test(v)) concl = o.fail ? `It’s close, but it misses one check (${uiLc(String(o.fail).replace(/\.$/,''))}), so wait and look again before the game` : 'It’s close, so wait and look again before the game';
-  else concl = (lose.length >= win.length && lose.length) ? 'The case against is stronger, so skip it' : win.length ? (o.fail ? `The pluses aren’t enough (${uiLc(String(o.fail).replace(/\.$/,''))}), so skip it` : 'The pluses aren’t strong enough, so skip it') : 'With nothing to lean on, skip it';
-  // one short closing clause on price, never the lead
-  let px = '';
-  if (o.est!=null && o.need!=null && isFinite(o.est) && isFinite(o.need)){
-    const gap = o.est - o.need, odds = o.oddsTxt ? o.oddsTxt : o.odds!=null && isFinite(o.odds) ? (typeof fmtAm==='function' ? fmtAm(o.odds) : String(o.odds)) : '';
-    px = gap >= 0.02 ? `, and ${odds?`at ${odds} `:''}the price is good value` : gap > -0.02 ? `, and ${odds?`at ${odds} `:''}the price is about fair` : `, and ${odds?`at ${odds} `:''}the price is ${gap < -0.06 ? 'too steep' : 'a little steep'}`;
-  }
+  else concl = (lose.length >= win.length && lose.length) ? 'The case against is stronger, so skip it' : (win.length && lose.length===0 && !o.fail) ? 'The case is too close to call, so skip it' : win.length ? (o.fail ? `The pluses aren’t enough (${uiLc(String(o.fail).replace(/\.$/,''))}), so skip it` : 'The pluses aren’t strong enough, so skip it') : 'Not enough edge here, so skip it';
+  const px = '';
   parts.push(concl + px + '.');
   return parts.join(' ');
 }
 function uncapFirst(s){ return uiLc(s); }
 function uiJudgeLeadsWithPrice(t){ const first = String(t||'').split(/(?<=[.!?])\s+/)[0]||''; return UI_PRICEISH.test(first) || /\bodds\b|\d+¢|break.?even|price/i.test(first); }
 function uiJudgeOnlyPrice(t){ const s = String(t||''); const sents = s.split(/(?<=[.!?])\s+/).filter(Boolean); return sents.length>0 && sents.every(x=>/\bodds\b|\d+¢|break.?even|price|wins in 10|of 10|passing\.?$|skip\.?$/i.test(x) || x.length<14); }
+
+/* v79 (Stanley: "don't talk about price so much"): explanations talk about the game, never the price.
+   The model, verdicts, stakes and math are untouched; only the words shown change. */
+var UI_BANNED = /implied|break.?even|\bneeds? (?:about )?\d+(?:\.\d+)? (?:in|of) 10|wins? in 10|pays? like|the price|price is|prices?\b|steep|ESPN'?s computer|\bthe odds\b|odds (?:imply|pay|are|say|ask)|fair (?:price|odds|shake)|\bvalue\b|\bEV\b|expected value|\d+(?:\.\d+)?¢|\bcents?\b|\bjuice\b|\bvig\b|overpa(?:y|ying)|bargain|payout|priced|\bedge\b|win chance|\d+(?:\.\d+)?% (?:chance|to win|of the time)|est(?:imate|\.)? (?:only )?\d+%|odds? (?:range|outside)|outside (?:your|the) (?:range|odds)|asking for more wins|break even|hit ?rate at|at these odds|app record|strict mode|strict settings|shorter than [+−-]\d{3}|longer than [+−-]\d{3}|[+−-]\d{3,}\b/i;
+function uiCleanTxt(t){
+  t = String(t==null?'':t).trim();
+  if (!t) return '';
+  // drop a price aside like "(63¢ → 57¢)" or "(odds -150)" but keep game facts like "(avg 7.5)"
+  t = t.replace(/\s*\((?:[^()]*?(?:¢|odds|implied|price|[+−-]\d{3})[^()]*?)\)/gi, '').replace(/\s*[—–-]\s+(?:at|for) (?:this|that|these) (?:price|odds)[^.;]*/gi,'').replace(/\s+/g,' ').trim();
+  if (UI_BANNED.test(t)) return '';
+  return t;
+}
+var UI_NEUTRAL_WHY = 'Nothing in the recent numbers clearly favors this side.';
+function uiPullWhy(t){ const c = uiCleanTxt(String(t||'').replace(/^Strict mode: missed\s*/i,'')); return c || 'the case for it got weaker'; }
 </script>
 </body>
 </html>
