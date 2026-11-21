@@ -935,6 +935,7 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
   .auth-card{max-width:none;border-radius:22px 22px 0 0;padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));max-height:92vh}
 }
 @media (max-width:380px){ .acct-btn:not(.signed) svg{display:none} }
+@media (max-width:430px){ .acct-btn.signed .acct-name{display:none} .acct-btn.signed{padding:0 6px} }
 /* Verdict+ : smart guessing chips, community learning pill, Safari redirect notice */
 .pk-assume{font-size:12.5px;color:var(--txt2);margin:8px 2px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 8px;line-height:1.45}
 .pk-assume .pk-assume-lab{flex:1 0 100%;margin-bottom:2px}
@@ -13853,7 +13854,7 @@ Storage.prototype.setItem = function(k, v){
   try{ onLocalWrite(k, v); }catch(e){}
 };
 function onLocalWrite(k, v){
-  const now = Date.now();
+  const now = (typeof syncClock==='function') ? syncClock() : Date.now();
   let changed = false;
   if (k===LS.settings){ if (v!==_lastSettingsStr){ _lastSettingsStr = v; syncMeta.settingsAt = now; changed = true; } }
   else if (k===LS.filters || k===LS.filterViews){ const sig = filtersSig(); if (sig!==_lastFiltersSig){ _lastFiltersSig = sig; syncMeta.filtersAt = now; changed = true; } }
@@ -13894,6 +13895,8 @@ async function authBoot(){
     await loadScriptOnce(base+'firebase-app-compat.js');
     await Promise.all([loadScriptOnce(base+'firebase-auth-compat.js'), loadScriptOnce(base+'firebase-firestore-compat.js')]);
     if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    // local testing only: ?emu=1 on localhost talks to the Firebase emulators, never the real account data
+    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && /[?&]emu=1\b/.test(location.search)){ try{ firebase.auth().useEmulator('http://127.0.0.1:9099', {disableWarnings:true}); firebase.firestore().useEmulator('127.0.0.1', 8080); }catch(e){} }
     try{ if (firebase.firestore && firebase.firestore.setLogLevel) firebase.firestore.setLogLevel('silent'); }catch(e){}
     try{ await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
     AUTH.ready = true; AUTH.loading = false;
@@ -13926,11 +13929,12 @@ async function onAuthUser(u){
   const was = AUTH.user && AUTH.user.uid;
   AUTH.user = u || null;
   if (AUTH.unsub){ try{ AUTH.unsub(); }catch(e){} AUTH.unsub = null; }
-  if (!u){ AUTH.status = 'idle'; AUTH.lastSync = 0; applyAdminGate(); renderAuthChrome(); return; }
+  if (!u){ if (typeof sync2Stop==='function') sync2Stop(); AUTH.status = 'idle'; AUTH.lastSync = 0; applyAdminGate(); renderAuthChrome(); return; }
   applyAdminGate();
   renderAuthChrome();
   if (was!==u.uid) await initialSync();
   startLiveSync();
+  if (typeof sync2Start==='function') await sync2Start(u.uid);
   if (isAdminUser() && typeof verdictAdminSync==='function') verdictAdminSync().catch(()=>{});
 }
 function authErrMsg(err){
@@ -14012,6 +14016,7 @@ async function forgotPassword(email){
 async function signOutUser(){
   if (AUTH.pushT){ clearTimeout(AUTH.pushT); AUTH.pushT = 0; try{ await cloudPush(); }catch(e){} }
   if (AUTH.unsub){ try{ AUTH.unsub(); }catch(e){} AUTH.unsub = null; }
+  if (typeof sync2Flush==='function'){ try{ await sync2Flush(); }catch(e){} }
   try{ await firebase.auth().signOut(); }catch(e){}
   closeAuthModal(); toast('Signed out. Your data stays on this device.');
 }
@@ -14034,6 +14039,7 @@ function localPayload(){
     profitPeriodAt: syncMeta.periodAt||0,
     profile: {displayName: (u && u.displayName)||'', email: (u && u.email)||''},
     deviceId: AUTH.deviceId,
+    syncV: 90,
     updatedAt: Date.now()
   };
 }
@@ -14056,7 +14062,8 @@ function applyRemote(d){
   AUTH.applying = true;
   let touched = false, needRender = false;
   try{
-    if (d.settings && (+d.settingsAt||0) > (syncMeta.settingsAt||0)){
+    const v2 = (typeof sync2LegacyOff==='function') && sync2LegacyOff();   // v90: settings/filters/period come from the per-key account doc
+    if (!v2 && d.settings && (+d.settingsAt||0) > (syncMeta.settingsAt||0)){
       const rs = parseJ(d.settings, null);
       if (rs && typeof rs==='object'){
         const keepNtfyOn = S.ntfyOn;
@@ -14066,7 +14073,7 @@ function applyRemote(d){
         syncMeta.settingsAt = +d.settingsAt; touched = needRender = true;
       }
     }
-    if (d.filters && (+d.filtersAt||0) > (syncMeta.filtersAt||0)){
+    if (!v2 && d.filters && (+d.filtersAt||0) > (syncMeta.filtersAt||0)){
       const rf = parseJ(d.filters, null);
       if (rf && typeof rf==='object'){
         if (rf.views && typeof rf.views==='object'){ Object.keys(filterViews).forEach(k=>delete filterViews[k]); Object.assign(filterViews, rf.views); localStorage.setItem(LS.filterViews, JSON.stringify(filterViews)); }
@@ -14078,7 +14085,7 @@ function applyRemote(d){
         _lastFiltersSig = filtersSig(); syncMeta.filtersAt = +d.filtersAt; touched = needRender = true;
       }
     }
-    if (d.profitPeriod && (+d.profitPeriodAt||0) > (syncMeta.periodAt||0) && typeof trackerUI!=='undefined'){
+    if (!v2 && d.profitPeriod && (+d.profitPeriodAt||0) > (syncMeta.periodAt||0) && typeof trackerUI!=='undefined'){
       trackerUI.period = d.profitPeriod; localStorage.setItem(TRACKER_LS, JSON.stringify({period:d.profitPeriod})); _lastPeriodStr = localStorage.getItem(TRACKER_LS);
       syncMeta.periodAt = +d.profitPeriodAt; touched = true; if (ui.tab==='tracker') needRender = true;
     }
@@ -14109,6 +14116,8 @@ function applyRemote(d){
     saveSyncMeta();
   }finally{ AUTH.applying = false; }
   if (needRender){ try{ if (typeof updateFilterChrome==='function') updateFilterChrome(); if (typeof render==='function') render(); }catch(e){} }
+  if (touched && typeof sync2Rehash==='function') sync2Rehash();
+  if (touched && typeof sync2Schedule==='function') sync2Schedule();
   return touched;
 }
 function localDiffersFrom(d){
@@ -19251,6 +19260,255 @@ function agBgStep(dl){
   }
   if (AG_BG.q.length){ AG_BG.t = 1; agIdle(agBgStep); } else AG_BG.q = null;
 }
+/* ================= v90: account-level sync, no master device =================
+   One per-account doc users/{uid}/sync/v2 holds every user-facing choice as its own key:
+     kv:{ key:{v:JSON, t:stamp, d:device} }, bets:{ id:{v:JSON, t, d} }, del:{ id:stamp }
+   Every device listens live and writes only what it changed (merge writes, ~1s debounce).
+   Each key / bet resolves on its own: the newest edit wins (stamps are Lamport-style, so a
+   device with a slow clock can never beat an edit it has already seen). Nothing is a whole-doc
+   overwrite, so no device acts as the master. The old users/{uid} doc is still kept up to date
+   (bets are merged both ways) so older copies of the app keep working. */
+var SYNC2_LS = 'bl_sync_v2';
+var SYNC2 = {unsub:null, uid:'', pushT:0, scanT:0, pushing:false, again:false, live:false};
+var sync2 = (function(){ let m = null; try{ m = JSON.parse(localStorage.getItem(SYNC2_LS)||'null'); }catch(e){} return (m && typeof m==='object') ? m : {}; })();
+sync2.kv = sync2.kv || {}; sync2.bp = sync2.bp || {}; sync2.dp = sync2.dp || {};
+sync2.dirty = Array.isArray(sync2.dirty) ? sync2.dirty : []; sync2.maxT = +sync2.maxT || 0;
+var SYNC2_DIRTY = new Set(sync2.dirty);
+function sync2Save(){ sync2.dirty = [...SYNC2_DIRTY]; try{ _origSetItem.call(localStorage, SYNC2_LS, JSON.stringify(sync2)); }catch(e){} }
+function syncClock(){ if (typeof sync2==='undefined' || !sync2) return Date.now(); const t = Math.max(Date.now(), (+sync2.maxT||0) + 1); sync2.maxT = t; return t; }
+function sync2See(t){ t = +t||0; if (t > (+sync2.maxT||0)) sync2.maxT = t; }
+function sync2LegacyOff(){ return !!(AUTH.user && sync2.seeded && sync2.uid && sync2.uid===AUTH.user.uid); }
+function sync2Dev(){ return AUTH.deviceId || syncMeta.deviceId || ''; }
+function sync2Wins(a, b){ const at = +((a&&a.t)||0), bt = +((b&&b.t)||0); return at > bt || (at===bt && String((a&&a.d)||'') > String((b&&b.d)||'')); }
+function sync2Hash(s){ s = String(s==null?'':s); let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i))|0; return s.length+':'+h; }
+var SYNC2_SKIP_S = new Set(['ntfyOn']);   // notifications are a per-device permission
+var SYNC2_WATCH = null;
+function sync2Watch(){
+  if (!SYNC2_WATCH) SYNC2_WATCH = new Set([LS.settings, LS.filters, LS.filterViews, AG_SEL_LS, SPORT_SEL_LS, TRACKER_LS, AV_FLAG_LS, LS.pulledDismiss].filter(Boolean));
+  return SYNC2_WATCH;
+}
+/* current local value (JSON string) of every synced key */
+function sync2Local(){
+  const out = {};
+  for (const k of Object.keys(S)) if (k[0]!=='_' && !SYNC2_SKIP_S.has(k) && S[k]!==undefined) out['s:'+k] = JSON.stringify(S[k]);
+  const f = Object.assign({}, loadJSON(LS.filters, {})||{}); delete f.tab; delete f.board; delete f.q;
+  out['f:last'] = JSON.stringify(f);
+  const fv = (typeof filterViews!=='undefined' && filterViews) || {};
+  for (const k of Object.keys(fv)) out['fv:'+k] = JSON.stringify(fv[k]);
+  if (typeof AG_SEL!=='undefined' && Array.isArray(AG_SEL)) out['ag'] = JSON.stringify(AG_SEL.slice().sort());
+  if (typeof SPORT_SEL!=='undefined' && SPORT_SEL) out['sport'] = JSON.stringify({sel:(SPORT_SEL.sel||[]).slice().sort(), en:(SPORT_SEL.en||[]).slice().sort()});
+  if (typeof trackerUI!=='undefined') out['period'] = JSON.stringify(trackerUI.period||'all');
+  out['nob'] = JSON.stringify(loadJSON(AV_FLAG_LS, null) || {f:{}, h:{}});
+  out['pdismiss'] = JSON.stringify(loadJSON(LS.pulledDismiss, {}) || {});
+  return out;
+}
+/* first run on this device: what's already here gets stamp 0, so the account's copy wins wherever it has one,
+   and anything the account doesn't have yet is filled in from here. Edits made from now on get real stamps. */
+function sync2Seed(){
+  if (sync2.seeded) return;
+  const L = sync2Local();
+  for (const k of Object.keys(L)) sync2.kv[k] = {t:0, d:'', h:sync2Hash(L[k])};
+  sync2.seeded = 1; sync2Save();
+}
+/* the old whole-doc sync changed values here: record them without stamping them as fresh edits */
+function sync2Rehash(){
+  if (!sync2.seeded) return;
+  const L = sync2Local();
+  for (const k of Object.keys(L)){ const e = sync2.kv[k]; if (e && !SYNC2_DIRTY.has(k)) e.h = sync2Hash(L[k]); }
+  sync2Save();
+}
+/* find keys changed on this device since we last looked; stamp them and queue a push */
+function sync2Scan(){
+  if (!sync2.seeded) sync2Seed();
+  const L = sync2Local(); let n = 0;
+  for (const k of Object.keys(L)){
+    const h = sync2Hash(L[k]); const e = sync2.kv[k];
+    if (!e){ sync2.kv[k] = k.startsWith('s:') ? {t:0, d:'', h} : {t:syncClock(), d:sync2Dev(), h}; if (!k.startsWith('s:')){ SYNC2_DIRTY.add(k); n++; } continue; }
+    if (e.h!==h){ e.h = h; e.t = syncClock(); e.d = sync2Dev(); SYNC2_DIRTY.add(k); n++; }
+  }
+  if (n) sync2Save();
+  return n;
+}
+function sync2ScanLater(){ clearTimeout(SYNC2.scanT); SYNC2.scanT = setTimeout(()=>{ SYNC2.scanT = 0; if (sync2Scan() || sync2BetsPending()) sync2Schedule(); }, 150); }
+/* watch the saves that matter (runs after the older hook in 16_auth_sync) */
+(function(){
+  const prev = Storage.prototype.setItem;
+  Storage.prototype.setItem = function(k, v){
+    prev.call(this, k, v);
+    try{ if (this===window.localStorage && !AUTH.applying && !SYNC2.applyingNow && sync2Watch().has(k)) sync2ScanLater(); }catch(e){}
+    try{ if (this===window.localStorage && !AUTH.applying && k===LS.bets) sync2Schedule(); }catch(e){}
+  };
+})();
+function sync2BetStamp(b){ return +syncMeta.betStamps[b.id] || +b.created || 1; }
+function sync2BetsPending(){
+  if ((Array.isArray(bets)?bets:[]).some(b=>b && b.id && sync2BetStamp(b) > (+sync2.bp[b.id]||0))) return true;
+  return Object.keys(syncMeta.deleted||{}).some(id=>(+syncMeta.deleted[id]||0) > (+sync2.dp[id]||0));
+}
+function sync2Ref(){ return (AUTH.user && typeof firebase!=='undefined') ? fs().collection('users').doc(AUTH.user.uid).collection('sync').doc('v2') : null; }
+function sync2Schedule(ms){
+  if (!AUTH.user || !SYNC2.live) return;
+  clearTimeout(SYNC2.pushT);
+  AUTH.status = 'pending'; try{ renderAuthStatusOnly(); }catch(e){}
+  SYNC2.pushT = setTimeout(()=>{ SYNC2.pushT = 0; sync2Push().catch(()=>{}); }, ms==null ? 1000 : ms);
+}
+async function sync2Flush(){ if (SYNC2.pushT){ clearTimeout(SYNC2.pushT); SYNC2.pushT = 0; } if (SYNC2.live){ sync2Scan(); await sync2Push(); } }
+/* write only what changed; inside a transaction (when online) so an older edit never replaces a newer one */
+async function sync2Push(){
+  const ref = sync2Ref(); if (!ref) return;
+  if (SYNC2.pushing){ SYNC2.again = true; return; }
+  SYNC2.pushing = true;
+  try{
+    sync2Scan();
+    const L = sync2Local(), dev = sync2Dev();
+    const kv = {}, bt = {}, del = {};
+    for (const k of SYNC2_DIRTY){ const e = sync2.kv[k]; if (e && L[k]!=null) kv[k] = {v:L[k], t:+e.t||0, d:e.d||dev}; }
+    for (const b of (Array.isArray(bets)?bets:[])){ if (!b || !b.id) continue; const t = sync2BetStamp(b); if (t > (+sync2.bp[b.id]||0)) bt[b.id] = {v:JSON.stringify(b), t, d:dev}; }
+    for (const id of Object.keys(syncMeta.deleted||{})){ const t = +syncMeta.deleted[id]||0; if (t > (+sync2.dp[id]||0) && !bt[id]) del[id] = t; }
+    if (!Object.keys(kv).length && !Object.keys(bt).length && !Object.keys(del).length){ AUTH.status = 'synced'; AUTH.lastSync = Date.now(); return; }
+    AUTH.status = 'syncing'; try{ renderAuthStatusOnly(); }catch(e){}
+    const FV = firebase.firestore.FieldValue;
+    const build = (cur)=>{
+      cur = cur || {}; const ck = cur.kv||{}, cb = cur.bets||{}, cd = cur.del||{};
+      const out = {schema:2, kv:{}, bets:{}, del:{}, at:Date.now(), by:dev};
+      for (const k of Object.keys(kv)) if (!ck[k] || sync2Wins(kv[k], ck[k])) out.kv[k] = kv[k];
+      for (const id of Object.keys(bt)){ const c = cb[id]; if ((+cd[id]||0) >= bt[id].t) continue; if (!c || +bt[id].t >= +c.t) out.bets[id] = bt[id]; }
+      for (const id of Object.keys(del)){ const c = cb[id]; if (c && +c.t > del[id]) continue; out.del[id] = Math.max(del[id], +cd[id]||0); if (c) out.bets[id] = FV.delete(); }
+      return out;
+    };
+    const online = (typeof navigator==='undefined' || navigator.onLine!==false);
+    if (online){
+      await fs().runTransaction(async tx=>{ const snap = await tx.get(ref); tx.set(ref, build(snap.exists ? snap.data() : null), {merge:true}); });
+    } else {
+      await ref.set(build(null), {merge:true});
+    }
+    for (const k of Object.keys(kv)) SYNC2_DIRTY.delete(k);
+    for (const id of Object.keys(bt)) sync2.bp[id] = bt[id].t;
+    for (const id of Object.keys(del)) sync2.dp[id] = del[id];
+    sync2Save();
+    AUTH.status = 'synced'; AUTH.lastSync = Date.now();
+  }catch(e){ AUTH.status = 'error'; AUTH.err = (e && e.code) || 'save failed'; console.warn('sync2 push', e && e.code); }
+  finally{
+    SYNC2.pushing = false; try{ renderAuthStatusOnly(); }catch(e){}
+    if (SYNC2.again){ SYNC2.again = false; sync2Schedule(300); }
+  }
+}
+/* apply one key that the cloud holds newer */
+function sync2ApplyKey(k, v, A){
+  let val; try{ val = JSON.parse(v); }catch(e){ return; }
+  if (k.startsWith('s:')){ const sk = k.slice(2); if (SYNC2_SKIP_S.has(sk)) return; S[sk] = val; A.settings = true; return; }
+  if (k==='f:last'){ if (val && typeof val==='object'){ A.filtersLast = val; A.filters = true; } return; }
+  if (k.startsWith('fv:')){ if (typeof filterViews!=='undefined'){ filterViews[k.slice(3)] = val; A.filters = true; } return; }
+  if (k==='ag'){ if (Array.isArray(val)){ AG_SEL = val.filter(id=>LMAP[id]); A.ag = true; } return; }
+  if (k==='sport'){ if (val && Array.isArray(val.sel) && typeof SPORT_SEL!=='undefined'){ SPORT_SEL.sel = val.sel.filter(id=>LMAP[id]); if (Array.isArray(val.en)) SPORT_SEL.en = val.en.slice(); A.sport = true; } return; }
+  if (k==='period'){ if (typeof trackerUI!=='undefined' && typeof val==='string'){ trackerUI.period = val; A.period = true; } return; }
+  if (k==='nob'){ A.nob = val; A.board = true; return; }
+  if (k==='pdismiss'){ A.pdismiss = val; A.board = true; return; }
+}
+function sync2DropQ(k){ try{ if (typeof SAVE_Q!=='undefined' && SAVE_Q && SAVE_Q.delete) SAVE_Q.delete(k); }catch(e){} }
+function sync2Set(k, v){ sync2DropQ(k); try{ localStorage.setItem(k, typeof v==='string' ? v : JSON.stringify(v)); }catch(e){} }
+/* merge the cloud doc into this device: per key, per bet, newest wins; push back whatever this device holds newer */
+function sync2Apply(d){
+  d = d || {};
+  if (!sync2.seeded) sync2Seed();
+  sync2Scan();                                  // stamp any local edit not yet seen, so it competes fairly
+  const L = sync2Local(); const rk = d.kv || {}, rb = d.bets || {}, rd = d.del || {};
+  const A = {}; let push = false, betsChanged = false;
+  AUTH.applying = true; SYNC2.applyingNow = true;
+  try{
+    for (const k of Object.keys(rk)){
+      const r = rk[k]; if (!r || typeof r.v!=='string') continue; sync2See(r.t);
+      const e = sync2.kv[k] || {t:0, d:''};
+      const same = sync2Hash(r.v)===sync2Hash(L[k]);
+      if (same){ if (sync2Wins(r, e)){ sync2.kv[k] = {t:+r.t||0, d:r.d||'', h:sync2Hash(r.v)}; SYNC2_DIRTY.delete(k); } else if (sync2Wins(e, r)) SYNC2_DIRTY.delete(k); continue; }
+      if (sync2Wins(r, e)){ sync2ApplyKey(k, r.v, A); sync2.kv[k] = {t:+r.t||0, d:r.d||'', h:sync2Hash(r.v)}; SYNC2_DIRTY.delete(k); }
+      else if (L[k]!=null){ SYNC2_DIRTY.add(k); push = true; }      // this device's edit is newer: send it (repairs a stale overwrite)
+    }
+    for (const k of Object.keys(L)) if (!rk[k]){ SYNC2_DIRTY.add(k); push = true; }   // the cloud doesn't have it yet
+    // bets
+    const byId = {}; (Array.isArray(bets)?bets:[]).forEach(b=>{ if (b && b.id) byId[b.id] = b; });
+    for (const id of Object.keys(rd)){ sync2See(rd[id]); const t = +rd[id]||0; sync2.dp[id] = Math.max(+sync2.dp[id]||0, t); if ((+syncMeta.deleted[id]||0) < t) syncMeta.deleted[id] = t; }
+    for (const id of Object.keys(rb)){
+      const r = rb[id]; if (!r || typeof r.v!=='string') continue; sync2See(r.t);
+      if ((+syncMeta.deleted[id]||0) >= +r.t) continue;
+      const lt = byId[id] ? sync2BetStamp(byId[id]) : 0;
+      if (!byId[id] || +r.t > lt){ let b = null; try{ b = JSON.parse(r.v); }catch(e){} if (b && b.id===id){ byId[id] = b; syncMeta.betStamps[id] = +r.t; delete syncMeta.deleted[id]; _betHashes[id] = betHash(b); betsChanged = true; } }
+      if (+r.t >= (+syncMeta.betStamps[id]||0)) sync2.bp[id] = Math.max(+sync2.bp[id]||0, +r.t);
+    }
+    for (const id of Object.keys(byId)){
+      const del = +syncMeta.deleted[id]||0;
+      if (del && del >= sync2BetStamp(byId[id])){ delete byId[id]; delete syncMeta.betStamps[id]; delete _betHashes[id]; betsChanged = true; continue; }
+      if (!rb[id]){ sync2.bp[id] = 0; push = true; }   // the cloud lost or never had it
+    }
+    if (betsChanged){
+      bets = Object.values(byId).sort((a,b)=>(+a.created||0)-(+b.created||0));
+      sync2Set(LS.bets, bets);
+    }
+    if (sync2BetsPending()) push = true;
+    // persist applied keys, quietly
+    if (A.settings){ sync2Set(LS.settings, S); _lastSettingsStr = localStorage.getItem(LS.settings); }
+    if (A.filters){
+      if (A.filtersLast){ const cur = loadJSON(LS.filters, {})||{}; const nl = Object.assign({}, A.filtersLast, {tab:cur.tab||ui.tab, board:cur.board||ui.board, q:cur.q}); if (nl.q===undefined) delete nl.q; sync2Set(LS.filters, nl); if (typeof nl.hideStarted==='boolean') ui.hideStarted = nl.hideStarted; if (typeof nl.hideLogged==='boolean') ui.hideLogged = nl.hideLogged; }
+      sync2Set(LS.filterViews, filterViews);
+      const key = typeof filterViewKey==='function' ? filterViewKey(ui.board||'games', ui.tab) : null;
+      if (key && typeof applyFilterView==='function'){ try{ applyFilterView(key); }catch(e){} }
+      const hs = $('#hideStarted'); if (hs) hs.checked = !!ui.hideStarted;
+      _lastFiltersSig = filtersSig();
+    }
+    if (A.ag) sync2Set(AG_SEL_LS, AG_SEL);
+    if (A.sport) sync2Set(SPORT_SEL_LS, SPORT_SEL);
+    if (A.period){ sync2Set(TRACKER_LS, {period:trackerUI.period}); _lastPeriodStr = localStorage.getItem(TRACKER_LS); }
+    if (A.nob){ sync2Set(AV_FLAG_LS, A.nob); try{ AV.flags = null; AV.fver = (AV.fver||0) + 1; }catch(e){} }
+    if (A.pdismiss) sync2Set(LS.pulledDismiss, A.pdismiss);
+    // re-hash so these applied values don't look like local edits
+    const L2 = sync2Local(); for (const k of Object.keys(L2)){ const e = sync2.kv[k]; if (e && !SYNC2_DIRTY.has(k)) e.h = sync2Hash(L2[k]); }
+    saveSyncMeta(); sync2Save();
+  }finally{ AUTH.applying = false; SYNC2.applyingNow = false; }
+  sync2Refresh(A, betsChanged);
+  if (push || SYNC2_DIRTY.size) sync2Schedule(push ? 400 : 1000);
+}
+/* show incoming changes without a jump: background patch for boards, quick flips for chips */
+function sync2Refresh(A, betsChanged){
+  const any = A.settings || A.filters || A.ag || A.sport || A.period || A.board || betsChanged;
+  if (!any) return;
+  try{
+    if (A.ag && ui.tab==='all' && typeof agApply==='function' && document.querySelector('#view .ag-body')) agApply();
+    if (A.settings && ui.tab==='settings' && typeof renderSettings==='function'){
+      const ae = document.activeElement;
+      if (!(ae && ae.closest && ae.closest('#view') && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName))){ const y = window.scrollY; renderSettings(); if (Math.abs(window.scrollY-y) > 1) window.scrollTo(0, y); }
+    }
+    if (typeof updateFilterChrome==='function') updateFilterChrome();
+    const redraw = ()=>{ try{ if (ui.tab!=='settings' && typeof render==='function') render(); }catch(e){} };
+    if (A.settings && typeof evaluateAllBg==='function' && typeof games!=='undefined' && games && games.length) evaluateAllBg(redraw);
+    else if (!(A.ag && !A.settings && !A.filters && !A.sport && !A.board && !betsChanged && !A.period)) redraw();
+  }catch(e){}
+}
+async function sync2Start(uid){
+  sync2Stop(true);
+  const ref = sync2Ref(); if (!ref) return;
+  if (sync2.uid && sync2.uid!==uid){   // (signed-out edits, uid '', are kept)
+ sync2.kv = {}; sync2.bp = {}; sync2.dp = {}; sync2.seeded = 0; SYNC2_DIRTY.clear(); }   // a different account on this device: start its stamps fresh
+  sync2.uid = uid; sync2Save();
+  try{
+    const snap = await ref.get();
+    SYNC2.live = true;
+    sync2Apply(snap.exists ? snap.data() : {});
+    if (!snap.exists) await sync2Push();
+  }catch(e){ SYNC2.live = true; console.warn('sync2 start', e && e.code); }
+  SYNC2.unsub = ref.onSnapshot(snap=>{
+    if (!snap.exists || snap.metadata.hasPendingWrites) return;
+    sync2Apply(snap.data());
+    if (!SYNC2.pushT && !SYNC2.pushing){ AUTH.status = 'synced'; AUTH.lastSync = Date.now(); try{ renderAuthStatusOnly(); }catch(e){} }
+  }, err=>{ AUTH.status = 'error'; AUTH.err = (err && err.code) || 'listen failed'; try{ renderAuthStatusOnly(); }catch(e){} });
+}
+function sync2Stop(keepLive){
+  if (SYNC2.unsub){ try{ SYNC2.unsub(); }catch(e){} SYNC2.unsub = null; }
+  clearTimeout(SYNC2.pushT); SYNC2.pushT = 0;
+  if (!keepLive) SYNC2.live = false;
+}
+window.addEventListener('online', ()=>{ if (AUTH.user && SYNC2.live){ sync2Scan(); sync2Schedule(200); } });
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='hidden' && SYNC2.pushT && AUTH.user){ clearTimeout(SYNC2.pushT); SYNC2.pushT = 0; sync2Push().catch(()=>{}); } });
+
+try{ sync2Seed(); }catch(e){}
 </script>
 </body>
 </html>
