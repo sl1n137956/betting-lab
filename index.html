@@ -1324,6 +1324,7 @@ table.ftab th,.ftab th{white-space:nowrap;overflow-wrap:normal;word-break:normal
 .ui-mini.win>i{background:var(--ui-g)}.ui-mini.lose>i{background:var(--ui-r)}.ui-mini.neu>i{background:#94a3b8}
 .ui-dots{grid-area:viz;justify-self:end;display:inline-flex;gap:3px;flex-wrap:nowrap}.ui-dots>i{width:9px;height:9px;border-radius:50%;display:block}.ui-dots>i.w{background:var(--ui-g)}.ui-dots>i.l{background:var(--ui-r)}.ui-dots>i.p{background:#64748b}
 @media (max-width:380px){ .ui-seq{gap:2px} .ui-seq>i{width:8px;height:8px} }
+.ui-seq{display:grid;gap:3px;align-self:center}.ui-seq2{align-self:start;margin-top:2px}
 .ui-rec>i{display:block;height:100%}.ui-rec>i.w{background:var(--ui-g)}.ui-rec>i.l{background:var(--ui-r)}
 /* Judge */
 .court2 .c-judge,.c-judge{border:1px solid rgba(96,165,250,.35);border-radius:var(--ui-rad);background:linear-gradient(180deg,rgba(37,99,235,.14),rgba(15,32,64,.28));padding:12px;gap:8px}
@@ -6077,10 +6078,13 @@ function contextFacts(p){
 
   // last 10
   if (team){
-    const a10 = parseWL(fx && fx.sides && fx.sides[side] && fx.sides[side].last10);
-    const b10 = parseWL(fx && fx.sides && fx.sides[opp] && fx.sides[opp].last10);
-    if (a10) addFact('l10', `${T.short} are ${a10.raw} in their last 10`, a10.w>=7?true:a10.w<=3?false:null);
-    if (b10) addFact('l10', `${O.short} are ${b10.raw} in their last 10`, b10.w<=3?true:b10.w>=7?false:null);
+    // v83: the actual last 10 games from the team's ESPN schedule (in order) when we have it; else ESPN's record (text only)
+    const tm10 = t => { const r = (typeof TM!=='undefined' && t && t.id) ? TM[g.league+':'+t.id] : null; const s = r && r.l10s; if (!s || s.length<10) return null;
+      const w = (s.match(/W/g)||[]).length, l = (s.match(/L/g)||[]).length, d = s.length-w-l; return {w, l, d, raw: d ? `${w}–${l}–${d}` : `${w}–${l}`, seq: s.split('').map(c=>c==='W'?'w':c==='L'?'l':'p')}; };
+    const a10 = tm10(T) || parseWL(fx && fx.sides && fx.sides[side] && fx.sides[side].last10);
+    const b10 = tm10(O) || parseWL(fx && fx.sides && fx.sides[opp] && fx.sides[opp].last10);
+    if (a10) addFact('l10', `${T.short} are ${a10.raw} in their last 10`, a10.w>=7?true:a10.w<=3?false:null, a10.seq);
+    if (b10) addFact('l10', `${O.short} are ${b10.raw} in their last 10`, b10.w<=3?true:b10.w>=7?false:null, b10.seq);
     if (!a10 && !b10 && fx) addFact('l10', `ESPN didn't post a last-10 record for this game`, null);
   }
 
@@ -8801,7 +8805,7 @@ function legMergeBoardCourt(leg){
   try{ const pl = playForMarketSide(leg.g, leg.L.kind, leg.L.kind==='total' ? leg.L.dir : leg.side); C = pl && typeof courtModel==='function' ? courtModel(pl) : null; }catch(e){ C = null; }
   if (!C) return;
   const keep = arr => (arr||[]).filter(x=>x && typeof x==='object' && /^Your line /.test(x.t||''));
-  const conv = list => (list||[]).filter(x=>x && x.txt && x.kind!=='price' && !x.always && !/break-even|odds pay like|price is a little steep|asked to be right|no side wins every night/i.test(x.txt)).map(x=>({t:x.txt, imp:x.imp||0, tag:''}));
+  const conv = list => (list||[]).filter(x=>x && x.txt && x.kind!=='price' && !x.always && !/break-even|odds pay like|price is a little steep|asked to be right|no side wins every night/i.test(x.txt)).map(x=>({t:x.txt, imp:x.imp||0, tag:'', seq:x.seq}));
   const yes = keep(leg.yes).concat(conv(C.win)), no = keep(leg.no).concat(conv(C.lose));
   if (leg.p!=null && leg.implied!=null && leg.userOdds!=null){
     const need = (leg.implied*10).toFixed(1).replace(/\.0$/,''), have = (leg.p*10).toFixed(1).replace(/\.0$/,'');
@@ -10470,7 +10474,7 @@ function propFeatures(rows, kind, line, g, homeFlag){
     l10meta: vals.slice(Math.max(0, vals.length-10)).map(x=>({opp:x.r.opp||'', home:x.r.home, date:+x.r.date, res:x.r.res||''})),
     seasonAvg:mean(series), seasonHit:hitRate(series,line,true),
     minL5:mean(minsL5), minSzn:mean(mins),
-    home:!!homeFlag, splitVals:split.slice(-10), h2hVals:h2h.slice(-10), splitN:split.length, splitHit:hitRate(split,line,true), splitAvg:mean(split),
+    home:!!homeFlag, seasonVals:series.slice(-20), splitVals:split.slice(-20), h2hVals:h2h.slice(-20), splitN:split.length, splitHit:hitRate(split,line,true), splitAvg:mean(split),
     rest, h2hn:h2h.length, h2hhit:hitRate(h2h,line,true), h2havg:mean(h2h)
   };
 }
@@ -10571,7 +10575,7 @@ function buildPropPlay(raw, side, feat, est){
   const sw = isUnder ? 'under' : 'over', L0 = +raw.line;
   const neutral = [];
   // v82: per-game hit/miss for the circles (oldest → newest); only when we have exactly those n games
-  const seqOf = (vals, n) => (Array.isArray(vals) && vals.length===n && n<=10) ? vals.map(v => v===L0 ? 'p' : ((isUnder ? v<L0 : v>L0) ? 'w' : 'l')) : null;
+  const seqOf = (vals, n) => (Array.isArray(vals) && vals.length===Math.min(n,20)) ? vals.map(v => v===L0 ? 'p' : ((isUnder ? v<L0 : v>L0) ? 'w' : 'l')) : null;
   const rateRow = (label, hit, n, extra, vals) => {
     if (hit==null || !n || n<5) return;
     const k = Math.round((isUnder ? 1-hit : hit)*n), r = k/n;
@@ -10588,7 +10592,7 @@ function buildPropPlay(raw, side, feat, est){
   if (f.seasonHit!=null && (f.n||0)>=5 && (f.n||0) > (f.l10n||0)){   // season = the same games as the last 10 → skip (no repeats)
     const k = Math.round((isUnder ? 1-f.seasonHit : f.seasonHit)*f.n), r = k/f.n;
     const rl = r>0.55 ? 1 : r<0.45 ? -1 : 0;
-    if (rl){ const txt = `Season: ${sw} in ${k} of ${f.n}${f.seasonAvg!=null?` (avg ${f.seasonAvg.toFixed(1)})`:''}`; (rl>0?win:lose).push({txt, kind:'rate'}); }
+    if (rl){ const txt = `Season: ${sw} in ${k} of ${f.n}${f.seasonAvg!=null?` (avg ${f.seasonAvg.toFixed(1)})`:''}`; (rl>0?win:lose).push({txt, kind:'rate', seq: seqOf(f.seasonVals, f.n)}); }
     else {
       // hit rate is a coin flip: only the average can lean, and then we quote the average, not the coin-flip count
       const al = avgLean(f.seasonAvg);
@@ -17830,11 +17834,11 @@ async function tmPrefetch(){
   if (TM_BUSY || typeof games==='undefined' || !games) return; TM_BUSY = true;
   try{
     const now = Date.now(); const need = [];
-    for (const g of games){ if (!g || g.state!=='pre' || !TM_BIG[g.league] || !LMAP[g.league] || g.start - now > 36*3600000) continue;
+    for (const g of games){ if (!g || g.state!=='pre' || !TM_BIG[g.league] || !LMAP[g.league] || g.start - now > 4*86400000) continue;
       for (const s of ['home','away']){ const id = g[s] && g[s].id; const k = g.league+':'+id; if (id && !TM[k] && !need.some(x=>x.k===k)) need.push({k, lg:g.league, id}); } }
     if (!need.length) return;
     let got = 0;
-    await pool(need.slice(0, 60).map(x=>async()=>{ try{ const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${LMAP[x.lg].path}/teams/${x.id}/schedule`, 15000); if (r.ok && r.data){ TM[x.k] = tmParse(x.lg, x.id, r.data); got++; } }catch(e){} }), 4);
+    await pool(need.slice(0, 120).map(x=>async()=>{ try{ const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${LMAP[x.lg].path}/teams/${x.id}/schedule`, 15000); if (r.ok && r.data){ TM[x.k] = tmParse(x.lg, x.id, r.data); got++; } }catch(e){} }), 4);
     if (got){ tmSave(); if (typeof softRender==='function') softRender(); }
   } finally { TM_BUSY = false; }
 }
@@ -18274,13 +18278,10 @@ function uiReasonLi(x, side){
   const P = uiReasonParts(raw);
   const sideCls = side==='lose' ? 'lose' : side==='win' ? 'win' : 'neu';
   let viz = '';
-  const seq = (x && typeof x==='object' && Array.isArray(x.seq) && x.seq.length && x.seq.length<=10) ? x.seq : null;
-  if (seq){ const nm = {w:'hit', l:'miss', p:'push'}; const isRec = !P.frac;
-    viz = `<span class="ui-dots ui-seq" title="Oldest → newest: ${seq.map(s=>isRec?({w:'W',l:'L',p:'T'}[s]):nm[s]).join(', ')}">${seq.map(s=>`<i class="${s}"></i>`).join('')}</span>`; }
-  else if (P.frac){ const pct = Math.round(P.frac[0]/P.frac[1]*100); viz = `<span class="ui-mini ${sideCls}" title="${P.frac[0]} of ${P.frac[1]}"><i style="width:${pct}%"></i></span>`; }
-  else if (P.rec){ const tot = P.rec[0]+P.rec[1];
-    viz = tot<=10 ? `<span class="ui-dots" title="${P.rec[0]} wins, ${P.rec[1]} losses">${'<i class="w"></i>'.repeat(P.rec[0])}${'<i class="l"></i>'.repeat(P.rec[1])}</span>`
-      : `<span class="ui-rec" title="${P.rec[0]}-${P.rec[1]}"><i class="w" style="width:${(P.rec[0]/tot*100).toFixed(1)}%"></i><i class="l" style="width:${(P.rec[1]/tot*100).toFixed(1)}%"></i></span>`; }
+  const seq = (x && typeof x==='object' && Array.isArray(x.seq) && x.seq.length) ? x.seq.slice(-20) : null;
+  if (seq){ const nm = {w:'hit', l:'miss', p:'push'}; const isRec = !P.frac; const cols = Math.min(10, seq.length);
+    viz = `<span class="ui-dots ui-seq${seq.length>10?' ui-seq2':''}" style="grid-template-columns:repeat(${cols},auto)" title="${(P.frac && P.frac[1]>seq.length)?`Last ${seq.length} games, `:''}oldest → newest: ${seq.map(s=>isRec?({w:'W',l:'L',p:'T'}[s]):nm[s]).join(', ')}">${seq.map(s=>`<i class="${s}"></i>`).join('')}</span>`; }
+  // v83: no progress bars or wins-first dots in reason rows: per-game circles or plain text only
   const val = uiColorNums(esc(P.value));
   return `<li class="rs-row rs-${sideCls}${P.label?'':' rs-nolab'}">${P.label?`<span class="rs-lab">${esc(P.label)}</span>`:''}<span class="rs-val">${val}${tag?` <em>(${esc(tag)})</em>`:''}</span>${viz}</li>`;
 }
