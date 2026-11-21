@@ -31,7 +31,8 @@ body{background:var(--bg);min-height:100vh}
    cards loading) made the browser repaint the whole background: ~120-150ms per tap on desktop. It is now a fixed-height
    layer at the top of the page that never changes size, so it is painted once. Same look. */
 body::before{content:"";position:absolute;left:0;right:0;top:0;height:640px;z-index:-1;pointer-events:none;background:radial-gradient(1100px 520px at 50% -170px,rgba(59,130,246,.22),transparent 70%),radial-gradient(720px 380px at 100% 0,rgba(125,211,252,.07),transparent 55%)}
-html,body{overscroll-behavior-y:contain}
+html{overflow-x:clip;overflow-y:auto;overscroll-behavior-y:auto;height:auto}
+body{overflow-x:visible;overflow-y:visible;overscroll-behavior-y:contain;height:auto}
 ::selection{background:rgba(59,130,246,.35)}
 a{color:var(--acc);text-decoration:none}a:hover{color:var(--acc-hi)}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -466,7 +467,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 }
 @media (max-width:767.98px){
   .slate-side{display:none}
-  html,body{overflow-x:hidden;max-width:100%;-webkit-text-size-adjust:100%}
+  html,body{max-width:100%;-webkit-text-size-adjust:100%}
   .wrap{padding:0 10px}
   .logo small{display:none}
   .topbar{padding:12px 0 10px;gap:12px}
@@ -497,7 +498,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
   .stats{grid-template-columns:repeat(2,1fr)}
   .card{width:100%;max-width:100%;overflow:visible}
   .ftab td:first-child{white-space:normal}
-  #view{overflow-x:hidden;max-width:100%}
+  #view{overflow-x:clip;max-width:100%}
   .verdict-pill{min-width:70px;padding:8px 13px;font-size:11px}
   .math-banner{margin:20px 0 12px}
   .card:hover{transform:none}
@@ -707,7 +708,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .ag-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
 .ag-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:12px;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);color:var(--txt2,#c3d0e6)}
 .ag-chip b{color:var(--txt,#e8eef8)}
-.agc-row{display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 24px 6px 2px;margin:8px 0 14px;-webkit-mask-image:linear-gradient(to right,#000 88%,transparent);mask-image:linear-gradient(to right,#000 88%,transparent)}
+.agc-row{display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;overscroll-behavior-y:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 24px 6px 2px;margin:8px 0 14px;-webkit-mask-image:linear-gradient(to right,#000 88%,transparent);mask-image:linear-gradient(to right,#000 88%,transparent)}
 .agc-row::-webkit-scrollbar{display:none}
 .agc{flex:0 0 auto;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;font:inherit;font-size:13px;font-weight:700;line-height:1.2;border:1px solid rgba(148,163,184,.22);background:rgba(148,163,184,.04);color:var(--mut);cursor:pointer;transition:background .15s,border-color .15s,color .15s}
 .agc .sp-emo{filter:grayscale(.8);opacity:.6}
@@ -716,7 +717,11 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .agc.on .sp-emo{filter:none;opacity:1}
 .agc.on .n{background:rgba(96,165,250,.28);color:#fff}
 .agc.zero:not(.on){opacity:.6}
-@media (min-width:768px){ .agc-row{flex-wrap:wrap;overflow:visible;-webkit-mask-image:none;mask-image:none;padding-right:2px} }
+@media (min-width:768px), (hover:hover) and (pointer:fine){
+  /* v89: on a PC (including a half-width split-screen window) wrap the chips so the
+     row is not a horizontal scroller that swallows the vertical mouse wheel. */
+  .agc-row{flex-wrap:wrap;overflow:visible;-webkit-mask-image:none;mask-image:none;padding-right:2px}
+}
 body.tab-all #filterBar,body.tab-all #btnFilters{display:none !important}
 .ag-sec{margin:6px 0 18px}
 .ag-h{font-size:15px;margin:4px 2px 10px;display:flex;align-items:center;gap:6px}
@@ -1164,6 +1169,20 @@ details.av-hid[open]>summary::after{content:' ▴'}
 .av-off-lab{color:var(--avoid)}
 .av-set{margin:12px 0}
 .ag-tailed{display:inline-flex;align-items:center;gap:5px;margin:0 0 8px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:750;color:var(--logged-hi);background:var(--logged-dim);border:1px solid rgba(34,211,238,.5)}
+
+/* v89: live tailed cards + visible settled section + split-screen page scroll.
+   overflow-x:hidden on both html and body (old phone CSS) turned both into scroll
+   containers. overscroll-behavior-y:contain then ate the mouse wheel on the one
+   that didn't overflow, so a half-width desktop window could not scroll. */
+
+.live-tag{display:inline-flex;align-items:center;gap:8px;margin:0;padding:5px 11px;border-radius:999px;font-size:12px;font-weight:650;color:#fecaca;background:rgba(208,87,79,.14);border:1px solid rgba(208,87,79,.35);max-width:100%;flex-wrap:wrap;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
+.live-tag .badge{flex:none}
+.live-tag-final{color:var(--txt);background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16)}
+.settle-cue{display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:10px 14px;border-radius:16px;background:linear-gradient(180deg,rgba(8,187,214,.28),#13364d);border:1px solid rgba(34,211,238,.5);color:var(--txt);font-weight:700;font-size:14px;line-height:1.35;box-shadow:0 0 18px -6px rgba(34,211,238,.45)}
+.settle-cue-x{margin-left:auto;flex:none;background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:2px 10px;font-size:16px;line-height:1;cursor:pointer;min-width:32px;min-height:32px}
+.trk-settled{margin:18px 0 8px}
+.trk-settled .bet-cards{margin-top:10px}
+.trk-settled-more{margin-top:12px}
 .av-nodata{margin:6px 2px 10px;font-size:12.5px;color:var(--mut)}
 .px-flash{animation:pxf 1.2s ease}@keyframes pxf{0%{background:rgba(96,165,250,.28)}100%{background:transparent}}
 
@@ -2259,6 +2278,12 @@ let firstSeen = loadJSON(LS.firstSeen, {});
 let bets = loadJSON(LS.bets, []);
 let oddsCache = loadJSON(LS.oddsCache, null);
 let games = [], plays = [];
+function setTrackedBets(list){ bets = Array.isArray(list) ? list.slice() : []; }
+function getTrackedBets(){ return bets; }
+function setAppGames(list){ games = Array.isArray(list) ? list.slice() : []; }
+function getAppGames(){ return games; }
+function setAppPlays(list){ plays = Array.isArray(list) ? list.slice() : []; }
+function getAppPlays(){ return plays; }
 let ui = {tab:'picks', board:'games', sport:'all', sports:null, mkt:'all', mix:'all', q:'', horizon:'24h', hideStarted:true, hideLogged:false, filtersOpen:false, open:new Set(), closed:new Set(), pullAll:false, sideOpen:false, navPop:null, settingsBoard:'games', resultsBoard:'games'};
 let filterViews = loadJSON(LS.filterViews, {}) || {};
 function filterViewKey(board, tab){
@@ -2585,6 +2610,8 @@ function saveFlush(deadline){
   if (SAVE_Q.size) SAVE_T = (window.requestIdleCallback ? requestIdleCallback(saveFlush, {timeout:3000}) : setTimeout(saveFlush, 200));
 }
 function saveJSON(k, v){
+  // v89: tracked bets always flush now so an idle queue can't overwrite or drop a just-tailed pick
+  if (typeof LS!=='undefined' && k===LS.bets){ try{ SAVE_Q.delete(k); }catch(e){} return saveJSONNow(k, v); }
   if (typeof window==='undefined' || !window.requestIdleCallback){ return saveJSONNow(k, v); }
   if (typeof uiUserEv==='function' && uiUserEv()){ SAVE_Q.delete(k); return saveJSONNow(k, v); }
   SAVE_Q.set(k, v);
@@ -2807,6 +2834,34 @@ function primaryLoggedBet(pOrKey){
 }
 // v37: a pending tailed bet is never hidden by the book filter (it must stay on its board)
 function isTailedPending(item){ try{ const b = primaryLoggedBet(item); return !!(b && (!b.result || b.result==='pending')); }catch(e){ return false; } }
+function gameByEventId(ev){
+  if (ev==null || ev==='') return null;
+  const s = String(ev);
+  return ((typeof games!=='undefined' && games) || []).find(g => g && (String(g.eventId)===s || String(g.id)===s)) || null;
+}
+// v89: pending tailed cards stay on the board after tip — Live / In progress until they grade
+function playLiveState(g){
+  if (!g) return null;
+  const st = g.state;
+  const start = g.start && (g.start.getTime ? g.start.getTime() : +g.start) || 0;
+  const now = Date.now();
+  if (st==='in') return 'live';
+  if (st==='post') return 'final';
+  if (start && start<=now && st==='pre') return 'live';
+  if (!st && start){
+    if (start<=now - 2.5*3600000) return 'final';
+    if (start<=now) return 'live';
+  }
+  return null;
+}
+function tailedLiveTagHTML(x){
+  const pending = (typeof isTailedPending==='function' && isTailedPending(x)) || !!(x && x.tailedKeep);
+  if (!pending) return '';
+  const st = playLiveState(x && (x.g||x));
+  if (st==='live') return `<div class="live-tag"><span class="badge b-live">● Live</span> In progress · your bet stays here until it grades</div>`;
+  if (st==='final') return `<div class="live-tag live-tag-final">Final · waiting to grade</div>`;
+  return '';
+}
 function isLoggedKey(k){ return betsForKey(k).length>0; }
 function isPlayLogged(p){ return betsForPlay(p).length>0; }
 function pulledNoteForKey(k){
@@ -5087,7 +5142,7 @@ async function gradeAll(){
     }
     if (changed) saveJSON(LS.results, results);
     // tracker bets
-    let bc = 0;
+    let bc = 0; const graded = [];
     for (const b of bets.filter(b=>b.result==='pending')){
       const legs = b.legs || (b.link ? [b.link] : null) || autoLink(b); if (!legs || !legs.length) continue;
       let anyLoss=false, allDone=true, allPush=true;
@@ -5107,17 +5162,18 @@ async function gradeAll(){
         }
         if (L.res==='loss') anyLoss = true; if (L.res!=='push' && L.res!=='void') allPush=false;
       }
-      if (anyLoss){ b.result='loss'; b.autoGraded=true; bc++; }
+      if (anyLoss){ b.result='loss'; b.autoGraded=true; if (typeof touchBet==='function') touchBet(b); bc++; graded.push(b); }
       else if (allDone){
         if (allPush) b.result = legs.some(L=>L.res==='void') && legs.every(L=>L.res==='void') ? 'void' : 'push';
         else { b.result='win'; const live = legs.filter(L=>L.res==='win'); if (legs.length>1 && live.length<legs.length && live.every(L=>L.price!=null)){ const dec = live.reduce((a,L)=>a*amToDec(L.price),1); b.odds = Math.round(dec>=2?(dec-1)*100:-100/(dec-1)); b.note='odds recalculated: pushed legs removed'; } }
-        b.autoGraded = true; bc++;
+        b.autoGraded = true; if (typeof touchBet==='function') touchBet(b); bc++; graded.push(b);
       }
     }
     if (bc) saveBets();
+    if (graded.length && typeof noteSettledBets==='function') noteSettledBets(graded);
     try{ if (typeof gradeLockedRecords==='function') await gradeLockedRecords(); }catch(e){ console.warn('grade locked', e); }
     if ((changed||bc) && (ui.tab==='tracker'||ui.tab==='results')) render();
-    if (bc) toast(`Auto-graded ${bc} bet${bc===1?'':'s'}`);
+    if (bc && typeof noteSettledBets!=='function') toast(`Auto-graded ${bc} bet${bc===1?'':'s'}`);
   } finally { gradingBusy = false; }
 }
 const amToDec = a => a>0 ? 1+a/100 : 1+100/(-a);
@@ -5162,7 +5218,7 @@ function pulledTailedItems(board){
       if (board==='parlay'){
         const live = (typeof parlays!=='undefined' ? parlays : []).find(x=>x && x.id===n.k);
         item = live ? Object.assign({}, live) : (typeof tailedParlayFromBet==='function' ? tailedParlayFromBet(b) : null);
-        if (item && (item.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')) item = null;
+        // v89: started pending parlays stay on the board until they grade
       } else if (board==='props'){
         const I = typeof propBetInfo==='function' ? propBetInfo(b) : null;
         const P = (typeof props!=='undefined' ? props : []);
@@ -5175,7 +5231,6 @@ function pulledTailedItems(board){
       }
     }catch(e){ item = null; }
     if (!item) continue;
-    if (item.g && item.g.state && item.g.state!=='pre') continue;   // started → lives in the Tracker
     item.pulledNote = n; item.tailedKeep = false;
     if (board==='parlay'){ item.C = Object.assign({}, item.C||{}, {J:'SKIP'}); item.verdict = 'avoid'; }   // never show BET on a pulled parlay
     out.push(item);
@@ -6867,7 +6922,19 @@ function recPriceHTML(p, bo){
   }
   return `<div class="price">${fmtPx(r.price, r.pm?r.cents:null)}<small>${esc(r.book)}</small></div>`;
 }
+function tailedPlayFallbackCard(p){
+  const g = p.g;
+  const loggedBet = typeof primaryLoggedBet==='function' ? primaryLoggedBet(p) : null;
+  return `<div class="card v-good logged">
+    ${loggedBet?`<div class="logged-badge">${esc(typeof loggedBadgeText==='function'?loggedBadgeText(loggedBet):'✓ Tailed')}</div>`:''}
+    ${g && typeof gameHead==='function'?gameHead(g, p.verdict||'started'):''}
+    ${typeof tailedLiveTagHTML==='function'?tailedLiveTagHTML(p):''}
+    <div class="pick"><div><div class="mk">${esc((typeof MKN!=='undefined'&&MKN[p.mk])||p.mk||'Pick')}</div><div class="what">${esc(p.label||'')}</div></div></div>
+    <div class="hint kept-note">📌 Kept on your board because you tailed it. Your bet is unchanged and will grade when the game is final.</div>
+  </div>`;
+}
 function playCard(p){
+  if (p && p._stub) return tailedPlayFallbackCard(p);
   const {g, sd, A} = p;
   const C = courtModel(p); const bo = betOnText(p);
   const allBooks = [...new Set((g.quotes[p.mk][p.side]||[]).filter(q=>p.mk==='ml'||q.point===sd.point).map(q=>`${q.book} ${fmtAm(q.price)}`))];
@@ -6897,6 +6964,7 @@ function playCard(p){
   return `<div class="${cardCls}">
     ${logMarks}
     ${gameHead(g, p.verdict)}
+    ${typeof tailedLiveTagHTML==='function'?tailedLiveTagHTML(p):''}
     ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
     ${move?`<div class="${move.kind==='up'?'moved-up':'moved-down'}">${esc(move.text)}</div>`:''}
     <div class="pick"><div><div class="mk">${MKN[p.mk]}${p.rank?` · #${p.rank}`:''}</div><div class="what">${esc(p.label)}</div></div>
@@ -7078,12 +7146,13 @@ function filtered(list, isPlay){
   return list.filter(x=>{
     const g = isPlay ? x.g : x;
     if (g && g.pickOnly) return false;
-    if (isPlay){ if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(x) && !isTailedPending(x)) return false; }
+    const tailed = isPlay && typeof isTailedPending==='function' && isTailedPending(x);
+    if (isPlay){ if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(x) && !tailed) return false; }
     else { if (typeof selectedBooksAllowGame==='function' && !selectedBooksAllowGame(g)) return false; }
-    if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)) return false;
-    if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt) return false;
-    if (ui.hideStarted && g.state!=='pre') return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(x):((g&&g.start&&g.start.getTime)?g.start.getTime():0), g&&g.state, (isPlay && typeof boardHorizonOverride==='function') ? boardHorizonOverride('games') : null)) return false;
+    if (typeof sportOnFilter==='function' ? !sportOnFilter(g.league) : (ui.sport!=='all' && g.league!==ui.sport)){ if (!tailed) return false; }
+    if (isPlay && ui.mkt!=='all' && x.mk!==ui.mkt && !tailed) return false;
+    if (ui.hideStarted && g && g.state!=='pre' && !tailed) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(x):((g&&g.start&&g.start.getTime)?g.start.getTime():0), g&&g.state, (isPlay && typeof boardHorizonOverride==='function') ? boardHorizonOverride('games') : null) && !tailed) return false;
     if (isPlay && ui.hideLogged && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid'||ui.tab==='pulled') && typeof isPlayLogged==='function' && isPlayLogged(x)){
       const k = x.g && x.g.eventId ? `${x.g.eventId}|${x.mk}|${x.side}` : '';
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(k))) return false;
@@ -7498,9 +7567,10 @@ function section(title, sub, list, emptyMsg){
 function render(){
   renderChips();
   const vis = v => filtered(plays.filter(p=>p.verdict===v), true);
-  const good = vis('good').sort((a,b)=>(a.rank||99)-(b.rank||99));
+  let good = vis('good').sort((a,b)=>(a.rank||99)-(b.rank||99));
   const watch = vis('watch').sort((a,b)=>b.score-a.score);
   const avoid = vis('avoid').sort((a,b)=>a.g.start-b.g.start);
+  try{ if (typeof tailedPlaysToKeep==='function') good = good.concat(tailedPlaysToKeep([...good, ...watch, ...avoid])); }catch(e){ console.warn('tailed plays keep', e); }
   const allG = allGamesList();
   const gamesLive = (ui.board||'games')==='games';
   const hideOnly = (list, v) => {
@@ -7512,8 +7582,9 @@ function render(){
       if (p.verdict!==v) return false;
       if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(p)) return false;
       if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
-      if (hs && p.g && p.g.state!=='pre') return false;
-      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h, 'games')) return false;
+      const tailed = typeof isTailedPending==='function' && isTailedPending(p);
+      if (hs && p.g && p.g.state!=='pre' && !tailed) return false;
+      if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h, 'games') && !tailed) return false;
       return true;
     }).length;
   };
@@ -7688,8 +7759,69 @@ function untrackPulled(k){
   };
   setTimeout(()=>go(10), 60);
 }
+
+/* v89: pending tailed game picks stay on the board after tip-off and after the market drops */
+function tailedPlayFromBet(b){
+  const L = (b && b.link) || {};
+  const ev = L.ev || L.eventId;
+  if (!ev) return null;
+  const mk0 = L.mk==='h2h'?'ml':L.mk==='spreads'?'spread':L.mk==='totals'?'total':L.mk;
+  if (!mk0 || !['ml','spread','total'].includes(mk0)) return null;
+  const side = L.side;
+  const g = (typeof gameByEventId==='function' ? gameByEventId(ev) : null) || {
+    id:String(ev), eventId:String(ev), league:L.lg||L.league||'nba',
+    state: playLiveState({state:null, start:L.start})==='final'?'post':(playLiveState({state:null, start:L.start})==='live'?'in':'pre'),
+    start: L.start?new Date(L.start):new Date(), statusText:'', quotes:{},
+    home:{name:'Home', short:'HME', rec:'', score:''}, away:{name:'Away', short:'AWY', rec:'', score:''}
+  };
+  const label = b.pick || [side, mk0, L.point!=null?L.point:''].filter(Boolean).join(' ');
+  return {id: (typeof betPlayKey==='function' && betPlayKey(b)) || `${ev}|${mk0}|${side}`, g, mk:mk0, side, label, tailedKeep:true, verdict: (g.state&&g.state!=='pre')?'started':'good', _stub:true, reasons:[], j:{conf:{v:0,label:'Low',notes:[]}}, sd:{nv:null,impBest:null,point:L.point,best:null,openTxt:'',adverse:false,support:false,ptAdv:0,impDelta:0}, A:{booksFull:0,hold:null,truth:''}};
+}
+function tailedPlaysToKeep(shown){
+  const out = [], seen = new Set();
+  if (ui && ui.hideLogged) return out;
+  const keyOf = p => {
+    if (!p) return '';
+    if (p.g && p.g.eventId && p.mk && p.side) return `${p.g.eventId}|${p.mk}|${p.side}`;
+    return p.id || '';
+  };
+  const shownKeys = new Set((shown||[]).map(keyOf).filter(Boolean));
+  const gameMk = k => !k || ['ml','spread','total','h2h','spreads','totals'].includes(k);
+  for (const b of (Array.isArray(bets)?bets:[])){
+    if (!b || (b.result && b.result!=='pending')) continue;
+    if (typeof isParlayBet==='function' && isParlayBet(b)) continue;
+    if (typeof propBetInfo==='function' && propBetInfo(b)) continue;
+    const L = b.link || {};
+    const mk = L.mk==='h2h'?'ml':L.mk==='spreads'?'spread':L.mk==='totals'?'total':L.mk;
+    if (mk && !gameMk(mk)) continue;
+    const k = (typeof betPlayKey==='function' && betPlayKey(b)) || (L.ev && mk && L.side ? `${L.ev}|${mk}|${L.side}` : '');
+    if (!k || shownKeys.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    let p = (plays||[]).find(x => x && (keyOf(x)===k || x.id===k));
+    if (!p && L.ev) p = (plays||[]).find(x => x && x.g && String(x.g.eventId)===String(L.ev) && x.mk===mk && x.side===L.side);
+    if (!p) p = tailedPlayFromBet(b);
+    if (!p) continue;
+    const live = playLiveState(p.g);
+    out.push(Object.assign({}, p, {tailedKeep:true, verdict: live ? 'started' : (p.verdict && p.verdict!=='started' ? p.verdict : 'good')}));
+  }
+  return out;
+}
 /* ================= TRACKER ================= */
-function saveBets(){ saveJSON(LS.bets, bets); }
+function saveBets(){
+  // v89: flush immediately so a backgrounded iPhone tab can't drop a new tail
+  try{ if (typeof SAVE_Q!=='undefined' && SAVE_Q && SAVE_Q.delete) SAVE_Q.delete(LS.bets); }catch(e){}
+  if (typeof saveJSONNow==='function') saveJSONNow(LS.bets, bets);
+  else saveJSON(LS.bets, bets);
+}
+var SETTLE_CUE = null;
+function dismissSettleCue(){ SETTLE_CUE = null; }
+function noteSettledBets(list){
+  const items = (list||[]).filter(Boolean);
+  if (!items.length) return;
+  SETTLE_CUE = {n:items.length, results:items.map(b=>b.result), picks:items.map(b=>b.pick||''), at:Date.now()};
+  const lab = typeof resultLabel==='function' ? resultLabel(items[0].result) : (items[0].result||'');
+  if (typeof toast==='function') toast(items.length===1 ? `1 bet settled · ${lab}` : `${items.length} bets settled`);
+}
 function touchBet(b){ if (b && typeof b==='object') b.updatedAt = Date.now(); }
 function tombstoneBet(id){
   if (!id) return;
@@ -7814,8 +7946,7 @@ const trackerUI = {period:'all', more:false, open:new Set(), allOpen:false, spor
 })();
 function saveTrackerPeriod(){ try{ saveJSON(TRACKER_LS, {period:trackerUI.period||'all'}); }catch(e){} }
 function resetTrackerOpen(){
-  trackerUI.allOpen = false;
-  trackerUI.showSettled = false;
+  // v89: do not collapse Pending or reset Settled when leaving the tab
   trackerUI.sportOpen = false;
   trackerUI.oddsOpen = false;
   if (trackerUI.open && typeof trackerUI.open.clear==='function') trackerUI.open.clear();
@@ -7995,7 +8126,20 @@ function renderTracker(pf){
     </article>`;
   };
   const betCards = sortedBets.filter(isPendingBet).map(betCardOf).join('');
-  const settledCards = trackerUI.showSettled ? sortedBets.filter(b=>!isPendingBet(b)).map(betCardOf).join('') : '';
+  const settledAll = sortedBets.filter(b=>!isPendingBet(b)).slice().sort((a,b)=>(+b.updatedAt||+b.created||0)-(+a.updatedAt||+a.created||0) || (b.date||'').localeCompare(a.date||''));
+  const weekAgo = Date.now() - 7*86400000;
+  const isoWeek = (typeof isoDate==='function') ? isoDate(new Date(weekAgo)) : '';
+  const settledRecent = settledAll.filter(b => {
+    const t = +b.updatedAt||+b.created||0;
+    if (t) return t >= weekAgo;
+    return !b.date || !isoWeek || b.date >= isoWeek;
+  });
+  const showAllSettled = !!trackerUI.settledAll;
+  const settledShow = showAllSettled ? settledAll : settledRecent;
+  const settledCards = settledShow.map(betCardOf).join('');
+  const cue = (typeof SETTLE_CUE!=='undefined' && SETTLE_CUE && Date.now()-SETTLE_CUE.at < 10*60000) ? SETTLE_CUE : null;
+  const cueLab = cue ? (cue.n===1 ? `1 bet settled · ${(typeof resultLabel==='function'?resultLabel(cue.results[0]):cue.results[0])}` : `${cue.n} bets settled`) : '';
+  const cuePick = cue && cue.n===1 && cue.picks && cue.picks[0] ? ` — ${cue.picks[0]}` : '';
   const clvBets=bets.filter(b=>b.clv!=null); const clvAvg=clvBets.length?clvBets.reduce((x,b)=>x+b.clv,0)/clvBets.length:null;
   $('#view').innerHTML = `
   <div class="section-title"><h2><span class="h-emo" aria-hidden="true">📊</span>Bet Tracker</h2><span class="hint">Saved on this device.</span></div>
@@ -8066,14 +8210,18 @@ function renderTracker(pf){
     </div>
   </details>
   ${typeof oddsHistoryTable==='function'?`<details class="dd trk-dd" data-trk="odds" ${trackerUI.oddsOpen?'open':''}><summary>Win rate by odds</summary><div class="trk-dd-body">${oddsHistoryTable()}</div></details>`:''}
+  ${cue?`<div class="settle-cue" role="status">${esc(cueLab)}${esc(cuePick)}<button type="button" class="settle-cue-x" data-dismiss-cue aria-label="Dismiss">×</button></div>`:''}
   <details class="dd trk-dd trk-allbets" id="allBets" ${trackerUI.allOpen?'open':''}>
     <summary>🕒 Pending bets (${pendingN})</summary>
     <div class="trk-allbets-body">
-      ${betCards ? `<div class="bet-cards">${betCards}</div>` : `<div class="bet-empty">${bets.length ? 'No pending bets. Settled bets are counted in your record above.' : 'No bets yet. Tail one above, or use <b>Tail</b> on a play card.'}</div>`}
-      ${settledN ? `<div class="settled-wrap"><button type="button" class="btn sm settled-toggle" data-toggle-settled aria-expanded="${trackerUI.showSettled?'true':'false'}">${trackerUI.showSettled?'Hide settled':'Show settled'} (${settledN})</button>
-        ${trackerUI.showSettled ? `<div class="hint settled-hint">Already counted in your record. Change a result here if you marked one by mistake.</div><div class="bet-cards settled-cards">${settledCards}</div>` : ''}</div>` : ''}
+      ${betCards ? `<div class="bet-cards">${betCards}</div>` : `<div class="bet-empty">${bets.length ? 'No pending bets right now.' : 'No bets yet. Tail one above, or use <b>Tail</b> on a play card.'}</div>`}
     </div>
-  </details>`;
+  </details>
+  ${settledN ? `<div class="trk-settled">
+    <div class="section-title"><h2><span class="h-emo" aria-hidden="true">✅</span>Settled</h2><span class="hint">${showAllSettled?'Every settled bet, newest first. Already counted in your record.' : 'Last 7 days, newest first. Already counted in your record.'}</span></div>
+    ${settledCards ? `<div class="bet-cards settled-cards">${settledCards}</div>` : `<div class="bet-empty">No settled bets in the last 7 days.</div>`}
+    ${settledAll.length>settledRecent.length ? `<button type="button" class="btn sm trk-settled-more" data-toggle-settled-all aria-expanded="${showAllSettled?'true':'false'}">${showAllSettled?'Show last 7 days':'Show all'} (${settledAll.length})</button>` : ''}
+  </div>` : ''}`;
   function currentOddsType(){
     const el = document.querySelector('#betForm input[name="oddsType"]:checked');
     return (el && el.value) || 'american';
@@ -8162,12 +8310,15 @@ function renderTracker(pf){
       // v40: settle → show the choice, toast, then the bet slides out of the Pending list
       const card = btn.closest('.bet-row');
       if (card){ card.querySelectorAll('.res-seg-btn').forEach(x=>{ const on = x===btn; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on?'true':'false'); }); card.classList.add('bet-leaving'); }
-      toast(`Marked ${typeof resultLabel==='function'?resultLabel(r):r} — saved to your record`);
+      if (typeof noteSettledBets==='function') noteSettledBets([b]);
+      else toast(`Marked ${typeof resultLabel==='function'?resultLabel(r):r} — saved to your record`);
       setTimeout(rerender, 900);
     } else rerender();
   });
-  const stg = $('#view').querySelector('[data-toggle-settled]');
-  if (stg) stg.onclick = ()=>{ trackerUI.showSettled = !trackerUI.showSettled; renderTracker(trkKeep()); };
+  const stg = $('#view').querySelector('[data-toggle-settled-all]');
+  if (stg) stg.onclick = ()=>{ trackerUI.settledAll = !trackerUI.settledAll; renderTracker(trkKeep()); };
+  const cueX = $('#view').querySelector('[data-dismiss-cue]');
+  if (cueX) cueX.onclick = ()=>{ if (typeof dismissSettleCue==='function') dismissSettleCue(); renderTracker(trkKeep()); };
   $('#view').querySelectorAll('[data-del]').forEach(s=>s.onclick=()=>{ if(!confirm('Delete this bet?')) return; if (typeof tombstoneBet==='function') tombstoneBet(s.dataset.del); bets=bets.filter(x=>x.id!==s.dataset.del); saveBets(); renderTracker(); });
   const allDet = $('#view').querySelector('details.trk-allbets');
   if (allDet) allDet.addEventListener('toggle', ()=>{ trackerUI.allOpen = !!allDet.open; });
@@ -10215,6 +10366,8 @@ const PROP_FILTER_KINDS = ['pts','reb','ast','threes','pra','sog','pass_yds','ru
 const OA_PROP_KIND = {pts:'player_points',reb:'player_rebounds',ast:'player_assists',threes:'player_threes',pra:'player_points_rebounds_assists',sog:'player_shots_on_goal',pass_yds:'player_pass_yds',rush_yds:'player_rush_yds',rec_yds:'player_reception_yds'};
 const PROP_BET_MIN = 0.60, PROP_WATCH_MIN = 0.54, PROP_ODDS_LO = -150, PROP_ODDS_HI = 150;
 let props = [];
+function setAppProps(list){ props = Array.isArray(list) ? list.slice() : []; }
+function getAppProps(){ return props; }
 let propStatus = {txt:'', err:'', source:'', n:0, loading:false};
 let propBoardCache = {};
 let propAthleteCache = loadJSON('bl_prop_athletes', {}) || {};
@@ -10898,11 +11051,12 @@ function filteredProps(list){
   const books = typeof selectedBooks==='function' ? selectedBooks() : (typeof myBookList==='function' ? myBookList() : []);
   return (list||[]).filter(p=>{
     const g = p.g;
-    if ((typeof selectedBooksAllowProp==='function' ? !selectedBooksAllowProp(p) : (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p))) && !isTailedPending(p)) return false;
-    if (typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) return false;
-    if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt) return false;
-    if (ui.hideStarted && g && g.state!=='pre') return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, g&&g.state, (typeof boardHorizonOverride==='function' ? boardHorizonOverride('props') : null), 'props')) return false;
+    const tailed = typeof isTailedPending==='function' && isTailedPending(p);
+    if ((typeof selectedBooksAllowProp==='function' ? !selectedBooksAllowProp(p) : (typeof bookSupportsMarket==='function' && !bookSupportsMarket(books, 'props', p))) && !tailed) return false;
+    if ((typeof sportOnFilter==='function' ? !sportOnFilter(p.league) : (ui.sport!=='all' && p.league!==ui.sport)) && !tailed) return false;
+    if (ui.mkt && ui.mkt!=='all' && p.kind!==ui.mkt && p.mk!==ui.mkt && !tailed) return false;
+    if (ui.hideStarted && g && g.state!=='pre' && !tailed) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, g&&g.state, (typeof boardHorizonOverride==='function' ? boardHorizonOverride('props') : null), 'props') && !tailed) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(p)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(p.id))) return false;
     }
@@ -11057,6 +11211,7 @@ function propCard(p){
   return `<div class="${cardCls}">
     ${logMarks}
     ${propHead(p)}
+    ${typeof tailedLiveTagHTML==='function'?tailedLiveTagHTML(p):''}
     ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
     <div class="pick"><div><div class="mk">${esc(PROP_KIND_LABEL[p.kind]||p.kind)} · ${esc(p.price==null||propSourceLabel(p)==='line'?'Research':(rec&&!rec.none)?rec.book:(p.pmNote?(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book):'Reference line'))}</div><div class="what">${esc(p.label)}</div></div>
       <div class="price">${price}</div></div>
@@ -11158,13 +11313,14 @@ function updatePropTabCounts(){
   const hs = fv && typeof fv.hideStarted==='boolean' ? fv.hideStarted : !!ui.hideStarted;
   const sp = fv && Array.isArray(fv.sports) ? fv.sports : null;
   const vis = v => live
-    ? filteredProps((props||[]).filter(p=>p.verdict===v)).length
+    ? filteredProps((props||[]).filter(p=>p.verdict===v)).length + (v==='good' && typeof tailedPropsToKeep==='function' ? (tailedPropsToKeep(filteredProps(props||[]))||[]).length : 0)
     : (props||[]).filter(p=>{
         if (p.verdict!==v) return false;
         if (typeof selectedBooksAllowProp==='function' && !selectedBooksAllowProp(p)) return false;
         if (sp && p.g && p.g.league && !sp.includes(p.g.league)) return false;
-        if (hs && p.g && p.g.state!=='pre') return false;
-        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h, 'props')) return false;
+        const tailed = typeof isTailedPending==='function' && isTailedPending(p);
+        if (hs && p.g && p.g.state!=='pre' && !tailed) return false;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state, h, 'props') && !tailed) return false;
         return true;
       }).length;
   if (typeof setTabCount==='function'){
@@ -11259,22 +11415,48 @@ function propMatchesInfo(p, I, anySide){
   if (I.pid) return String(p.playerId)===String(I.pid);
   return !!(I.name && typeof nameScore==='function' && nameScore(I.name, p.playerName||'')>=7);
 }
+function tailedPropFromBet(b, I){
+  I = I || propBetInfo(b); if (!I) return null;
+  const ev = I.ev;
+  const L = (b && b.link) || {};
+  const start = L.start || 0;
+  let g = typeof gameByEventId==='function' ? gameByEventId(ev) : null;
+  if (!g && ev){
+    const live = typeof playLiveState==='function' ? playLiveState({state:null, start}) : null;
+    g = {id:String(ev), eventId:String(ev), league:L.lg||L.league||b.sport&&String(b.sport).toLowerCase()||'nba',
+      state: live==='final'?'post':live==='live'?'in':'pre',
+      start: start?new Date(start):new Date(), statusText: live==='live'?'Live':live==='final'?'Final':'',
+      quotes:{}, home:{name:'Home', short:'HME', rec:'', score:''}, away:{name:'Away', short:'AWY', rec:'', score:''}};
+  }
+  const P = props||[];
+  const sib = P.find(p => (I.pid && String(p.playerId)===String(I.pid)) || (I.name && p.playerName && typeof nameScore==='function' && nameScore(I.name, p.playerName)>=7)) || null;
+  const name = I.name || (sib && sib.playerName) || String(b.pick||'').replace(/\s*\(.*$/,'').replace(/\s+(over|under)\b.*$/i,'').replace(/^(over|under)\s+/i,'').trim() || 'Player';
+  const kind = I.kind, side = I.side || 'over', line = I.line;
+  const kindLab = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[kind]) || kind;
+  const sideLab = String(side).toLowerCase()==='under'?'Under':'Over';
+  const label = b.pick || `${name} ${sideLab} ${line} ${kindLab}`;
+  return {
+    id: I.k || (typeof betPlayKey==='function' && betPlayKey(b)) || `prop:${ev}:${I.pid||name}:${kind}:${side}:${line}`,
+    isProp:true, playerName:name, playerId:I.pid||(sib&&sib.playerId)||'', kind, side, line, label,
+    league:(g&&g.league)||L.lg||'nba', team:sib&&sib.team, opp:sib&&sib.opp, pos:sib&&sib.pos, home:sib&&sib.home,
+    g, verdict:'good', tailedKeep:true, price:b.odds, p:null, implied:null, edge:null, feat:{n:0,l10n:0},
+    source:'tailed'
+  };
+}
 function tailedPropsToKeep(shown){
-  const out = [], seen = new Set(), now = Date.now();
+  const out = [], seen = new Set();
   if (ui && ui.hideLogged) return out;
   for (const b of (Array.isArray(bets) ? bets : [])){
     if (b.result && b.result!=='pending') continue;
     const I = propBetInfo(b); if (!I) continue;
     const sk = I.k+'|'+(I.name||I.pid); if (seen.has(sk)) continue; seen.add(sk);
-    if (shown.some(p=>propMatchesInfo(p, I))) continue;
-    if (typeof pulledNoteForKey==='function' && pulledNoteForKey(I.k)) continue;
+    if ((shown||[]).some(p=>propMatchesInfo(p, I))) continue;
     const P = props||[];
     let pr = P.find(p=>propMatchesInfo(p, I));
     if (!pr){ const other = P.find(p=>propMatchesInfo(p, I, true)); if (other && other.raw){ try{ pr = buildPropPlay(other.raw, I.side, other.feat, other.est); pr.raw = other.raw; }catch(e){ pr = null; } } }
-    if (!pr) continue;   // line moved or the prop is gone: the Tracker still has the bet
-    if (pr.g && pr.g.state && pr.g.state!=='pre') continue;
-    if (typeof itemStartMs==='function' && itemStartMs(pr) && itemStartMs(pr) < now) continue;
-    out.push(Object.assign({}, pr, {tailedKeep:true, verdict:'good'}));
+    if (!pr) pr = tailedPropFromBet(b, I);
+    if (!pr) continue;
+    out.push(Object.assign({}, pr, {tailedKeep:true, verdict: pr.verdict && pr.verdict!=='started' ? pr.verdict : 'good'}));
   }
   return out;
 }
@@ -11835,8 +12017,9 @@ function filteredParlays(list){
     }
     if (ui.mix && ui.mix!=='all' && pl.mix!==ui.mix) return false;
     const started = (pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre');
-    if (ui.hideStarted && started) return false;
-    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre', (typeof boardHorizonOverride==='function' ? boardHorizonOverride('parlay') : null), 'parlay')) return false;
+    const tailed = typeof isTailedPending==='function' && isTailedPending(pl);
+    if (ui.hideStarted && started && !tailed) return false;
+    if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(pl):0, started?'in':'pre', (typeof boardHorizonOverride==='function' ? boardHorizonOverride('parlay') : null), 'parlay') && !tailed) return false;
     if (ui.hideLogged && typeof isPlayLogged==='function' && isPlayLogged(pl)){
       if (!(typeof pulledNoteForKey==='function' && pulledNoteForKey(pl.id))) return false;
     }
@@ -11860,8 +12043,9 @@ function updateParlayTabCounts(){
         const sports = (p.sports && p.sports.length) ? p.sports : [p.league];
         if (sp && sports.filter(Boolean).some(lg=>!sp.includes(lg))) return false;
         const started = (p.legs||[]).some(l=>l.g&&l.g.state&&l.g.state!=='pre');
-        if (hs && started) return false;
-        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, started?'in':'pre', h, 'parlay')) return false;
+        const tailed = typeof isTailedPending==='function' && isTailedPending(p);
+        if (hs && started && !tailed) return false;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, started?'in':'pre', h, 'parlay') && !tailed) return false;
         return true;
       }).length;
   if (typeof setTabCount==='function'){
@@ -12033,7 +12217,7 @@ function tailedParlaysToKeep(shownIds){
     const live = (parlays||[]).find(x=>x && x.id===k);
     const pl = live ? Object.assign(Object.create(Object.getPrototypeOf(live)), live, {tailedKeep:true, verdict:'good'}) : tailedParlayFromBet(b);
     if (!pl) continue;
-    if ((pl.legs||[]).some(l=>l.g && l.g.state && l.g.state!=='pre')) continue;   // started → it lives in the Tracker
+    // v89: started pending parlays stay on the board until they grade
     if (isFinite(pl.start) && pl.start < now) continue;
     out.push(pl);
   }
@@ -13678,7 +13862,16 @@ function onLocalWrite(k, v){
     let arr = []; try{ arr = JSON.parse(v)||[]; }catch(e){}
     const seen = {};
     arr.forEach(b=>{ if (!b || !b.id) return; seen[b.id] = 1; const h = betHash(b); if (_betHashes[b.id]!==h){ _betHashes[b.id] = h; syncMeta.betStamps[b.id] = now; delete syncMeta.deleted[b.id]; changed = true; } });
-    Object.keys(_betHashes).forEach(id=>{ if (!seen[id]){ delete _betHashes[id]; delete syncMeta.betStamps[id]; syncMeta.deleted[id] = now; changed = true; } });
+    Object.keys(_betHashes).forEach(id=>{
+      if (seen[id]) return;
+      // v89: only mark a bet deleted when the user actually deleted it. A stale idle save
+      // that writes an older list used to tombstone a just-tracked pick and push that
+      // deletion to the cloud, wiping it on every device.
+      let explicit = false;
+      try{ const tombs = (typeof loadJSON==='function' && loadJSON('bl_bet_tombstones', {})) || {}; explicit = !!(tombs && tombs[id]); }catch(e){}
+      if (!explicit) return;
+      delete _betHashes[id]; delete syncMeta.betStamps[id]; syncMeta.deleted[id] = now; changed = true;
+    });
   }
   if (!changed) return;
   saveSyncMeta();
@@ -13903,6 +14096,7 @@ function applyRemote(d){
       if (rg && (+rg.checked||0) > (+(st41.guard||{}).checked||0)){ st41.guard = rg; try{ localStorage.setItem('bl_parlayGuard_v1', JSON.stringify(rg)); }catch(e){} }
     }
     if (d.bets != null){
+      try{ if (typeof SAVE_Q!=='undefined' && SAVE_Q && SAVE_Q.delete) SAVE_Q.delete(LS.bets); }catch(e){}
       const m = mergeBets(parseJ(d.bets, []), parseJ(d.betsDeleted, {}));
       const before = JSON.stringify(bets);
       bets = m.list; syncMeta.betStamps = m.stamps; syncMeta.deleted = m.del;
@@ -18700,9 +18894,16 @@ function uiBackgroundPatch(fn){
   UI_PATCH.ms = performance.now()-t0;
 }
 const uiIdle = (cb) => (window.requestIdleCallback ? requestIdleCallback(cb, {timeout:1200}) : setTimeout(cb, 60));
+var _baseRender = typeof render==='function' ? render : null;
+function renderNow(){
+  try{ if (typeof UI_PATCH!=='undefined'){ UI_PATCH.pending = false; UI_PATCH.last = ''; } }catch(e){}
+  if (typeof _baseRender==='function') return _baseRender.apply(this, arguments);
+  if (typeof render==='function') return render.apply(this, arguments);
+}
 (function(){
   if (typeof render!=='function') return;
   const baseRender = render;
+  _baseRender = baseRender;
   render = function(){
     const a = arguments;
     if (uiUserEv() || !document.getElementById('view') || !document.getElementById('view').firstChild){ UI_PATCH.pending = false; UI_PATCH.last = ''; return baseRender.apply(this, a); }
