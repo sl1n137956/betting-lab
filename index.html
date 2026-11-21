@@ -434,7 +434,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
   .pk-hero,.pk-grid,.pk-empty,.pk-ticket{max-width:840px;margin-left:auto;margin-right:auto;width:100%}
   .pk-grid{grid-template-columns:1fr;gap:18px}
 }
-.pk-typed{margin:0 2px 10px;overflow-wrap:anywhere}
+.pk-typed{margin:0 2px 0;overflow-wrap:break-word;word-break:normal}
 .pk-match{margin:0 0 16px;padding:12px 14px 14px;background:linear-gradient(180deg,rgba(36,64,110,.95) 0%,#132033 100%);border:1px solid rgba(125,211,252,.22);border-radius:20px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset,var(--shadow)}
 .pk-match label{display:flex;flex-direction:column;gap:8px;margin:0;width:100%;color:inherit;font-size:inherit}
 .pk-match .lab{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
@@ -941,9 +941,9 @@ body:not(.is-admin) #tabs [data-tab="results"]{display:none !important}
 .pk-assume .pk-assume-lab{flex:1 0 100%;margin-bottom:2px}
 .pk-assume .chip.pk-dym{min-height:0;padding:7px 14px;line-height:1.25}
 .pk-assume b{color:#fff}
-.pk-dym-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 2px 2px}
-.pk-dym-row .lab{font-size:11px;color:var(--mut);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-right:2px}
-.chip.pk-dym{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.32);color:var(--acc-hi);padding:6px 13px;font-size:12.5px;border-radius:999px;font-family:inherit;cursor:pointer;max-width:100%;white-space:normal;text-align:left}
+.pk-dym-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 2px 0;width:100%}
+.pk-dym-row .lab{font-size:11px;color:var(--mut);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-right:2px;flex:0 0 auto}
+.chip.pk-dym{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.32);color:var(--acc-hi);padding:6px 13px;font-size:12.5px;border-radius:999px;font-family:inherit;cursor:pointer;max-width:100%;white-space:normal;text-align:left;overflow-wrap:break-word;word-break:normal}
 .chip.pk-dym:hover{background:rgba(59,130,246,.24);color:#fff}
 .chip.pk-dym .mut{color:var(--mut);font-weight:500}
 .vc-pill{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:4px 0 12px;padding:9px 14px;border-radius:999px;background:rgba(59,130,246,.10);border:1px solid rgba(59,130,246,.28);font-size:12.5px;color:var(--txt2);line-height:1.4}
@@ -9378,19 +9378,48 @@ async function runPicks(){
   try{ if (typeof verdictRecordChecks==='function') verdictRecordChecks(legs); }catch(e){ console.warn('verdict ledger', e); }
 }
 // Replace one leg's text (Assuming-ML switch, teamless-total fix) and re-check
+function pickLineList(){ return String(PK.text||'').split(/\n|;/).map(s=>s.trim()).filter(Boolean); }
+function replaceLegLine(i, text){
+  const lines = pickLineList();
+  if (i>=0 && i<lines.length) lines[i] = text;
+  else if (text) lines.push(text);
+  PK.text = lines.join('\n');
+  const ta = $('#pkText'); if (ta) ta.value = PK.text;
+}
+function dymPickText(leg, cand){
+  const L = (leg && leg.L) || {}, g = cand && cand.c && cand.c.g, T = g && cand.c.side && g[cand.c.side];
+  if (!g || !T) return '';
+  let text;
+  if (L.kind==='spread') text = T.name+' '+(L.line===0?'PK':fmtPt(L.line));
+  else if (L.kind==='total') text = (g.away.short||g.away.name)+'/'+(g.home.short||g.home.name)+' '+(L.dir==='under'?'Under':'Over')+' '+L.line;
+  else if (L.kind==='teamtotal') text = T.name+' team total '+(L.dir==='under'?'Under':'Over')+' '+L.line;
+  else text = T.name+' ML';
+  if (L.odds!=null) text += ' '+(typeof fmtAmRaw==='function' ? fmtAmRaw(L.odds) : fmtAm(L.odds));
+  return text;
+}
 function swapLegText(i, text){
   if (!text) return;
-  const lines = PK.text.split(/\n|;/).map(s=>s.trim()).filter(Boolean);
-  const old = PK.legs[i] && PK.legs[i].raw;
-  const k = old!=null ? lines.indexOf(old) : -1;
-  if (k>=0) lines[k] = text; else lines.push(text);
-  PK.text = lines.join('\n'); const ta = $('#pkText'); if (ta) ta.value = PK.text;
+  replaceLegLine(i, text);
   runPicks();
 }
 async function rerunLeg(i, key){
-  const l = PK.legs[i]; PK.busy = true; renderPicks();
-  const n = await resolveLeg(l.raw, key); n.override = key; judgeLeg(n); PK.legs[i] = n; PK.busy = false; renderPicks();
-  try{ if (typeof verdictRecordChecks==='function') verdictRecordChecks([n]); }catch(e){}
+  const l = PK.legs[i]; if (!l) return;
+  const hit = (l.dym||[]).concat(l.cands||[]).find(x=>x && x.key===key);
+  const next = (hit && dymPickText(l, hit)) || l.raw;
+  if (next) replaceLegLine(i, next);
+  PK.busy = true; renderPicks();
+  let n = l;
+  try{
+    n = await resolveLeg(next || l.raw, key);
+    n.override = key;
+    judgeLeg(n);
+    PK.legs[i] = n;
+  }catch(e){
+    console.warn(e);
+    if (PK.legs[i]) PK.legs[i].err = 'Error: '+(e.message||e);
+  }
+  PK.busy = false; renderPicks();
+  try{ if (typeof verdictRecordChecks==='function' && n && !n.err) verdictRecordChecks([n]); }catch(e){}
 }
 /* ---------- render ---------- */
 function verdictBadge(v){ const c = v==='BET'?'b-good':v==='WATCHLIST'?'b-watch':v==='FINAL'?'b-none':'b-avoid'; return `<span class="badge ${c}">${v==='WATCHLIST'?'MAYBE LATER':v==='PASS'?'SKIP':v}</span>`; }
@@ -9427,12 +9456,18 @@ function legAssistHTML(leg, i){
       : `<div class="pk-assume">Assuming <b>Moneyline</b> — add a line (like “${esc(verdictShortName(T, g))} -4.5”) to check a spread instead.</div>`);
   }
   if (leg.guessed && g) bits.push(`<div class="pk-assume">Best guess: <b>${esc(g[leg.side].name)}</b> (closest name on today's board)</div>`);
-  if (leg.dym && leg.dym.length) bits.push(`<div class="pk-dym-row"><span class="lab">Did you mean</span>${leg.dym.map(x=>`<button type="button" class="chip pk-dym" data-dym="${i}" data-dym-key="${esc(x.key)}">${esc(x.c.g[x.c.side].name)} <span class="mut">· ${esc(LMAP[x.c.g.league].label)}${g && g[leg.side] && x.c.g[x.c.side].name===g[leg.side].name ? ' · '+esc(fmtTime(x.c.g.start)) : ''}</span></button>`).join('')}</div>`);
+  return bits.join('');
+}
+function legDymHTML(leg, i){
+  const g = leg.g;
+  if (leg.dym && leg.dym.length){
+    return `<div class="pk-dym-row"><span class="lab">Did you mean</span>${leg.dym.map(x=>`<button type="button" class="chip pk-dym" data-dym="${i}" data-dym-key="${esc(x.key)}">${esc(x.c.g[x.c.side].name)} <span class="mut">· ${esc(LMAP[x.c.g.league].label)}${g && g[leg.side] && x.c.g[x.c.side].name===g[leg.side].name ? ' · '+esc(fmtTime(x.c.g.start)) : ''}</span></button>`).join('')}</div>`;
+  }
   if (leg.err && leg.hint==='teamless'){
     const ex = (typeof pickExampleChips==='function' ? pickExampleChips() : []).find(x=>/\bover\b/i.test(x) && /\//.test(x)) || 'Lakers/Celtics Over 225.5';
-    bits.push(`<div class="pk-dym-row"><span class="lab">Try</span><button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(ex)}">${esc(ex)}</button></div>`);
+    return `<div class="pk-dym-row"><span class="lab">Try</span><button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(ex)}">${esc(ex)}</button></div>`;
   }
-  return bits.join('');
+  return '';
 }
 function verdictShortName(T, g){
   if (!T) return '';
@@ -9481,20 +9516,21 @@ function legCard(leg, i, weakest){
   const g = leg.g;
   const selHtml = legMatchSelectHTML(leg, i);
   const sel = '';
-  const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}${leg.lineNote?` · ${esc(leg.lineNote)}`:''}</div>` + legAssistHTML(leg, i);
+  const typed = `<div class="hint pk-typed">You typed: “${esc(leg.raw)}”${weakest?' · <span class="neg">WEAKEST LEG</span>':''}${leg.userOdds!=null?` · your odds ${fmtAm(leg.userOdds)}`:''}${leg.lineNote?` · ${esc(leg.lineNote)}`:''}</div>`;
+  const headBits = typed + legDymHTML(leg, i) + legAssistHTML(leg, i);
   const resultBan = leg.result?`<div class="banner" style="margin:6px 0">Result: <b class="${leg.result==='HIT'?'pos':leg.result==='MISS'?'neg':''}">${leg.result}</b>${leg.actual!=null?` (actual ${leg.actual})`:''}</div>`:'';
   const pl = (!leg.err && !leg.player) ? (leg._card || playFromLeg(leg)) : null;
   const propPl = (!leg.err && leg.player && typeof playFromPropLeg==='function') ? (leg._card || playFromPropLeg(leg)) : null;
   if (propPl && typeof propCard==='function'){
     return `<div class="pk-leg${weakest?' weak':''}">
-      ${typed}${sel}
+      ${headBits}${sel}
 ${resultBan}
       ${injectMatchTitle(scopeVerdictCard(propCard(propPl), i, propPl), selHtml)}
     </div>`;
   }
   if (pl && typeof playCard==='function'){
     return `<div class="pk-leg${weakest?' weak':''}">
-      ${typed}${sel}
+      ${headBits}${sel}
 ${resultBan}
       ${injectMatchTitle(scopeVerdictCard(playCard(pl), i, pl), selHtml)}
     </div>`;
@@ -9504,11 +9540,13 @@ ${resultBan}
   if (leg.ownCourt && !leg.err) legMergeBoardCourt(leg);
   const gamePl = (!leg.err && g && !leg.ownCourt) ? (typeof verdictNoRange==="function" ? verdictNoRange(gamePlayFor(g, leg.side)) : gamePlayFor(g, leg.side)) : null;
   const research = gamePl ? sharedGameResearchHTML(gamePl, 'verdict|'+i+'|game') : '';
-  return `<div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
+  return `<div class="pk-leg${weakest?' weak':''}">
+    ${headBits}${sel}
+    ${resultBan}
+    <div class="card ${weakest?'weak':''} v-${leg.verdict==='BET'?'good':leg.verdict==='WATCHLIST'?'watch':leg.verdict==='FINAL'?'none':'avoid'}">
     ${head}
     <div class="pick"><div><div class="mk">Leg ${i+1}${weakest?' · <span class="neg">WEAKEST LEG</span>':''} · ${esc(leg.market||'')}${leg.outRange?' · <span class="neg">OUTSIDE YOUR RANGE</span>':''}</div>${selHtml?`<div class="what what-sel">${selHtml}</div>`:`<div class="what">${esc(leg.desc||leg.raw)}</div>`}</div>
       <div class="price">${leg.p!=null?fmtPct(leg.p,0):'—'}<small>est. probability</small></div></div>
-    ${typed}${sel}
     ${leg.err ? `<div class="err-list">${leg.matchedName ? esc(leg.err).replace(esc(leg.matchedName), '<b>'+esc(leg.matchedName)+'</b>') : esc(leg.err)}</div>` : `
     <div class="stats">
       <div class="stat"><div class="k">Price</div><div class="v">${price}</div></div>
@@ -9516,7 +9554,6 @@ ${resultBan}
       <div class="stat"><div class="k">Est. edge</div><div class="v ${leg.edge==null?'mut':leg.edge>=0?'pos':'neg'}">${leg.edge==null?'n/a':fmtEdge(leg.edge)}</div></div>
       <div class="stat"><div class="k">Fair odds</div><div class="v">${leg.p!=null?fmtAm(probToAm(leg.p)):'—'}</div></div>
     </div>
-    ${resultBan}
     ${research || `<details class="dd court-dd" data-dd="verdict|${i}|court" ${ui.open.has('verdict|'+i+'|court')?'open':''}><summary>⚖️ Courtroom</summary>
     ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)};
       const isProp = leg.L && leg.L.kind==='prop';
@@ -9532,6 +9569,7 @@ ${resultBan}
       <div class="hint">${esc(leg.formula||'—')}</div>
       ${leg.info.length?`<ul class="why">${leg.info.map(x=>`<li class="mut">${esc(x)}</li>`).join('')}</ul>`:''}</div></details>`:''}
     <div class="cfoot pk-log" style="margin-top:14px"><span class="cfoot-meta">${verdictBadge(leg.verdict)}${unitPillHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail" data-logleg="${i}">Tail as single</button>${typeof openInBookHTML==='function'?openInBookHTML(leg, (leg.L&&leg.L.kind==='prop')?'prop':'game'):''}</span></div>`}
+  </div>
   </div>`;
 }
 /* v64: ONE source of truth. Each leg's card below is the board's own card (same model, same gates), so the
@@ -9581,10 +9619,11 @@ function ticketJudgeText(legs, ranked, pAll, bookDec, safe, drop){
   return parts.join(' ');
 }
 function parlaySummary(){
+  if (!PK.legs.length) return '';
   const legs = PK.legs.filter(l=>!l.err);
-  if (!legs.length) return '';
   const live = legs.filter(l=>l.p!=null && !l.final);
-  const ranked = PK.legs.map((l,i)=>({l,i})).filter(x=>x.l.p!=null).sort((a,b)=>a.l.p-b.l.p);
+  const ranked = live.slice().sort((a,b)=>a.p-b.p).map((l)=>({l, i:PK.legs.indexOf(l)}));
+  const ticketRows = PK.legs.map((l,i)=>({l,i}));
   const pAll = live.length===legs.length && live.length ? live.reduce((a,l)=>a*l.p,1) : null;
   const priced = legs.every(l=>l.price!=null);
   const bookDec = priced ? legs.reduce((a,l)=>a*amToDec(l.price),1) : null;
@@ -9605,7 +9644,7 @@ function parlaySummary(){
   const drop = legs.filter(l=>!safe.includes(l) && !l.final);
   const weakest = ranked[0];
   const tkJudge = ticketJudgeText(legs, ranked, pAll, bookDec, safe, drop);
-  return `<div class="pk-ticket"><h3>🎫 Ticket summary (${legs.length} legs)</h3>
+  return `<div class="pk-ticket"><h3>🎫 Ticket summary (${PK.legs.length} leg${PK.legs.length===1?'':'s'})</h3>
     ${tkJudge?`<div class="tk-judge"><span class="ct">The Judge says</span> <span class="c-sent">${esc(tkJudge)}</span></div>`:''}
     <div class="kpis">
       <div class="kpi"><div class="k">All legs hit</div><div class="v">${pAll!=null?fmtPct(pAll):'—'}</div>${uiChanceMini(pAll)}</div>
@@ -9614,8 +9653,13 @@ function parlaySummary(){
       <div class="kpi"><div class="k">Weakest leg</div><div class="v" style="font-size:15px">${weakest?esc(legShortDesc(weakest.l))+' ('+fmtPct(weakest.l.p,0)+')':'—'}</div></div>
     </div>
     ${pAll!=null && bookAm!=null ? `<div class="ui-ev ${pAll*bookDec>=1?'pos':'neg'}"><span class="ui-ev-k">Parlay EV</span><b>${fmtEdge(pAll*bookDec-1)}</b><span class="mut">per $1 at the leg prices</span></div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'}</div>`}
-    <h3 style="margin-top:12px">Most likely to miss → least</h3>
-    <ol class="why">${ranked.map(x=>`<li><span class="tk-row"><span class="tk-name"><b>${esc(legShortDesc(x.l))}</b></span><span class="tk-p">${uiChanceMini(x.l.p)}<b>${fmtPct(x.l.p,0)}</b></span><span class="tk-badge">${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</span></span></li>`).join('')}</ol>
+    <ol class="why">${ticketRows.map(x=>{
+      const l = x.l;
+      const name = esc(legShortDesc(l) || l.raw || ('Leg '+(x.i+1)));
+      const phtml = l.p!=null ? `${uiChanceMini(l.p)}<b>${fmtPct(l.p,0)}</b>` : '<b>—</b>';
+      const badge = l.err ? '<span class="mut">No match</span>' : (l._card && typeof verdictPill==='function' ? verdictPill(l._card.verdict) : verdictBadge(l.verdict));
+      return `<li><span class="tk-row"><span class="tk-name"><b>${name}</b></span><span class="tk-p">${phtml}</span><span class="tk-badge">${badge}</span></span></li>`;
+    }).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(legShortDesc(l))).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(legShortDesc(l))).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
     <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML==='function'?openInBookHTML({legs, g:legs[0]&&legs[0].g}, legs.length>1?'parlay':'game'):''}</span></div>
@@ -21084,6 +21128,8 @@ parlayLearnRetune = rtWrap(parlayLearnRetune, 'parlay');
   }catch(e){}
 })();
 window.rtStatus = () => ({doc:RT101.doc, err:RT101.err, games:learnDue(), props:LEARN && LEARN.props ? boardLearnDue(LEARN.props, typeof propLearnRows==='function' ? propLearnRows() : []) : null});
+/* v102: "Did you mean" replaces the leg in place and always sits under "You typed". */
+var APP_BUILD = 102;
 </script>
 </body>
 </html>
