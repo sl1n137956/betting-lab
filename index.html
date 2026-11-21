@@ -1342,10 +1342,11 @@ table.ftab th,.ftab th{white-space:nowrap;overflow-wrap:normal;word-break:normal
 .unit-judge{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .unit-pill{border-radius:999px !important;white-space:nowrap}
 /* Pick cards: price vs worth */
-.ui-val{display:grid;gap:5px;margin:4px 0 2px}
-.ui-val-row{display:grid;grid-template-columns:44px 1fr 40px;align-items:center;gap:8px;font-size:11.5px;font-variant-numeric:tabular-nums}
+.ui-val{display:grid;grid-template-columns:44px 1fr auto;column-gap:8px;row-gap:5px;margin:4px 0 2px}
+.ui-val-row{display:contents;font-size:11.5px;font-variant-numeric:tabular-nums}
+.ui-val-row>*{align-self:center;font-size:11.5px;font-variant-numeric:tabular-nums}
 .ui-val-k{color:var(--mut);font-weight:700}
-.ui-val-row>b{text-align:right;font-weight:800;color:var(--txt)}
+.ui-val-row>b{text-align:right;font-weight:800;color:var(--txt);white-space:nowrap;min-width:40px}
 .ui-val-bar{height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
 .ui-val-bar>i{display:block;height:100%;border-radius:999px}
 .ui-val-bar>i.px{background:#94a3b8}.ui-val-bar>i.pos{background:var(--ui-g)}.ui-val-bar>i.neg{background:var(--ui-r)}
@@ -1448,6 +1449,41 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
 @media (max-width:420px){.mu-table .oc{font-size:11px;letter-spacing:-.1px}.mu-table td:first-child{max-width:68px}}
 .ftab.prop-stats.kv{display:table}.ftab.prop-stats.kv td{min-width:0 !important;white-space:normal}.ftab.prop-stats.kv td:first-child{color:var(--mut,#9aa4b2);width:62%}.ftab.prop-stats.kv td:last-child{text-align:right;font-weight:700;white-space:nowrap}
 .ui-edge-lab .r{text-align:right}
+/* v81 */
+.sx{border:1px solid var(--line2,var(--line));border-radius:14px;background:rgba(255,255,255,.025);padding:10px 12px;display:flex;flex-direction:column;gap:0;margin:8px 0 10px}
+.sx-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.06)}
+.sx-at{color:var(--mut);font-size:12px;font-weight:700}
+.sx-row{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);display:grid;gap:4px}
+.sx-row:last-child{border-bottom:0;padding-bottom:2px}
+.sx-k{text-align:center;color:var(--mut);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+.sx-vals{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.sx-v{min-width:0;overflow-wrap:anywhere}.sx-v.h{text-align:right}.sx-v.h .oc{justify-content:flex-end}
+.sx-v.better{color:#6ee7b7;font-weight:600}.sx-v.worse{color:#fca5a5}
+.sx-v .tip{cursor:help;border-bottom:1px dotted rgba(255,255,255,.25)}
+.sx-bar{display:flex;height:6px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.06);gap:2px;margin-top:2px}
+.sx-bar>i{display:block;height:100%}
+.sx-prop{gap:9px;padding:12px}
+.sx-prop .tm-stat>span:first-child{flex:0 0 120px}
+.sx-prop .tm-stat b{margin-left:auto;white-space:nowrap}
+.sx-prop .tm-stat .tm-mini{max-width:none}
+.sx-prop .tm-stat .tm-mini+b{margin-left:0}
+.sx-vsl{font-size:11px;white-space:nowrap}
+.tm-mini>i.y{background:#f59e0b}
+.fca-body{display:grid;gap:10px}
+.fca-sec{border:1px solid var(--line2,var(--line)) !important;border-radius:14px !important;background:rgba(255,255,255,.025) !important;padding:12px !important}
+.fca-h{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#93c5fd}
+.fca-body .p10{border:1px solid var(--line2,var(--line));border-radius:14px;background:rgba(255,255,255,.025);padding:12px;margin:0 !important}
+@media (max-width:380px){ .fca-body .p10{padding:10px 2px} }
+.c-judge-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.c-judge-h>.ct{margin-right:auto}
+.c-more-li{list-style:none;padding:0 !important;border:0 !important;background:none !important}
+.c-more>summary{cursor:pointer;font-size:12px;font-weight:700;color:#93c5fd;padding:4px 0;list-style:none}
+.c-more>summary::-webkit-details-marker{display:none}
+.c-more>ul{margin-top:6px}
+.pk-ticket ol.why .tk-row{display:grid !important;grid-template-columns:minmax(0,1fr) auto !important;grid-template-areas:"name badge" "p p";align-items:center;row-gap:6px;column-gap:10px}
+.pk-ticket ol.why .tk-name{grid-area:name}.pk-ticket ol.why .tk-badge{grid-area:badge !important;justify-self:end;grid-column:auto !important;grid-row:auto !important}
+.pk-ticket ol.why .tk-p{grid-area:p !important;grid-column:auto !important;display:flex !important}.pk-ticket ol.why .tk-p .ui-mini2{flex:1;width:auto}
+.verdict-slot{margin-left:auto;justify-content:flex-end}
+.pk-what-sel{margin-top:10px !important}
 </style>
 </head>
 <body>
@@ -1607,6 +1643,8 @@ const NO_ODDS_KEY = '';   // the Odds API is removed; every old "if key" path is
 const TRAD_BOOKS = ['draftkings'];
 // v35: Settings groups. Prediction markets price from their own free public APIs (no Odds API credits).
 const PREDICTION_BOOKS = ['polymarket','polymarket_us','kalshi','cryptocom','novig'];
+// v81: books whose prices people read in cents (drives the app-wide price format only)
+const CENT_BOOKS = ['polymarket','polymarket_us','kalshi','cryptocom','novig','prophetx'];
 const POPULAR_BOOKS = TRAD_BOOKS.slice();
 const isPredictionBook = k => PREDICTION_BOOKS.includes(String(k||'').toLowerCase());
 const PM_BOOK_CAPS = { games: ['h2h','spreads','totals','ml','spread','total'], props: ['pts','reb','ast','threes','stl','blk','pass_yds','rush_yds','rec_yds','rec','pass_td','rush_td','rec_td'] };
@@ -2003,7 +2041,7 @@ function bookPriceFor(item, kind, bookKey){
   try{
     const b = String(bookKey||'').toLowerCase();
     if (!item) return null;
-    const cents = c => (c!=null && isFinite(+c)) ? Math.round(+c*100)+'¢' : null;
+    const cents = c => (c!=null && isFinite(+c)) ? fmtPx(null, +c) : null;
     // Verdict leg: {L, g, side}
     let g = item.g, mk = item.mk, side = item.side, point = item.sd && item.sd.point;
     if (item.L && !item.isProp && item.L.kind!=='prop'){ mk = item.L.kind; side = mk==='total' ? item.L.dir : item.side; point = item.L.line; }
@@ -2513,8 +2551,23 @@ function saveFilters(){
 let nextAt = 0, lastUpdated = null, feedErrors = [], oddsErrors = [], busy = false;
 let feedBackoffUntil = 0, feedFailStreak = 0, feedRateLimited = false;
 
-function loadJSON(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
-function saveJSON(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ console.warn('save failed', k, e); } }
+function loadJSON(k, d){ if (typeof SAVE_Q!=='undefined' && SAVE_Q.has(k)){ try{ return JSON.parse(JSON.stringify(SAVE_Q.get(k))); }catch(e){} } try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
+function saveJSONNow(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ console.warn('save failed', k, e); } }
+// v81: saves are coalesced and written in idle time, one key per idle slice (big caches used to stringify several times a refresh)
+var SAVE_Q = new Map(); var SAVE_T = null;
+function saveFlush(deadline){
+  SAVE_T = null;
+  for (const [k, v] of SAVE_Q){ SAVE_Q.delete(k); saveJSONNow(k, v); if (deadline && deadline.timeRemaining && deadline.timeRemaining() < 8) break; }
+  if (SAVE_Q.size) SAVE_T = (window.requestIdleCallback ? requestIdleCallback(saveFlush, {timeout:3000}) : setTimeout(saveFlush, 200));
+}
+function saveJSON(k, v){
+  if (typeof window==='undefined' || !window.requestIdleCallback){ return saveJSONNow(k, v); }
+  if (typeof uiUserEv==='function' && uiUserEv()){ SAVE_Q.delete(k); return saveJSONNow(k, v); }
+  SAVE_Q.set(k, v);
+  if (!SAVE_T) SAVE_T = requestIdleCallback(saveFlush, {timeout:3000});
+}
+addEventListener('pagehide', ()=>{ for (const [k, v] of SAVE_Q) saveJSONNow(k, v); SAVE_Q.clear(); });
+document.addEventListener('visibilitychange', ()=>{ if (document.hidden){ for (const [k, v] of SAVE_Q) saveJSONNow(k, v); SAVE_Q.clear(); } });
 const $ = s => document.querySelector(s);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2600); }
@@ -2573,7 +2626,7 @@ function pxMode(){
   try{
     const b = (typeof selectedBooks==='function' ? selectedBooks() : []) || [];
     const k = b.join(','); if (_pxm.k===k) return _pxm.m;
-    const pr = b.filter(x=>PREDICTION_BOOKS.includes(String(x).toLowerCase())).length;
+    const pr = b.filter(x=>CENT_BOOKS.includes(String(x).toLowerCase())).length;
     const m = !b.length ? 'both' : pr===b.length ? 'c' : pr===0 ? 'am' : 'both';
     _pxm = {k, m}; return m;
   }catch(e){ return 'am'; }
@@ -2581,28 +2634,21 @@ function pxMode(){
 function fmtCents(p){ if (p==null || !isFinite(+p)) return '—'; const c = Math.round(+p*100); return c<1 ? '<1¢' : c>99 ? '>99¢' : c+'¢'; }
 // am = American price; c = the actual prediction-market ask (0–1) when there is one (otherwise cents come from am)
 function fmtPx(am, c){
-  const a = (am==null || am==='' || !isFinite(+am)) ? null : +am;
+  let a = (am==null || am==='' || !isFinite(+am)) ? null : +am;
   const cc = (c!=null && isFinite(+c)) ? +c : (a!=null ? imp(a) : null);
   if (a==null && cc==null) return '—';
+  if (a==null && cc>0 && cc<1) a = cc>=0.5 ? -100*cc/(1-cc) : 100*(1-cc)/cc;   // v81: cents-only quote still shows American when a sportsbook is on
   const m = pxMode();
   // v78: long shots / heavy favorites (cents would round to <=5¢ or >=95¢) read better as American odds, e.g. +21,972 / -2,400
-  const amK = x => { const r = Math.round(+x); return (r>0?'+':r<0?'-':'')+Math.abs(r).toLocaleString('en-US'); };
+  const amK = x => { const r = Math.round(+x); return (r>0?'+':r<0?'-':'')+String(Math.abs(r)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
   if (cc!=null && cc>0 && cc<1 && (cc<=0.055 || cc>=0.945)){ const a2 = a!=null ? a : (cc>=0.5 ? -100*cc/(1-cc) : 100*(1-cc)/cc); return amK(a2); }
   if (m==='am') return a!=null ? amK(a) : fmtCents(cc);
   if (m==='c' || a==null) return fmtCents(cc);
-  return fmtCents(cc)+' / '+fmtAmRaw(a);
+  return fmtCents(cc)+' ('+amK(a)+')';   // v81: both kinds of book on → 64¢ (-178)
 }
 const fmtAm = a => fmtPx(a);
-// v80: cents plus American odds, e.g. "91¢ (-1,011)" / "14¢ (+614)" (Additional stats)
-function fmtPxBoth(am, c){
-  const a = (am==null || am==='' || !isFinite(+am)) ? null : +am;
-  const cc = (c!=null && isFinite(+c)) ? +c : (a!=null ? imp(a) : null);
-  if (a==null && cc==null) return '—';
-  const a2 = a!=null ? a : (cc>0 && cc<1 ? (cc>=0.5 ? -100*cc/(1-cc) : 100*(1-cc)/cc) : null);
-  const r = a2==null ? null : Math.round(a2);
-  const amS = r==null ? '' : (r>0?'+':r<0?'-':'')+Math.abs(r).toLocaleString('en-US');
-  return cc==null ? amS : (amS ? fmtCents(cc)+' ('+amS+')' : fmtCents(cc));
-}
+// v81: Additional stats follows the same Settings-driven format as the rest of the app
+function fmtPxBoth(am, c){ return fmtPx(am, c); }
 // value pre-filled into the tail form: cents when only prediction markets are selected, American otherwise
 function tailOddsDefault(am, c){
   if (pxMode()==='c'){ const cc = c!=null ? +c : imp(+am); if (cc!=null && cc>0 && cc<1) return {oddsType:'polymarket', odds:String(Math.round(cc*100))}; }
@@ -2698,9 +2744,9 @@ function fmtBetOdds(b){
   }
   if (b.oddsType==='polymarket'){
     const c = b.oddsCents!=null ? +b.oddsCents : parsePmCents(b.oddsEntered);
-    if (c!=null) return Math.round(c*100)+'¢';
+    if (c!=null) return fmtPx(null, c);
   }
-  return fmtAmRaw(+b.odds);
+  return (b.odds!=null && isFinite(+b.odds)) ? fmtPx(+b.odds) : fmtAmRaw(+b.odds);
 }
 function fmtStake(s){
   const n = +s || 0;
@@ -2752,6 +2798,8 @@ function noVig(arr){ const ps = arr.map(imp); if (ps.some(p=>p==null)) return nu
 const betterPrice = (a,b) => imp(a) < imp(b); // a pays more than b
 
 /* ================= FETCH ================= */
+// v81: hand the main thread back between heavy refresh steps so taps and scrolling never wait
+function uiYield(){ return (window.scheduler && scheduler.yield) ? scheduler.yield() : new Promise(r=>setTimeout(r, 0)); }
 async function fetchJSON(url, timeoutMs=15000){
   const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), timeoutMs);
   try{
@@ -2772,6 +2820,7 @@ function ymd(d){ return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+S
 // Football is weekly, so NFL/NCAAF always look a full week ahead; other sports use the "Days ahead" setting.
 const WEEKLY = new Set(['nfl','ncaaf']);
 const leagueDays = id => WEEKLY.has(id) ? 7 : Math.max(2, Math.min(7, +S.lookaheadDays||3));   // v46: at least today + tomorrow so the next 24h is always covered
+const ESPN_SB_CACHE = new Map();
 async function fetchEspn(){
   feedErrors = [];
   const base = new Date();
@@ -2779,9 +2828,15 @@ async function fetchEspn(){
   for (const L of LEAGUES){
     // v76: every sport is fetched so All Games can list it; sports off in Settings stay off the boards (marked agOnly)
     const dates = []; for (let i=0;i<leagueDays(L.id);i++){ const d=new Date(base); d.setDate(d.getDate()+i); dates.push(ymd(d)); }
-    for (const dt of dates){
+    const on = (S.enabled||[]).includes(L.id);
+    for (let di=0; di<dates.length; di++){
+      const dt = dates[di];
       const url = `https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${dt}${L.q?'&'+L.q:''}`;
-      tasks.push(async()=>{ const r = await fetchJSON(url); if (r.status===429) noteFeedRateLimit(); if(!r.ok||!r.data) throw new Error(`${L.label} ${dt}: HTTP ${r.status}`); return {L, data:r.data, status:r.status}; });
+      // v81: later days and sports that are only in All Games don't change minute to minute; reuse them for a while
+      const maxAge = !on ? 5*60000 : di>0 ? 3*60000 : 0;
+      const hit = ESPN_SB_CACHE.get(url);
+      if (maxAge && hit && Date.now()-hit.t < maxAge){ tasks.push(async()=>({L, data:hit.data, status:200})); continue; }
+      tasks.push(async()=>{ const r = await fetchJSON(url); if (r.ok && r.data) ESPN_SB_CACHE.set(url, {t:Date.now(), data:r.data}); if (r.status===429) noteFeedRateLimit(); if(!r.ok||!r.data) throw new Error(`${L.label} ${dt}: HTTP ${r.status}`); return {L, data:r.data, status:r.status}; });
     }
   }
   const res = await pool(tasks, 6);
@@ -3140,8 +3195,14 @@ async function fetchOddsApi(force){
   saveJSON(LS.oddsCache, oddsCache);
 }
 const STOP = new Set(['fc','cf','sc','afc','the','of','and','de','state','university','city','united','club','real','st','saint','sporting','athletic','atletico','ac','as','us','cd','rc','ud','sd','vfb','vfl','tsg','bv']);
-function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/&/g,' and ').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+const NORM_MEMO = new Map(), NM_MEMO = new Map();
+function norm(s){ const k = String(s||''); let v = NORM_MEMO.get(k); if (v!==undefined) return v; if (NORM_MEMO.size > 40000) NORM_MEMO.clear(); v = norm0(k); NORM_MEMO.set(k, v); return v; }
+function norm0(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/&/g,' and ').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
 function nameMatch(a,b){
+  const mk = String(a||'')+'\u0001'+String(b||''); const hit = NM_MEMO.get(mk); if (hit!==undefined) return hit;
+  if (NM_MEMO.size > 80000) NM_MEMO.clear(); const r = nameMatch0(a,b); NM_MEMO.set(mk, r); return r;
+}
+function nameMatch0(a,b){
   const x=norm(a), y=norm(b); if (!x||!y) return 0;
   if (x===y) return 3;
   if (x.includes(y)||y.includes(x)) return 2;
@@ -3281,7 +3342,7 @@ function analyzeMarket(g, mk){
     const impDelta = nImp ? impSum/nImp : 0;  // + = shorter price = market moved toward this side
     const ptAdv = nPt ? ptSum/nPt : 0;
     const advPct = Math.max(0,-impDelta*100), supPct = Math.max(0, impDelta*100);
-    out.sides[s] = {side:s, best, nv, edge, impBest:imp(best.price), impDelta, ptAdv, fsOnly, openTxt, point:refPts[s],
+    out.sides[s] = {side:s, best, nv, edge, impBest:imp(best.price), impDelta, ptAdv, fsOnly, openTxt, openAm: ref && ref.openPrice!=null && !ref.openIsFirstSeen ? ref.openPrice : null, openPt: ref ? ref.openPoint : null, refNow: ref ? ref.price : null, refPt: ref ? ref.point : null, point:refPts[s],
       adverse: advPct >= S.advPct || ptAdv >= S.advPts,
       heavy:   advPct >= S.heavyPct || ptAdv >= S.heavyPts,
       support: supPct >= S.watchMovePct || ptAdv <= -S.watchMovePts };
@@ -3789,8 +3850,7 @@ async function runEnrichment(){
     const now = Date.now();
     if (!force && now-lastFlush < 1600) return;
     lastFlush = now;
-    evaluateAll();
-    softRender();
+    evaluateAllBg(()=>softRender());
   };
   await pool(targets.map(g=>async()=>{
     const k = sumKey(g);
@@ -3905,13 +3965,31 @@ function strictGates(p, opts){
   return F;
 }
 const MKN_S = {ml:'moneylines', spread:'spreads', total:'totals'};
-function evaluateAll(){
-  plays = [];
-  for (const g of games) plays.push(...evalGame(g));
-  for (const p of plays) p.my = myBooks(p);
+// v81: background version: games are evaluated in small slices (the page stays responsive), then the rest runs once.
+var EVAL_BG = {busy:false, again:false};
+async function evaluateAllBg(after){
+  if (EVAL_BG.busy){ EVAL_BG.again = true; return; }
+  EVAL_BG.busy = true;
+  try{
+    do {
+      EVAL_BG.again = false;
+      const list = []; let t = performance.now();
+      const gs = (games||[]).slice();
+      for (const g of gs){ list.push(...evalGame(g)); if (performance.now()-t > 12){ await uiYield(); t = performance.now(); } }
+      for (const p of list){ p.my = myBooks(p); p.strictFails = strictGates(p); if (performance.now()-t > 12){ await uiYield(); t = performance.now(); } }
+      list.myDone = true;
+      evaluateAll(list);
+    } while (EVAL_BG.again);
+  } finally { EVAL_BG.busy = false; }
+  if (after) after();
+}
+function evaluateAll(pre){
+  if (Array.isArray(pre)) plays = pre;
+  else { plays = []; for (const g of games) plays.push(...evalGame(g)); }
+  if (!(pre && pre.myDone)) for (const p of plays) p.my = myBooks(p);
   for (const p of plays){
     p._v0 = p.verdict; p._r0 = (p.reasons||[]).slice();
-    p.strictFails = strictGates(p);
+    if (!(pre && pre.myDone)) p.strictFails = strictGates(p);
     if (p.verdict==='started') continue;
     if (S.strictMode){
       if (p.strictFails.length===0 && p.base!=='avoid'){ if (p.verdict!=='good') p.reasons.unshift('Passed every strict check'); p.verdict='good'; }
@@ -4138,8 +4216,8 @@ function mergePolymarket(){
   const N = s => norm(s).replace(/\s+/g,' ').trim();
   for (const g of games){
     const list = pmCache.m[g.league]; if (!list || g.ind) continue;
-    const names = side => [g[side].nick, g[side].loc, g[side].name, g[side].short].filter(Boolean).map(N);
-    const hit = (o, side) => { const n = N(o); return names(side).some(x=>x && (x===n || (n.length>3 && x.includes(n)) || (x.length>3 && n.includes(x)))); };
+    const NM = {away: [g.away.nick, g.away.loc, g.away.name, g.away.short].filter(Boolean).map(N), home: [g.home.nick, g.home.loc, g.home.name, g.home.short].filter(Boolean).map(N)};
+    const hit = (o, side) => { const n = N(o); return NM[side].some(x=>x && (x===n || (n.length>3 && x.includes(n)) || (x.length>3 && n.includes(x)))); };
     for (const m of list){
       if (!isFinite(m.t) || Math.abs(m.t - g.start.getTime()) > 4*3600000 || m.o.length!==2) continue;
       let sides = null;
@@ -4204,8 +4282,11 @@ function mergeKalshi(){
   if (!kalshiCache || !kalshiCache.m || !wantsKalshi()) return;
   const N = s => norm(s).replace(/\s+/g,' ').trim();
   const fixAb = a => { a = String(a||'').toLowerCase(); return KALSHI_ABBR_FIX[a]||a; };
+  if (KAL_MEMO.t !== kalshiCache.t || KAL_MEMO.c !== kalshiCache){ KAL_MEMO.t = kalshiCache.t; KAL_MEMO.c = kalshiCache; KAL_MEMO.m.clear(); }
   for (const g of games){
     const list = kalshiCache.m[g.league]; if (!list || !list.length || !g.start) continue;
+    const memoK = g.id+'|'+g.start.getTime()+'|'+(g.home&&g.home.short)+'|'+(g.away&&g.away.short);
+    if (KAL_MEMO.m.has(memoK)){ const bm = KAL_MEMO.m.get(memoK); if (bm) kalshiPut(g, bm); continue; }
     const byEv = {};
     for (const m of list){ if (!isFinite(m.t) || Math.abs(m.t - g.start.getTime()) > 6*3600000) continue; (byEv[m.ev]||(byEv[m.ev]=[])).push(m); }
     const scoreSide = (m, side) => {
@@ -4231,12 +4312,17 @@ function mergeKalshi(){
       else if (h0 && a1){ map = {home:teams[0], away:teams[1]}; sc = h0+a1; }
       if (map && sc>bestSc){ bestSc = sc; best = {map, tie, ev}; }
     }
+    KAL_MEMO.m.set(memoK, best || null);
     if (!best) continue;
+    kalshiPut(g, best);
+  }
+}
+var KAL_MEMO = {t:null, c:null, m:new Map()};
+function kalshiPut(g, best){
     g.kalshi = {ml:{}, ev:best.ev};
     const put = (side, m) => { if (m && m.ask!=null && m.ask>0 && m.ask<1){ const spread = (m.bid!=null) ? m.ask-m.bid : null; g.kalshi.ml[side] = {ask:m.ask, bid:m.bid, mid:(m.bid!=null?(m.ask+m.bid)/2:m.ask), spread, fee:KALSHI_FEE, thin: spread==null || spread > Math.max(+S.pmThinSpread||0.03, 0.04) || (m.oi<500 && m.v24<500), point:null, tk:m.tk}; } };
     put('home', best.map.home); put('away', best.map.away); if (best.tie) put('draw', best.tie);
     if (Object.keys(g.kalshi.ml).length) g.sources.add('Kalshi'); else g.kalshi = null;
-  }
 }
 
 /* ================= RESULTS HISTORY (every Good play the app recommended) ================= */
@@ -5263,7 +5349,7 @@ async function loadPlayerImpacts(){
       const r5 = rows.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,5);
       pimp[id] = {t:Date.now(), n, ppg: n? rows.reduce((a,r)=>a+(r.pts||0),0)/n : 0, mpg: n? rows.reduce((a,r)=>a+(r.min||0),0)/n : 0, l5: r5.length>=3 ? r5.reduce((a,r)=>a+(r.pts||0),0)/r5.length : null, l5n:r5.length}; }catch(e){ pimp[id] = {t:Date.now()-11*3600000, n:0, ppg:0, mpg:0, l5:null, err:1}; } }), 4);
     for (const k in pimp) if (Date.now()-pimp[k].t > 3*86400000) delete pimp[k];
-    saveJSON(PIMP_KEY, pimp); evaluateAll(); softRender();
+    saveJSON(PIMP_KEY, pimp); evaluateAllBg(()=>softRender());
   } finally { pimpBusy = false; }
 }
 // expected margin a missing player is worth to his team (full absence)
@@ -5589,7 +5675,7 @@ async function loadOddsHistory(){
       }
     }
     if (!teams.length) return;
-    teams.sort((a,b)=>histTeamRank(a)-histTeamRank(b));
+    const rk = new Map(teams.map(t=>[t, histTeamRank(t)])); teams.sort((a,b)=>rk.get(a)-rk.get(b));
     for (const tm of teams) if (!oddsHistStatus[tm.lg] || oddsHistStatus[tm.lg]==='empty') oddsHistStatus[tm.lg] = 'loading';
     if (!oddsHistPass && typeof softRender==='function') softRender();
 
@@ -5623,7 +5709,7 @@ async function loadOddsHistory(){
         if (oddsCacheFresh(oddsHistCache[ek])) continue;
         if (seenE.has(ek)) continue;
         seenE.add(ek);
-        startNeed.push({lg:tm.lg, eventId:ev.eventId, teamK:tm.k, rank: histTeamRank(tm)});
+        startNeed.push({lg:tm.lg, eventId:ev.eventId, teamK:tm.k, rank: rk.get(tm)});
       }
       teamHist[tm.k] = recordFromGames(tm.lg, tm.id, past);
     }
@@ -5914,23 +6000,21 @@ function rankPill(rank, n){
 }
 function lineMovePlain(p, who){
   const sd = p && p.sd; if (!sd) return null;
-  const now = sd.best && sd.best.price;
-  const openTxt = sd.openTxt || '';
-  const m = /([+\-]?\d+)/.exec(openTxt);
-  const open = m ? +m[1] : null;
+  // v81: compare the opening price with the SAME book's price now, and say the actual move (Stanley: show the change)
+  const open = sd.openAm, now = sd.refNow!=null ? sd.refNow : (sd.best && sd.best.price);
+  const samePt = p.mk==='ml' || sd.openPt==null || sd.refPt==null || sd.openPt===sd.refPt;
   const d = sd.impDelta;
-  if (open!=null && now!=null && open!==now){
-    const toward = (now < 0 && open < 0 && now < open) || (now > 0 && open > 0 && now < open) || (open>0 && now<0);
-    // shorter American = moved toward this side
-    const towardSide = (typeof imp==='function') ? (imp(now) > imp(open)) : toward;
-    const verb = Math.abs((imp(now)||0)-(imp(open)||0)) >= 0.02 ? 'has steamed' : 'has drifted';
-    return {txt:`The line ${verb} ${towardSide?'toward':'against'} ${who} since open (${fmtAm(open)} → ${fmtAm(now)})`, good:towardSide};
+  if (open!=null && now!=null && samePt && Math.round(open)!==Math.round(now)){
+    const dd = (imp(now)||0) - (imp(open)||0);
+    if (Math.abs(dd) >= 0.005){
+      const verb = Math.abs(dd) >= 0.02 ? 'has steamed' : 'has drifted';
+      return {txt:`The line ${verb} ${dd>0?'toward':'against'} ${who} since open, from ${fmtPx(open)} to ${fmtPx(now)}`, good:dd>0, move:true};
+    }
   }
   if (d!=null && Math.abs(d)>=0.005){
     const steam = Math.abs(d)>=0.02;
-    return {txt:`The market has ${steam?'steamed':'drifted'} ${d>0?'toward':'against'} ${who} (${d>0?'+':''}${(d*100).toFixed(1)}% implied since open)`, good:d>0};
+    return {txt:`The market has ${steam?'steamed':'drifted'} ${d>0?'toward':'against'} ${who} since open`, good:d>0};
   }
-  if (openTxt && now!=null) return {txt:`The line is ${fmtAm(now)} now; it opened ${openTxt}`, good:null};
   return null;
 }
 function scheduleSpot(g, side){
@@ -6365,7 +6449,9 @@ function matchupTableHTML(p, C){
   if (ra && ra.n>=8 && ra.byId[String(A.id)] && ra.byId[String(H.id)]){
     const a = ra.byId[String(A.id)], h = ra.byId[String(H.id)];
     rows.push(`<tr><td class="k">Offense rank</td>${cell(rankPill(a.off, ra.n)+(a.pf!=null?` <span class="mut">${a.pf.toFixed(1)}</span>`:''), a.off<h.off?'better':'')}${cell(rankPill(h.off, ra.n)+(h.pf!=null?` <span class="mut">${h.pf.toFixed(1)}</span>`:''), h.off<a.off?'better':'')}</tr>`);
+    rows.push(`<tr class="sxbar" data-a="${ra.n+1-a.off}" data-h="${ra.n+1-h.off}"></tr>`);
     rows.push(`<tr><td class="k">Defense rank</td>${cell(rankPill(a.def, ra.n)+(a.pa!=null?` <span class="mut">${a.pa.toFixed(1)}</span>`:''), a.def<h.def?'better':'')}${cell(rankPill(h.def, ra.n)+(h.pa!=null?` <span class="mut">${h.pa.toFixed(1)}</span>`:''), h.def<a.def?'better':'')}</tr>`);
+    rows.push(`<tr class="sxbar" data-a="${ra.n+1-a.def}" data-h="${ra.n+1-h.def}"></tr>`);
   }
   const canHist = typeof corePath==='function' ? !!corePath(g.league) : (typeof histForTeam==='function');
   const stLg = (typeof oddsHistStatus!=='undefined' && oddsHistStatus[g.league]) || (canHist ? 'loading' : 'unavailable');
@@ -6401,7 +6487,7 @@ function matchupTableHTML(p, C){
     const ouA = fx.sides.away && fx.sides.away.ou, ouH = fx.sides.home && fx.sides.home.ou;
     if (ouA || ouH) rows.push(`<tr><td class="k">Over / under</td>${cell(ouA||null)}${cell(ouH||null)}</tr>`);
   }
-  return `<table class="mu-table"><thead><tr><th></th><th>${esc(A.short)}</th><th>${esc(H.short)}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  return typeof uiStatsFaceoffHTML==='function' ? uiStatsFaceoffHTML(g, rows) : `<table class="mu-table"><thead><tr><th></th><th>${esc(A.short)}</th><th>${esc(H.short)}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 function marginChartsHTML(p){
   const g = p && p.g; if (!g) return '';
@@ -6560,10 +6646,13 @@ async function refresh(forceOdds=false){
     mergePolymarket();
     if (typeof avRefresh==='function') avRefresh(false).catch(e=>console.warn('avail', e));
     try{ if (typeof fetchKalshi==='function') await fetchKalshi(); }catch(e){ kalshiErr = String(e.message||e); }
+    await uiYield();
     try{ if (typeof mergeKalshi==='function') mergeKalshi(); }catch(e){ console.warn('kalshi merge', e); }
+    await uiYield();
     stampFirstSeen();
     attachFx();
-    evaluateAll();
+    await evaluateAllBg();
+    await uiYield();
     lastUpdated = new Date();
     updateFeedPill();
   }catch(e){
@@ -6621,6 +6710,7 @@ function updateOddsPill(){
 const REFRESH_WATCH_MS = 5000;
 function refreshIfDue(){
   if (!nextAt || busy) return false;
+  if (document.hidden) return false;   // v81: no polling while the app is in the background; catches up when shown
   if (Date.now() >= nextAt){ refresh(); return true; }
   return false;
 }
@@ -6878,7 +6968,7 @@ function marketCell(g, mk){
   const sidesTxt = Object.values(A.sides).map(sd=>{
     const nm = sd.side==='draw' ? 'Draw' : mk==='total' ? '' : esc(g[sd.side].short||g[sd.side].name);
     const lbl = mk==='total' ? (sd.side==='over'?'O ':'U ')+sd.point : mk==='spread' ? `${nm} ${sd.point===0?'PK':fmtPt(sd.point)}` : nm;
-    return `<div style="white-space:nowrap">${lbl} <b>${fmtAm(sd.best.price)}</b> <span class="mut" style="font-size:11px">${fmtPct(sd.nv,0)}</span></div>`;
+    return `<div><span style="white-space:nowrap">${lbl}</span> <b style="white-space:nowrap">${fmtAm(sd.best.price)}</b> <span class="mut" style="font-size:11px;white-space:nowrap">${fmtPct(sd.nv,0)}</span></div>`;
   }).join('');
   const why = p.verdict==='started' ? '' : ((p.reasons||[]).map(uiCleanTxt).find(Boolean)||'');
   return `<td>${sidesTxt}</td><td title="${esc((p.reasons||[]).map(uiCleanTxt).filter(Boolean).join('\n'))}">${badge(p.verdict)}<div style="font-size:12px;margin-top:3px">${esc(p.verdict==='started'?'':p.label)}</div><div class="mut" style="font-size:11px">${esc(why)}</div></td>`;
@@ -10596,7 +10686,7 @@ async function loadLiveProps(opts){
       const k = `${r.eventId}|${r.playerId}|${r.kind}|${r.line}`;
       if (seen.has(k)) continue; seen.add(k); uniq.push(r);
     }
-    props = uniq.map(r => evaluatePropRaw(r));
+    { const out = []; let t = performance.now(); for (const r of uniq){ out.push(evaluatePropRaw(r)); if (performance.now()-t > 12){ await uiYield(); t = performance.now(); } } props = out; }   // v81: in slices
     propStatus = {
       loading:false,
       n: props.length,
@@ -10818,7 +10908,7 @@ function propStatTableHTML(p){
     ['Minutes (last 5 / season)', f.minL5!=null && f.minSzn!=null ? f.minL5.toFixed(1)+' / '+f.minSzn.toFixed(1) : null],
     [p.home?'Hit rate at home':'Hit rate on the road', f.splitN?pct(f.splitHit,f.splitN):null],
     ['Vs this opponent', f.h2hn?pct(f.h2hhit,f.h2hn):null], ['Rest', f.rest==null?null:f.rest<=1?'B2B / 1 day':f.rest+' days']];
-  return `<table class="ftab prop-stats kv" style="margin-top:10px">${rows.map(r=>`<tr><td>${r[0]}</td><td>${cell(r[1])}</td></tr>`).join('')}</table>`;
+  return typeof uiPropStatsHTML==='function' ? uiPropStatsHTML(p, rows) : `<table class="ftab prop-stats kv" style="margin-top:10px">${rows.map(r=>`<tr><td>${r[0]}</td><td>${cell(r[1])}</td></tr>`).join('')}</table>`;
 }
 function propCourtroomHTML(p){
   const C = p.C || {};
@@ -11301,6 +11391,29 @@ function gameParlayLeg(g, mk, side){
   p.league = g.league;
   return p;
 }
+// v81: same as gameParlaySides, in small slices for background refreshes
+async function gameParlaySidesAsync(){
+  const out = []; let t = performance.now();
+  const cfg = boardS('parlay');
+  const mkts = String(cfg.sMarkets||'ml,spread,total').split(',').map(x=>x.trim()).filter(Boolean);
+  for (const g of (games||[]).slice()){
+    if (performance.now()-t > 12){ await uiYield(); t = performance.now(); }
+    if (!g || (g.state && g.state!=='pre')) continue;
+    if (!boardSportOn('parlay', g.league)) continue;
+    for (const mk of mkts){
+      const A = g.analysis && g.analysis[mk]; if (!A || !A.sides) continue;
+      for (const side of Object.keys(A.sides)){
+        if (side==='draw') continue;
+        const sd = A.sides[side]; if (!sd || !sd.best || sd.best.price==null) continue;
+        const p = gameParlayLeg(g, mk, side); if (!p) continue;
+        if (typeof selectedBooksAllowPlay==='function' && !selectedBooksAllowPlay(p)) continue;
+        if (contradictsBoardPick(p)) continue;
+        out.push(p);
+      }
+    }
+  }
+  return out;
+}
 function gameParlaySides(){
   const out = [];
   const cfg = boardS('parlay');
@@ -11360,11 +11473,11 @@ function parlayLegFails(p, cfg){
   return F;
 }
 
-function buildParlays(){
+function buildParlays(pre){
   const cfg = boardS('parlay');
   const payLo = +cfg.payoutMin || 1.85, payHi = +cfg.payoutMax || 3.25;
   const sweetLo = +cfg.payoutSweetMin || 2.0, sweetHi = +cfg.payoutSweetMax || 3.0;
-  const gamesL = gameParlaySides();
+  const gamesL = (pre && pre.gamesL) || gameParlaySides();
   const propsL = propParlaySides();
   // v41: a pulled leg can never come back inside a parlay
   const raw = gamesL.concat(propsL).filter(l=>!(typeof isFinalPulled==='function' && (isFinalPulled(legKeyOf(l)) || isFinalPulled(l.id))));
@@ -12005,10 +12118,16 @@ const storeGetAll = async name => {
 const storeWrite = async (name, list, del) => {
   const d = await idbOpenV2();
   if (!d.objectStoreNames.contains(name)) return;
-  const tx = d.transaction(name, 'readwrite'); const st = tx.objectStore(name);
-  for (const x of list||[]) st.put(x);
-  for (const k of del||[]) st.delete(k);
-  return new Promise((res,rej)=>{ tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+  // v81: write in small batches (each put copies the record on the main thread; thousands at once froze the page)
+  const L = list||[], D = del||[], B = 120;
+  for (let i=0; i<Math.max(L.length, 1) || (i===0 && D.length); i+=B){
+    const part = L.slice(i, i+B), last = i+B >= L.length;
+    const tx = d.transaction(name, 'readwrite'); const st = tx.objectStore(name);
+    for (const x of part) st.put(x);
+    if (last) for (const k of D) st.delete(k);
+    await new Promise((res,rej)=>{ tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });
+    if (last) break;
+  }
 };
 
 const PROP_SNAPS = new Map();
@@ -16561,7 +16680,7 @@ avLoadSaved();
 // after new market data: re-run the board so prices at your books + verdicts + parlays use it
 function avChanged(reEval){
   AV.ver++;
-  try{ if (reEval && typeof evaluateAll==='function' && typeof busy!=='undefined' && !busy && (typeof games!=='undefined' && games.length)) evaluateAll(); }catch(e){ console.warn('avail re-eval', e); }
+  try{ if (reEval && typeof evaluateAll==='function' && typeof busy!=='undefined' && !busy && (typeof games!=='undefined' && games.length)){ if (typeof uiUserEv==='function' && !uiUserEv()){ evaluateAllBg(()=>softRender()); return; } evaluateAll(); } }catch(e){ console.warn('avail re-eval', e); }
   try{ if (typeof buildParlays==='function' && !(reEval)) buildParlays(); }catch(e){}
   try{ if (typeof softRender==='function') softRender(); }catch(e){}
 }
@@ -16771,7 +16890,13 @@ function avQuoteBooks(){
   AV._qb = {ver:AV.ver, n:(typeof games!=='undefined'&&games.length)||0, pn:(typeof props!=='undefined'&&props&&props.length)||0, set};
   return set;
 }
+var AV_BHD = {t:0, m:new Map()};
 function avBookHasData(b){
+  const now = Date.now(); if (now - AV_BHD.t > 1000){ AV_BHD.t = now; AV_BHD.m.clear(); }
+  if (AV_BHD.m.has(b)) return AV_BHD.m.get(b);
+  const r = avBookHasData0(b); AV_BHD.m.set(b, r); return r;
+}
+function avBookHasData0(b){
   if (b==='polymarket_us') return !!(AV.us.t && Object.keys(AV.us.ev).length);
   if (b==='polymarket') return !!(AV.pm.t && Object.keys(AV.pm.ev).length) || ((typeof games!=='undefined' && games)||[]).some(g=>g && g.pm);
   if (b==='prophetx') return !!(AV.px.t && Object.keys(AV.px.ev).length);
@@ -18169,9 +18294,10 @@ function uiEdgeBarHTML(est, need, sideTxt){
 function uiValueBarHTML(estP, cost){
   if (!(estP>0 && estP<1) || !(cost>0 && cost<1)) return '';
   const pc = Math.round(cost*100), fc = Math.round(estP*100), good = fc >= pc;
-  return `<div class="ui-val" title="Price ${pc}¢ vs worth ${fc}¢ per $1">
-    <div class="ui-val-row"><span class="ui-val-k">Price</span><span class="ui-val-bar"><i class="px" style="width:${pc}%"></i></span><b>${pc}¢</b></div>
-    <div class="ui-val-row"><span class="ui-val-k">Worth</span><span class="ui-val-bar"><i class="${good?'pos':'neg'}" style="width:${fc}%"></i></span><b class="${good?'ui-pos':'ui-neg'}">${fc}¢</b></div>
+  const pt = fmtPx(null, cost), ft = fmtPx(null, estP);
+  return `<div class="ui-val" title="Price ${pt} vs worth ${ft}">
+    <div class="ui-val-row"><span class="ui-val-k">Price</span><span class="ui-val-bar"><i class="px" style="width:${pc}%"></i></span><b>${pt}</b></div>
+    <div class="ui-val-row"><span class="ui-val-k">Worth</span><span class="ui-val-bar"><i class="${good?'pos':'neg'}" style="width:${fc}%"></i></span><b class="${good?'ui-pos':'ui-neg'}">${ft}</b></div>
   </div>`;
 }
 // Ticket: one leg's win chance as a slim bar
@@ -18230,7 +18356,7 @@ function betStrengthPillHTML(conf, verdict){
    2 strongest reasons each way and which side wins out, then ends with at most one short clause on price. */
 var UI_PRICEISH = /no side wins every night|priced this|prediction markets|break-?even|odds pay|odds imply|implied|the price|price is|prices? (?:stays?|built)|wins in 10|fair shake|overpay|asked to be right|at your [+−-]?\d|juice|we couldn'?t get|haven'?t loaded|not loaded|nothing (measurable|clear)|no red flags|not enough history|app record|ranking-only/i;
 function uiFactorText(x, who){
-  let t = uiCleanTxt((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x || '').trim();
+  let t = uiCleanTxt((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x || '').trim().replace(/, from .+ to .+$/,'');   // Judge: no prices, even for line moves
   if (!t || UI_PRICEISH.test(t) || (typeof UI_NOISE!=='undefined' && UI_NOISE.test(t))) return '';
   t = t.replace(/\s*\((?:see Matchup|burden [^)]*|worth about[^)]*|rule points[^)]*|can't be measured[^)]*)\)\s*/gi, ' ').replace(/\s+/g,' ').trim();
   let m;
@@ -18278,6 +18404,8 @@ var UI_BANNED = /implied|break.?even|\bneeds? (?:about )?\d+(?:\.\d+)? (?:in|of)
 function uiCleanTxt(t){
   t = String(t==null?'':t).trim();
   if (!t) return '';
+  // v81: approved exception: a line-move reason keeps its actual move ("…since open, from 58¢ (-138) to 64¢ (-178)")
+  { const m = /^(.*\b(?:steamed|drifted)\b.*?since open), (from .+ to .+)$/i.exec(t); if (m){ const head = uiCleanTxt(m[1]); return head ? head+', '+m[2] : ''; } }
   // drop a price aside like "(63¢ → 57¢)" or "(odds -150)" but keep game facts like "(avg 7.5)"
   t = t.replace(/\s*\((?:[^()]*?(?:¢|odds|implied|price|[+−-]\d{3})[^()]*?)\)/gi, '').replace(/\s*[—–-]\s+(?:at|for) (?:this|that|these) (?:price|odds)[^.;]*/gi,'').replace(/\s+/g,' ').trim();
   if (UI_BANNED.test(t)) return '';
@@ -18337,21 +18465,19 @@ function uiOpenFor(g, mk, side){
 }
 /* o: {win, lose, judgeHTML, sentence, edgeHTML, unitHTML, chanceHTML, fullHTML, odds, coverage:{have:[], lack:[]}, extraWin, extraLose} */
 function uiCourtroomHTML(o){
+  // v81: every reason lives in the courtroom (strongest 3 first, then the rest under "More reasons");
+  // Additional stats holds only the stats (table/charts) and the odds rows.
   const W = uiTop3(o.win), L = uiTop3(o.lose);
-  const fullTxt = [].concat(W.top, W.rest, L.top, L.rest).map(x=>(x && x.txt) || x || '').join(' ') + ' ' + (o.sentence||'');
-  const more = (W.rest.length || L.rest.length) ? `<div class="fca-sec"><div class="fca-h">More of the case</div>
-      ${W.rest.length?`<div class="c-col win fca-more"><div class="ct">✅ Also for it</div><ul>${uiReasonList(W.rest,'win')}</ul></div>`:''}
-      ${L.rest.length?`<div class="c-col lose fca-more"><div class="ct">⚠️ Also against it</div><ul>${uiReasonList(L.rest,'lose')}</ul></div>`:''}</div>` : '';
-  const cov = o.coverage ? `<div class="fca-sec"><div class="fca-h">What we checked</div><div class="fca-cov"><span class="pos">✓ ${esc(o.coverage.have.join(', '))}</span>${o.coverage.lack&&o.coverage.lack.length?`<span class="mut">Not available yet: ${esc(o.coverage.lack.join(', '))}</span>`:''}</div></div>` : '';
+  const moreLi = (R, side) => R.rest.length ? `<li class="c-more-li"><details class="c-more"><summary>${R.rest.length} more reason${R.rest.length===1?'':'s'}</summary><ul>${uiReasonList(R.rest, side)}</ul></details></li>` : '';
   return `<div class="court2">
     ${o.chanceHTML||''}
-    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(W.top,'win')}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(L.top,'lose','No major red flags in the numbers we have.')}</ul></div>
-    <div class="c-judge"><div>${o.judgeHTML||''}</div>
+    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(W.top,'win')}${moreLi(W,'win')}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(L.top,'lose','No major red flags in the numbers we have.')}${moreLi(L,'lose')}</ul></div>
+    <div class="c-judge"><div class="c-judge-h">${o.judgeHTML||''}</div>
       <div class="c-sent">${esc(o.sentence||'')}</div>
       ${o.edgeHTML||''}${o.unitHTML||''}</div>
     <details class="dd fca"${o.ddKey?` data-dd="${esc(o.ddKey)}" ${ui.open.has(o.ddKey)?'open':''}`:''}${o.gid?` data-gid="${esc(o.gid)}"`:''}><summary>📊 Additional stats</summary><div class="fca-body">
-      ${more}${o.fullHTML||''}${uiOddsRowHTML(o.odds)}${cov}${uiGlossaryHTML(fullTxt)}
+      ${o.fullHTML||''}${uiOddsRowHTML(o.odds)}
     </div></details>
   </div>`;
 }
@@ -18421,18 +18547,121 @@ function uiKeepScroll(fn){
   if (A && v){ setTimeout(()=>{ v.style.minHeight = ''; }, 2500); }
   return r;
 }
+/* ===== v81: invisible background refresh (Stanley: "it jitters the screen… refreshing every 15s freezes the mobile app").
+   Background renders (timer refresh, live ticks, matchup/injury/props loads) no longer rebuild #view. The new HTML is built
+   into a hidden twin of #view, then only the nodes that actually changed are patched in place (text, attributes; a card is
+   swapped only when its structure changed). Untouched cards keep their DOM, size and scroll position, so nothing moves.
+   The patch runs in idle time, coalesced (many triggers → one patch). Renders the user causes (taps, typing) stay immediate. */
+var UI_PATCH = {pending:false, last:'', runs:0, patched:0, skipped:0, ms:0};
+function uiUserEv(){ const e = window.event; return !!(e && /click|touch|key|input|change|submit|pointer|mouse/.test(e.type)); }
+function uiNodeKey(n){
+  if (n.nodeType!==1) return null;
+  if (n.id) return '#'+n.id;
+  const dd = n.getAttribute('data-dd'); if (dd) return 'dd:'+dd;
+  const dk = n.getAttribute('data-key'); if (dk) return 'k:'+dk;
+  if (n.classList.contains('card') || n.classList.contains('pk-leg') || n.classList.contains('pk-ticket')){
+    const a = n.querySelector('[data-log],[data-plog],[data-log-prop],[data-nob],[data-logleg],[data-lazy-id]');
+    if (a){ for (const k of ['log','plog','logProp','nob','logleg','lazyId']) if (a.dataset[k]) return 'c:'+k+':'+a.dataset[k]; }
+  }
+  return null;
+}
+function uiPatchAttrs(a, b){
+  const keepOpen = a.nodeName==='DETAILS';
+  const formVal = (a.nodeName==='INPUT' || a.nodeName==='TEXTAREA' || a.nodeName==='SELECT');
+  for (const at of b.attributes){
+    if (keepOpen && at.name==='open') continue;
+    if (formVal && at.name==='value') continue;
+    if (a.getAttribute(at.name)!==at.value) a.setAttribute(at.name, at.value);
+  }
+  for (let i=a.attributes.length-1;i>=0;i--){
+    const n = a.attributes[i].name;
+    if (keepOpen && n==='open') continue;
+    if (n==='style' && !b.hasAttribute('style')) continue;   // inline sizes set at runtime
+    if (formVal && n==='value') continue;
+    if (!b.hasAttribute(n)) a.removeAttribute(n);
+  }
+}
+function uiPatchNode(a, b){
+  if (a.nodeType===3 || a.nodeType===8){ if (a.nodeValue!==b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  uiPatchAttrs(a, b);
+  if (a===document.activeElement && (a.nodeName==='TEXTAREA' || a.nodeName==='INPUT' || a.nodeName==='SELECT')) return;
+  // a closed lazy <details> in the live page may have been filled in by the user; keep its body if the new one is empty
+  if (a.nodeName==='DETAILS' && a.open && b.children.length<=1 && a.children.length>1) return;
+  uiMorphChildren(a, b);
+}
+function uiSame(a, b){ return a.nodeType===b.nodeType && a.nodeName===b.nodeName && uiNodeKey(a)===uiNodeKey(b); }
+function uiMorphChildren(from, to){
+  let fc = from.firstChild, tc = to.firstChild;
+  while (tc){
+    const next = tc.nextSibling;
+    if (!fc){ from.appendChild(tc); UI_PATCH.patched++; tc = next; continue; }
+    if (uiSame(fc, tc)){ uiPatchNode(fc, tc); fc = fc.nextSibling; tc = next; continue; }
+    const k = uiNodeKey(tc);
+    if (k){ let sb = fc.nextSibling; while (sb && uiNodeKey(sb)!==k) sb = sb.nextSibling;
+      if (sb && sb.nodeName===tc.nodeName){ from.insertBefore(sb, fc); uiPatchNode(sb, tc); tc = next; continue; } }
+    const fk = uiNodeKey(fc);
+    if (fk){ from.insertBefore(tc, fc); UI_PATCH.patched++; tc = next; continue; }   // keep fc: it may match a later node
+    const old = fc; fc = fc.nextSibling; from.replaceChild(tc, old); UI_PATCH.patched++; tc = next;
+  }
+  while (fc){ const n = fc.nextSibling; from.removeChild(fc); fc = n; }
+}
+function uiRenderInto(fn){
+  const live = document.getElementById('view'); if (!live) return {written:false};
+  const sh = document.createElement(live.nodeName); sh.className = live.className; sh.style.display = 'none';
+  const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML'); let html = null;
+  Object.defineProperty(sh, 'innerHTML', {configurable:true, get(){ return desc.get.call(this); }, set(v){ html = String(v); desc.set.call(this, v); }});
+  live.id = 'view__live'; sh.id = 'view'; live.parentNode.insertBefore(sh, live.nextSibling);
+  try{ fn(); } finally { sh.remove(); sh.id = ''; live.id = 'view'; }
+  return {written: html!=null || sh.childNodes.length>0, html: html!=null ? html : sh.innerHTML, sh, live};
+}
+var UI_NATIVE_ANCHOR = (function(){ try{ return CSS.supports('overflow-anchor','auto'); }catch(e){ return false; } })();   // Chrome/Firefox hold your place themselves
+function uiBackgroundPatch(fn){
+  const t0 = performance.now(); UI_PATCH.runs++;
+  if (ui.tab==='settings'){ return; }                  // never touch a settings form from the background
+  const R = uiRenderInto(fn);
+  if (!R.written){ return; }
+  const key = (ui.tab||'')+'|'+(ui.board||'')+'|'+R.html;
+  if (key===UI_PATCH.last){ UI_PATCH.skipped++; UI_PATCH.ms = performance.now()-t0; return; }
+  UI_PATCH.last = key;
+  // Keep what you're reading still: if text above it got shorter/longer, hold the same element in place
+  // (what Chrome's scroll anchoring does natively; iOS Safari doesn't, so we do it here).
+  const view = document.getElementById('view'), cands = [];
+  if (view && scrollY > 0 && !UI_NATIVE_ANCHOR){
+    for (const f of [0.08, 0.16, 0.25, 0.35, 0.45, 0.6, 0.75, 0.9]){
+      const el = document.elementFromPoint(innerWidth/2, innerHeight*f);
+      if (el && view.contains(el) && el!==view){ const r = el.getBoundingClientRect(); cands.push([el, r.top, r.height, el.textContent]); }
+    }
+  }
+  uiMorphChildren(R.live, R.sh);
+  for (const [el, top, h, txt] of cands){
+    if (!el.isConnected || !el.offsetParent || el.textContent!==txt || Math.abs(el.getBoundingClientRect().height-h)>=1) continue;   // only a piece that didn't change itself
+    const d = el.getBoundingClientRect().top - top;
+    if (Math.abs(d) >= 1) { window.scrollBy(0, d); UI_PATCH.held = (UI_PATCH.held||0)+1; }
+    break;
+  }
+  UI_PATCH.ms = performance.now()-t0;
+}
+const uiIdle = (cb) => (window.requestIdleCallback ? requestIdleCallback(cb, {timeout:1200}) : setTimeout(cb, 60));
 (function(){
   if (typeof render!=='function') return;
   const baseRender = render;
-  // Renders the user caused (tab taps, buttons, typing) keep the old behaviour; only background renders are anchored.
-  const userEv = () => { const e = window.event; return !!(e && /click|touch|key|input|change|submit|pointer|mouse/.test(e.type)); };
-  render = function(){ const a = arguments; if (userEv()){ UI_SCROLL.hold = null; return baseRender.apply(this, a); } return uiKeepScroll(()=>baseRender.apply(this, a)); };
+  render = function(){
+    const a = arguments;
+    if (uiUserEv() || !document.getElementById('view') || !document.getElementById('view').firstChild){ UI_PATCH.pending = false; UI_PATCH.last = ''; return baseRender.apply(this, a); }
+    if (document.hidden){ UI_PATCH.dirtyHidden = true; return; }
+    if (UI_PATCH.pending) return; UI_PATCH.pending = true;
+    uiIdle(()=>{ if (!UI_PATCH.pending) return; UI_PATCH.pending = false; uiBackgroundPatch(()=>baseRender()); });
+  };
   if (typeof softRender==='function'){
     const baseSoft = softRender;
-    const busy = () => UI_SCROLL.touching || (Date.now() - UI_SCROLL.lastMove) < 900;
-    const run = () => { UI_SCROLL.timer = null; if (busy()){ UI_SCROLL.timer = setTimeout(run, 500); return; } UI_SCROLL.pending = false; uiKeepScroll(()=>baseSoft()); };
-    softRender = function(){ if (userEv()){ UI_SCROLL.pending = false; return uiKeepScroll(()=>baseSoft()); } UI_SCROLL.pending = true; if (busy()){ if (!UI_SCROLL.timer) UI_SCROLL.timer = setTimeout(run, 500); return; } run(); };
+    softRender = function(){
+      if (uiUserEv()){ UI_PATCH.last = ''; return baseSoft(); }
+      if (document.hidden){ UI_PATCH.dirtyHidden = true; return; }
+      if (UI_PATCH.pendingSoft || UI_PATCH.pending) return; UI_PATCH.pendingSoft = true;
+      uiIdle(()=>{ UI_PATCH.pendingSoft = false; uiBackgroundPatch(()=>baseSoft()); });
+    };
   }
+  document.addEventListener('visibilitychange', ()=>{ if (!document.hidden && UI_PATCH.dirtyHidden){ UI_PATCH.dirtyHidden = false; render(); } });
 })();
 
 /* v80: "As fav / underdog" and "At these odds" stuck on "loading records…" because the background loader only pulls
@@ -18462,6 +18691,65 @@ document.addEventListener('toggle', e=>{
   const g = (typeof games!=='undefined' && games || []).find(x=>x && String(x.id)===d.dataset.gid);
   if (g) uiHistFor(g).catch(()=>{});
 }, true);
+
+/* v81: Additional stats in the matchup look (Stanley: "additional stats should also have same ui look as the rest of the app").
+   Game: face-off rows (label on top, away value left, home value right, team-colour bars for ranks).
+   Prop: stat rows with hit-rate meters and averages coloured against the line. */
+function uiTeamCols(g){
+  const T = s => (typeof TM!=='undefined' && g[s] && TM[g.league+':'+g[s].id]) || null;
+  const pick = (s, fb) => typeof tmColor==='function' ? tmColor(Object.assign({}, g[s], T(s)), fb) : fb;
+  const col = {away: pick('away', '#60a5fa'), home: pick('home', '#f59e0b')};
+  try{ const rgb = h => { const n = parseInt(String(h).replace('#',''),16); return [n>>16&255, n>>8&255, n&255]; }; const a = rgb(col.away), h = rgb(col.home);
+    if (Math.hypot(a[0]-h[0], a[1]-h[1], a[2]-h[2]) < 130) col.home = (Math.hypot(a[0]-245, a[1]-158, a[2]-11) < 130) ? '#60a5fa' : '#f59e0b'; }catch(e){}
+  return col;
+}
+function uiStatsFaceoffHTML(g, rows){
+  const col = uiTeamCols(g);
+  const ab = s => esc((g[s] && (g[s].short || g[s].nick || g[s].name)) || '');
+  const chip = s => `<span class="tm-chip" style="--tc:${col[s]}">${ab(s)}</span>`;
+  const RX = /^<tr><td class="k">([\s\S]*?)<\/td><td class="([^"]*)">([\s\S]*?)<\/td><td class="([^"]*)">([\s\S]*?)<\/td><\/tr>$/;
+  const out = [];
+  for (const r of rows){
+    const bm = /^<tr class="sxbar" data-a="([\d.]+)" data-h="([\d.]+)"><\/tr>$/.exec(r);
+    if (bm){ const a = +bm[1], h = +bm[2], t = (a+h) || 1;
+      if (out.length) out[out.length-1] = out[out.length-1].replace('<!--bar-->', `<div class="sx-bar"><i style="width:${(a/t*100).toFixed(1)}%;background:${col.away}"></i><i style="width:${(h/t*100).toFixed(1)}%;background:${col.home}"></i></div>`);
+      continue; }
+    const m = RX.exec(r); if (!m) continue;
+    const cl = c => /better/.test(c) ? ' better' : /worse/.test(c) ? ' worse' : '';
+    out.push(`<div class="sx-row"><div class="sx-k">${m[1]}</div><div class="sx-vals"><div class="sx-v a${cl(m[2])}">${m[3]}</div><div class="sx-v h${cl(m[4])}">${m[5]}</div></div><!--bar--></div>`);
+  }
+  return `<div class="sx"><div class="sx-head">${chip('away')}<span class="sx-at">@</span>${chip('home')}</div>${out.join('').replace(/<!--bar-->/g,'')}</div>`;
+}
+function uiPropStatsHTML(p, rows){
+  const line = p.line, over = p.side!=='under';
+  const frac = v => { const m = /^(\d+)\/(\d+)$/.exec(String(v||'')); return m && +m[2] ? +m[1]/+m[2] : null; };
+  const body = rows.map(([k, v])=>{
+    if (v==null || v==='' || v==='n/a') return `<div class="tm-stat"><span>${esc(k)}</span><span class="mut">n/a</span></div>`;
+    const f = frac(v);
+    if (f!=null){ const good = over ? f>=0.55 : f<=0.45, bad = over ? f<=0.45 : f>=0.55;
+      return `<div class="tm-stat"><span>${esc(k)}</span><span class="tm-mini"><i class="${good?'g':bad?'r':'y'}" style="width:${Math.max(3, f*100).toFixed(0)}%"></i></span><b>${esc(v)}</b></div>`; }
+    if (/avg/i.test(k) && line!=null && isFinite(parseFloat(v))){ const x = parseFloat(v), d = x - line, good = over ? d>0 : d<0;
+      return `<div class="tm-stat"><span>${esc(k)}</span><b class="${Math.abs(d)<0.05?'':good?'pos':'neg'}">${esc(v)}</b><span class="mut sx-vsl">vs ${line} line</span></div>`; }
+    return `<div class="tm-stat"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
+  }).join('');
+  return `<div class="sx sx-prop">${body}</div>`;
+}
+// v81: run a background job in idle time, once per key, even if asked many times
+var UI_LATER = new Map();
+function uiLater(key, fn){ if (UI_LATER.has(key)) return; UI_LATER.set(key, 1); uiIdle(()=>{ UI_LATER.delete(key); try{ fn(); }catch(e){ console.warn(key, e); } }); }
+// v81: parlays are rebuilt once, in idle time, after background updates (they used to rebuild 3× per refresh)
+(function(){
+  if (typeof buildParlays!=='function') return;
+  const base = buildParlays; let busyP = false, againP = false;
+  const bg = async () => {
+    if (busyP){ againP = true; return; } busyP = true;
+    try{ do { againP = false; const gamesL = typeof gameParlaySidesAsync==='function' ? await gameParlaySidesAsync() : null; await uiYield(); base(gamesL ? {gamesL} : undefined); } while (againP); }
+    catch(e){ console.warn('parlays', e); } finally { busyP = false; }
+    if (typeof updateParlayTabCounts==='function') try{ updateParlayTabCounts(); }catch(e){}
+    if (ui.board==='parlay' && typeof softRender==='function') softRender();
+  };
+  buildParlays = function(){ if (uiUserEv() || !(typeof parlays!=='undefined' && parlays && parlays.length)) return base.apply(this, arguments); uiLater('parlays', bg); };
+})();
 </script>
 </body>
 </html>
