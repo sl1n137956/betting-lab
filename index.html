@@ -1298,7 +1298,143 @@ a, button, label, summary, input, select, textarea, .btn, .chip{touch-action:man
   .pk-try-v{text-align:right}
 }
 /* v76: math-table headers never split mid-word */
-table.ftab th,.ftab th{white-space:nowrap;overflow-wrap:normal;word-break:normal}
+table.ftab th,.ftab th{white-space:nowrap;overflow-wrap:normal;word-break:normal}.ftab td{overflow-wrap:normal !important;word-break:normal !important}.ftab td:last-child{min-width:120px}
+/* ===== v77: shared design system (from the v73 matchup block) ===== */
+:root{--ui-g:#22c55e;--ui-g2:#4ade80;--ui-a:#f59e0b;--ui-a2:#fbbf24;--ui-r:#ef4444;--ui-r2:#f87171;--ui-card:rgba(255,255,255,.025);--ui-card-b:var(--line2);--ui-rad:14px}
+.ui-pos{color:var(--ui-g2);font-weight:800;white-space:nowrap}.ui-neg{color:var(--ui-r2);font-weight:800;white-space:nowrap}
+/* Courtroom: WHY WIN / WHY LOSE as accented cards with labeled rows */
+.court2{gap:12px;grid-template-columns:minmax(0,1fr)}.court2>*{min-width:0}.wc-cap{overflow-wrap:break-word}
+.form>label[style*="span 2"]{grid-column:1/-1 !important;min-width:0}.form>label{min-width:0}.form input,.form select{min-width:0;max-width:100%}
+.court2 .c-col{border:1px solid var(--ui-card-b);border-radius:var(--ui-rad);background:var(--ui-card);padding:12px 12px 10px;margin:0}
+.court2 .c-col.win{border-left:4px solid var(--ui-g)}.court2 .c-col.lose{border-left:4px solid var(--ui-r)}
+.court2 .c-col>.ct{font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.court2 .c-col.win>.ct{color:var(--ui-g2)}.court2 .c-col.lose>.ct{color:var(--ui-r2)}
+.court2 .c-col ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:0}
+.rs-row{display:grid;grid-template-columns:1fr auto;grid-template-areas:"lab viz" "val val";column-gap:10px;row-gap:2px;align-items:center;padding:8px 0;margin:0 !important;border-top:1px solid rgba(255,255,255,.06);line-height:1.45;font-size:13px}
+.c-col ul>.rs-row:first-child{border-top:0;padding-top:2px}
+.rs-row.rs-nolab{grid-template-areas:"val viz"}
+.rs-lab{grid-area:lab;font-weight:800;font-size:12px;letter-spacing:.02em;white-space:nowrap;color:var(--txt)}
+.rs-win .rs-lab::before,.rs-lose .rs-lab::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.rs-win .rs-lab::before{background:var(--ui-g)}.rs-lose .rs-lab::before{background:var(--ui-r)}
+.rs-val{grid-area:val;color:var(--txt2);overflow-wrap:break-word;word-break:normal;min-width:0}
+.rs-val em{color:var(--mut);font-style:normal;font-size:11.5px}
+.rs-empty .rs-val{grid-column:1/-1}
+.ui-mini,.ui-rec{grid-area:viz;justify-self:end;display:flex;width:84px;height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;gap:2px}
+.ui-mini>i{display:block;height:100%;border-radius:999px}
+.ui-mini.win>i{background:var(--ui-g)}.ui-mini.lose>i{background:var(--ui-r)}.ui-mini.neu>i{background:#94a3b8}
+.ui-dots{grid-area:viz;justify-self:end;display:inline-flex;gap:3px;flex-wrap:nowrap}.ui-dots>i{width:9px;height:9px;border-radius:50%;display:block}.ui-dots>i.w{background:var(--ui-g)}.ui-dots>i.l{background:var(--ui-r)}
+.ui-rec>i{display:block;height:100%}.ui-rec>i.w{background:var(--ui-g)}.ui-rec>i.l{background:var(--ui-r)}
+/* Judge */
+.court2 .c-judge,.c-judge{border:1px solid rgba(96,165,250,.35);border-radius:var(--ui-rad);background:linear-gradient(180deg,rgba(37,99,235,.14),rgba(15,32,64,.28));padding:12px;gap:8px}
+.c-judge>div:first-child{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.c-judge .ct{font-size:11.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--acc-hi)}
+.c-judge .badge{border-radius:999px;white-space:nowrap}
+.ui-edge{border:1px solid var(--ui-card-b);border-radius:12px;background:rgba(0,0,0,.14);padding:10px 12px}
+.ui-edge-lab{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;font-size:12.5px;color:var(--txt2);margin-bottom:8px;font-variant-numeric:tabular-nums}
+.ui-edge-lab>span{white-space:nowrap}.ui-edge-lab>.r{text-align:right;justify-self:end}.ui-edge-lab>.l{justify-self:start}.ui-edge-lab b{color:var(--txt);font-weight:800}
+.ui-gap{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;font-size:11.5px;font-weight:800;white-space:nowrap}
+.ui-gap.pos{background:rgba(52,211,153,.16);color:var(--ui-g2);border:1px solid rgba(52,211,153,.45)}
+.ui-gap.neg{background:rgba(248,113,113,.14);color:var(--ui-r2);border:1px solid rgba(248,113,113,.45)}
+.ui-edge-track{position:relative;height:10px;border-radius:999px;background:rgba(255,255,255,.07);overflow:visible}
+.ui-edge-track>i{display:block;height:100%;border-radius:999px;background:#64748b}
+.ui-edge-track>i.pos{background:linear-gradient(90deg,#16a34a,var(--ui-g))}.ui-edge-track>i.neg{background:linear-gradient(90deg,#b91c1c,var(--ui-r))}
+.ui-edge-need{position:absolute;top:-4px;width:3px;height:18px;margin-left:-1.5px;border-radius:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.5)}
+.unit-judge{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.unit-pill{border-radius:999px !important;white-space:nowrap}
+/* Pick cards: price vs worth */
+.ui-val{display:grid;gap:5px;margin:4px 0 2px}
+.ui-val-row{display:grid;grid-template-columns:44px 1fr 40px;align-items:center;gap:8px;font-size:11.5px;font-variant-numeric:tabular-nums}
+.ui-val-k{color:var(--mut);font-weight:700}
+.ui-val-row>b{text-align:right;font-weight:800;color:var(--txt)}
+.ui-val-bar{height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+.ui-val-bar>i{display:block;height:100%;border-radius:999px}
+.ui-val-bar>i.px{background:#94a3b8}.ui-val-bar>i.pos{background:var(--ui-g)}.ui-val-bar>i.neg{background:var(--ui-r)}
+.beton{border-radius:var(--ui-rad) !important}
+.beton>div:first-child{font-weight:700;color:var(--txt)}
+.card .pick{border-radius:var(--ui-rad)}
+.card .pick .mk{font-weight:800;letter-spacing:.08em}
+/* Inner sections = matchup-style cards */
+.card details.dd{border:1px solid var(--ui-card-b);border-radius:var(--ui-rad);background:var(--ui-card);padding:10px 12px}
+.card details.dd>summary{font-weight:800;color:var(--txt)}
+.card details.dd details.dd{background:rgba(0,0,0,.12)}
+.court-dd>.court2{margin-top:10px}
+.inj-team{border:1px solid var(--ui-card-b);border-radius:12px;background:rgba(255,255,255,.02);padding:10px 12px;margin-top:8px}
+.inj-team b,.inj-team strong{font-weight:800}
+.inj-row{padding:6px 0;border-top:1px solid rgba(255,255,255,.06)}
+.st-out{color:var(--ui-r2);font-weight:800}.st-doubt{color:var(--ui-a2);font-weight:800}.st-q{color:var(--ui-a2);font-weight:700}
+/* Tables (matchup table, stat tables, tracker) */
+.card table{border-collapse:separate;border-spacing:0;border:1px solid var(--ui-card-b);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.015)}
+.card table th{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);background:rgba(255,255,255,.03)}
+.card table td{border-top:1px solid rgba(255,255,255,.06)}
+/* Ticket */
+.pk-ticket{border-radius:var(--ui-rad)}
+.pk-ticket h3{font-weight:800}
+.pk-ticket .kpi{border:1px solid var(--ui-card-b);border-radius:var(--ui-rad);background:var(--ui-card);box-shadow:none}
+.pk-ticket .kpi .k{font-weight:800}
+.pk-ticket .kpi .ui-mini2{margin-top:8px;width:100%}
+.ui-mini2{display:inline-flex;width:70px;height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;flex-shrink:0}
+.ui-mini2>i{display:block;height:100%;border-radius:999px}
+.ui-mini2.pos>i{background:var(--ui-g)}.ui-mini2.mid>i{background:var(--ui-a)}.ui-mini2.neg>i{background:var(--ui-r)}
+.pk-ticket ol.why{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;counter-reset:tk}
+.pk-ticket ol.why>li{border:1px solid var(--ui-card-b);border-radius:12px;background:var(--ui-card);padding:9px 12px;counter-increment:tk}
+.pk-ticket .tk-row{display:grid !important;grid-template-columns:1fr auto auto;align-items:center;gap:10px;width:100%}
+.pk-ticket .tk-name{min-width:0;overflow-wrap:break-word}
+.pk-ticket .tk-name::before{content:counter(tk);display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.08);font-size:11px;font-weight:800;margin-right:8px;vertical-align:1px}
+.pk-ticket .tk-p{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pk-ticket .tk-badge .badge,.pk-ticket .tk-badge .verdict-pill{border-radius:999px;white-space:nowrap}
+.ui-ev{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border:1px solid var(--ui-card-b);border-left:4px solid var(--ui-r);border-radius:var(--ui-rad);background:var(--ui-card);padding:10px 12px;margin:10px 0 4px}
+.ui-ev.pos{border-left-color:var(--ui-g)}
+.ui-ev-k{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+.ui-ev b{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}.ui-ev.neg b{color:var(--ui-r2)}.ui-ev.pos b{color:var(--ui-g2)}
+@media (max-width:420px){ .pk-ticket .tk-row{grid-template-columns:1fr auto;row-gap:6px} .pk-ticket .tk-badge{grid-column:2;grid-row:1} .pk-ticket .tk-p{grid-column:1/-1} .pk-ticket .tk-p .ui-mini2{flex:1;width:auto} }
+/* KPIs everywhere (tracker, results) */
+.kpi,.trk-kpi{border-radius:var(--ui-rad)}
+.kpi .k,.trk-kpi .k{font-weight:800}
+.trk-kpi .v.pos,.kpi .v.pos{color:var(--ui-g2)}.trk-kpi .v.neg,.kpi .v.neg{color:var(--ui-r2)}
+/* Settings & panels */
+.panel{border-radius:var(--ui-rad)}
+.panel>h3{font-weight:800;letter-spacing:.01em}
+.form label{font-weight:700;color:var(--txt2)}
+/* Status pills stay round and never wrap */
+.badge,.verdict-pill,.conf,.meta-pill,.sport-pill,.tm-pill,.unit-pill,.logged-badge{white-space:nowrap}
+@media (min-width:900px){ .rs-row{grid-template-columns:118px 1fr auto;grid-template-areas:"lab val viz"} .rs-row.rs-nolab{grid-template-areas:"val val viz"} .rs-lab{align-self:start;padding-top:1px} }
+
+.c-judge{grid-template-columns:minmax(0,1fr)}.c-judge>*{min-width:0}
+.ui-edge-lab{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+.ui-edge-lab>.l,.ui-edge-lab>.r{white-space:normal;overflow-wrap:normal;word-break:normal}
+.ui-edge-lab b{white-space:nowrap}
+.rs-lab{white-space:normal;overflow-wrap:normal;word-break:normal}
+@media (min-width:900px){ .rs-row{grid-template-columns:150px minmax(0,1fr) auto} }
+th,.k,.kpi .k,.trk-kpi .k{overflow-wrap:normal !important;word-break:normal !important}
+
+.p10-axis{display:flex;gap:4px;padding:5px 2px 0}
+.p10-ax{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.15;cursor:pointer;font-variant-numeric:tabular-nums}
+.p10-ax b{font-size:9px;font-weight:800;color:var(--txt2);white-space:nowrap;letter-spacing:-.01em}
+.p10-ax span{font-size:8.5px;color:var(--mut);white-space:nowrap}
+.p10-ax .d-l{display:none}
+@media (min-width:700px){ .p10-ax .d-s{display:none} .p10-ax .d-l{display:inline} .p10-ax b{font-size:10px} .p10-ax span{font-size:9.5px} }
+@media (max-width:380px){ .p10-ax b{font-size:8px;letter-spacing:-.03em} .p10-ax span{font-size:8px} .p10-axis,.p10-chart,.p10-dual{gap:3px} }
+.p10-col,.p10-dcol{cursor:pointer}
+.p10-hint{text-transform:none;letter-spacing:0;color:var(--mut);font-size:10.5px}
+.p10-tip{position:absolute;z-index:9999;max-width:min(300px,calc(100vw - 16px));padding:8px 11px;border-radius:10px;background:#0b1424;border:1px solid rgba(125,211,252,.4);color:var(--txt);font-size:12px;font-weight:600;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.45);pointer-events:none}
+
+.conf.bstr{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;border-radius:999px}
+.conf.bstr b{font-weight:800}
+.bstr-stars{color:#fbbf24;letter-spacing:1px;font-size:11px}.bstr-stars i{font-style:normal;color:rgba(255,255,255,.18)}
+.conf.bstr.bs-hi{background:rgba(52,211,153,.14);border:1px solid rgba(52,211,153,.45);color:#4ade80}
+.conf.bstr.bs-ok{background:rgba(52,211,153,.10);border:1px solid rgba(52,211,153,.35);color:#86efac}
+.conf.bstr.bs-mid{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.4);color:#fbbf24}
+.conf.bstr.bs-lo{background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.3);color:#cbd5e1}
+.tk-judge{border:1px solid rgba(96,165,250,.35);border-radius:var(--ui-rad,12px);background:linear-gradient(180deg,rgba(37,99,235,.14),rgba(15,32,64,.28));padding:10px 12px;margin:8px 0 10px;display:grid;gap:4px}.tk-judge .ct{color:var(--acc-hi);font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase}.tk-judge .c-sent{overflow-wrap:break-word}
+.p10{container-type:inline-size;min-width:0}
+.p10-ax b i{font-style:normal;font-weight:700;color:var(--mut)}
+@container (max-width:420px){ .p10-ax b{font-size:8px;letter-spacing:-.02em} .p10-ax span{font-size:7.5px} .p10-ax.hm b i{display:none} .p10-axis{gap:2px;padding-left:0;padding-right:0} .p10-ax .d-l{display:none} .p10-ax .d-s{display:inline} }
+@container (min-width:421px){ .p10-ax .d-s{display:none} .p10-ax .d-l{display:inline} }
+@container (max-width:300px){ .p10-ax:nth-child(even) b,.p10-ax:nth-child(even) span{visibility:hidden} }
+.l10-row.p10-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}.l10-row.p10-grid>*{min-width:0}
+.mkt-table{width:100%;table-layout:auto}.mkt-table td:last-child{text-align:right;width:1%}
+@media (max-width:440px){ .mkt-table td{padding:6px 3px} .mkt-table td:first-child{width:54px;letter-spacing:.03em} .mkt-table .badge{font-size:10.5px;padding:2px 7px;gap:3px;min-height:0} .mkt-table td:nth-child(2) div{white-space:normal !important} .mkt-table td:nth-child(2) b{white-space:nowrap} }
+input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
 </style>
 </head>
 <body>
@@ -5788,7 +5924,7 @@ function scheduleSpot(g, side){
 function l10Margins(g, side){
   const evs = g && g.fx && g.fx.sides && g.fx.sides[side] && g.fx.sides[side].l5;
   if (!evs || !evs.length) return null;
-  const rows = evs.filter(e=>e.pf!=null && e.pa!=null).map(e=>({m:e.pf-e.pa, pf:e.pf, pa:e.pa, tot:e.pf+e.pa, res:e.res}));
+  const rows = evs.filter(e=>e.pf!=null && e.pa!=null).map(e=>({m:e.pf-e.pa, pf:e.pf, pa:e.pa, tot:e.pf+e.pa, res:e.res, opp:e.opp||'', home:e.at ? e.at!=='@' : null, date:e.d}));
   if (!rows.length) return null;
   const avg = rows.reduce((a,x)=>a+x.m,0)/rows.length;
   return {rows, avg, n:rows.length};
@@ -6028,46 +6164,13 @@ function pricePlain(P, E, who, tone){
   return opts[tone];
 }
 function judgeSentence(p, E, P, who, reasons, against, fail){
-  const v = p.verdict;
-  const id = p.id || (p.g && p.g.eventId) || who;
-  const tone = (String(id).length + (who||'').length) % 3;
-  const stop = s => { s=String(s||'').trim(); return !s ? '' : /[.!?]$/.test(s) ? s : s+'.'; };
-  const why = stop(reasons[0] || '');
-  const why2 = stop(reasons[1] || '');
-  const vs = stop(against[0] || '');
-  const est = outOf10(E.final), need = outOf10(P.need);
-  const join = (a,b) => a && b ? a.replace(/\.$/,'') + ', and ' + uncap(b) : (a||b||'');
-  if (v==='started') return 'The game already started, so this one is off the table.';
-  if (v==='good' && P.edge < 0){
-    return pickTpl(id+'g-', [
-      `${cap(who)} still looks like the right side${why?`. ${why}`:''}. It should win about ${est} of 10, but the price is a bit steep (it pays like ${need} of 10), so this is about being right more often, not finding a bargain.`,
-      `I'd still take ${who}. ${join(why,why2) || 'The usual checks all cleared.'}. Expect about ${est} wins in 10; the odds are asking for ${need}, so don't think of this as a juicy price.`,
-      `${cap(who)} gets the nod${why?`. ${why}`:''}. The win chance looks solid (about ${est} of 10), even if the price isn't doing you any favors (break-even is ${need} of 10).`
-    ]);
-  }
-  if (v==='good'){
-    return pickTpl(id+'g+', [
-      `I'd take ${who}. ${join(why,why2) || 'The recent form and the matchup both check out.'}${vs?` The other way to see it: ${uncap(vs)}`:''} ${pricePlain(P,E,who,tone)}.`,
-      `${cap(who)} looks like the better side here. ${why||''}${why2?` ${why2}`:''}${vs?` On the other side, ${uncap(vs)}`:''} ${pricePlain(P,E,who,tone)}.`,
-      `${cap(who)} gets the nod${why?`. ${why}`:''}${why2?` ${why2}`:''} The price is fair: this side should win about ${est} of 10 and the odds pay like it wins ${need}.`
-    ]);
-  }
-  if (v==='watch'){
-    const hole = fail ? softFail(fail) : 'it does not quite clear every check yet';
-    return pickTpl(id+'w', [
-      `There's a case for ${who}${why?`. ${why}`:''} But ${hole}. Worth another look closer to tip.`,
-      `${cap(who)} is close, not quite there. ${cap(hole)}.${why?` The encouraging part: ${uncap(why)}.`:''} Check again before the game.`,
-      `I'm not betting this yet. ${cap(hole)}.${vs?` Also, ${uncap(vs)}.`:''} If the situation changes, it could come back into play.`
-    ]);
-  }
-  if (P.edge < -0.02){
-    return pickTpl(id+'s', [
-      `I'm passing on ${who}. ${pricePlain(P,E,who,tone)}.${vs?` ${vs}`: fail?` ${cap(softFail(fail))}.`:''}`,
-      `This isn't one I'd take. ${pricePlain(P,E,who,tone)}.${why?' There are some pluses, but not enough to get over the price.':''}`,
-      `Skip. The odds are asking for more wins than we think ${who} will get (${need} needed, about ${est} expected).${vs?` ${vs}`:''}`
-    ]);
-  }
-  return fail ? `I'm passing. ${cap(softFail(fail))}.` : (vs ? `I'm passing. ${vs}` : 'There is not a clear enough reason to bet this.');
+  // v77: sum up the full case (2 strongest reasons each way + which side wins), price only as a closing clause
+  if (p.verdict==='started') return 'The game already started, so this one is off the table.';
+  const vk = p.verdict==='good' ? 'BET' : p.verdict==='watch' ? 'WATCH' : 'SKIP';
+  const failTxt = fail ? softFail(fail) : '';
+  return uiJudgeText({v:vk, win:reasons, lose:against, est:E.final, need:P.need,
+    oddsTxt: P.pm ? fmtPx(P.am, P.cents) : (P.am!=null ? fmtAm(P.am) : ''),
+    fail: failTxt && !UI_PRICEISH.test(failTxt) ? failTxt : ''});
 }
 
 const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : s;
@@ -6156,10 +6259,11 @@ function courtroomHTML(p, C){
   const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]};
   return `<div class="court2">
     ${chanceBarHTML(p, C)}
-    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way.</li>'}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.map(li).join('')}</ul></div>
+    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win,'win','Nothing clear is leaning this way.')}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(DD.lose,'lose','No red flags recorded.')}</ul></div>
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
       <div class="c-sent">${esc(C.sentence)}</div>
+      ${uiEdgeBarHTML(C.E&&C.E.final, C.P&&C.P.need)}
       ${unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game")}<div class="wr-inline">${esc(hitRateText(wr))}</div></div>
     ${matchupTableHTML(p, C)}
     ${marginChartsHTML(p)}
@@ -6286,11 +6390,12 @@ function marginChartsHTML(p){
         const v = x.tot;
         const hit = p.side==='under' ? v<line : v>line;
         const h = Math.max(4, Math.round((v/mx)*72));
-        return `<div class="p10-col" title="Game ${i-seq.length+1}: total ${v} vs ${line}"><i class="${hit?'over':'under'}" style="height:${h}px"></i><span>${v}</span></div>`;
+        const tip = uiGameTip(Object.assign({}, x, {score:`${x.pf}-${x.pa}`}), `total ${v} vs ${line} (${v>line?'over':v<line?'under':'push'})`); x._tip = tip;
+        return `<div class="p10-col" data-tip="${esc(tip)}" title="${esc(tip)}"><i class="${hit?'over':'under'}" style="height:${h}px"></i><span>${v}</span></div>`;
       }).join('');
       const top = Math.round((line/mx)*72);
       const avgTot = (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
-      return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b> · Last ${m.n} totals vs ${line} (avg ${avgTot})</div><div class="p10-chart"><div class="p10-line" style="bottom:${top+14}px"></div>${bars}</div></div>`;
+      return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b> · Last ${m.n} totals vs ${line} (avg ${avgTot})</div><div class="p10-chart"><div class="p10-line" style="bottom:${top+14}px"></div>${bars}</div>${uiAxisHTML(seq.map(x=>Object.assign({}, x, {tip:x._tip})))}</div>`;
     }
     const maxAbs = Math.max(4, ...seq.map(x=>Math.abs(x.m)));
     const isPickedSide = (p.side===side);
@@ -6302,10 +6407,11 @@ function marginChartsHTML(p){
       const lbl = (val>0?'+':'') + val.toFixed(0);
       const topBar = val>=0 ? `<i class="${hit?'over':'under'}" style="height:${h}px"></i>` : '';
       const botBar = val<0 ? `<i class="${hit?'over':'under'}" style="height:${h}px"></i>` : '';
-      return `<div class="p10-dcol" title="Game ${i-seq.length+1}: margin ${lbl}"><div class="p10-half-top">${topBar}</div><div class="p10-half-bot">${botBar}</div><span>${lbl}</span></div>`;
+      const tip = uiGameTip(Object.assign({}, x, {score:`${x.pf}-${x.pa}`}), `margin ${lbl}`); x._tip = tip;
+      return `<div class="p10-dcol" data-tip="${esc(tip)}" title="${esc(tip)}"><div class="p10-half-top">${topBar}</div><div class="p10-half-bot">${botBar}</div><span>${lbl}</span></div>`;
     }).join('');
     const avg = `avg ${m.avg>=0?'+':''}${m.avg.toFixed(1)}`;
-    return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b> · Last ${m.n} margins (${avg})${l10?` · L10 ${esc(l10)}`:''}</div><div class="p10-dual"><div class="p10-zero"></div>${bars}</div></div>`;
+    return `<div class="p10"><div class="p10-lab"><b>${esc(t.short)}</b> · Last ${m.n} margins (${avg})${l10?` · L10 ${esc(l10)}`:''}</div><div class="p10-dual"><div class="p10-zero"></div>${bars}</div>${uiAxisHTML(seq.map(x=>Object.assign({}, x, {tip:x._tip})))}</div>`;
   };
   return `<div class="l10-row p10-grid">${one('away')}${one('home')}</div>`;
 }
@@ -6630,12 +6736,12 @@ function playCard(p){
     ${move?`<div class="${move.kind==='up'?'moved-up':'moved-down'}">${esc(move.text)}</div>`:''}
     <div class="pick"><div><div class="mk">${MKN[p.mk]}${p.rank?` · #${p.rank}`:''}</div><div class="what">${esc(p.label)}</div></div>
       ${recPriceHTML(p, bo)}</div>
-    <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div><div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
+    <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div>${uiValueBarHTML(C.E&&C.E.final, (bo.rec&&bo.rec.cost!=null)?bo.rec.cost:(sd.best&&sd.best.price!=null?imp(sd.best.price):null))}<div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
     ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return `<div class="hint" style="margin:6px 2px 0">${/^excluded/.test(f[0]) ? '<b>No picks for this sport</b> (turned off in Settings)' : `Strict mode: missed "${esc(f[0])}"${f.length>1?` (+${f.length-1} more)`:''}`}</div>`; })() : ''}
     ${typeof wrLineHTML==='function'?wrLineHTML(p, C):''}
     ${lazy(cid, '⚖️ Courtroom', 'court', courtBody, ' court-dd')}
     ${typeof injuriesSectionHTML==='function'?injuriesSectionHTML(p):''}
-    <div class="cfoot"><span class="cfoot-meta">${confBadge(p.j.conf)}${unitPillHTML(p,"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'game'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'games'):''}</span></div>
+    <div class="cfoot"><span class="cfoot-meta">${betStrengthPillHTML(p.j&&p.j.conf, p.verdict)}${unitPillHTML(p,"game")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'game'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'games'):''}</span></div>
   </div>`;
 }
 
@@ -8949,10 +9055,10 @@ ${resultBan}
     ${resultBan}
     ${research || `<details class="dd court-dd" data-dd="verdict|${i}|court" ${ui.open.has('verdict|'+i+'|court')?'open':''}><summary>⚖️ Courtroom</summary>
     <div class="court2">
-      ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.slice(0,4).map(legItem).join(''):'<li class="mut">Nothing measurable pushes this up.</li>'}</ul></div>
-      <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.slice(0,4).map(legItem).join('')}`; })()}${leg.p!=null?`<li><span>No side wins every night — even a good look will lose sometimes</span></li>`:''}</ul></div>
+      ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win.slice(0,4),'win','Nothing measurable pushes this up.')}</ul></div>
+      <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.slice(0,4).map(x=>uiReasonLi(x,'lose')).join('')}`; })()}${leg.p!=null?uiReasonLi('No side wins every night — even a good look will lose sometimes','lose'):''}</ul></div>
       <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf, leg.verdict):''}</div>
-        <div class="c-sent">${esc(leg.plainWhy||leg.why||'')}</div>${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
+        <div class="c-sent">${esc(legJudgeText(leg))}</div>${uiEdgeBarHTML(leg.p, leg.implied)}${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
         ${leg.wr?`<div class="wr-inline">${esc(typeof hitRateText==='function'?hitRateText(leg.wr):'Not enough history yet')}</div>`: ''}</div>
     </div></details>`}
     ${!research ? `<details class="dd" data-dd="verdict|${i}|math" ${ui.open.has('verdict|'+i+'|math')?'open':''}><summary>📐 Nerd stats / Show the math</summary><div style="margin-top:6px">
@@ -8979,6 +9085,36 @@ function legSyncCard(leg){
   leg.why = v===leg._v0 ? leg._why0 : (v==='BET' ? 'The full verdict below says Bet' : v==='WATCHLIST' ? 'The full verdict below says Watch' : 'The full verdict below says Avoid');
   return pl;
 }
+/* v77: the Verdict Judge text sums up the leg's whole case; price is only the closing clause */
+function legJudgeText(leg){
+  if (!leg || leg.err || leg.final || leg.out || leg.p==null || (leg.g && leg.g.state==='in' && leg.verdict==='PASS' && /started/i.test(leg.why||''))) return leg ? (leg.plainWhy||leg.why||'') : '';
+  const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)};
+  const vk = leg.verdict==='BET' ? 'BET' : leg.verdict==='WATCHLIST' ? 'WATCH' : 'SKIP';
+  const gtd = leg.gtd ? "a key player's status still isn't decided" : '';
+  return uiJudgeText({v:vk, win:DD.win, lose:DD.lose, est:leg.p, need:leg.implied, odds:leg.price, fail: vk!=='BET' ? gtd : '',
+    who: leg.player ? (typeof shortPlayerName==='function' ? shortPlayerName(leg.player.name) : leg.player.name) : ''});
+}
+function ticketJudgeText(legs, ranked, pAll, bookDec, safe, drop){
+  const live = ranked.filter(x=>!x.l.final);
+  if (!live.length) return '';
+  const nm = l => legShortDesc(l), pc = l => fmtPct(l.p,0);
+  const strong = live[live.length-1].l, weak = live[0].l;
+  const parts = [];
+  if (live.length>1) parts.push(`${nm(strong)} is the strongest leg (${pc(strong)}) and ${nm(weak)} the weakest (${pc(weak)}).`);
+  else parts.push(`${nm(strong)} is the only live leg (${pc(strong)}).`);
+  const wf = (weak.no||[]).map(x=>uiFactorText(x)).find(Boolean);
+  if (wf && live.length>1) parts.push(`The weak link's main problem: ${uiLc(wf)}.`);
+  const nb = legs.filter(l=>l.verdict==='BET').length, ns = legs.filter(l=>l.verdict==='PASS').length;
+  const mix = nb ? `${nb} of ${legs.length} legs ${nb===1?'is a Bet':'are Bets'}${ns?` and ${ns} ${ns===1?'is a Skip':'are Skips'}`:''}.` : `None of the ${legs.length} legs is a Bet${ns?` (${ns} ${ns===1?'is a Skip':'are Skips'})`:''}.`;
+  parts.push(mix);
+  let concl;
+  if (pAll!=null && pAll>=0.40 && nb===legs.length) concl = 'The ticket is playable';
+  else if (safe && safe.length && drop && drop.length) concl = 'Skip the full ticket; the safer version below is the better play';
+  else concl = pAll!=null ? `All ${legs.length} hit only about ${fmtPct(pAll,pAll<0.1?1:0)} of the time, so skip the full ticket` : 'Skip the full ticket';
+  if (pAll!=null && bookDec) concl += pAll*bookDec>=1 ? ', and the payout is fair for the risk' : ', and the payout doesn’t make up for it';
+  parts.push(concl + '.');
+  return parts.join(' ');
+}
 function parlaySummary(){
   const legs = PK.legs.filter(l=>!l.err);
   if (!legs.length) return '';
@@ -9003,16 +9139,18 @@ function parlaySummary(){
   const pSafe = safe.length ? safe.reduce((a,l)=>a*l.p,1) : null;
   const drop = legs.filter(l=>!safe.includes(l) && !l.final);
   const weakest = ranked[0];
+  const tkJudge = ticketJudgeText(legs, ranked, pAll, bookDec, safe, drop);
   return `<div class="pk-ticket"><h3>🎫 Ticket summary (${legs.length} legs)</h3>
+    ${tkJudge?`<div class="tk-judge"><span class="ct">The Judge says</span> <span class="c-sent">${esc(tkJudge)}</span></div>`:''}
     <div class="kpis">
-      <div class="kpi"><div class="k">All legs hit</div><div class="v">${pAll!=null?fmtPct(pAll):'—'}</div></div>
+      <div class="kpi"><div class="k">All legs hit</div><div class="v">${pAll!=null?fmtPct(pAll):'—'}</div>${uiChanceMini(pAll)}</div>
       <div class="kpi"><div class="k">Fair parlay odds</div><div class="v">${pAll!=null?fmtAm(probToAm(pAll)):'—'}</div></div>
       <div class="kpi"><div class="k">Payout from prices</div><div class="v">${bookAm!=null?fmtAm(bookAm):'—'}</div></div>
       <div class="kpi"><div class="k">Weakest leg</div><div class="v" style="font-size:15px">${weakest?esc(legShortDesc(weakest.l))+' ('+fmtPct(weakest.l.p,0)+')':'—'}</div></div>
     </div>
-    ${pAll!=null && bookAm!=null ? `<div class="hint">Parlay EV at the leg prices: ${fmtEdge(pAll*bookDec-1)} per $1 (${pAll*bookDec>=1?'positive':'negative'}). Your book's actual parlay price may differ: worth it only if it pays better than ${fmtAm(probToAm(pAll))}.</div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'} Fair odds = what the ticket should pay if the estimates are right.</div>`}
+    ${pAll!=null && bookAm!=null ? `<div class="ui-ev ${pAll*bookDec>=1?'pos':'neg'}"><span class="ui-ev-k">Parlay EV</span><b>${fmtEdge(pAll*bookDec-1)}</b><span class="mut">per $1 at the leg prices</span></div><div class="hint">Your book's actual parlay price may differ: worth it only if it pays better than ${fmtAm(probToAm(pAll))}.</div>`:`<div class="hint">${legs.some(l=>l.final)?'Some legs are already final, so the full-ticket number is not shown.':'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'} Fair odds = what the ticket should pay if the estimates are right.</div>`}
     <h3 style="margin-top:12px">Most likely to miss → least</h3>
-    <ol class="why">${ranked.map(x=>`<li><span class="tk-row"><span class="tk-name"><b>${esc(legShortDesc(x.l))}</b> · ${fmtPct(x.l.p,0)}</span><span class="tk-badge">${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</span></span></li>`).join('')}</ol>
+    <ol class="why">${ranked.map(x=>`<li><span class="tk-row"><span class="tk-name"><b>${esc(legShortDesc(x.l))}</b></span><span class="tk-p">${uiChanceMini(x.l.p)}<b>${fmtPct(x.l.p,0)}</b></span><span class="tk-badge">${x.l._card && typeof verdictPill==='function' ? verdictPill(x.l._card.verdict) : verdictBadge(x.l.verdict)}</span></span></li>`).join('')}</ol>
     ${safe.length && drop.length ? `<div class="banner">Safer ticket: keep <b>${safe.map(l=>esc(legShortDesc(l))).join(' + ')}</b> (≈${fmtPct(pSafe)} to all hit, fair ${fmtAm(probToAm(pSafe))}); drop ${drop.map(l=>esc(legShortDesc(l))).join(', ')}.</div>` : ''}
     ${notes.length?`<ul class="why">${notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
     <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict:(pAll!=null&&pAll>=0.40&&legs.every(l=>l.verdict!=='PASS'))?'good':(pAll!=null&&pAll>=0.28&&!legs.some(l=>l.verdict==='PASS'))?'watch':'avoid', p:pAll, legs}, legs.length>1?"parlay":"game")}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML==='function'?openInBookHTML({legs, g:legs[0]&&legs[0].g}, legs.length>1?'parlay':'game'):''}</span></div>
@@ -10099,7 +10237,7 @@ function normalizeGamelog(data, league){
   if (Array.isArray(data.rows)){
     return data.rows.map(r=>({
       eventId:String(r.eventId||''), date:r.date instanceof Date?r.date:new Date(r.date||0),
-      opp:r.opp||'', home: (r.atVs||'')!=='@', min:r.min, pts:r.pts, reb:r.reb, ast:r.ast,
+      opp:r.opp||'', home: (r.atVs||'')!=='@', res:r.res||r.gameResult||'', min:r.min, pts:r.pts, reb:r.reb, ast:r.ast,
       threes:r['3pm']!=null?r['3pm']:r.threes, stl:r.stl, blk:r.blk, tov:r.tov,
       sog:r.sog, saves:r.saves, goals:r.goals, hpts:r.hpts, pass_yds:r.pass_yds, rush_yds:r.rush_yds, rec_yds:r.rec_yds, rec:r.rec
     })).filter(r=>r.date && isFinite(+r.date)).sort((a,b)=>a.date-b.date);
@@ -10141,6 +10279,7 @@ function normalizeGamelog(data, league){
         eventId:String(e.eventId||''), date:new Date(dt),
         opp:(meta.opponent&&(meta.opponent.abbreviation||meta.opponent.displayName))||'',
         home:(meta.atVs||'')!=='@',
+        res:meta.gameResult||'', score:meta.score||'',
         min:get(s,I.min), pts:get(s,I.pts), reb:get(s,I.reb), ast:get(s,I.ast), threes:get(s,I.threes),
         stl:get(s,I.stl), blk:get(s,I.blk), tov:get(s,I.tov), sog:get(s,I.sog), saves:get(s,I.saves),
         goals:get(s,I.goals), hpts:get(s,I.pts), pass_yds:get(s,I.pass_yds), rush_yds:get(s,I.rush_yds), rec_yds:get(s,I.rec_yds), rec:get(s,I.rec)
@@ -10205,6 +10344,7 @@ function propFeatures(rows, kind, line, g, homeFlag){
     n: series.length, line,
     l5n:l5.length, l5avg:mean(l5), l5hit:hitRate(l5,line,true),
     l10n:l10.length, l10avg:mean(l10), l10hit:hitRate(l10,line,true), l10sd:pstdev(l10), l10vals:l10.slice(),
+    l10meta: vals.slice(Math.max(0, vals.length-10)).map(x=>({opp:x.r.opp||'', home:x.r.home, date:+x.r.date, res:x.r.res||''})),
     seasonAvg:mean(series), seasonHit:hitRate(series,line,true),
     minL5:mean(minsL5), minSzn:mean(mins),
     home:!!homeFlag, splitN:split.length, splitHit:hitRate(split,line,true), splitAvg:mean(split),
@@ -10352,13 +10492,13 @@ function buildPropPlay(raw, side, feat, est){
   if (isUnder) lose.push({txt:'A hot shooting night or extra usage from a teammate injury can push this over the line'});
   else lose.push({txt:'Foul trouble or a cold shooting night can leave this under the line'});
   const J = gates.verdict==='good'?'BET':gates.verdict==='watch'?'MAYBE LATER':'SKIP';
+  // v77: the Judge sums up the full case; price is at most one closing clause
   const sentence = pSide==null
     ? 'We still need this player’s recent game log before the judge can speak with any confidence.'
-    : (gates.verdict==='good'
-      ? `${raw.playerName} has a real, repeatable lean ${side} ${raw.line} ${PROP_KIND_LABEL[raw.kind]||''}. The estimate is ${fmtPct(pSide,0)} and the price stays inside our singles range.`
-      : gates.verdict==='watch'
-        ? `There is a lean, but it is not clean enough to bet as a single yet — ${gates.fails[0]||'close enough to watch, not to fire'}.`
-        : `The judge passes. ${(t=>t.charAt(0).toUpperCase()+t.slice(1))(String(gates.fails[0]||'Not enough of an edge, or the sample is too thin.'))}`);
+    : uiJudgeText({v: J==='BET'?'BET':J==='MAYBE LATER'?'WATCH':'SKIP', who: (typeof shortPlayerName==='function' ? shortPlayerName(raw.playerName) : raw.playerName),
+        win: win.filter(x=>x.kind!=='neutral'), lose: lose.filter(x=>x.kind!=='neutral' && !/hot shooting night|foul trouble|cold shooting night/i.test(x.txt||'')),
+        est: pSide, need: implied, odds: price,
+        fail: (gates.fails||[]).find(x=>!UI_PRICEISH.test(String(x))) || ''});
   const confV = Math.max(30, Math.min(90, 40 + (f.n||0) + (f.l10n||0)*2 + (pSide!=null?Math.abs(pSide-0.5)*80:0)));
   return {
     id: propPlayId(raw, side), isProp:true, mk:raw.kind, kind:raw.kind, side, label,
@@ -10625,13 +10765,16 @@ function l10PropChartHTML(p){
   const line = p.line;
   if (!vals.length || line==null) return `<div class="mut" style="margin-top:8px">No last-10 games to chart yet.</div>`;
   const mx = Math.max(line, ...vals, 1);
+  const meta = (f.l10meta && f.l10meta.length===vals.length) ? f.l10meta : vals.map(()=>({}));
+  const statLab = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[p.kind]) ? PROP_KIND_LABEL[p.kind].toLowerCase() : 'stat';
+  const tips = vals.map((v,i)=>uiGameTip(meta[i], `${v%1?v.toFixed(1):v} ${statLab} vs ${line} (${v>line?'over':v<line?'under':'push'})`));
   const bars = vals.map((v,i)=>{
     const over = v>line;
     const h = Math.max(4, Math.round((v/mx)*72));
-    return `<div class="p10-col" title="Game ${i-vals.length+1}: ${v} vs ${line}"><i class="${over?'over':'under'}" style="height:${h}px"></i><span>${v%1?v.toFixed(1):v}</span></div>`;
+    return `<div class="p10-col" data-tip="${esc(tips[i])}" title="${esc(tips[i])}"><i class="${over?'over':'under'}" style="height:${h}px"></i><span>${v%1?v.toFixed(1):v}</span></div>`;
   }).join('');
   const top = Math.round((line/mx)*72);
-  return `<div class="p10"><div class="p10-lab">Last 10 vs the ${line} line</div><div class="p10-chart"><div class="p10-line" style="bottom:${top+14}px"></div>${bars}</div></div>`;
+  return `<div class="p10"><div class="p10-lab">Last 10 vs the ${line} line <span class="p10-hint">· tap a bar for the game</span></div><div class="p10-chart"><div class="p10-line" style="bottom:${top+14}px"></div>${bars}</div>${uiAxisHTML(meta.map((m,i)=>Object.assign({}, m, {tip:tips[i]})))}</div>`;
 }
 function propStatTableHTML(p){
   const f = p.feat||{};
@@ -10662,10 +10805,11 @@ function propCourtroomHTML(p){
   const wr = '';   // v55: break-even line removed (Stanley)
   return `<div class="court2">
     ${bar}
-    ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${DD.win.length?DD.win.map(li).join(''):'<li class="mut">Nothing clear is leaning this way yet.</li>'}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${DD.lose.length?DD.lose.map(li).join(''):'<li class="mut">No red flags recorded.</li>'}</ul></div>`; })()}
+    ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win,'win','Nothing clear is leaning this way yet.')}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(DD.lose,'lose','No red flags recorded.')}</ul></div>`; })()}
     <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span> ${p.j&&p.j.conf&&typeof confDots==='function'?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
       <div class="c-sent">${esc(C.sentence||'')}</div>
+      ${uiEdgeBarHTML(p.p, p.implied, p.side==='under'?'Under':'Over')}
       ${unitJudgeLineHTML(p,"prop")}${wr?`<div class="wr-inline">${esc(wr)}</div>`:''}</div>
     ${propStatTableHTML(p)}
     ${l10PropChartHTML(p)}
@@ -10733,8 +10877,8 @@ function propCard(p){
   const recLine = (p.price==null || !rec) ? '' : (rec.none && p.pmNote)
     ? `<div class="beton"><div>Bet on: ${esc(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book)} <span class="mut av-differ">· Polymarket line may differ</span></div><div class="mut">${fairAm!=null?`Worth about ${esc(fmtAm(Math.round(fairAm)))} · `:''}reference line from ${esc(propRefLabel(p))}</div></div>`
     : rec.none
-    ? `<div class="beton ${(p.p!=null && p.price!=null && p.p-imp(p.price)>=0)?'ok':'bad'}"><div>${esc(p.price!=null ? worthLine(`Best price ${fmtAm(p.price)}`, p.p, imp(p.price)) : 'No price yet')}</div><div class="mut">Reference line · fair line from ${esc(propRefLabel(p))}</div></div>`
-    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(worthLine(rec.pm?`Buy on ${rec.book} at ${fmtPx(rec.price, rec.cents)}`:`Bet on ${rec.book} at ${fmtAm(rec.price)}`, p.p, rec.cost))}</div><div class="mut">Fair line from ${esc(propRefLabel(p))}</div></div>`;
+    ? `<div class="beton ${(p.p!=null && p.price!=null && p.p-imp(p.price)>=0)?'ok':'bad'}"><div>${esc(p.price!=null ? worthLine(`Best price ${fmtAm(p.price)}`, p.p, imp(p.price)) : 'No price yet')}</div>${p.price!=null?uiValueBarHTML(p.p, imp(p.price)):''}<div class="mut">Reference line · fair line from ${esc(propRefLabel(p))}</div></div>`
+    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(worthLine(rec.pm?`Buy on ${rec.book} at ${fmtPx(rec.price, rec.cents)}`:`Bet on ${rec.book} at ${fmtAm(rec.price)}`, p.p, rec.cost))}</div>${uiValueBarHTML(p.p, rec.cost)}<div class="mut">Fair line from ${esc(propRefLabel(p))}</div></div>`;
   const lazy = (id, sum, kind, body) => {
     const open = ui.open.has(id);
     return `<details class="dd${kind==='court'?' court-dd':''}" data-dd="${esc(id)}" data-lazy="${kind}" data-lazy-id="${esc(p.id)}" ${open?'open':''}><summary>${sum}</summary>${open?body:''}</details>`;
@@ -10751,7 +10895,7 @@ function propCard(p){
     ${typeof tmBlockHTML==='function' ? tmBlockHTML(p) : ''}
     ${lazy(cid, '⚖️ Courtroom', 'court', propCourtroomHTML(p))}
     ${lazy(nid, '🩺 Injuries, lineups &amp; news', 'inj', propInjBody(p))}
-    <div class="cfoot"><span class="cfoot-meta">${p.j&&p.j.conf?`<span class="conf conf-${p.j.conf.label.toLowerCase()}" title="How sure the judge is about this call">Verdict confidence ${p.j.conf.label} ${Math.round(p.j.conf.v)}</span>`:''}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'props'):''}</span></div>
+    <div class="cfoot"><span class="cfoot-meta">${betStrengthPillHTML(p.j&&p.j.conf, p.verdict)}${unitPillHTML(p,"prop")}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${loggedBet?" is-tailed":""}" data-log="${esc(p.id)}">${logBtn}</button>${typeof openInBookHTML==='function'?openInBookHTML(p,'prop'):''}${typeof nobBtnHTML==='function'?nobBtnHTML(p,'props'):''}</span></div>
   </div>`;
 }
 
@@ -11354,10 +11498,10 @@ function parlayCourtroomHTML(pl){
   const strongTxt = strongest ? `${legTitle(strongest)} (${fmtPct(strongest.p,0)})` : 'the top leg';
   const weakTxt = weakest ? `${legTitle(weakest)} (${fmtPct(weakest.p,0)})` : 'the weakest leg';
   const sentence = J==='BET'
-    ? `This ${pl.n}-leg ticket pays ${fmtDecX(pl.dec)} (${fmtAm(pl.am)}) and every leg clears our favorite-leg filters. Anchored by ${strongTxt}, with ${weakTxt} as the leg to watch closest.`
+    ? `Every leg clears our favorite-leg filters, anchored by ${strongTxt}, with ${weakTxt} as the leg to watch closest, and at ${fmtAm(pl.am)} the ${pl.n}-leg payout is fair.`
     : J==='MAYBE LATER'
       ? `There is a real lean here led by ${strongTxt}, but ${weakTxt} or the combined juice keeps this on the watchlist rather than a full play.`
-      : `Pass on this combo. Between ${weakTxt} and the compounded juice on a ${fmtDecX(pl.dec)} ticket, the risk outweighs the payout.`;
+      : `Pass on this combo. ${strongTxt} is solid, but ${weakTxt} is the weak link, so the case against wins out, and the juice compounds over ${pl.n} legs.`;
   const wr = (pl.implied!=null && pl.p!=null)
     ? `This ${fmtDecX(pl.dec)} parlay breaks even at about ${typeof outOf10==='function'?outOf10(pl.implied):(pl.implied*10).toFixed(1)} wins in 10 (${fmtPct(pl.implied,0)}). We estimate ${typeof outOf10==='function'?outOf10(pl.p):(pl.p*10).toFixed(1)} in 10 (${fmtPct(pl.p,0)}).`
     : '';
@@ -11373,8 +11517,8 @@ function parlayCourtroomHTML(pl){
       ? ((typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[l.kind]) || 'Prop')
       : (MKN[l.mk] || 'Game');
     { const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(d.win||[], d.lose||[]) : null; if (DD){ d.win = DD.win; d.lose = DD.lose; } }
-    const lWin = d.win.length ? d.win.map(li).join('') : '<li class="mut">Supported mainly by market strength and team baseline.</li>';
-    const lLose = d.lose.length ? d.lose.map(li).join('') : '<li class="mut">No major red flags logged — normal game variance still applies.</li>';
+    const lWin = d.win.length ? d.win.map(x=>uiReasonLi(x,'win')).join('') : '<li class="mut">Supported mainly by market strength and team baseline.</li>';
+    const lLose = d.lose.length ? d.lose.map(x=>uiReasonLi(x,'lose')).join('') : '<li class="mut">No major red flags logged — normal game variance still applies.</li>';
     const candleChart = d.isProp
       ? (typeof l10PropChartHTML==='function' ? l10PropChartHTML(l) : '')
       : (typeof marginChartsHTML==='function' ? marginChartsHTML(l) : '');
@@ -12860,7 +13004,7 @@ function renderSettings(){
     <li><b>Hard rules (applied first)</b>: Avoid favorites worse than ${fmtAmRaw(S.avoidFavBelow)}, dogs above ${fmtAmRaw(S.longshotAbove)} without a ${S.dogMinEdge}% model or price edge, juice worse than ${fmtAmRaw(S.avoidJuice)}, and heavy adverse line moves. A moneyline Pick needs a favorite between ${fmtAmRaw(S.goodFavMin)} and ${fmtAmRaw(S.goodFavMax)} (or a dog clearing the stricter underdog bar), no adverse move, and model/price edge ≥ −${S.neutralTol}%.</li>
     <li><b>Spreads/totals</b>: a Pick needs price no worse than ${fmtAmRaw(S.maxJuice)}, no adverse move, and the factor score below. Model edge on spreads uses ESPN win probability at 60% weight (it is a win %, not a cover %).</li>
     <li><b>Factor model</b>: each market side gets points from price range, ESPN model vs market, best price vs books, line movement, injuries (team leaders and QBs count most; IR/long-term ignored), last-5 form, home/away split, rest/back-to-backs, head-to-head, season scoring margin or projections vs the line, starting goalies (GAA), and weather for outdoor totals. Composite ≥ ${S.goodScore} with 2+ supporting factors and confidence ≥ ${S.minConfGood} can land on Picks. Underdogs need ≥ ${S.dogGoodScore}, ${S.dogMinFactors}+ strong factors and a ${S.dogMinEdge}% model or price edge.</li>
-    <li><b>Confidence</b> starts at 100 and drops for missing data: no game page, no model, no injury report, only one book, unconfirmed goalie/pitcher, key game-time decisions, unknown outdoor weather.</li>
+    <li><b>Data completeness</b> (shown when you tap a card's Bet strength) starts at 100 and drops for missing data: no game page, no model, no injury report, only one book, unconfirmed goalie/pitcher, key game-time decisions, unknown outdoor weather.</li>
     <li><b>Strict mode</b> (${S.strictMode?'on':'off'}): no cap, built for win rate on singles. A play lands on Picks only if it passes every check: ${S.sMarkets==='ml'?'moneyline only, ':''}price between ${fmtAmRaw(S.sFavMin)} and ${fmtAmRaw(S.sDogMax)} at your book, estimated win chance ≥ ${(S.sMinWin*100).toFixed(0)}%, ESPN's computer agrees (≥ ${(S.sModelMin*100).toFixed(0)}% and not less sure than the odds, where it exists), no line move against of more than ${S.sMaxAdvPct}%, ${S.sMinPos}+ supporting factors, nothing strongly against, ${S.sExclude?`not ${esc(S.sExclude.toUpperCase())}, `:''}full data (confidence ≥ ${S.sMinConf}, injury report, confirmed goalie/pitcher, no key game-time decisions) and not a thin Polymarket market. Value (price vs estimate) is shown but ${+S.sMinEV>-99?`must be at least ${S.sMinEV}%`:'is not required'}. Picks are ranked by estimated win chance. Misses go to the Watchlist with the missed check named.</li>
   </ul></div>
   </div></details>
@@ -17916,6 +18060,191 @@ function verdictParseSelfTest(){
   }
   return fails;
 }
+/* v77: one design language for the whole app, taken from the v73 matchup block (Stanley: "everything else
+   should be like the matchup tab"). Rounded inner cards, bold labels + muted secondary text, two-color bars,
+   mini bars, W/L dots, green/amber/red, colored +/- numbers, nowrap pills. Display only: no logic changes. */
+
+// A reason's category label, read from its own words (shown bold, like the matchup's stat labels).
+var UI_REASON_CATS = [
+  [/^your line /i, 'Your line'],
+  [/no clear edge|coin flip/i, 'Coin flip'],
+  [/blowout/i, 'Blowout'],
+  [/foul|(hot|cold) shooting|\bpace\b|overtime/i, 'Game flow'],
+  [/injur|is without|are missing|might not play|ruled out|\((out|questionable|doubtful|day-to-day)|has a question on|key absences|lineup/i, 'Injuries'],
+  [/steamed|line (has )?moved|moved .* (toward|against)|since open/i, 'Line move'],
+  [/break-?even|wins in 10|odds pay|price is|fair shake|overpay|asked to be right|at your [+−-]?\d/i, 'Price'],
+  [/priced this|prediction markets|only one (book|sportsbook)/i, 'Data'],
+  [/in their last|last \d+|form\b|streak|won \d+ straight|lost \d+ straight/i, 'Form'],
+  [/head[- ]to[- ]head|\bh2h\b|beat .* times|met \d/i, 'Head to head'],
+  [/days? (of )?rest|back-to-back|\bb2b\b|played yesterday|rest vs/i, 'Rest'],
+  [/offense|defense|\branks?\b|\d+(st|nd|rd|th) in /i, 'Ranks'],
+  [/score [\d.]+ points|points a game|allow [\d.]+/i, 'Scoring'],
+  [/at home|on the road|road games|home games|home\/away|neutral site/i, 'Venue'],
+  [/season averages?|project(s|ed)? [\d.]+ vs|land around/i, 'Season avg'],
+  [/weather|wind|rain|snow|temperature/i, 'Weather'],
+  [/minutes|usage|role/i, 'Role'],
+  [/espn'?s? computer|model|bpi|power index/i, 'Model'],
+  [/no side wins every night/i, 'Variance'],
+];
+function uiReasonParts(txt){
+  let t = String(txt==null?'':txt).trim(), label = null, value = t;
+  const m = t.match(/^([A-Za-z][A-Za-z0-9 '’/+.-]{1,24}):\s+(.+)$/);
+  if (m && !/https?$/i.test(m[1])){ label = m[1]; value = m[2]; }
+  if (!label){ for (const [re, lab] of UI_REASON_CATS) if (re.test(t)){ label = lab; break; } }
+  // a fraction like "over in 7 of 10" / "4/7" → mini hit-rate bar
+  let frac = null; const f = value.match(/\b(\d{1,3})\s*(?:of|\/)\s*(\d{1,3})\b/);
+  if (f){ const a = +f[1], b = +f[2]; if (b>0 && a<=b && b<=200 && !/\d\s*\/\s*\d+\s*(?:¢|pts|%)/.test(f[0])) frac = [a, b]; }
+  // a record like "2-8 in their last 10" / "1-4 at home" → W/L bar
+  let rec = null; const r = value.match(/\b(\d{1,2})[-–](\d{1,2})\b(?=\s+(?:in (?:their |his )?last|at home|on the road|on road|away|as (?:a )?(?:fav|dog|underdog)))/i);
+  const nRec = (value.match(/\b\d{1,2}[-–]\d{1,2}\b/g)||[]).length;
+  if (r && !frac && nRec===1){ const w = +r[1], l = +r[2]; if (w+l>0 && w+l<=82) rec = [w, l]; }
+  return {label, value, frac, rec};
+}
+// colored numbers: "+2.1 pts" green, "−2.4 pts" red, percents stay neutral; plain text is always kept
+function uiColorNums(html){
+  return html.replace(/(^|[\s(])([+])(\d+(?:\.\d+)?)(\s?(?:pts|points|%))(?=[\s),.;]|$)/g, '$1<b class="ui-pos">+$3$4</b>')
+             .replace(/(^|[\s(])([−-])(\d+(?:\.\d+)?)(\s?(?:pts|points|%))(?=[\s),.;]|$)/g, '$1<b class="ui-neg">−$3$4</b>');
+}
+function uiReasonLi(x, side){
+  const raw = (x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x;
+  if (raw==null || raw==='') return '';
+  const tag = (x && typeof x==='object' && x.tag && / /.test(x.tag) && !/^rule points|^context$/i.test(x.tag)) ? x.tag : '';
+  const P = uiReasonParts(raw);
+  const sideCls = side==='lose' ? 'lose' : side==='win' ? 'win' : 'neu';
+  let viz = '';
+  if (P.frac){ const pct = Math.round(P.frac[0]/P.frac[1]*100); viz = `<span class="ui-mini ${sideCls}" title="${P.frac[0]} of ${P.frac[1]}"><i style="width:${pct}%"></i></span>`; }
+  else if (P.rec){ const tot = P.rec[0]+P.rec[1];
+    viz = tot<=10 ? `<span class="ui-dots" title="${P.rec[0]} wins, ${P.rec[1]} losses">${'<i class="w"></i>'.repeat(P.rec[0])}${'<i class="l"></i>'.repeat(P.rec[1])}</span>`
+      : `<span class="ui-rec" title="${P.rec[0]}-${P.rec[1]}"><i class="w" style="width:${(P.rec[0]/tot*100).toFixed(1)}%"></i><i class="l" style="width:${(P.rec[1]/tot*100).toFixed(1)}%"></i></span>`; }
+  const val = uiColorNums(esc(P.value));
+  return `<li class="rs-row rs-${sideCls}${P.label?'':' rs-nolab'}">${P.label?`<span class="rs-lab">${esc(P.label)}</span>`:''}<span class="rs-val">${val}${tag?` <em>(${esc(tag)})</em>`:''}</span>${viz}</li>`;
+}
+function uiReasonList(list, side, emptyTxt){
+  const rows = (list||[]).map(x=>uiReasonLi(x, side)).filter(Boolean);
+  return rows.length ? rows.join('') : `<li class="rs-row rs-empty"><span class="rs-val mut">${esc(emptyTxt||'Nothing measurable here.')}</span></li>`;
+}
+// Judge: our estimate vs what the price needs (break-even), one track with a marker, plus the gap as a colored pill
+function uiEdgeBarHTML(est, need, sideTxt){
+  if (est==null || !isFinite(est)) return '';
+  const e = Math.max(0, Math.min(1, est)), n = need!=null && isFinite(need) ? Math.max(0, Math.min(1, need)) : null;
+  const gap = n==null ? null : e - n, good = gap==null ? null : gap >= 0;
+  const gapTxt = gap==null ? '' : Math.abs(gap) < 0.005 ? 'even' : `${gap>=0?'+':'−'}${(Math.abs(gap)*100).toFixed(1)} pts`;
+  return `<div class="ui-edge">
+    <div class="ui-edge-lab"><span class="l">We have <b>${fmtPct(e,0)}</b>${sideTxt?` <span class="mut">${esc(sideTxt)}</span>`:''}</span>${n!=null?`<span class="ui-gap ${good?'pos':'neg'}">${gapTxt}</span><span class="r">Needs <b>${fmtPct(n,0)}</b></span>`:'<span class="mut r">no price to compare</span>'}</div>
+    <div class="ui-edge-track"><i class="${good==null?'':good?'pos':'neg'}" style="width:${(e*100).toFixed(1)}%"></i>${n!=null?`<span class="ui-edge-need" style="left:${(n*100).toFixed(1)}%"></span>`:''}</div>
+  </div>`;
+}
+// Pick cards: price you pay vs what it's worth, as two short bars (cents of $1)
+function uiValueBarHTML(estP, cost){
+  if (!(estP>0 && estP<1) || !(cost>0 && cost<1)) return '';
+  const pc = Math.round(cost*100), fc = Math.round(estP*100), good = fc >= pc;
+  return `<div class="ui-val" title="Price ${pc}¢ vs worth ${fc}¢ per $1">
+    <div class="ui-val-row"><span class="ui-val-k">Price</span><span class="ui-val-bar"><i class="px" style="width:${pc}%"></i></span><b>${pc}¢</b></div>
+    <div class="ui-val-row"><span class="ui-val-k">Worth</span><span class="ui-val-bar"><i class="${good?'pos':'neg'}" style="width:${fc}%"></i></span><b class="${good?'ui-pos':'ui-neg'}">${fc}¢</b></div>
+  </div>`;
+}
+// Ticket: one leg's win chance as a slim bar
+function uiChanceMini(p){
+  if (p==null || !isFinite(p)) return '';
+  const c = p>=0.55 ? 'pos' : p>=0.5 ? 'mid' : 'neg';
+  return `<span class="ui-mini2 ${c}"><i style="width:${(Math.max(0,Math.min(1,p))*100).toFixed(1)}%"></i></span>`;
+}
+
+/* v77: every game-log chart labels each bar with the matchup and date ("vs ATL" / "Nov 18"), and tapping a bar
+   (or its label) shows the full game: date, home/away, opponent, result, value vs the line. */
+function uiGameDate(d){ const t = d instanceof Date ? d : new Date(d); return isFinite(+t) ? t : null; }
+function uiMD(d){ const t = uiGameDate(d); return t ? `${t.getMonth()+1}/${t.getDate()}` : ''; }
+function uiMonDay(d){ const t = uiGameDate(d); return t ? t.toLocaleDateString('en-US', {month:'short', day:'numeric'}) : ''; }
+function uiAxisHTML(items){
+  if (!items || !items.length || !items.some(x=>x && (x.opp || x.date))) return '';
+  return `<div class="p10-axis">${items.map(it=>{ it = it||{};
+    const where = it.home==null ? '' : it.home ? 'vs' : '@';
+    return `<div class="p10-ax${it.home?' hm':''}" data-tip="${esc(it.tip||'')}"><b>${where?`<i>${esc(where)}${it.home?'\u2009':''}</i>`:''}${esc(String(it.opp||'').toUpperCase().slice(0,4))}</b><span class="d-s">${esc(uiMD(it.date))}</span><span class="d-l">${esc(uiMonDay(it.date))}</span></div>`; }).join('')}</div>`;
+}
+function uiGameTip(it, valueTxt){
+  const bits = [uiMonDay(it.date), it.home==null ? '' : (it.home ? 'Home vs ' : 'Away @ ') + (it.opp||'?'), it.res ? ({W:'Win', L:'Loss', D:'Draw', T:'Tie'}[it.res]||it.res) + (it.score?` ${it.score}`:'') : '', valueTxt||''];
+  return bits.filter(Boolean).join(' · ');
+}
+(function(){
+  let tipEl = null;
+  const hide = () => { if (tipEl){ tipEl.remove(); tipEl = null; } };
+  document.addEventListener('click', e=>{
+    const t = e.target.closest && e.target.closest('.p10 [data-tip]');
+    if (!t || !t.getAttribute('data-tip')){ hide(); return; }
+    hide();
+    tipEl = document.createElement('div'); tipEl.className = 'p10-tip'; tipEl.setAttribute('role','tooltip'); tipEl.textContent = t.getAttribute('data-tip');
+    document.body.appendChild(tipEl);
+    const r = t.getBoundingClientRect(), w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width/2 - w/2));
+    const top = r.top - h - 8 > 8 ? r.top - h - 8 : r.bottom + 8;
+    tipEl.style.left = left + 'px'; tipEl.style.top = (top + window.scrollY) + 'px';
+  });
+  window.addEventListener('scroll', hide, {passive:true});
+})();
+
+/* v77: one "Bet strength" on every card, from the same source as the courtroom stars (betStarsN). The old
+   "Verdict confidence High 90" measured how complete the data was, so a 90 could sit on a 1-star Avoid; it now
+   lives only in the tooltip as "data completeness". Avoid / Skip always shows 1 of 5. */
+function uiVerdictKey(v){ const k = String(v||'').toLowerCase(); return k==='good'||k==='bet' ? 'BET' : k==='watch'||k==='watchlist'||k==='maybe later' ? 'WATCH' : k==='started'||k==='final'||k==='live' ? null : 'SKIP'; }
+function betStrengthPillHTML(conf, verdict){
+  const vk = uiVerdictKey(verdict); if (!vk) return '';
+  const cv = conf && conf.v!=null ? +conf.v : 0;
+  const n = betStarsN(cv, vk) || 1;
+  const cls = n>=4 ? 'bs-hi' : n===3 ? 'bs-ok' : n===2 ? 'bs-mid' : 'bs-lo';
+  const tip = `Bet strength ${n} of 5 (same as the stars). ${vk==='BET'?'A Bet scores 3–5.':vk==='WATCH'?'Maybe later is always 2.':'Skip / Avoid is always 1.'}${conf && conf.v!=null?` Data completeness ${Math.round(cv)} of 100${conf.notes&&conf.notes.length?': '+conf.notes.join('; '):''}.`:''}`;
+  return `<span class="conf bstr ${cls}" data-bstr="${n}" title="${esc(tip)}">Bet strength <b>${n}/5</b> <span class="bstr-stars" aria-hidden="true">${'★'.repeat(n)}<i>${'★'.repeat(5-n)}</i></span></span>`;
+}
+
+/* v77: the Judge sums up the whole case (Stanley: "judge verdict shouldn't only talk about price"). It names the
+   2 strongest reasons each way and which side wins out, then ends with at most one short clause on price. */
+var UI_PRICEISH = /no side wins every night|priced this|prediction markets|break-?even|odds pay|odds imply|implied|the price|price is|prices? (?:stays?|built)|wins in 10|fair shake|overpay|asked to be right|at your [+−-]?\d|juice|we couldn'?t get|haven'?t loaded|not loaded|nothing (measurable|clear)|no red flags|not enough history|app record|ranking-only/i;
+function uiFactorText(x, who){
+  let t = String((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x || '').trim();
+  if (!t || UI_PRICEISH.test(t)) return '';
+  t = t.replace(/\s*\((?:see Matchup|worth about[^)]*|rule points[^)]*|can't be measured[^)]*)\)\s*/gi, ' ').replace(/\s+/g,' ').trim();
+  let m;
+  if ((m = t.match(/^Last (\d+): (over|under) in (\d+) of (\d+)(.*)$/i))) t = `${m[2].toLowerCase()} in ${m[3]} of the last ${m[4]}${m[5]}`;
+  else if ((m = t.match(/^Season: (over|under) in (\d+) of (\d+)(.*)$/i))) t = `${m[1].toLowerCase()} in ${m[2]} of ${m[3]} this season${m[4]}`;
+  else if ((m = t.match(/^(Home|Road) games: (over|under) in (\d+) of (\d+)(.*)$/i))) t = `${m[2].toLowerCase()} in ${m[3]} of ${m[4]} ${m[1].toLowerCase()} games${m[5]}`;
+  else if ((m = t.match(/^Vs ([A-Za-z.]+): (over|under) in (\d+) of (\d+)(.*)$/i))) t = `${m[2].toLowerCase()} in ${m[3]} of ${m[4]} vs ${m[1]}${m[5]}`;
+  else if ((m = t.match(/^Season: averaging ([\d.]+) vs the ([\d.]+) line/i))) t = `averaging ${m[1]} this season vs the ${m[2]} line`;
+  else if ((m = t.match(/^Last (\d+): averaging ([\d.]+) vs the ([\d.]+) line/i))) t = `averaging ${m[2]} over the last ${m[1]} vs the ${m[3]} line`;
+  else if ((m = t.match(/^Blowout risk (\w+): (.+?)(?:, so starters could sit late)?$/i))) t = `${m[1].toLowerCase()} blowout risk (${m[2]})`;
+  else if ((m = t.match(/^([A-Z][A-Za-z ]{2,22}): (.+)$/))) t = `${m[1].toLowerCase()} (${m[2]})`;
+  t = t.split(/;\s+/)[0].replace(/\s*\([^)]*¢[^)]*\)/g,'').replace(/[.;]\s*$/,'');
+  if (who && /^(over|under) in /.test(t)) t = `${who} went ${t}`;
+  return t;
+}
+function uiLc(s){ if (!s) return s; return /^[A-Z]{2,}\b|^[A-Z][a-z]+ [A-Z]/.test(s) || /^[A-Z]\.\s/.test(s) ? s : s.charAt(0).toLowerCase()+s.slice(1); }
+function uiAnd(list){ list = list.filter(Boolean).map((x,i)=>i ? uiLc(x) : x); return list.length<=1 ? (list[0]||'') : list.slice(0,-1).join(', ') + ' and ' + list[list.length-1]; }
+function uiJudgeText(o){
+  const v = String(o.v||'').toUpperCase();
+  if (o.started) return 'The game already started, so this one is off the table.';
+  const win = [], lose = [];
+  const INJ = /is without|are missing|\(out\b|ruled out/i;
+  const one = (arr,t) => !(INJ.test(t) && arr.some(y=>INJ.test(y)));
+  for (const x of (o.win||[])){ const t = uiFactorText(x, o.who); if (t && !win.includes(t) && one(win,t)) win.push(t); if (win.length>=2) break; }
+  for (const x of (o.lose||[])){ const t = uiFactorText(x, o.who); if (t && !lose.includes(t) && !win.includes(t) && one(lose,t)) lose.push(t); if (lose.length>=2) break; }
+  const parts = [];
+  if (win.length) parts.push(`In its favor, ${uncapFirst(uiAnd(win))}.`);
+  if (lose.length) parts.push(`${win.length?'Against it':'Working against it'}, ${uncapFirst(uiAnd(lose))}.`);
+  if (!win.length && !lose.length) parts.push('Nothing in the form, matchup or news stands out either way.');
+  let concl;
+  if (/^(BET|GOOD)$/.test(v)) concl = lose.length ? 'The case for it is stronger, so it’s a bet' : 'The case is clean, so it’s a bet';
+  else if (/^(WATCH|WATCHLIST|MAYBE LATER)$/.test(v)) concl = o.fail ? `It’s close, but it misses one check (${uiLc(String(o.fail).replace(/\.$/,''))}), so wait and look again before the game` : 'It’s close, so wait and look again before the game';
+  else concl = (lose.length >= win.length && lose.length) ? 'The case against is stronger, so skip it' : win.length ? (o.fail ? `The pluses aren’t enough (${uiLc(String(o.fail).replace(/\.$/,''))}), so skip it` : 'The pluses aren’t strong enough, so skip it') : 'With nothing to lean on, skip it';
+  // one short closing clause on price, never the lead
+  let px = '';
+  if (o.est!=null && o.need!=null && isFinite(o.est) && isFinite(o.need)){
+    const gap = o.est - o.need, odds = o.oddsTxt ? o.oddsTxt : o.odds!=null && isFinite(o.odds) ? (typeof fmtAm==='function' ? fmtAm(o.odds) : String(o.odds)) : '';
+    px = gap >= 0.02 ? `, and ${odds?`at ${odds} `:''}the price is good value` : gap > -0.02 ? `, and ${odds?`at ${odds} `:''}the price is about fair` : `, and ${odds?`at ${odds} `:''}the price is ${gap < -0.06 ? 'too steep' : 'a little steep'}`;
+  }
+  parts.push(concl + px + '.');
+  return parts.join(' ');
+}
+function uncapFirst(s){ return uiLc(s); }
+function uiJudgeLeadsWithPrice(t){ const first = String(t||'').split(/(?<=[.!?])\s+/)[0]||''; return UI_PRICEISH.test(first) || /\bodds\b|\d+¢|break.?even|price/i.test(first); }
+function uiJudgeOnlyPrice(t){ const s = String(t||''); const sents = s.split(/(?<=[.!?])\s+/).filter(Boolean); return sents.length>0 && sents.every(x=>/\bodds\b|\d+¢|break.?even|price|wins in 10|of 10|passing\.?$|skip\.?$/i.test(x) || x.length<14); }
 </script>
 </body>
 </html>
