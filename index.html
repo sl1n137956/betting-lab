@@ -18218,6 +18218,7 @@ document.addEventListener('click', e=>{
   const id = c.getAttribute('data-ag-sport');
   if (id==='all') AG_SEL = LEAGUES.map(L=>L.id);
   else { const i = AG_SEL.indexOf(id); if (i>=0) AG_SEL.splice(i,1); else AG_SEL.push(id); }
+  if (ui.tab==='all' && typeof agApply==='function' && document.querySelector('#view .ag-body')){ agApply(); agSaveLater(); return; }   // v86: instant, no render
   agSave();
   const row = document.querySelector('#view .agc-row'), sl = row ? row.scrollLeft : 0;   // v85: keep the chip row where you left it
   render();
@@ -18820,6 +18821,80 @@ function agChipsRowHTML(){
       return r;
     };
   }
+})();
+/* ================= v86: instant All Games sport chips =================
+   Stanley: "it lags pretty bad when using it like selecting and deselecting the sports".
+   Before: each chip tap saved, then ran the full render() (all boards re-filtered, 189 game cards rebuilt, scroll anchoring).
+   Now: All Games renders every sport's cards once, each tagged data-lg. A tap only flips the chip, a data-agoff list on
+   .ag-body (CSS hides those sports), the section counts and the empty state. The save runs after the paint.
+   The same HTML is produced by a background refresh, so the idle patch (v81) keeps the same state and stays diff-only. */
+(function(){
+  const css = LEAGUES.map(L=>`.ag-body[data-agoff~="${L.id}"] [data-lg="${L.id}"]`).join(',') + '{display:none!important}';
+  const st = document.createElement('style'); st.id = 'agOffCss'; st.textContent = css; document.head.appendChild(st);
+})();
+function agOffList(){ const on = new Set(AG_SEL); return LEAGUES.filter(L=>!on.has(L.id)).map(L=>L.id).join(' '); }
+function agSecCount(lgc, on){ let n = 0; for (const part of String(lgc||'').split(',')){ const [lg, c] = part.split(':'); if (lg && on.has(lg)) n += +c||0; } return n; }
+function agNoneText(){ return AG_SEL.length ? 'No games in the next 24 hours for the sports picked above.' : 'No sports picked yet. Tap a sport above, or <b>All</b>, to see its games.'; }
+allGamesHTML = function(){
+  const list = allGamesList(true), on = new Set(AG_SEL);
+  const live = list.filter(g=>g.state==='in'), up = list.filter(g=>g.state!=='in');
+  const dayKey = g => { const d = new Date(g.start); const t = new Date(); const tm = new Date(); tm.setDate(t.getDate()+1);
+    return d.toDateString()===t.toDateString() ? 'Today' : d.toDateString()===tm.toDateString() ? 'Tomorrow' : d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}); };
+  const groups = []; for (const g of up){ const k = dayKey(g); let G = groups.find(x=>x.k===k); if (!G){ G = {k, list:[]}; groups.push(G); } G.list.push(g); }
+  const tag = (h, g) => String(h).replace(/^(\s*<div)/, `$1 data-lg="${esc(g.league)}"`);
+  const liveCard = g => { let h = gameCard(g); if (gameTailedPending(g)) h = String(h).replace(/^(\s*<div [^>]*>)/, '$1<div class="ag-tailed"><span aria-hidden="true">🎟️</span> You tailed this</div>'); return tag(h, g); };
+  const upCard = g => tag(gameCard(g), g);
+  let shown = 0;
+  const sec = (title, arr, cls, extra) => {
+    const c = {}; for (const g of arr) c[g.league] = (c[g.league]||0)+1;
+    const lgc = Object.entries(c).map(([k,n])=>k+':'+n).join(','), n = agSecCount(lgc, on); shown += n;
+    return `<div class="ag-sec ${cls||''}" data-lgc="${lgc}"${n?'':' hidden'}><h3 class="ag-h">${title} <span class="mut ag-n">(${n})</span>${extra||''}</h3><div class="grid">${arr.map(cls==='ag-live'?liveCard:upCard).join('')}</div></div>`;
+  };
+  const head = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now, in every sport. Tap a sport below to show or hide it here. Settings and the Games / Props boards keep their own sports. Odds show when the free feed has them; % = no-vig probability.</span></div>`;
+  if (!list.length) return head + agChipsRowHTML() + `<div class="empty-state">No games in the next 24 hours.</div>`;
+  const body = (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live', ` <span class="live-upd mut" data-live-upd>${typeof liveAgoTxt==='function'?esc(liveAgoTxt()):''}</span>`) : '') + groups.map(G=>sec(esc(G.k), G.list)).join('');
+  return head + agChipsRowHTML() + `<div class="ag-body" data-agoff="${agOffList()}"><div class="empty-state ag-none"${shown?' hidden':''}>${agNoneText()}</div>${body}</div>`;
+};
+// The tap: synchronous DOM flips only, no render.
+function agApply(){
+  const v = document.getElementById('view'); const body = v && v.querySelector('.ag-body');
+  const on = new Set(AG_SEL), allOn = LEAGUES.every(L=>on.has(L.id));
+  for (const c of v ? v.querySelectorAll('.agc[data-ag-sport]') : []){
+    const id = c.getAttribute('data-ag-sport'), sel = id==='all' ? allOn : on.has(id);
+    if (c.classList.contains('on')!==sel){ c.classList.toggle('on', sel); c.setAttribute('aria-pressed', sel?'true':'false'); }
+    if (id!=='all'){ const L = LMAP[id]; c.title = sel ? `${L.label} is shown. Tap to hide.` : `${L.label} is hidden. Tap to show.`; }
+  }
+  if (!body) return false;
+  body.setAttribute('data-agoff', agOffList());
+  let shown = 0;
+  for (const s of body.querySelectorAll(':scope > .ag-sec')){
+    const n = agSecCount(s.getAttribute('data-lgc'), on); shown += n;
+    const el = s.querySelector('.ag-n'); const t = `(${n})`; if (el && el.textContent!==t) el.textContent = t;
+    s.hidden = !n;
+  }
+  const none = body.querySelector('.ag-none'); if (none){ none.hidden = !!shown; if (!shown) none.innerHTML = agNoneText(); }
+  return true;
+}
+var AG_SAVE_T = 0;
+function agSaveLater(){ clearTimeout(AG_SAVE_T); AG_SAVE_T = setTimeout(agSave, 250); }
+addEventListener('pagehide', ()=>{ if (AG_SAVE_T){ clearTimeout(AG_SAVE_T); agSave(); } });
+// Background refreshes (v81 idle patch) wait until you've stopped tapping chips for a moment, so a 189-card diff never
+// lands in the middle of a run of taps. Only the newest pending patch runs.
+var AG_TAP_AT = 0, AG_PATCH_Q = null, AG_PATCH_T = 0;
+document.addEventListener('pointerdown', e=>{ if (e.target.closest && e.target.closest('#view .agc')) AG_TAP_AT = Date.now(); }, {capture:true, passive:true});
+(function(){
+  if (typeof uiBackgroundPatch!=='function') return;
+  const base = uiBackgroundPatch;
+  uiBackgroundPatch = function(fn){
+    const wait = 1500 - (Date.now() - AG_TAP_AT);
+    if (wait > 0 && ui.tab==='all'){
+      AG_PATCH_Q = fn; clearTimeout(AG_PATCH_T);
+      AG_PATCH_T = setTimeout(function again(){ const w = 1500 - (Date.now() - AG_TAP_AT); if (w > 0){ AG_PATCH_T = setTimeout(again, w + 30); return; }
+        const f = AG_PATCH_Q; AG_PATCH_Q = null; if (f) uiIdle(()=>base(f)); }, wait + 30);
+      return;
+    }
+    return base(fn);
+  };
 })();
 </script>
 </body>
