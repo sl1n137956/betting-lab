@@ -15669,12 +15669,12 @@ function uniUpsert(b, src, id, base, snap){
     if (snap.shown && !r.shown){ r.shown = 1; UNI_DIRTY.add(id); }
     return r;
   }
-  r.at = now; r.price = snap.price; r.v = snap.v || 'nocall'; r.p = snap.p!=null ? Math.round(snap.p*10000)/10000 : null; r.mins = mins;
+  r.at = now; r.price = snap.price; r.v = snap.v || 'nocall'; if (snap.sv) r.sv = snap.sv; else delete r.sv; r.p = snap.p!=null ? Math.round(snap.p*10000)/10000 : null; r.mins = mins;
   if (snap.shown) r.shown = 1;
   if (snap.u!=null) r.u = snap.u; else delete r.u;
   if (snap.tu!=null) r.tu = snap.tu; else delete r.tu;
   if (snap.X) r.X = snap.X;
-  if (lockNow) r.lk = {price:r.price, v:r.v, p:r.p, u:r.u, tu:r.tu, at:now};
+  if (lockNow) r.lk = {price:r.price, v:r.v, sv:r.sv, p:r.p, u:r.u, tu:r.tu, at:now};
   if (closeNow) r.cl = {price:r.price, v:r.v, p:r.p, at:now};
   UNI_DIRTY.add(id);
   return r;
@@ -15746,15 +15746,18 @@ function uniCaptureGames(){
       for (const s in A.sides){
         const sd = A.sides[s]; if (!sd || !sd.best || sd.best.price==null) continue;
         const pt = mk==='ml' ? null : sd.point;
-        let v, p = sd.nv!=null ? sd.nv : null, shown = 0;
+        let v, sv, p = sd.nv!=null ? sd.nv : null, shown = 0;
         if (play && play.side===s){
           v = play.verdict==='started' ? (play.base||'avoid') : play.verdict; if (play.est!=null) p = play.est; shown = v==='good'||v==='watch' ? 1 : 0;
-        } else { const jv = sd.judge && sd.judge.verdict; v = jv==='good' ? 'watch' : jv==='watch' ? 'watch' : 'avoid'; }
+          // v99: Results grade the model's own call (before your odds range, books and strict mode); the board's call is kept as sv
+          sv = v; v = play._v0==null ? v : play._v0==='started' ? (play.base||'avoid') : play._v0;
+        } else { const jv = sd.judge && sd.judge.verdict; v = jv==='good' ? 'watch' : jv==='watch' ? 'watch' : 'avoid'; sv = v; }
         if (v==='none' || v==='started' || !v) v = 'avoid';
+        if (sv==='none' || sv==='started' || !sv) sv = 'avoid';
         if (g.agOnly) shown = 0;
-        if (typeof isFinalPulled==='function' && play && play.side===s && isFinalPulled(play.id)) v = 'avoid';
+        if (typeof isFinalPulled==='function' && play && play.side===s && isFinalPulled(play.id)){ v = 'avoid'; sv = 'avoid'; }
         const id = `g:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`;
-        if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, u: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').u : null, tu: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').tier : null, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
+        if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, sv, p, shown, u: (play && play.side===s && sv==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').u : null, tu: (play && play.side===s && sv==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').tier : null, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
       }
     }
     // Kalshi moneylines (loaded through the Verdict relay whenever Kalshi prices are on)
@@ -15763,7 +15766,7 @@ function uniCaptureGames(){
         const q = g.kalshi.ml[s]; if (!q || !(q.ask>0 && q.ask<1)) continue;
         const cost = typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask; const am = decToAm(1/cost);
         const rowSb = UNI.get(`g:${g.eventId}:ml:${s}:`);
-        if (uniUpsert('games', 'kalshi', `k:${g.eventId}:ml:${s}`, {l:g.league, ev:String(g.eventId), t, mk:'ml', side:s, pt:null, game:`${g.away.short} @ ${g.home.short}`, book:'Kalshi'}, {price:am, v: rowSb ? rowSb.v : 'nocall', p: rowSb ? rowSb.p : null})) n++;
+        if (uniUpsert('games', 'kalshi', `k:${g.eventId}:ml:${s}`, {l:g.league, ev:String(g.eventId), t, mk:'ml', side:s, pt:null, game:`${g.away.short} @ ${g.home.short}`, book:'Kalshi'}, {price:am, v: rowSb ? rowSb.v : 'nocall', sv: rowSb ? rowSb.sv : undefined, p: rowSb ? rowSb.p : null})) n++;
       }
     }
     // v51: Kalshi spreads + totals (relay index), every line Kalshi lists for this game
@@ -15775,7 +15778,7 @@ function uniCaptureGames(){
           if (!q || !(q.ask>0 && q.ask<1)) continue;
           const cost = typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask; const am = decToAm(1/cost);
           const rowSb = UNI.get(`g:${g.eventId}:${mk}:${s}:${q.pt}`); if (!rowSb) continue; // only the board's own lines (Kalshi lists many alt lines)
-          if (uniUpsert('games', 'kalshi', `k:${g.eventId}:${mk}:${s}:${q.pt}`, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt:q.pt, game:`${g.away.short} @ ${g.home.short}`, book:'Kalshi'}, {price:am, v: rowSb ? rowSb.v : 'nocall', p: rowSb ? rowSb.p : null})) n++;
+          if (uniUpsert('games', 'kalshi', `k:${g.eventId}:${mk}:${s}:${q.pt}`, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt:q.pt, game:`${g.away.short} @ ${g.home.short}`, book:'Kalshi'}, {price:am, v: rowSb ? rowSb.v : 'nocall', sv: rowSb ? rowSb.sv : undefined, p: rowSb ? rowSb.p : null})) n++;
         }
       }
     }
@@ -15790,7 +15793,7 @@ function uniCaptureGames(){
           const am = q.am!=null ? +q.am : decToAm(1/(typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask));
           const pt = mk==='ml' ? null : q.pt;
           const rowSb = UNI.get(`g:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`); if (mk!=='ml' && !rowSb) continue;
-          if (uniUpsert('games', src, `${src}:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:lab}, {price:am, v: rowSb ? rowSb.v : 'nocall', p: rowSb ? rowSb.p : null})) n++;
+          if (uniUpsert('games', src, `${src}:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:lab}, {price:am, v: rowSb ? rowSb.v : 'nocall', sv: rowSb ? rowSb.sv : undefined, p: rowSb ? rowSb.p : null})) n++;
         }
       }
     }
@@ -15930,12 +15933,14 @@ async function uniCaptureProps(){
         const id = `prop:${gm.ev}:${x.pid}:${x.kind}:${x.side}:${x.line}`;
         const bp = board.get(id);
         let m;
-        if (bp && bp.verdict){ m = {v:bp.verdict, p:bp.p}; }
-        else m = uniPropModel(gm, x.pid, x.kind, x.line, x.side, x.price);
+        // v99: the model's own call (odds range ignored); the board's call is kept as sv
+        VERDICT_NO_RANGE++; try{ m = uniPropModel(gm, x.pid, x.kind, x.line, x.side, x.price); } finally{ VERDICT_NO_RANGE--; }
+        const sv = bp && bp.verdict ? bp.verdict : null;
+        if (sv && m.v==='nocall'){ m = {v:sv, p:bp.p, need:m.need}; }
         if (m.need) needLog.add(gm.l+':'+x.pid);
         const a = propAthleteCache[gm.l+':'+x.pid];
         if (!a || !a.name) needAth.add(gm.l+':'+x.pid);
-        if (uniUpsert('props', 'sb', id, {l:gm.l, ev:gm.ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {price:x.price, v:m.v, p:m.p, u: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').u : null, tu: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').tier : null, shown: bp && (bp.verdict==='good'||bp.verdict==='watch') ? 1 : 0})) n++;
+        if (uniUpsert('props', 'sb', id, {l:gm.l, ev:gm.ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {price:x.price, v:m.v, sv: sv || undefined, p:m.p, u: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').u : null, tu: (bp && bp.verdict==='good' && typeof recommendedUnits==='function') ? recommendedUnits(bp,'prop').tier : null, shown: bp && (bp.verdict==='good'||bp.verdict==='watch') ? 1 : 0})) n++;
       }
     }catch(e){ UNI_ST.evAt[gm.ev] = Date.now(); uniErr('props '+gm.ev, e); }
   }), 2);
@@ -19906,6 +19911,7 @@ function mlogCompact(r){
   else { o.k = r.kind||''; if (r.pn) o.pn = String(r.pn).slice(0,40); if (r.pid) o.pid = String(r.pid); }
   if (r.pt!=null && isFinite(+r.pt)) o.pt = +r.pt;
   if (r.book) o.bk = String(r.book).slice(0,24);
+  { const sv = (r.lk && r.lk.sv) || r.sv; if (sv) o.sv = sv; }   // v99: v = the model's own call, sv = what the board showed
   if (r.shown) o.sh = 1; if (r.u!=null) o.u = +r.u; if (r.lk) o.lk = 1; if (r.mins!=null) o.mn = +r.mins;
   o.at = +((r.lk && r.lk.at) || r.at || r.first || 0);
   if (r.res){ o.res = r.res; if (r.act!=null) o.act = typeof r.act==='number' ? r.act : String(r.act).slice(0,16); o.g = +r.g || Date.now(); }
@@ -20672,7 +20678,7 @@ window.v95Status = () => ({ush:{docs:USH.docs.length, at:USH.at, err:USH.err, pu
      last upload, so Settings › Account shows exactly which device is behind and why.
    - Sync now = full pull + push of everything (settings, bets, filters, Tracked universe, learning, pick log).
    - Auto-update: an open tab (e.g. the always-on VPS) reloads itself into a new version when it's idle. */
-var APP_BUILD = 98;
+var APP_BUILD = 99;
 MR.range = 7;
 var DEVS = {list:[], at:0, err:'', busy:false};
 function devLabel(){ return (typeof mchkDev==='function') ? mchkDev() : {id:AUTH.deviceId, lab:'a device'}; }
@@ -20886,11 +20892,13 @@ uniInnerHTML = function(){
   const fromD = urFrom();
   const cover = B.first && (UR.range==='all' || (UR.range==='year' && B.first > fromD) || ((UR.range==='7' || UR.range==='30') && B.first > fromD))
     ? `${UR_LABEL[UR.range]} covers what's been tracked since ${urDate(B.first)}. ` : '';
+  // v99: from Nov 21 the rows grade the model's own call; older days keep the call as it was shown then
+  const rawNote = (UR.range==='all' || urFrom() < '20261121') && (!B.first || B.first < '20261121') ? 'Since Nov 21, Picks, Watch and Avoid are the model\'s own call, before your odds range and books. ' : '';
   const when = B.lastTick ? `Last scan ${new Date(B.lastTick).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.';
   const loading = mlogOn() && !USH.at ? ' Loading from your account…' : '';
   return `<div class="uni-in">${sel}
     <div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>
-    <div class="hint" style="margin-top:10px">${cover}Synced across ${B.devs} signed-in device${B.devs===1?'':'s'}. ${when}${loading}${USH.err ? ` Couldn't reach the account copy (${esc(String(USH.err))}).` : ''}</div></div>`;
+    <div class="hint" style="margin-top:10px">${cover}${rawNote}Synced across ${B.devs} signed-in device${B.devs===1?'':'s'}. ${when}${loading}${USH.err ? ` Couldn't reach the account copy (${esc(String(USH.err))}).` : ''}</div></div>`;
 };
 uniResultsHTML = function(){ return uniInnerHTML(); };
 document.addEventListener('change', e=>{
