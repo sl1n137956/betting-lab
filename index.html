@@ -4603,6 +4603,50 @@ function parlayAlertLine(pl){
   const when = isFinite(pl.start) && pl.start!==Infinity ? alertWhen(new Date(pl.start)) : '';
   return `${pl.n||((pl.legs||[]).length)}-leg (${pay}): ${legs}${when?` · ${when}`:''}`;
 }
+
+/* v109: one phone alert per account. Every open device (Mac tab, VPS, PC…) runs the same checks, so before a
+   device sends a phone (ntfy) alert it claims the alert in the signed-in account (users/{uid}/alertClaims/{id})
+   with a Firestore transaction. Only the device that creates the claim sends; the others mark it as handled.
+   Signed out (or Firestore not loaded): this device sends on its own, like before. */
+const ALERT_CLAIM_STALE_MS = 6*3600000;
+function alertClaimId(key){ return String(key||'').replace(/[\/\s]+/g,'_').replace(/[^A-Za-z0-9_|:.+-]/g,'').slice(0,240) || 'x'; }
+function alertClaimCol(){
+  try{ if (typeof AUTH!=='undefined' && AUTH.user && typeof firebase!=='undefined' && firebase.firestore) return firebase.firestore().collection('users').doc(AUTH.user.uid).collection('alertClaims'); }catch(e){}
+  return null;
+}
+async function alertClaimOne(col, key){
+  const ref = col.doc(alertClaimId(key));
+  const dev = (typeof AUTH!=='undefined' && AUTH.deviceId) || '';
+  for (let i=0;i<2;i++){
+    try{
+      return await firebase.firestore().runTransaction(async t => {
+        const s = await t.get(ref);
+        if (s.exists) return false;
+        t.set(ref, {k: String(key).slice(0,300), at: Date.now(), dev: String(dev).slice(0,64)});
+        return true;
+      });
+    }catch(e){ try{ console.warn('alertClaim', e && (e.code||e.message)); }catch(_){} if (e && /permission/i.test(String(e.code||e.message||''))) return null; await new Promise(r=>setTimeout(r, 400+Math.random()*600)); }
+  }
+  return null;   // Firestore unreachable: caller decides
+}
+// returns the subset of keys this device won (all keys when there's no account to coordinate through)
+async function alertClaim(keys){
+  keys = (keys||[]).filter(Boolean);
+  const col = alertClaimCol();
+  if (!col || !keys.length) return keys;
+  const res = await Promise.all(keys.map(k=>alertClaimOne(col, k)));
+  // null = couldn't reach Firestore: send anyway so an alert is never lost (a duplicate beats a miss)
+  return keys.filter((k,i)=>res[i]!==false);
+}
+function alertUnclaim(keys){
+  const col = alertClaimCol(); if (!col) return;
+  for (const k of keys||[]) try{ col.doc(alertClaimId(k)).delete().catch(()=>{}); }catch(e){}
+}
+let _alertClaimPruneAt = 0;
+function alertClaimPrune(){
+  const col = alertClaimCol(); if (!col || Date.now()-_alertClaimPruneAt < 6*3600000) return; _alertClaimPruneAt = Date.now();
+  try{ col.where('at','<', Date.now()-14*86400000).limit(100).get().then(sn=>sn.forEach(d=>d.ref.delete().catch(()=>{}))).catch(()=>{}); }catch(e){}
+}
 function lockItemKey(board, item){
   if (!item) return '';
   if (board==='games') return 'lock:games|' + playResultKey(item);
@@ -4656,34 +4700,47 @@ function checkLockAlerts(board){
       return true;
     });
     if (!pending.length) continue;
-    const keys = pending.map(x => lockItemKey(b, x));
-    const lineFn = b==='props' ? propAlertLine : b==='parlay' ? parlayAlertLine : playAlertLine;
-    const singular = b==='props' ? 'Prop Lock' : b==='parlay' ? 'Parlay Lock' : 'Game Lock';
-    const plural = b==='props' ? 'Prop Locks' : b==='parlay' ? 'Parlay Locks' : 'Game Locks';
-    const tagIcon = b==='props' ? 'lock,dart' : b==='parlay' ? 'lock,tickets' : 'lock,moneybag';
-    const title = pending.length===1 ? `🔒 ${singular}` : `🔒 ${pending.length} ${plural}`;
-    const body = pending.map(lineFn).join('\n');
-    const markSent = () => {
+    const keysAll = pending.map(x => lockItemKey(b, x));
+    for (const lk of keysAll) _lockPushInFlight.add(lk);
+    const markSent = keys => {
       const now = Date.now();
       for (const lk of keys){ newPlayNotified[lk] = now; _lockPushInFlight.delete(lk); }
       pruneNewPlayNotified();
       saveJSON(LS.newPlayNotified, newPlayNotified);
     };
-    for (const lk of keys) _lockPushInFlight.add(lk);
+    const lineFn = b==='props' ? propAlertLine : b==='parlay' ? parlayAlertLine : playAlertLine;
+    const singular = b==='props' ? 'Prop Lock' : b==='parlay' ? 'Parlay Lock' : 'Game Lock';
+    const plural = b==='props' ? 'Prop Locks' : b==='parlay' ? 'Parlay Locks' : 'Game Locks';
+    const tagIcon = b==='props' ? 'lock,dart' : b==='parlay' ? 'lock,tickets' : 'lock,moneybag';
+    const send = list => {
+      const keys = list.map(x => lockItemKey(b, x));
+      const title = list.length===1 ? `🔒 ${singular}` : `🔒 ${list.length} ${plural}`;
+      const body = list.map(lineFn).join('\n');
+      return {keys, title, body};
+    };
     const localOk = canNotify();
-    if (localOk){
-      postNotification(title, {body: pending.length===1 ? body : `${pending.length} new ${plural.toLowerCase()}:
-${body}`, tag: pending.length===1 ? 'bl-'+keys[0] : 'bl-lock-'+b});
+    if (localOk){   // this device's own pop-up (per device, not the phone)
+      const A = send(pending);
+      postNotification(A.title, {body: pending.length===1 ? A.body : `${pending.length} new ${plural.toLowerCase()}:\n${A.body}`, tag: pending.length===1 ? 'bl-'+A.keys[0] : 'bl-lock-'+b});
     }
     if (ntfyEnabled()){
-      ntfyPush(title, body, {priority:'high', tags:tagIcon, click: NTFY_CLICK+'?board='+b}).then(ok => {
-        if (ok || localOk) markSent();
-        else for (const lk of keys) _lockPushInFlight.delete(lk);
+      const now = Date.now();
+      const fresh = pending.filter(x => { const st = typeof itemStartMs==='function' ? itemStartMs(x) : 0; return !st || st > now - 15*60000; });
+      const claimKey = x => 'ntfy|' + lockItemKey(b, x);
+      alertClaim(fresh.map(claimKey)).then(won => {
+        const mine = fresh.filter(x => won.includes(claimKey(x)));
+        if (!mine.length){ markSent(keysAll); return; }   // another device sent it (or it's stale)
+        const A = send(mine);
+        ntfyPush(A.title, A.body, {priority:'high', tags:tagIcon, click: NTFY_CLICK+'?board='+b}).then(ok => {
+          if (ok || localOk) markSent(keysAll);
+          else { alertUnclaim(mine.map(claimKey)); for (const lk of keysAll) _lockPushInFlight.delete(lk); }
+        });
       });
+      alertClaimPrune();
     } else if (localOk){
-      markSent();
+      markSent(keysAll);
     } else {
-      for (const lk of keys) _lockPushInFlight.delete(lk);
+      for (const lk of keysAll) _lockPushInFlight.delete(lk);
     }
   }
 }
@@ -4717,9 +4774,14 @@ function notifyPulled(r){
     const localOk = canNotify();
     if (localOk) postNotification(title, {body, tag:'bl-pull-'+pk});
     if (ntfyEnabled()){
-      ntfyPush(title, body, {priority:'urgent', tags:'rotating_light,warning', click: NTFY_CLICK+'?tab=pulled'}).then(ok => {
-        if (ok || localOk) markSent();
-        else if (pk) _pullPushInFlight.delete(pk);
+      const st = +r.start || 0, stale = (st && st < Date.now() - 15*60000) || (r.at && r.at < Date.now() - ALERT_CLAIM_STALE_MS);
+      const ck = 'ntfy|pull|' + pk + '|' + (st ? new Date(st).toISOString().slice(0,10) : '');
+      (stale ? Promise.resolve([]) : alertClaim([ck])).then(won => {
+        if (!won.length){ markSent(); return; }   // another device already sent this one (or it's too old)
+        ntfyPush(title, body, {priority:'urgent', tags:'rotating_light,warning', click: NTFY_CLICK+'?tab=pulled'}).then(ok => {
+          if (ok || localOk) markSent();
+          else { alertUnclaim([ck]); if (pk) _pullPushInFlight.delete(pk); }
+        });
       });
     } else if (localOk){
       markSent();
@@ -22233,6 +22295,8 @@ function uiCourtroomHTML(o){
     </div></details>
   </div>`;
 }
+/* v109: phone alerts go out once per account, not once per open device (see alertClaim in 08_strict.js). */
+APP_BUILD = 109;
 </script>
 </body>
 </html>
