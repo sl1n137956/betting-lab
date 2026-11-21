@@ -237,7 +237,10 @@ code{background:var(--inset);border:1px solid var(--line2);border-radius:5px;pad
 .ln-status-pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;border:1px solid transparent}
 .ln-status-pill.on{color:#86efac;background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.38);box-shadow:0 0 16px -6px rgba(16,185,129,.7)}
 .ln-status-pill.off{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(251,191,36,.38)}
-.ln-dot{width:7px;height:7px;border-radius:99px;background:#34d399;box-shadow:0 0 0 0 rgba(52,211,153,.7);animation:lnPulse 1.8s ease-out infinite}
+.ln-dot{width:7px;height:7px;border-radius:99px;background:#34d399;position:relative}
+/* v88: the pulse ring is a scaled/fading layer (GPU only) instead of an animated box-shadow that repainted every frame */
+.ln-dot::after{content:"";position:absolute;inset:0;border-radius:inherit;background:rgba(52,211,153,.6);animation:lnRing 1.8s ease-out infinite;will-change:transform,opacity;pointer-events:none}
+@keyframes lnRing{0%{transform:scale(1);opacity:.85}70%{transform:scale(3.2);opacity:0}100%{transform:scale(3.2);opacity:0}}
 @keyframes lnPulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55)}70%{box-shadow:0 0 0 8px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
 .ln-ver{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:800;letter-spacing:.08em;color:#dbeafe;background:linear-gradient(180deg,rgba(59,130,246,.32),rgba(29,78,216,.22));border:1px solid rgba(147,197,253,.45);box-shadow:0 0 18px -6px rgba(59,130,246,.85)}
 .ln-card .ln-kpis,.ln-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:0 0 16px}
@@ -511,7 +514,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
   .ln-tab td:nth-child(3),.ln-tab td:nth-child(4){min-width:0;width:auto}
   .form input,.form select,.simple input:not([type=checkbox]):not([type=radio]){min-height:44px}
   .toast{left:12px;right:12px;bottom:calc(20px + 88px + env(safe-area-inset-bottom,0px))}
-  .bottom-nav{display:flex;position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:30;gap:2px;align-items:stretch;min-height:60px;padding:4px;border-radius:26px;background:rgba(10,18,34,.82);border:1px solid rgba(59,130,246,.22);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 14px 36px -12px rgba(0,0,0,.75),0 0 0 1px rgba(0,0,0,.25)}
+  .bottom-nav{display:flex;position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:30;gap:2px;align-items:stretch;min-height:60px;padding:4px;border-radius:26px;background:rgba(10,18,34,.95);border:1px solid rgba(59,130,246,.22);box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 14px 36px -12px rgba(0,0,0,.75),0 0 0 1px rgba(0,0,0,.25)}
   .bottom-nav button{flex:1 1 0;min-width:48px;min-height:48px;margin:0;padding:4px 2px 3px;border:0;border-radius:20px;background:transparent;color:var(--mut);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;font-weight:600;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform .16s var(--ease),background .2s var(--ease),color .2s var(--ease),box-shadow .2s var(--ease),flex-basis .2s var(--ease)}
   .bottom-nav button:active{transform:scale(.92)}
   .bottom-nav button.on{flex:1.25 1 0;color:#fff;background:linear-gradient(180deg,#4f8cff,#1d4ed8);box-shadow:0 0 0 1px rgba(255,255,255,.12) inset,0 8px 18px -6px rgba(37,99,235,.7),0 0 22px rgba(37,99,235,.35)}
@@ -2821,14 +2824,31 @@ const betterPrice = (a,b) => imp(a) < imp(b); // a pays more than b
 /* ================= FETCH ================= */
 // v81: hand the main thread back between heavy refresh steps so taps and scrolling never wait
 function uiYield(){ return (window.scheduler && scheduler.yield) ? scheduler.yield() : new Promise(r=>setTimeout(r, 0)); }
-async function fetchJSON(url, timeoutMs=15000){
+/* v88: background downloads (past-game history, team schedules, player game logs, odds history) run at most 4 at a
+   time and are only unpacked when you are not touching or scrolling, so a burst of big replies never lands mid-gesture. */
+const BG_FETCH_RX = /sports\.core\.api\.espn\.com|\/teams\/[^/?]+\/schedule|\/athletes\/[^/?]+\/gamelog/;
+const BG_FETCH = {n:0, max:4, q:[]};
+function bgFetchSlot(){ if (BG_FETCH.n < BG_FETCH.max){ BG_FETCH.n++; return Promise.resolve(); } return new Promise(r=>BG_FETCH.q.push(r)); }
+function bgFetchDone(){ const r = BG_FETCH.q.shift(); if (r) r(); else BG_FETCH.n--; }
+function bgQuiet(){
+  return new Promise(res=>{ const chk = () => { const S2 = (typeof UI_SCROLL!=='undefined') ? UI_SCROLL : null;
+      const busyMs = S2 ? (S2.touching ? 700 : 700 - (Date.now() - (S2.lastMove||0))) : 0;
+      if (busyMs > 0) return setTimeout(chk, busyMs + 20);
+      if (window.requestIdleCallback) requestIdleCallback(()=>res(), {timeout:800}); else setTimeout(res, 0); };
+    chk(); });
+}
+async function fetchJSON(url, timeoutMs=15000, opts){
+  const bg = !!(opts && opts.bg) || BG_FETCH_RX.test(url);
+  const quiet = bg || /gamma-api\.polymarket\.com|gateway\.polymarket\.us/.test(url);   // big market lists: unpack between gestures
+  if (bg) await bgFetchSlot();
   const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), timeoutMs);
   try{
     const r = await fetch(url, {signal:ctl.signal, cache:'no-store'});
     if (r.status===429 && typeof noteFeedRateLimit==='function') noteFeedRateLimit();
-    const txt = await r.text(); let data=null; try{ data = JSON.parse(txt); }catch(e){}
+    const txt = await r.text(); if (quiet) await bgQuiet();
+    let data=null; try{ data = JSON.parse(txt); }catch(e){}
     return {ok:r.ok, status:r.status, data, headers:r.headers};
-  } finally { clearTimeout(to); }
+  } finally { clearTimeout(to); if (bg) bgFetchDone(); }
 }
 async function pool(tasks, n=6){
   const out = new Array(tasks.length); let i=0;
@@ -5188,7 +5208,7 @@ const BT_LEAGUES = ['nba','nhl','nfl','ncaaf','ncaab','wnba','mlb','mls','epl','
 const BT_MODEL = new Set(['nba','wnba','ncaab','nfl','ncaaf']);
 const BT_WARMUP = 14; // extra days loaded before the window for form/rest/H2H (not scored)
 let BT = loadJSON(BT_KEY, null) || {v:1, days:{}, games:{}};
-async function getJSON(url){ for (let a=0;a<3;a++){ try{ const r = await fetchJSON(url, 20000); if (r.ok && r.data) return r.data; if (r.status===404) throw new Error('404'); }catch(e){ if (String(e.message)==='404') throw e; } await new Promise(z=>setTimeout(z, 600*(a+1))); } throw new Error('fetch failed '+url); }
+async function getJSON(url){ for (let a=0;a<3;a++){ try{ const r = await fetchJSON(url, 20000, {bg:true}); if (r.ok && r.data) return r.data; if (r.status===404) throw new Error('404'); }catch(e){ if (String(e.message)==='404') throw e; } await new Promise(z=>setTimeout(z, 600*(a+1))); } throw new Error('fetch failed '+url); }
 let btState = {busy:false, prog:'', res:null, err:null};
 function btSave(){
   // prune > 150 days
@@ -13400,14 +13420,14 @@ function setTab(t, opts){
 function onTabClick(e){
   const b=e.target.closest('button[data-tab]'); if(!b) return;
   const board = b.dataset.board;
-  setTab(b.dataset.tab, board?{board}:undefined); render(); window.scrollTo({top:0});
+  setTab(b.dataset.tab, board?{board}:undefined); window.scrollTo({top:0}); render();   // v88: scroll first so the new page is not force-laid-out twice
 }
 $('#tabs').addEventListener('click', e=>{
   const par = e.target.closest('[data-board-parent]');
   if (par){
     const board = par.getAttribute('data-board-parent');
     const tab = (ui.board===board && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid')) ? ui.tab : 'good';
-    setTab(tab, {board}); render(); window.scrollTo({top:0});
+    setTab(tab, {board}); window.scrollTo({top:0}); render();
     return;
   }
   onTabClick(e);
@@ -13419,7 +13439,7 @@ if ($('#bottomNav')) $('#bottomNav').addEventListener('click', e=>{
     const board = par.getAttribute('data-board-parent');
     setMoreOpen(false);
     setNavPop(null);
-    setTab('good', {board}); render(); window.scrollTo({top:0});
+    setTab('good', {board}); window.scrollTo({top:0}); render();
     return;
   }
   if (e.target.closest('button[data-tab]')){ setMoreOpen(false); setNavPop(null); }
@@ -18620,6 +18640,7 @@ function uiPatchAttrs(a, b){
 }
 function uiPatchNode(a, b){
   if (a.nodeType===3 || a.nodeType===8){ if (a.nodeValue!==b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  if (a.isEqualNode(b)) return;   // v88: identical subtree (most cards on a refresh): nothing to do
   uiPatchAttrs(a, b);
   if (a===document.activeElement && (a.nodeName==='TEXTAREA' || a.nodeName==='INPUT' || a.nodeName==='SELECT')) return;
   // a closed lazy <details> in the live page may have been filled in by the user; keep its body if the new one is empty
@@ -18890,6 +18911,7 @@ document.addEventListener('pointerdown', e=>{ if (e.target.closest && e.target.c
 (function(){
   if (typeof uiBackgroundPatch!=='function') return;
   const base = uiBackgroundPatch;
+  const run = f => (ui.tab==='all' && typeof agBgPatch==='function' && agBgPatch(f)) ? undefined : base(f);   // v88: All Games updates only changed cards
   uiBackgroundPatch = function(fn){
     // v87: also wait while you're scrolling (a full board diff is ~100-150ms even on desktop, which showed up as scroll hitches)
     const quiet = () => { const sc = (typeof UI_SCROLL!=='undefined') ? (UI_SCROLL.touching ? 1200 : 1200 - (Date.now() - (UI_SCROLL.lastMove||0))) : 0;
@@ -18898,12 +18920,136 @@ document.addEventListener('pointerdown', e=>{ if (e.target.closest && e.target.c
     if (wait > 0){
       AG_PATCH_Q = fn; clearTimeout(AG_PATCH_T);
       AG_PATCH_T = setTimeout(function again(){ const w = quiet(); if (w > 0){ AG_PATCH_T = setTimeout(again, w + 30); return; }
-        const f = AG_PATCH_Q; AG_PATCH_Q = null; if (f) uiIdle(()=>base(f)); }, wait + 30);
+        const f = AG_PATCH_Q; AG_PATCH_Q = null; if (f) uiIdle(()=>run(f)); }, wait + 30);
       return;
     }
-    return base(fn);
+    return run(fn);
   };
 })();
+/* ================= v88: app-wide speed pass =================
+   Stanley: "everything in the app should be super smooth and as fast as possible".
+   1) Date formatting: toLocaleTimeString/DateString/String build a new Intl formatter on every call (~0.05-0.2ms each,
+      hundreds per board render). Formatters are now cached per (locale, options); output is identical.
+   2) All Games: the first screenful of cards renders right away, the rest fill in during idle time in small slices.
+      Background refreshes only rebuild the cards whose content changed (a live score, a new price), in slices,
+      instead of regenerating and diffing all ~190 cards.
+   The CSS show/hide filter from v86 is unchanged: every card (and placeholder) carries data-lg. */
+(function(){
+  const cache = new Map();
+  const TF = ['hour','minute','second','dayPeriod','fractionalSecondDigits'], DF = ['weekday','year','month','day'];
+  const has = (o, ks) => o && ks.some(k=>o[k]!==undefined);
+  const wrap = (name, need) => { const base = Date.prototype[name]; if (!base) return;
+    Date.prototype[name] = function(loc, opt){
+      if (isNaN(this.getTime())) return base.call(this, loc, opt);
+      if (opt!=null && (typeof opt!=='object' || opt.dateStyle || opt.timeStyle)) return base.call(this, loc, opt);
+      const key = name+'|'+(Array.isArray(loc)?loc.join(','):(loc==null?'':String(loc)))+'|'+(opt?JSON.stringify(opt):'');
+      let f = cache.get(key);
+      if (!f){
+        let o = opt ? Object.assign({}, opt) : {};
+        {
+          const t = has(o, TF), d = has(o, DF);
+          if (need==='time' && !t) Object.assign(o, {hour:'numeric', minute:'numeric', second:'numeric'});
+          else if (need==='date' && !d) Object.assign(o, {year:'numeric', month:'numeric', day:'numeric'});
+          else if (need==='any' && !t && !d) Object.assign(o, {year:'numeric', month:'numeric', day:'numeric', hour:'numeric', minute:'numeric', second:'numeric'});
+        }
+        try{ f = new Intl.DateTimeFormat(loc, o); }catch(e){ return base.call(this, loc, opt); }
+        if (cache.size > 200) cache.clear();
+        cache.set(key, f);
+      }
+      return f.format(this);
+    };
+  };
+  wrap('toLocaleTimeString', 'time'); wrap('toLocaleDateString', 'date'); wrap('toLocaleString', 'any');
+})();
+
+/* ---- All Games: progressive first paint + per-card background updates ---- */
+var AG_FIRST = 12;                 // cards built immediately (more than a desktop screenful)
+var AG_HTML = new Map();           // agid -> last card HTML put on the page
+var AG_SIG = '';                   // section layout (titles + card order) the page was built with
+var AG_FILL = {q:[], t:0}, AG_BG = {q:null, t:0};
+function agId(g){ return String(g.league)+':'+String(g.eventId||g.id||''); }
+function agLayout(){
+  const list = allGamesList(true);
+  const live = list.filter(g=>g.state==='in'), up = list.filter(g=>g.state!=='in');
+  const dayKey = g => { const d = new Date(g.start); const t = new Date(); const tm = new Date(); tm.setDate(t.getDate()+1);
+    return d.toDateString()===t.toDateString() ? 'Today' : d.toDateString()===tm.toDateString() ? 'Tomorrow' : d.toLocaleDateString([], {weekday:'long', month:'short', day:'numeric'}); };
+  const groups = []; for (const g of up){ const k = dayKey(g); let G = groups.find(x=>x.k===k); if (!G){ G = {k, list:[]}; groups.push(G); } G.list.push(g); }
+  const secs = []; if (live.length) secs.push({live:true, k:'live', list:live}); for (const G of groups) secs.push({live:false, k:G.k, list:G.list});
+  const sig = secs.map(s=>s.k+'='+s.list.map(agId).join(',')).join('|');
+  return {list, secs, sig};
+}
+function agCardHTML(g, isLive){
+  let h = String(gameCard(g));
+  if (isLive && gameTailedPending(g)) h = h.replace(/^(\s*<div [^>]*>)/, '$1<div class="ag-tailed"><span aria-hidden="true">🎟️</span> You tailed this</div>');
+  return h.replace(/^(\s*<div)/, `$1 data-lg="${esc(g.league)}" data-agid="${esc(agId(g))}"`);
+}
+function agInBackground(){ return !!document.getElementById('view__live'); }
+allGamesHTML = function(){
+  const {list, secs, sig} = agLayout(), on = new Set(AG_SEL), bg = agInBackground();
+  const head = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now, in every sport. Tap a sport below to show or hide it here. Settings and the Games / Props boards keep their own sports. Odds show when the free feed has them; % = no-vig probability.</span></div>`;
+  if (!list.length){ AG_SIG = sig; return head + agChipsRowHTML() + `<div class="empty-state">No games in the next 24 hours.</div>`; }
+  if (!bg){ AG_FILL.q = []; AG_HTML = new Map(); }
+  let shown = 0, built = 0;
+  const body = secs.map(s=>{
+    const c = {}; for (const g of s.list) c[g.league] = (c[g.league]||0)+1;
+    const lgc = Object.entries(c).map(([k,n])=>k+':'+n).join(','), n = agSecCount(lgc, on); shown += n;
+    const title = s.live ? '<span class="badge b-live">● Live now</span>' : esc(s.k);
+    const extra = s.live ? ` <span class="live-upd mut" data-live-upd>${typeof liveAgoTxt==='function'?esc(liveAgoTxt()):''}</span>` : '';
+    const cards = s.list.map(g=>{
+      const id = agId(g);
+      // build now: background refreshes (full diff), and the first screenful of cards that are shown
+      if (bg || (on.has(g.league) && built < AG_FIRST)){ if (on.has(g.league)) built++; const h = agCardHTML(g, s.live); AG_HTML.set(id, h); return h; }
+      AG_FILL.q.push({id, g, live:s.live});
+      return `<div class="card ag-ph" data-lg="${esc(g.league)}" data-agid="${esc(id)}" aria-busy="true"></div>`;
+    }).join('');
+    return `<div class="ag-sec ${s.live?'ag-live':''}" data-lgc="${lgc}"${n?'':' hidden'}><h3 class="ag-h">${title} <span class="mut ag-n">(${n})</span>${extra}</h3><div class="grid">${cards}</div></div>`;
+  }).join('');
+  AG_SIG = sig;
+  if (!bg && AG_FILL.q.length) agFillSoon();
+  return head + agChipsRowHTML() + `<div class="ag-body" data-agoff="${agOffList()}"><div class="empty-state ag-none"${shown?' hidden':''}>${agNoneText()}</div>${body}</div>`;
+};
+const agIdle = (cb) => (window.requestIdleCallback ? requestIdleCallback(cb, {timeout:400}) : setTimeout(()=>cb({timeRemaining:()=>8, didTimeout:true}), 16));
+function agFillSoon(){ if (AG_FILL.t) return; AG_FILL.t = 1; requestAnimationFrame(()=>setTimeout(()=>agIdle(agFillStep), 0)); }
+function agFillStep(dl){
+  AG_FILL.t = 0;
+  const v = document.getElementById('view'); if (!v || ui.tab!=='all'){ AG_FILL.q = []; return; }
+  // shown sports first, so a chip tap never waits behind hidden cards
+  const on = new Set(AG_SEL); AG_FILL.q.sort((a,b)=>(on.has(b.g.league)?1:0)-(on.has(a.g.league)?1:0));
+  const t0 = performance.now(), budget = Math.max(6, Math.min(12, (dl && dl.timeRemaining ? dl.timeRemaining() : 8)));
+  while (AG_FILL.q.length && performance.now()-t0 < budget){
+    const it = AG_FILL.q.shift();
+    const ph = v.querySelector(`.ag-ph[data-agid="${CSS.escape(it.id)}"]`); if (!ph) continue;
+    const h = agCardHTML(it.g, it.live); const tpl = document.createElement('template'); tpl.innerHTML = h;
+    const el = tpl.content.firstElementChild; if (el){ ph.replaceWith(el); AG_HTML.set(it.id, h); }
+  }
+  if (AG_FILL.q.length){ AG_FILL.t = 1; agIdle(agFillStep); }
+}
+// Background refresh on All Games: if the section layout didn't change, update only the cards whose HTML changed.
+function agBgPatch(fn){
+  const v = document.getElementById('view'); if (!v || ui.tab!=='all' || !v.querySelector('.ag-body')) return false;
+  const L = agLayout(); if (L.sig !== AG_SIG) return false;
+  // run the app's render into a throwaway view for its side effects (tab counts, chips, badges), without building cards
+  const keep = allGamesHTML; allGamesHTML = function(){ return ''; };
+  try{ uiRenderInto(fn); } catch(e){} finally { allGamesHTML = keep; }
+  const items = []; for (const s of L.secs) for (const g of s.list) items.push({g, live:s.live});
+  AG_BG.q = items; if (!AG_BG.t){ AG_BG.t = 1; agIdle(agBgStep); }
+  const t = typeof liveAgoTxt==='function' ? liveAgoTxt() : null; if (t!=null) v.querySelectorAll('[data-live-upd]').forEach(el=>{ if (el.textContent!==t) el.textContent = t; });
+  return true;
+}
+function agBgStep(dl){
+  AG_BG.t = 0;
+  const v = document.getElementById('view'); if (!v || ui.tab!=='all' || !AG_BG.q){ AG_BG.q = null; return; }
+  const t0 = performance.now(), budget = Math.max(5, Math.min(10, (dl && dl.timeRemaining ? dl.timeRemaining() : 8)));
+  while (AG_BG.q.length && performance.now()-t0 < budget){
+    const it = AG_BG.q.shift(), id = agId(it.g);
+    if (!AG_HTML.has(id)) continue;                 // still a placeholder: the idle fill builds it fresh
+    const h = agCardHTML(it.g, it.live); if (h === AG_HTML.get(id)) continue;
+    const el = v.querySelector(`[data-agid="${CSS.escape(id)}"]`); if (!el) continue;
+    const tpl = document.createElement('template'); tpl.innerHTML = h; const nu = tpl.content.firstElementChild;
+    if (nu){ uiPatchNode(el, nu); AG_HTML.set(id, h); UI_PATCH.patched++; }
+  }
+  if (AG_BG.q.length){ AG_BG.t = 1; agIdle(agBgStep); } else AG_BG.q = null;
+}
 </script>
 </body>
 </html>
