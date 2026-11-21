@@ -8214,8 +8214,7 @@ function renderTracker(pf){
     </div>
     </div>
   </details>
-  ${typeof oddsHistoryTable==='function'?`<details class="dd trk-dd" data-trk="odds" ${trackerUI.oddsOpen?'open':''}><summary>Win rate by odds</summary><div class="trk-dd-body">${oddsHistoryTable()}</div></details>`:''}
-  ${cue?`<div class="settle-cue" role="status">${esc(cueLab)}${esc(cuePick)}<button type="button" class="settle-cue-x" data-dismiss-cue aria-label="Dismiss">×</button></div>`:''}
+    ${cue?`<div class="settle-cue" role="status">${esc(cueLab)}${esc(cuePick)}<button type="button" class="settle-cue-x" data-dismiss-cue aria-label="Dismiss">×</button></div>`:''}
   <details class="dd trk-dd trk-allbets" id="allBets" ${trackerUI.allOpen?'open':''}>
     <summary>🕒 Pending bets (${pendingN})</summary>
     <div class="trk-allbets-body">
@@ -19847,6 +19846,374 @@ function yourBetsHTML(){
 @media (max-width:420px){ .yb-grid{grid-template-columns:minmax(0,1fr)} .yb-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px} .yb-kpi{padding:11px 12px} .yb-kpi .v{font-size:20px} .yb-spark{width:64px} }`;
   try{ const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }catch(e){}
 })();
+/* ================= v93: Results = the model's full graded pick log, shared by every admin device =================
+   Every BET / WATCH / AVOID the model gives (games and props, every book and venue) is snapshotted by the tracked
+   universe (20_universe.js). Before v93 that history stayed on the device that saw it. Now every device signed in
+   as the admin copies its snapshots and grades into one admin-only Firestore log:
+     modelLog/{day}_{board}_{shard}  { d, b, r:{ pickId: row } }        raw rows (deduped by pick id, merge writes)
+     modelSum/{day}                  { d, final, agg:{ "b|v|dim|val": [w,l,push,void,profit,staked] } }
+   A row is only replaced by a better copy (graded beats open, the lock-time snapshot beats an earlier one).
+   Any admin device also grades open cloud rows it never saw itself (from ESPN finals and box scores), so a pick
+   seen on the phone gets graded later on the Mac. Results reads the log, so it's filled on every device. */
+var MLOG = {raw:new Map(), sums:new Map(), at:0, busy:false, pushing:false, queue:new Map(), up:new Map(), err:'', ver:0, loadedFrom:'', listFrom:'', backfilled:0, uploaded:0, gradedCloud:0};
+var MLOG_SHARDS = {games:2, props:8};
+var MLOG_BF_LS = 'bl_mlog_backfill_v1';
+function mlogOn(){ try{ return !!(AUTH && AUTH.user && AUTH.ready && typeof firebase!=='undefined' && isAdminUser()); }catch(e){ return false; } }
+function mlogH(s){ s = String(s); let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i))|0; return Math.abs(h); }
+function mlogDay(t){ return uniDay(+t); }
+/* day key (YYYYMMDD, local) -> local noon timestamp; short label */
+function mlogDT(d){ d = String(d||''); return new Date(+d.slice(0,4), +d.slice(4,6)-1, +d.slice(6,8), 12).getTime(); }
+function mlogFmt(d){ return new Date(mlogDT(d)).toLocaleDateString(undefined, {month:'short', day:'numeric'}); }
+function mlogDocId(id, o){ return `${mlogDay(o.t)}_${o.b}_${mlogH(id) % (MLOG_SHARDS[o.b]||2)}`; }
+function mlogRank(o){ return o ? ((o.res && o.res!=='ungradeable') ? 4 : o.res ? 2 : 0) + (o.lk ? 1 : 0) : -1; }
+/* compact copy of a universe row; only rows with a verdict (nocall = the model had no read) */
+function mlogCompact(r){
+  if (!r || (r.b!=='games' && r.b!=='props')) return null;
+  const v = uniV(r); if (v!=='good' && v!=='watch' && v!=='avoid') return null;
+  if (r.b==='props' && (r.alt || r.yes) && !r.shown) return null;     // alt/yes-no ladders: only when the board showed them
+  const id = String(r.id || r.i || ''); if (!id) return null;
+  const o = {b:r.b, s:r.src||'', l:r.l||'', ev:String(r.ev||''), t:+r.t||0, sd:r.side||'', v};
+  const pr = uniPrice(r), p = uniP(r); if (pr!=null && isFinite(+pr)) o.pr = Math.round(+pr); if (p!=null && isFinite(+p)) o.p = Math.round(+p*10000)/10000;
+  if (r.b==='games'){ o.mk = r.mk||''; if (r.game) o.gm = String(r.game).slice(0,40); }
+  else { o.k = r.kind||''; if (r.pn) o.pn = String(r.pn).slice(0,40); if (r.pid) o.pid = String(r.pid); }
+  if (r.pt!=null && isFinite(+r.pt)) o.pt = +r.pt;
+  if (r.book) o.bk = String(r.book).slice(0,24);
+  if (r.shown) o.sh = 1; if (r.u!=null) o.u = +r.u; if (r.lk) o.lk = 1; if (r.mins!=null) o.mn = +r.mins;
+  o.at = +((r.lk && r.lk.at) || r.at || r.first || 0);
+  if (r.res){ o.res = r.res; if (r.act!=null) o.act = typeof r.act==='number' ? r.act : String(r.act).slice(0,16); o.g = +r.g || Date.now(); }
+  return [id, o];
+}
+function mlogCloudRow(id){ const d = MLOG.raw.get(id.__day) ; return null; }
+function mlogFind(id, o){ const m = MLOG.raw.get(mlogDay(o.t)); return m ? m.get(id) : undefined; }
+function mlogQueue(r){ const c = mlogCompact(r); if (!c) return; const [id, o] = c; const prev = MLOG.queue.get(id); if (!prev || mlogRank(o) >= mlogRank(prev)) MLOG.queue.set(id, o); }
+/* universe hooks: graded rows get queued; cloud-injected rows don't double count in this device's local summary */
+(function(){
+  try{
+    if (typeof uniFinalize==='function'){
+      const f = uniFinalize;
+      uniFinalize = function(r, res, act){ const out = f.apply(this, arguments); try{ if (r && r._cloud) MLOG.gradedCloud++; mlogQueue(r); }catch(e){} return out; };
+    }
+    if (typeof uniSumAdd==='function'){
+      const s = uniSumAdd;
+      uniSumAdd = function(r){ if (r && r._cloud) return; return s.apply(this, arguments); };
+    }
+  }catch(e){}
+})();
+function mlogFS(){ return firebase.firestore(); }
+/* load the cloud log: summaries for the range, raw rows for days without a final summary (plus the list window) */
+async function mlogLoad(force, fromDay){
+  if (!mlogOn()) return false;
+  if (MLOG.busy) return false;
+  const want = fromDay || MLOG.loadedFrom || mlogDay(Date.now() - 30*86400000);
+  if (!force && MLOG.at && Date.now() - MLOG.at < 5*60000 && MLOG.loadedFrom && MLOG.loadedFrom <= want) return true;
+  MLOG.busy = true;
+  try{
+    const db = mlogFS();
+    const ss = await db.collection('modelSum').where('d', '>=', want).get();
+    ss.forEach(doc=>{ const x = doc.data(); if (x && x.d) MLOG.sums.set(x.d, x); });
+    const today = mlogDay(Date.now());
+    const listFrom = MLOG.listFrom || mlogDay(Date.now() - 3*86400000);
+    // raw: every day in range that has no final summary, plus the days the list shows
+    const need = new Set();
+    const top = mlogDay(Date.now() + 8*86400000);
+    for (let t = mlogDT(want); mlogDay(t) <= top; t += 86400000){ const d = mlogDay(t); const s = MLOG.sums.get(d); if (!s || !s.final || d >= listFrom) need.add(d); }
+    const days = [...need].sort();
+    if (days.length){
+      const lo = days[0];
+      const rs = await db.collection('modelLog').where('d', '>=', lo).get();
+      rs.forEach(doc=>{ const x = doc.data(); if (!x || !x.d || !x.r) return; if (!need.has(x.d) && !MLOG.raw.has(x.d)) return; let m = MLOG.raw.get(x.d); if (!m){ m = new Map(); MLOG.raw.set(x.d, m); } for (const id in x.r){ const o = x.r[id]; if (!o || !o.b) continue; const old = m.get(id); if (!old || mlogRank(o) >= mlogRank(old)) m.set(id, o); } });
+    }
+    MLOG.loadedFrom = (!MLOG.loadedFrom || want < MLOG.loadedFrom) ? want : MLOG.loadedFrom;
+    MLOG.at = Date.now(); MLOG.err = ''; MLOG.ver++;
+    mlogInjectOpen();
+    mlogWriteFinalSums().catch(()=>{});
+    return true;
+  }catch(e){ MLOG.err = (e && (e.code||e.message)) || 'load failed'; console.warn('model log load', MLOG.err); return false; }
+  finally{ MLOG.busy = false; }
+}
+/* open cloud rows this device never saw: hand them to the universe grader */
+function mlogInjectOpen(){
+  if (typeof UNI==='undefined' || typeof UNI_ST==='undefined' || !UNI_ST.ready) return 0;
+  const now = Date.now(); let n = 0;
+  for (const [d, m] of MLOG.raw){
+    for (const [id, o] of m){
+      if (o.res || !(o.t < now - 3*3600000) || o.t < now - 4*86400000 || UNI.has(id)) continue;
+      UNI.set(id, {i:id, id, b:o.b, src:o.s, l:o.l, ev:o.ev, t:o.t, mk:o.mk, side:o.sd, pt:o.pt, kind:o.k, pid:o.pid, pn:o.pn, game:o.gm, book:o.bk, v:o.v, p:o.p, price:o.pr, shown:o.sh, u:o.u, mins:o.mn,
+        lk:{v:o.v, p:o.p, price:o.pr, u:o.u, at:o.at}, fd:mlogDay(o.at||o.t), first:o.at||o.t, at:o.at||o.t, y:null, _cloud:1});
+      n++;
+    }
+  }
+  return n;
+}
+/* upload: queued graded rows + open rows; only rows the cloud lacks or holds a worse copy of */
+async function mlogPush(){
+  if (!mlogOn() || MLOG.pushing) return 0;
+  MLOG.pushing = true;
+  try{
+    // first run on this device for this account: backfill its graded history (30 days) and open rows
+    const bfKey = (AUTH.user && AUTH.user.uid) || '';
+    if (localStorage.getItem(MLOG_BF_LS)!==bfKey && typeof idbOpen==='function' && UNI_ST.idb!==false){
+      let n = 0;
+      try{
+        const d = await idbOpen(); const lo = mlogDay(Date.now() - 31*86400000);
+        await new Promise((res, rej)=>{ const req = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound(lo));
+          req.onsuccess = ()=>{ const c = req.result; if (!c) return res(); const r = c.value; if (r && !r._cloud){ const before = MLOG.queue.size; mlogQueue(r); if (MLOG.queue.size > before) n++; } c.continue(); };
+          req.onerror = ()=>rej(req.error); });
+        MLOG.backfilled = n; MLOG.bfPending = bfKey;
+      }catch(e){ console.warn('model log backfill', e); }
+    }
+    if (typeof UNI!=='undefined') for (const r of UNI.values()) if (!r._cloud) mlogQueue(r);
+    if (!MLOG.queue.size){ if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; } return 0; }
+    // make sure we know what the cloud already holds for these days
+    let lo = null; for (const o of MLOG.queue.values()){ const d = mlogDay(o.t); if (!lo || d < lo) lo = d; }
+    if (lo && (!MLOG.loadedFrom || lo < MLOG.loadedFrom || Date.now() - MLOG.at > 10*60000)) await mlogLoad(true, lo < mlogDay(Date.now() - 32*86400000) ? mlogDay(Date.now() - 32*86400000) : lo);
+    const byDoc = new Map(); let n = 0;
+    for (const [id, o] of MLOG.queue){
+      const cloud = mlogFind(id, o); const sent = MLOG.up.get(id);
+      if (cloud && mlogRank(cloud) >= mlogRank(o)) continue;
+      if (sent!=null && sent >= mlogRank(o)) continue;
+      const k = mlogDocId(id, o); if (!byDoc.has(k)) byDoc.set(k, {d:mlogDay(o.t), b:o.b, r:{}});
+      byDoc.get(k).r[id] = o; n++;
+    }
+    const db = mlogFS(); const docs = [...byDoc.entries()];
+    for (let i=0; i<docs.length; i+=400){
+      const batch = db.batch();
+      for (const [k, body] of docs.slice(i, i+400)) batch.set(db.collection('modelLog').doc(k), body, {merge:true});
+      await batch.commit();
+    }
+    for (const [, body] of docs){ let m = MLOG.raw.get(body.d); if (!m){ m = new Map(); MLOG.raw.set(body.d, m); } for (const id in body.r){ m.set(id, body.r[id]); MLOG.up.set(id, mlogRank(body.r[id])); } }
+    MLOG.queue.clear(); MLOG.uploaded += n; if (n) MLOG.ver++;
+    if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; }
+    return n;
+  }catch(e){ MLOG.err = (e && (e.code||e.message)) || 'upload failed'; console.warn('model log push', MLOG.err); return 0; }
+  finally{ MLOG.pushing = false; }
+}
+/* ---- grouping ---- */
+var MLOG_MK = {ml:'Moneyline', spread:'Spread', total:'Total', tt_home:'Team total', tt_away:'Team total'};
+function mlogMkt(o){
+  if (o.b==='props') return 'Prop · ' + ((typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[o.k]) || String(o.k||'other').replace(/^other:/,''));
+  const m = /^(h1|q[1-4])_(.+)$/.exec(o.mk||''); if (m) return (m[1]==='h1' ? '1st half ' : m[1].toUpperCase()+' ') + (MLOG_MK[m[2]]||m[2]).toLowerCase();
+  return MLOG_MK[o.mk] || o.mk || 'Other';
+}
+function mlogVenue(o){ if (o.bk) return o.bk; return ({sb:'DraftKings', pm:'Polymarket', kalshi:'Kalshi', px:'ProphetX', nv:'Novig', cc:'Crypto.com'})[o.s] || o.s || 'Other'; }
+function mlogImp(a){ a = +a; return a<0 ? -a/(-a+100) : 100/(a+100); }
+function mlogTier(o){ if (o.p==null || o.pr==null) return 'No estimate'; const e = o.p - mlogImp(o.pr); return e>=0.08 ? 'Edge 8%+' : e>=0.04 ? 'Edge 4–8%' : e>=0 ? 'Edge 0–4%' : 'Below the price'; }
+function mlogBand(pr){ if (pr==null || !isFinite(+pr) || +pr===0) return 'Unknown'; const o = +pr; return o<=-200 ? 'b0' : o<=-130 ? 'b1' : o<130 ? 'b2' : o<200 ? 'b3' : 'b4'; }
+function mlogBandLabel(k){ const P = a => (typeof fmtPx==='function' ? fmtPx(a) : String(a)); return ({b0:`Big favorite (${P(-200)} or shorter)`, b1:`Favorite (${P(-199)} to ${P(-130)})`, b2:`Near even (${P(-129)} to ${P(129)})`, b3:`Underdog (${P(130)} to ${P(199)})`, b4:`Long shot (${P(200)} or longer)`})[k] || k; }
+var MLOG_DIMS = ['all','sport','mkt','venue','tier','band'];
+function mlogDimVal(o, dim){ return dim==='all' ? 'all' : dim==='sport' ? (o.l||'—') : dim==='mkt' ? mlogMkt(o) : dim==='venue' ? mlogVenue(o) : dim==='tier' ? mlogTier(o) : mlogBand(o.pr); }
+function mlogAggAdd(agg, o){
+  const st = o.res; if (!st || st==='ungradeable') return;
+  for (const dim of MLOG_DIMS){
+    const k = `${o.b}|${o.v}|${dim}|${mlogDimVal(o, dim)}`; const a = agg[k] || (agg[k] = [0,0,0,0,0,0]);
+    if (st==='win'){ a[0]++; a[5] += 100; a[4] += (o.pr!=null && typeof profitOn==='function') ? profitOn(o.pr, 100) : 100; }
+    else if (st==='loss'){ a[1]++; a[5] += 100; a[4] -= 100; }
+    else if (st==='push') a[2]++; else if (st==='void') a[3]++;
+  }
+}
+function mlogDayAgg(day){
+  const s = MLOG.sums.get(day); if (s && s.final && s.agg) return s.agg;
+  const m = MLOG.raw.get(day); if (!m){ return s && s.agg ? s.agg : null; }
+  const agg = {}; for (const o of m.values()) mlogAggAdd(agg, o); return agg;
+}
+/* a day is final once every row is graded (or it's 4+ days old): write its summary so later loads stay small */
+async function mlogWriteFinalSums(){
+  if (!mlogOn()) return;
+  const now = Date.now(), cut = mlogDay(now - 86400000); const db = mlogFS(); let w = 0;
+  for (const [day, m] of MLOG.raw){
+    if (day > cut) continue; const s = MLOG.sums.get(day); if (s && s.final && s.n===m.size) continue;
+    const open = [...m.values()].filter(o=>!o.res).length;
+    const final = open===0 || day <= mlogDay(now - 4*86400000);
+    if (!final) continue;
+    const agg = {}; for (const o of m.values()) mlogAggAdd(agg, o);
+    for (const k in agg) agg[k][4] = Math.round(agg[k][4]*100)/100;
+    const body = {d:day, final:true, n:m.size, agg, at:now};
+    try{ await db.collection('modelSum').doc(day).set(body); MLOG.sums.set(day, body); w++; }catch(e){ break; }
+    if (w >= 6) break;
+  }
+}
+/* ---- background loop on admin devices ---- */
+setInterval(()=>{ if (mlogOn()) mlogPush().catch(()=>{}); }, 10*60000);
+setTimeout(function mlogKick(){ if (mlogOn()) mlogPush().then(()=>mlogLoad(false)).catch(()=>{}); else setTimeout(mlogKick, 30000); }, 45000);
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='hidden' && mlogOn() && MLOG.queue.size) mlogPush().catch(()=>{}); });
+
+/* ---- Results UI ---- */
+var MR = {range:30, board:'all', verdict:'good', sport:'all', res:'all', show:120};
+var MR_CACHE = {sig:'', html:''};
+var MLOG_VN = {good:'BET', watch:'WATCH', avoid:'AVOID'};
+function mrT(){ return {w:0, l:0, p:0, vd:0, pf:0, st:0}; }
+function mrAdd(T, a){ T.w += a[0]; T.l += a[1]; T.p += a[2]; T.vd += a[3]; T.pf += a[4]; T.st += a[5]; return T; }
+function mrSum(days, filt){ const out = new Map();
+  for (const d of days){ const agg = mlogDayAgg(d); if (!agg) continue;
+    for (const k in agg){ const [b, v, dim, val] = k.split('|'); if (MR.board!=='all' && b!==MR.board) continue; if (!filt(v, dim)) continue; const key = `${v}|${dim}|${val}`; mrAdd(out.get(key) || (out.set(key, mrT()), out.get(key)), agg[k]); } }
+  return out; }
+function mrDays(n){ const out = []; const today = Date.now(); for (let i=0;i<n;i++) out.push(mlogDay(today - i*86400000)); return out; }
+function mrRow(label, T, v){
+  const n = T.w + T.l; const roi = T.st ? T.pf/T.st : null;
+  const avoid = v==='avoid';
+  const k = avoid ? T.l : T.w; const r = n ? k/n : null;
+  const good = avoid ? (T.pf < 0) : (T.pf > 0);
+  const cls = !n ? 'mut' : good ? 'cx-hi' : Math.abs(T.pf) < 0.5 ? 'cx-mid' : 'cx-lo';
+  const rc = roi==null ? '' : roi>=0 ? 'pos' : 'neg';
+  const sub = n ? `${T.w}–${T.l}${T.p?'–'+T.p:''} · ROI <b class="${rc}">${roi>=0?'+':'−'}${Math.abs(roi*100).toFixed(1)}%</b>${avoid?' if bet':''}` : (T.vd ? `${T.vd} void` : 'not graded yet');
+  return `<div class="yb-row"><div class="yb-l"><div class="yb-k">${label}</div><div class="yb-s">${sub}</div></div><span class="cx-rate yb-rate" title="${k} of ${n}"><span class="pc ${cls}">${n?Math.round(r*100)+'%':'—'}</span><span class="sub">${n?`${k} of ${n}${avoid?' right':''}`:'none graded'}</span></span></div>`;
+}
+function mrLabel(o){
+  if (o.b==='props'){ const st = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[o.k]) || o.k || ''; return `${o.pn||'Player'} ${o.sd==='over'?'Over':o.sd==='under'?'Under':o.sd} ${o.pt!=null?o.pt:''} ${st}`.replace(/\s+/g,' ').trim(); }
+  const g = String(o.gm||''); const [aw, hm] = g.split(' @ ');
+  const team = o.sd==='home' ? (hm||'Home') : o.sd==='away' ? (aw||'Away') : '';
+  const mk = mlogMkt(o);
+  if (/Moneyline/.test(mk)) return `${team} ML${/half|Q\d/.test(mk)?' ('+mk.replace(/ moneyline/,'')+')':''} · ${g}`;
+  if (/Spread/i.test(mk)) return `${team} ${o.pt>0?'+':''}${o.pt!=null?o.pt:''}${/half|Q\d/.test(mk)?' ('+mk.replace(/ spread/,'')+')':''} · ${g}`;
+  return `${o.sd==='over'?'Over':o.sd==='under'?'Under':o.sd} ${o.pt!=null?o.pt:''} ${mk==='Total'?'':mk} · ${g}`.replace(/\s+/g,' ').trim();
+}
+function modelResultsHTML(){
+  const sig = [MLOG.ver, MR.range, MR.board, MR.verdict, MR.sport, MR.res, MR.show, typeof pxMode==='function'?pxMode():'', mlogDay(Date.now())].join('|');
+  if (MR_CACHE.sig===sig && MR_CACHE.html) return MR_CACHE.html;
+  const head = `<div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">🤖</span>Model results</h2><span class="hint">Every BET, WATCH and AVOID the model gave, games and props, on every book, graded from finals and box scores. Shared by all your signed-in devices. ROI is per $100 at the price when it locked.</span></div>`;
+  if (!mlogOn()) return `<div class="card mr-card">${head}<div class="hint">Sign in as the admin to load the model's pick log.</div></div>`;
+  const days = mrDays(MR.range);
+  const loading = !MLOG.at;
+  // headline: by verdict
+  const all = mrSum(days, (v, dim)=>dim==='all');
+  const vt = v => all.get(`${v}|all|all`) || mrT();
+  let logged = 0, waiting = 0; for (const d of days){ const m = MLOG.raw.get(d); if (m) for (const o of m.values()){ if (MR.board!=='all' && o.b!==MR.board) continue; logged++; if (!o.res) waiting++; } else { const s = MLOG.sums.get(d); if (s && s.n) logged += s.n; } }
+  const B = vt('good'), Wt = vt('watch'), A = vt('avoid');
+  const kpi = (k, v, h, cls) => `<div class="kpi yb-kpi"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div>${h?`<div class="hint">${h}</div>`:''}</div>`;
+  const roiS = T => T.st ? `${T.pf>=0?'+':'−'}${Math.abs(T.pf/T.st*100).toFixed(1)}%` : '—';
+  const nB = B.w+B.l, nA = A.w+A.l, nW = Wt.w+Wt.l;
+  const kpis = `<div class="kpis yb-kpis">
+    ${kpi('Picks logged', logged.toLocaleString(), `${waiting.toLocaleString()} waiting on a final`)}
+    ${kpi('BET record', nB ? `${B.w}–${B.l}` : '—', nB ? `${Math.round(B.w/nB*100)}% hit` : 'none graded yet')}
+    ${kpi('BET ROI', roiS(B), nB ? `${nB} graded` : '', B.pf>0?'pos':B.pf<0?'neg':'')}
+    ${kpi('AVOID right', nA ? `${Math.round(A.l/nA*100)}%` : '—', nA ? `${A.l} of ${nA} lost` : 'none graded yet', nA ? (A.pf<0?'pos':'neg') : '')}
+    ${kpi('WATCH record', nW ? `${Wt.w}–${Wt.l}` : '—', nW ? `ROI ${roiS(Wt)}` : 'none graded yet')}
+  </div>`;
+  const byVerdict = ['good','watch','avoid'].map(v=>mrRow(MLOG_VN[v], vt(v), v)).join('');
+  // trend: BET profit per day (flat $100)
+  const trend = (()=>{ const pts = []; let c = 0; for (const d of days.slice().reverse()){ const agg = mlogDayAgg(d); let pf = 0; if (agg) for (const k in agg){ const [b, v, dim] = k.split('|'); if (dim==='all' && v==='good' && (MR.board==='all' || b===MR.board)) pf += agg[k][4]; } c += pf; pts.push([mlogDT(d), c]); } return typeof ybSpark==='function' ? ybSpark(pts) : ''; })();
+  const recent = [7, 30].filter(n=>n<=MR.range || n===7).map(n=>{ const S7 = mrSum(mrDays(n), (v, dim)=>dim==='all' && v===MR.verdict); return mrRow(`Last ${n} days`, S7.get(`${MR.verdict}|all|all`) || mrT(), MR.verdict); }).join('');
+  // breakdowns for the chosen verdict
+  const dims = mrSum(days, (v, dim)=>v===MR.verdict && dim!=='all');
+  const block = (dim, title, labelFn, order) => {
+    const rows = [...dims.entries()].filter(([k])=>k.split('|')[1]===dim).map(([k, T])=>[k.split('|').slice(2).join('|'), T]);
+    if (order) rows.sort((a,b)=>order.indexOf(a[0])-order.indexOf(b[0])); else rows.sort((a,b)=>(b[1].w+b[1].l)-(a[1].w+a[1].l));
+    const html = rows.slice(0, 14).map(([val, T])=>mrRow(esc(labelFn ? labelFn(val) : val), T, MR.verdict)).join('');
+    return `<div class="v42-b yb-b"><h3>${title}</h3>${html || '<div class="hint">Nothing graded here yet.</div>'}</div>`;
+  };
+  const lgLab = id => (typeof LMAP!=='undefined' && LMAP[id] && LMAP[id].label) || id;
+  const sel = (id, opts, cur, lab) => `<label class="mr-f"><span>${lab}</span><select data-mr="${id}">${opts.map(([v, l])=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`).join('')}</select></label>`;
+  const filters = `<div class="mr-filters">${sel('range', [[7,'Last 7 days'],[30,'Last 30 days']], MR.range, 'Range')}${sel('board', [['all','Games + Props'],['games','Games'],['props','Props']], MR.board, 'Board')}${sel('verdict', [['good','BET'],['watch','WATCH'],['avoid','AVOID']], MR.verdict, 'Breakdowns for')}</div>`;
+  // list of graded picks (days loaded raw)
+  const L = []; const sports = new Set();
+  for (const d of days){ const m = MLOG.raw.get(d); if (!m) continue; for (const [id, o] of m){ if (MR.board!=='all' && o.b!==MR.board) continue; sports.add(o.l); if (MR.sport!=='all' && o.l!==MR.sport) continue; if (MR.res==='open' ? !!o.res : MR.res==='graded' ? !o.res || o.res==='ungradeable' : false) continue; if (MR.res!=='open' && MR.res!=='graded' && MR.res!=='all' && o.v!==MR.res) continue; L.push([id, o]); } }
+  L.sort((a,b)=>b[1].t - a[1].t);
+  const listFrom = MLOG.listFrom || mlogDay(Date.now() - 3*86400000);
+  const rows = L.slice(0, MR.show).map(([id, o])=>{
+    const res = o.res==='win' ? (o.v==='avoid' ? ['Won', 'neg'] : ['Won', 'pos']) : o.res==='loss' ? (o.v==='avoid' ? ['Lost', 'pos'] : ['Lost', 'neg']) : o.res==='push' ? ['Push', ''] : o.res==='void' ? ['Void', 'mut'] : o.res ? ['No grade', 'mut'] : ['Waiting', 'mut'];
+    const px = o.pr!=null && typeof fmtPx==='function' ? fmtPx(o.pr) : '—';
+    const when = new Date(o.t); const dt = `${when.getMonth()+1}/${when.getDate()}`;
+    return `<div class="mr-li"><span class="mr-v mr-${o.v}">${MLOG_VN[o.v]}</span><div class="yb-l"><div class="yb-k mr-pick">${esc(mrLabel(o))}</div><div class="yb-s">${dt} · ${esc(lgLab(o.l))} · ${esc(mlogVenue(o))} · ${esc(px)}${o.p!=null?` · est ${Math.round(o.p*100)}%`:''}${o.act!=null&&o.act!==''?` · final ${esc(String(o.act))}`:''}</div></div><b class="mr-res ${res[1]}">${res[0]}</b></div>`;
+  }).join('');
+  const listFilters = `<div class="mr-filters">${sel('sport', [['all','All sports']].concat([...sports].filter(Boolean).sort().map(s=>[s, lgLab(s)])), MR.sport, 'Sport')}${sel('res', [['all','All'],['good','BET'],['watch','WATCH'],['avoid','AVOID'],['graded','Graded'],['open','Waiting']], MR.res, 'Show')}</div>`;
+  const more = L.length > MR.show ? `<button type="button" class="btn sm" data-mr-more>Show more (${(L.length-MR.show).toLocaleString()} left)</button>` : '';
+  const older = listFrom > days[days.length-1] ? `<button type="button" class="btn sm" data-mr-older>Load older picks</button>` : '';
+  const err = MLOG.err ? `<div class="hint mr-err">Couldn't reach the pick log (${esc(String(MLOG.err))}). Showing what's loaded.</div>` : '';
+  const small = nB && nB < 100 ? `<div class="yb-small">Small sample: ${nB} graded BET pick${nB===1?'':'s'} in this range, so read these as early signs.</div>` : '';
+  const html = `<div class="card mr-card">${head}${filters}${err}${loading ? '<div class="hint">Loading the model\'s pick log…</div>' : ''}${small}${kpis}
+    <div class="yb-grid">
+      <div class="v42-b yb-b"><h3>⚖️ By verdict</h3>${byVerdict}<div class="hint yb-note">AVOID is right when the side it warned about lost. Its ROI is what betting it would have made.</div></div>
+      <div class="v42-b yb-b"><h3>📅 Recent form · ${MLOG_VN[MR.verdict]}</h3>${recent}${trend?`<div class="mr-trend"><span class="hint">BET profit, flat $100 per pick</span>${trend}</div>`:''}</div>
+      ${block('sport', '🏅 By sport', lgLab)}
+      ${block('mkt', '🎯 By market')}
+      ${block('venue', '🏦 By venue')}
+      ${block('tier', '📐 By confidence', null, ['Edge 8%+','Edge 4–8%','Edge 0–4%','Below the price','No estimate'])}
+      ${block('band', '💵 By price', mlogBandLabel, ['b0','b1','b2','b3','b4','Unknown'])}
+    </div>
+    <div class="mr-list-head"><h3>📋 Every pick</h3><span class="hint">${L.length.toLocaleString()} picks since ${esc(mlogFmt(listFrom))}, newest first.</span></div>
+    ${listFilters}
+    <div class="mr-list">${rows || '<div class="hint" style="padding:12px">No picks logged for these filters yet. Picks show up here as soon as any of your signed-in devices sees the board.</div>'}</div>
+    <div class="mr-more">${more}${older}</div>
+  </div>`;
+  MR_CACHE.sig = sig; MR_CACHE.html = html;
+  return html;
+}
+function mrRefresh(){
+  if (ui.tab!=='results') return;
+  const el = document.querySelector('#view .mr-card'); if (!el) return;
+  const y = window.scrollY; const t = document.createElement('div'); t.innerHTML = modelResultsHTML(); const n = t.firstElementChild;
+  const lst = el.querySelector('.mr-list'); const st = lst ? lst.scrollTop : 0;
+  el.replaceWith(n); const l2 = n.querySelector('.mr-list'); if (l2) l2.scrollTop = st; if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  mrBind();
+}
+function mrBind(){
+  const el = document.querySelector('#view .mr-card'); if (!el || el.__b) return; el.__b = 1;
+  el.addEventListener('change', e=>{ const s = e.target.closest('[data-mr]'); if (!s) return; const k = s.dataset.mr; MR[k] = (k==='range') ? +s.value : s.value; MR.show = 120;
+    if (k==='range' && MR.range===30){ mlogLoad(false, mlogDay(Date.now() - 30*86400000)).then(mrRefresh); }
+    mrRefresh(); });
+  el.addEventListener('click', e=>{
+    if (e.target.closest('[data-mr-more]')){ MR.show += 200; mrRefresh(); return; }
+    if (e.target.closest('[data-mr-older]')){ const cur = MLOG.listFrom || mlogDay(Date.now() - 3*86400000); MLOG.listFrom = mlogDay(mlogDT(cur) - 7*86400000); const b = e.target.closest('button'); b.disabled = true; b.textContent = 'Loading…'; mlogLoad(true).then(mrRefresh); }
+  });
+}
+/* wire into Results: model results first, then your bets and the older cards */
+(function(){
+  try{
+    const base = renderResults;
+    renderResults = function(){
+      const out = base.apply(this, arguments);
+      try{
+        if (ui.tab==='results'){
+          const view = document.querySelector('#view'); const title = view && view.querySelector('.section-title');
+          if (title && !view.querySelector('.mr-card')){ title.insertAdjacentHTML('afterend', modelResultsHTML()); mrBind(); }
+          if (mlogOn() && (!MLOG.at || Date.now() - MLOG.at > 5*60000)) mlogLoad(false).then(ok=>{ if (ok) mrRefresh(); });
+        }
+      }catch(e){ console.warn('model results', e); }
+      return out;
+    };
+  }catch(e){}
+})();
+/* v93: Results is admin-only on every screen size (phone too) */
+canOpenResults = function(){ return (typeof isAdminUser==='function') && isAdminUser(); };
+(function(){
+  try{
+    const sheet = document.getElementById('moreSheet');
+    if (sheet && !sheet.querySelector('[data-tab="results"]')){
+      const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'results'; b.setAttribute('role','menuitem'); b.setAttribute('aria-label','Results'); b.hidden = true;
+      b.innerHTML = '<span class="tab-ic tab-emo" aria-hidden="true">🧪</span><span class="tab-lab">Results</span>';
+      sheet.appendChild(b);
+    }
+    if (typeof applyAdminGate==='function') applyAdminGate();
+  }catch(e){}
+  const css = `
+@media (max-width:899.98px){ body.is-admin #tabs [data-tab="results"]{display:none !important} }
+body:not(.is-admin) #moreSheet [data-tab="results"]{display:none !important}
+.mr-filters{display:flex;flex-wrap:wrap;gap:8px 12px;margin:0 0 12px}
+.mr-f{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--mut);font-weight:700;white-space:nowrap}
+.mr-f select{appearance:none;-webkit-appearance:none;background:var(--inset,#0f1b2d);color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:7px 28px 7px 10px;font:inherit;font-size:12.5px;font-weight:700;background-image:linear-gradient(45deg,transparent 50%,#7dd3fc 50%),linear-gradient(135deg,#7dd3fc 50%,transparent 50%);background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;max-width:170px}
+.mr-trend{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(148,163,184,.1)}
+.mr-trend .yb-spark{width:110px}
+.mr-list-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:18px 0 8px}
+.mr-list-head h3{margin:0;font-size:15px}
+.mr-list{max-height:560px;overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--line);border-radius:14px;background:rgba(8,16,30,.35);padding:0 12px}
+.mr-li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid rgba(148,163,184,.1)}
+.mr-li:first-child{border-top:0}
+.mr-pick{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mr-li .yb-s{white-space:normal;overflow-wrap:normal;word-break:keep-all;line-height:1.35}
+.mr-li .yb-l{min-width:0;flex:1 1 auto}
+.mr-v{flex:0 0 auto;font-size:10px;font-weight:800;letter-spacing:.05em;border-radius:999px;padding:3px 7px;min-width:56px;text-align:center}
+.mr-good{background:rgba(34,197,94,.16);color:#4ade80;border:1px solid rgba(74,222,128,.35)}
+.mr-watch{background:rgba(251,191,36,.14);color:#fbbf24;border:1px solid rgba(251,191,36,.32)}
+.mr-avoid{background:rgba(239,68,68,.14);color:#f87171;border:1px solid rgba(248,113,113,.32)}
+.mr-res{flex:0 0 auto;font-size:12.5px;white-space:nowrap}
+.mr-more{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.mr-err{color:#fecaca;margin:0 0 10px}
+.mr-card .yb-kpis{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+@media (max-width:600px){ .v42-grid{grid-auto-flow:row;grid-template-columns:minmax(0,1fr)} }
+@media (max-width:420px){ .mr-card .yb-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .mr-list{max-height:480px;padding:0 10px} }`;
+  try{ const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }catch(e){}
+})();
+window.mlogStats = () => ({days:MLOG.raw.size, rows:[...MLOG.raw.values()].reduce((a,m)=>a+m.size,0), sums:MLOG.sums.size, queue:MLOG.queue.size, uploaded:MLOG.uploaded, backfilled:MLOG.backfilled, gradedCloud:MLOG.gradedCloud, err:MLOG.err});
 </script>
 </body>
 </html>
