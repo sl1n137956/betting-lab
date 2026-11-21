@@ -700,6 +700,17 @@ body.filters-open #filterBar:not([hidden]){display:flex}
 .ag-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
 .ag-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:999px;font-size:12px;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.22);color:var(--txt2,#c3d0e6)}
 .ag-chip b{color:var(--txt,#e8eef8)}
+.agc-row{display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:2px 24px 6px 2px;margin:8px 0 14px;-webkit-mask-image:linear-gradient(to right,#000 88%,transparent);mask-image:linear-gradient(to right,#000 88%,transparent)}
+.agc-row::-webkit-scrollbar{display:none}
+.agc{flex:0 0 auto;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;font:inherit;font-size:13px;font-weight:700;line-height:1.2;border:1px solid rgba(148,163,184,.22);background:rgba(148,163,184,.04);color:var(--mut);cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.agc .sp-emo{filter:grayscale(.8);opacity:.6}
+.agc .n{font-size:11px;font-weight:800;padding:1px 7px;border-radius:999px;background:rgba(148,163,184,.12);color:var(--mut);font-variant-numeric:tabular-nums}
+.agc.on{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.75);color:var(--txt,#e8eef8);box-shadow:inset 0 0 0 1px rgba(96,165,250,.15)}
+.agc.on .sp-emo{filter:none;opacity:1}
+.agc.on .n{background:rgba(96,165,250,.28);color:#fff}
+.agc.zero:not(.on){opacity:.6}
+@media (min-width:768px){ .agc-row{flex-wrap:wrap;overflow:visible;-webkit-mask-image:none;mask-image:none;padding-right:2px} }
+body.tab-all #filterBar,body.tab-all #btnFilters{display:none !important}
 .ag-sec{margin:6px 0 18px}
 .ag-h{font-size:15px;margin:4px 2px 10px;display:flex;align-items:center;gap:6px}
 .bet-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;min-width:0}
@@ -7034,7 +7045,7 @@ function allGamesHTML(list){
   const liveCard = g => { const h = gameCard(g); return gameTailedPending(g) ? String(h).replace(/^(\s*<div [^>]*>)/, '$1<div class="ag-tailed"><span aria-hidden="true">🎟️</span> You tailed this</div>') : h; };
   const sec = (title, arr, cls, extra) => `<div class="ag-sec ${cls||''}"><h3 class="ag-h">${title} <span class="mut">(${arr.length})</span>${extra||''}</h3><div class="grid">${arr.map(cls==='ag-live'?liveCard:gameCard).join('')}</div></div>`;
   const off = LEAGUES.filter(L=>!(S.enabled||[]).includes(L.id)).map(L=>L.label);
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now, in every sport. Settings and the board filters don't apply here; the sport chips above only narrow this list. Odds show when the free feed has them; % = no-vig probability.</span></div>`
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🏟️</span>All Games</h2><span class="hint">Every game starting in the next 24 hours, plus games live now, in every sport. Tap a sport below to show or hide it here. Settings and the Games / Props boards keep their own sports. Odds show when the free feed has them; % = no-vig probability.</span></div>`
     + (list.length ? `<div class="ag-chips">${chips}</div>` + (live.length ? sec('<span class="badge b-live">● Live now</span>', live, 'ag-live', ` <span class="live-upd mut" data-live-upd>${typeof liveAgoTxt==='function'?esc(liveAgoTxt()):''}</span>`) : '') + groups.map(G=>sec(esc(G.k), G.list)).join('')
       : `<div class="empty-state">No games in the next 24 hours for the sports picked above.</div>`);
 }
@@ -18207,7 +18218,10 @@ document.addEventListener('click', e=>{
   const id = c.getAttribute('data-ag-sport');
   if (id==='all') AG_SEL = LEAGUES.map(L=>L.id);
   else { const i = AG_SEL.indexOf(id); if (i>=0) AG_SEL.splice(i,1); else AG_SEL.push(id); }
-  agSave(); render();
+  agSave();
+  const row = document.querySelector('#view .agc-row'), sl = row ? row.scrollLeft : 0;   // v85: keep the chip row where you left it
+  render();
+  const row2 = document.querySelector('#view .agc-row'); if (row2) row2.scrollLeft = sl;
 }, true);
 
 /* v76: Verdict parsing regression cases (Stanley's slip, Nov 20 2026). Run verdictParseSelfTest() in the
@@ -18767,6 +18781,45 @@ function uiLater(key, fn){ if (UI_LATER.has(key)) return; UI_LATER.set(key, 1); 
     if (ui.board==='parlay' && typeof softRender==='function') softRender();
   };
   buildParlays = function(){ if (uiUserEv() || !(typeof parlays!=='undefined' && parlays && parlays.length)) return base.apply(this, arguments); uiLater('parlays', bg); };
+})();
+/* ================= v85: All Games = one row of sport chips, no Filters panel =================
+   Stanley: "there shouldn't be a filter option on the all games tab and just all the sports offered where u can select or
+   deselect to show or hide certain sports that have no correlation to the game or props tab".
+   The chips live in the page (not the Filters drawer). Selection is AG_SEL (localStorage bl_ag_sel_v1), separate from the
+   Games/Props shared selection (bl_sport_sel_v1) and from Settings. */
+function agChipsRowHTML(){
+  const counts = {}; for (const g of allGamesList(true)) counts[g.league] = (counts[g.league]||0)+1;
+  const on = new Set(AG_SEL), total = Object.values(counts).reduce((a,n)=>a+n,0);
+  const allOn = LEAGUES.every(L=>on.has(L.id));
+  const order = LEAGUES.map((L,i)=>({L,i,n:counts[L.id]||0})).sort((a,b)=>(b.n>0)-(a.n>0) || a.i-b.i);
+  const chip = (id, lab, n, sel, title) => `<button type="button" class="agc${sel?' on':''}${n?'':' zero'}" data-ag-sport="${id}" aria-pressed="${sel?'true':'false'}" title="${esc(title)}">${lab}<span class="n">${n}</span></button>`;
+  return `<div class="agc-row" role="group" aria-label="Sports shown in All Games">`
+    + chip('all', 'All', total, allOn, 'Show every sport')
+    + order.map(o=>chip(o.L.id, sportChipLabel(o.L), o.n, on.has(o.L.id), on.has(o.L.id) ? `${o.L.label} is shown. Tap to hide.` : `${o.L.label} is hidden. Tap to show.`)).join('')
+    + `</div>`;
+}
+(function(){
+  if (typeof allGamesHTML!=='function') return;
+  const base = allGamesHTML;
+  allGamesHTML = function(list){
+    let h = base(list);
+    h = h.replace(/<div class="ag-chips">[\s\S]*?<\/div>/, '');   // the old read-only count chips
+    if (!AG_SEL.length) h = h.replace(/<div class="empty-state">[\s\S]*?<\/div>/, `<div class="empty-state ag-none">No sports picked yet. Tap a sport above, or <b>All</b>, to see its games.</div>`);
+    const i = h.indexOf('</div>');   // end of the section title
+    return i>=0 ? h.slice(0, i+6) + agChipsRowHTML() + h.slice(i+6) : agChipsRowHTML() + h;
+  };
+  if (typeof updateFilterChrome==='function'){
+    const baseChrome = updateFilterChrome;
+    updateFilterChrome = function(){
+      const r = baseChrome.apply(this, arguments);
+      const isAll = ui.tab==='all';
+      document.body.classList.toggle('tab-all', isAll);
+      const fb = $('#filterBar'), btn = $('#btnFilters');
+      if (isAll){ if (fb) fb.hidden = true; if (btn) btn.hidden = true; if (document.body.classList.contains('filters-open')) setFiltersOpen(false); }
+      else if (btn) btn.hidden = false;
+      return r;
+    };
+  }
 })();
 </script>
 </body>
