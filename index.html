@@ -22216,6 +22216,23 @@ function capGame(p, C){
   R.sentence = p.verdict==='started' ? 'The game already started, so this one is off the table.' : c7Judge({v: C.J==='BET'?'BET':C.J==='MAYBE LATER'?'WATCH':'SKIP', win:R.win, lose:R.lose, pick, fail: typeof softFail==='function' && fail ? softFail(fail) : fail});
   return R;
 }
+/* v108: show every reason in the courtroom, no "N more reasons" collapse (Stanley pt264u). */
+APP_BUILD = 108; CAP4_MAX = 99;
+function uiCourtroomHTML(o){
+  const all = l => { const R = uiTop3(l); return R.top.concat(R.rest); };
+  const W = all(o.win), L = all(o.lose);
+  return `<div class="court2">
+    ${o.chanceHTML||''}
+    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(W,'win')}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(L,'lose','No major red flags in the numbers we have.')}</ul></div>
+    <div class="c-judge"><div class="c-judge-h">${o.judgeHTML||''}</div>
+      <div class="c-sent">${esc(o.sentence||'')}</div>
+      ${o.edgeHTML||''}${o.unitHTML||''}</div>
+    <details class="dd fca"${o.ddKey?` data-dd="${esc(o.ddKey)}" ${ui.open.has(o.ddKey)?'open':''}`:''}${o.gid?` data-gid="${esc(o.gid)}"`:''}><summary>📊 Additional stats</summary><div class="fca-body">
+      ${o.fullHTML||''}${uiOddsRowHTML(o.odds)}
+    </div></details>
+  </div>`;
+}
 </script>
 </body>
 </html>
