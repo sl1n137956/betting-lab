@@ -9887,14 +9887,14 @@ function liveRecordHTML(board){
   }
   return `<div class="kpis">
     <div class="kpi" title="Every pick this board made, whether or not you tailed it. Pulled picks are listed separately."><div class="k">Board picks record</div><div class="v" data-rec="board-${board}">${st.w}–${st.l}${st.p?'–'+st.p:''}</div></div>
-    ${board!=='verdict' ? (()=>{ const t = tailedRecord(board); return `<div class="kpi" title="Only the ${board==='parlay'?'parlays':board==='props'?'props':'game bets'} you tailed or logged in the Tracker — the same count as the Tracker."><div class="k">Your tailed ${board==='parlay'?'parlays':board==='props'?'props':'game bets'}</div><div class="v" data-rec="tailed-${board}">${t.txt}</div></div>`; })() : ''}
+    <!-- v94: Results shows model picks only (no tracked / tailed bets) -->
     <div class="kpi"><div class="k">Win rate</div><div class="v">${st.wr==null?'—':(st.wr*100).toFixed(1)+'%'}</div></div>
     <div class="kpi"><div class="k">Profit at $${unit.toFixed(0)} flat</div><div class="v ${st.net>=0?'pos':'neg'}">${money(st.net)}</div></div>
     <div class="kpi"><div class="k">ROI</div><div class="v ${(st.roi||0)>=0?'pos':'neg'}">${st.roi==null?'—':(st.roi*100).toFixed(1)+'%'}</div></div>
     <div class="kpi"${board==='games'?' title="Closing line value: our price vs the final DraftKings line (house cut removed). Positive = we beat the close, the best long-run sign of real skill."':''}><div class="k">${fifthLabel}</div><div class="v ${fifthCls}">${fifthVal}</div></div>
     <div class="kpi"><div class="k">Pending</div><div class="v">${st.pend}</div></div>
   </div>
-  ${board!=='verdict' ? `<p class="hint rec-why">The board record counts every pick the app made on this board (pulled picks are listed below, not in it). Your record counts only the bets you tailed, including ones that were pulled after you tailed them and ones you typed in yourself, so the two only match when you tailed every pick.</p>` : ''}
+  ${board!=='verdict' ? `<p class="hint rec-why">The board record counts every pick the app made on this board (pulled picks are listed below, not in it).</p>` : ''}
   <div class="panel overflow"><h3>${esc(title)}</h3>
     <table>${cols}${rows||`<tr><td colspan="7" class="mut">${esc(empty)}</td></tr>`}</table>
     <div style="margin-top:8px"><button class="btn sm" id="btnGrade">Grade now</button> <span class="hint">Grading also runs on every refresh.</span></div></div>
@@ -17717,7 +17717,7 @@ function moneySectionHTML(){
   };
   const any = A.length;
   return `<div class="card v41-score v55-money">
-    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money?</h2><span class="hint">Every Pick the board made (Games and Props), graded automatically from finals. Each pick counts at the size it was given (1u or 0.5u, or 1.5u/2u once unlocked; older picks 1u). Not just the bets you tailed.</span></div>
+    <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">💰</span>Is it making money?</h2><span class="hint">Every Pick the board made (Games and Props), graded automatically from finals. Each pick counts at the size it was given (1u or 0.5u, or 1.5u/2u once unlocked; older picks 1u).</span></div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Board</th><th>W–L</th><th>Win rate</th><th>Profit</th><th>ROI</th><th>Today</th><th>Yesterday</th><th>Waiting</th><th>So far</th></tr></thead>
     <tbody>${line('Games', G)}${line('Props', P)}${line('Both', A, 'v55-total')}</tbody></table></div>
     ${any ? '' : `<div class="hint" style="margin-top:8px">${MONEY.at ? 'No board Picks have started yet on this device. Picks show up here once their game starts, and get graded after the final.' : 'Loading graded picks…'}</div>`}
@@ -17752,10 +17752,9 @@ function renderResults(){
   const head = (emo, t, sub) => `<div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">${emo}</span>${t}</h2><span class="hint">${sub}</span></div>`;
   const picked = `<div class="card v55-learn v55-auto">${head('🤖', 'What the model picked', 'Pickiness, lock time and sports, chosen automatically from graded results.')}
     ${v55DD('v55-auto', '⚙️ Games and Props settings', autoBody)}</div>`;
-  const recs = `<div class="card v55-learn v55-recs">${head('📋', 'Board picks and your tailed bets', 'Win–loss by type: what the board picked and what you tailed.')}
+  const recs = `<div class="card v55-learn v55-recs">${head('📋', 'Board picks', 'Win–loss by type: what the board picked.')}
     ${v55DD('v55-rec-games', '🏟️ Games', v55Scope(safe(()=>liveRecordHTML('games')), 'rg'))}${v55DD('v55-rec-props', '🏀 Props', v55Scope(safe(()=>liveRecordHTML('props')), 'rp'))}${v55DD('v55-rec-verdict', '⚖️ Verdict checks', v55Scope(safe(()=>liveRecordHTML('verdict')), 'rv'))}</div>`;
-  const mine = safe(()=>typeof yourBetsHTML==='function' ? yourBetsHTML() : '');   // v92: your tracked bets first, never empty
-  $('#view').innerHTML = title + mine + money + uni + learning + picked + recs;
+  $('#view').innerHTML = title + money + uni + learning + picked + recs;
   v55BindScoped('rg', ()=>bindLiveRecordGrade('games'));
   v55BindScoped('rp', ()=>bindLiveRecordGrade('props'));
   v55BindScoped('rv', ()=>bindLiveRecordGrade('verdict'));
@@ -20214,6 +20213,204 @@ body:not(.is-admin) #moreSheet [data-tab="results"]{display:none !important}
   try{ const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); }catch(e){}
 })();
 window.mlogStats = () => ({days:MLOG.raw.size, rows:[...MLOG.raw.values()].reduce((a,m)=>a+m.size,0), sums:MLOG.sums.size, queue:MLOG.queue.size, uploaded:MLOG.uploaded, backfilled:MLOG.backfilled, gradedCloud:MLOG.gradedCloud, err:MLOG.err});
+/* ================= v94: weekly model check =================
+   Once per ISO week, one signed-in admin device (e.g. the always-on VPS browser) takes a Firestore lock on
+   modelCheck/{week}, refreshes the shared pick log, runs this device's normal learning step, and writes a report:
+   how BET / WATCH / AVOID did over the last 7 days vs the model's own estimates, plus what the learners changed.
+   The check itself never changes the model: the only changes are the existing learners' own bounded, logged steps. */
+var MCHK = {doc:null, at:0, busy:false, err:'', ver:0};
+var MCHK_LOCK_MS = 20*60000;
+function mchkWeek(t){
+  const d = new Date(t); d.setHours(12,0,0,0); d.setDate(d.getDate() + 3 - ((d.getDay()+6)%7));
+  const y = d.getFullYear(), w1 = new Date(y, 0, 4, 12);
+  const wk = 1 + Math.round(((d - w1)/86400000 - 3 + ((w1.getDay()+6)%7))/7);
+  return y + '-W' + String(wk).padStart(2, '0');
+}
+function mchkDev(){
+  let id = ''; try{ id = localStorage.getItem('bl_dev_id') || ''; if (!id){ id = Math.random().toString(36).slice(2, 10); localStorage.setItem('bl_dev_id', id); } }catch(e){}
+  const ua = navigator.userAgent || '';
+  const lab = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows PC' : /Macintosh/.test(ua) ? 'Mac' : /Linux|X11/.test(ua) ? 'Linux computer' : 'a device';
+  return {id, lab};
+}
+/* learner log lines (Games, Props, Verdict, auto settings) from the last 8 days on this device */
+function mchkChanges(since){
+  const out = [];
+  const take = (arr, who) => { for (const x of (arr||[])){ if (x && +x.at >= since && x.txt && !/learning (is on|switched on)/i.test(x.txt)) out.push({at:+x.at, who, txt:String(x.txt).slice(0, 220)}); } };
+  try{ if (typeof LEARN!=='undefined' && LEARN){ take(LEARN.log, 'Games'); if (LEARN.props) take(LEARN.props.log, 'Props'); if (LEARN.verdict) take(LEARN.verdict.log, 'Verdict'); } }catch(e){}
+  try{ if (typeof AUTO==='function'){ const a = AUTO(); for (const x of (a.log||[])) if (x && +x.at >= since && x.txt) out.push({at:+x.at, who:x.board==='props'?'Props':x.board==='games'?'Games':'Auto settings', txt:String(x.txt).slice(0, 220)}); } }catch(e){}
+  out.sort((a,b)=>b.at-a.at);
+  return out.slice(0, 12);
+}
+function mchkStats(rows){
+  const S = {};
+  for (const o of rows){
+    if (!o || !o.res || o.res==='ungradeable' || o.res==='void') continue;
+    const k = o.b + '|' + o.v; const s = S[k] || (S[k] = {b:o.b, v:o.v, w:0, l:0, p:0, ps:0, pn:0, pf:0, st:0});
+    if (o.res==='push'){ s.p++; continue; }
+    const win = o.res==='win';
+    if (win) s.w++; else s.l++;
+    if (o.p!=null && isFinite(+o.p)){ s.ps += +o.p; s.pn++; }
+    s.st += 100; s.pf += win ? ((o.pr!=null && typeof profitOn==='function') ? profitOn(o.pr, 100) : 100) : -100;
+  }
+  for (const k in S){ const s = S[k]; const n = s.w + s.l; s.n = n; s.hit = n ? s.w/n : null; s.est = s.pn ? s.ps/s.pn : null; s.roi = s.st ? s.pf/s.st : null;
+    s.pf = Math.round(s.pf*100)/100; s.ps = Math.round(s.ps*1000)/1000; }
+  return S;
+}
+function mchkFindings(S){
+  const F = [], pct = x => Math.round(x*100) + '%', BN = {games:'Games', props:'Props'};
+  let any = false;
+  for (const b of ['games','props']){
+    const bet = S[b+'|good'], av = S[b+'|avoid'], wa = S[b+'|watch'];
+    if (bet && bet.n >= 30 && bet.est!=null){ any = true; const gap = bet.hit - bet.est;
+      if (gap <= -0.05) F.push(`${BN[b]} BET picks won ${pct(bet.hit)} against the model's ${pct(bet.est)} estimate: it was too confident this week.`);
+      else if (gap >= 0.05) F.push(`${BN[b]} BET picks won ${pct(bet.hit)} against the model's ${pct(bet.est)} estimate: it was too cautious this week.`);
+      else F.push(`${BN[b]} BET picks won ${pct(bet.hit)}, close to the model's ${pct(bet.est)} estimate.`); }
+    if (av && av.n >= 30){ any = true; const right = av.l/av.n; if (right < 0.5) F.push(`${BN[b]} AVOID calls were right only ${pct(right)} of the time (${av.l} of ${av.n}).`); }
+    if (bet && wa && bet.n >= 30 && wa.n >= 30 && wa.roi > bet.roi + 0.05) F.push(`${BN[b]} WATCH picks out-earned BET picks (ROI ${wa.roi>=0?'+':'−'}${Math.abs(wa.roi*100).toFixed(1)}% vs ${bet.roi>=0?'+':'−'}${Math.abs(bet.roi*100).toFixed(1)}%).`);
+  }
+  if (!any) F.push('Not enough graded picks in the last 7 days to judge the model yet (needs 30 BETs on a board).');
+  return F;
+}
+async function mchkRead(force){
+  if (!mlogOn()) return null;
+  if (!force && MCHK.at && Date.now() - MCHK.at < 30*60000) return MCHK.doc;
+  try{
+    const db = mlogFS();
+    const qs = await db.collection('modelCheck').orderBy('at', 'desc').limit(1).get();
+    let doc = null; qs.forEach(d=>{ doc = d.data(); });
+    MCHK.doc = doc; MCHK.at = Date.now(); MCHK.err = ''; MCHK.ver++;
+    return doc;
+  }catch(e){ MCHK.err = (e && (e.code||e.message)) || 'read failed'; return MCHK.doc; }
+}
+async function mchkRun(opts){
+  opts = opts || {};
+  if (!mlogOn() || MCHK.busy) return {ran:false, why:'busy or signed out'};
+  const now = Date.now(), wk = mchkWeek(now), dev = mchkDev();
+  const db = mlogFS(), ref = db.collection('modelCheck').doc(wk);
+  MCHK.busy = true;
+  try{
+    // lock: only one device runs this week's check
+    const got = await db.runTransaction(async tx => {
+      const s = await tx.get(ref); const x = s.exists ? s.data() : null;
+      if (x && x.status==='done' && !opts.force) return false;
+      if (x && x.status==='running' && now - (+x.lockAt||0) < MCHK_LOCK_MS && x.dev!==dev.id) return false;
+      tx.set(ref, {wk, status:'running', dev:dev.id, by:dev.lab, lockAt:now, at:(x && x.at) || 0}, {merge:true});
+      return true;
+    });
+    if (!got) return {ran:false, why:'already done or another device has the lock'};
+    // fresh data: upload this device's picks, run its normal learning step (bounded and logged as always)
+    try{ await mlogPush(); }catch(e){}
+    try{ if (typeof learnTick==='function') await learnTick(); }catch(e){ console.warn('model check learn', e); }
+    const from = mlogDay(now - 7*86400000), to = mlogDay(now - 86400000);
+    const rows = []; const qs = await db.collection('modelLog').where('d', '>=', from).get();
+    const seen = new Map();
+    qs.forEach(d=>{ const x = d.data(); if (!x || !x.r || x.d > to) return; for (const id in x.r){ const o = x.r[id]; const old = seen.get(id); if (!old || mlogRank(o) >= mlogRank(old)) seen.set(id, o); } });
+    for (const o of seen.values()) rows.push(o);
+    const S = mchkStats(rows);
+    const body = {wk, status:'done', at:Date.now(), dev:dev.id, by:dev.lab, from, to, logged:rows.length, graded:rows.filter(o=>o.res && o.res!=='ungradeable').length,
+      stats:S, findings:mchkFindings(S), changes:mchkChanges(now - 8*86400000), lockAt:now};
+    await ref.set(body);
+    MCHK.doc = body; MCHK.at = Date.now(); MCHK.ver++;
+    try{ console.info('model check done', wk, body.logged, body.graded); }catch(e){}
+    if (typeof ui!=='undefined' && ui.tab==='results') mchkRefresh();
+    return {ran:true, wk, logged:body.logged, graded:body.graded};
+  }catch(e){
+    MCHK.err = (e && (e.code||e.message)) || 'check failed'; console.warn('model check', MCHK.err);
+    try{ await ref.set({status:'failed', err:String(MCHK.err).slice(0, 200), lockAt:0}, {merge:true}); }catch(_){}
+    return {ran:false, why:MCHK.err};
+  }finally{ MCHK.busy = false; }
+}
+/* on every admin device: check every 30 min whether this week's check still needs doing */
+async function mchkMaybe(){
+  try{
+    if (!mlogOn() || MCHK.busy) return;
+    const d = await mchkRead(true);
+    if (d && d.wk===mchkWeek(Date.now()) && d.status==='done') return;
+    await mchkRun();
+  }catch(e){}
+}
+setTimeout(function mchkKick(){ if (mlogOn()) mchkMaybe(); else setTimeout(mchkKick, 60000); }, 120000);
+setInterval(()=>{ if (mlogOn()) mchkMaybe(); }, 30*60000);
+
+/* ---- Results card ---- */
+function mchkWhen(t){ try{ return new Date(+t).toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'}); }catch(e){ return ''; } }
+function mchkHTML(){
+  const head = `<div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">🩺</span>Weekly model check</h2><span class="hint">Runs once a week on one signed-in admin device. It checks the model against the last 7 days of graded picks; it doesn't change the model.</span></div>`;
+  const d = MCHK.doc;
+  if (!d || !d.at || d.status!=='done'){
+    const msg = MCHK.err ? `Couldn't reach the check log (${esc(String(MCHK.err))}).` : d && d.status==='running' ? 'This week\'s check is running now.' : 'No check has run yet. The first one runs within a few minutes on a signed-in admin device.';
+    return `<div class="card mr-card mchk-card">${head}<div class="hint">${msg}</div></div>`;
+  }
+  const BN = {games:'Games', props:'Props'};
+  const rows = [];
+  for (const b of ['games','props']) for (const v of ['good','watch','avoid']){
+    const s = (d.stats||{})[b+'|'+v]; if (!s) continue;
+    const T = {w:s.w, l:s.l, p:s.p, vd:0, pf:s.pf, st:s.st};
+    const est = s.est!=null && v!=='avoid' ? ` <span class="mut">· est ${Math.round(s.est*100)}%</span>` : '';
+    rows.push(mrRow(`${BN[b]} ${MLOG_VN[v]}`, T, v).replace('</div></div><span', `${est}</div></div><span`));
+  }
+  const ch = (d.changes||[]).length ? (d.changes||[]).map(c=>`<li><b>${esc(c.who)}</b> <span class="mut">${esc(mchkWhen(c.at))}</span> · ${esc(c.txt)}</li>`).join('') : '<li>No model settings changed this week.</li>';
+  const fd = (d.findings||[]).map(f=>`<li>${esc(f)}</li>`).join('');
+  return `<div class="card mr-card mchk-card">${head}
+    <div class="mchk-last"><b>Last model check:</b> ${esc(mchkWhen(d.at))} <span class="mut">· ${esc(String(d.by||''))} · ${(+d.graded||0).toLocaleString()} graded of ${(+d.logged||0).toLocaleString()} picks</span></div>
+    <div class="yb-grid">
+      <div class="v42-b yb-b"><h3>🔎 What it found</h3><ul class="mchk-ul">${fd}</ul></div>
+      <div class="v42-b yb-b"><h3>🛠️ What changed</h3><ul class="mchk-ul">${ch}</ul></div>
+      <div class="v42-b yb-b mchk-wide"><h3>📊 Last 7 days vs the model's estimate</h3>${rows.join('') || '<div class="hint">No graded picks in that week.</div>'}</div>
+    </div></div>`;
+}
+function mchkRefresh(){ const el = document.querySelector('#view .mchk-card'); if (!el) return; const t = document.createElement('div'); t.innerHTML = mchkHTML(); el.replaceWith(t.firstElementChild); }
+(function(){
+  try{
+    const base = renderResults;
+    renderResults = function(){
+      const out = base.apply(this, arguments);
+      try{
+        if (ui.tab==='results'){
+          const mr = document.querySelector('#view .mr-card:not(.mchk-card)');
+          if (mr && !document.querySelector('#view .mchk-card')) mr.insertAdjacentHTML('afterend', mchkHTML());
+          if (mlogOn() && (!MCHK.at || Date.now() - MCHK.at > 30*60000)) mchkRead(false).then(()=>mchkRefresh());
+        }
+      }catch(e){ console.warn('model check card', e); }
+      return out;
+    };
+  }catch(e){}
+  try{
+    const st = document.createElement('style');
+    st.textContent = `.mchk-last{font-size:13.5px;margin:0 0 12px;line-height:1.45}
+.mchk-ul{margin:0;padding-left:18px;font-size:13px;line-height:1.45}
+.mchk-ul li{margin:0 0 6px}
+.mchk-card .yb-grid{margin-top:0}
+@media (min-width:700px){ .mchk-card .yb-grid{grid-template-columns:repeat(2,minmax(0,1fr))} .mchk-card .mchk-wide{grid-column:1 / -1} }`;
+    document.head.appendChild(st);
+  }catch(e){}
+})();
+window.mchkStatus = () => ({week:mchkWeek(Date.now()), doc:MCHK.doc && {wk:MCHK.doc.wk, status:MCHK.doc.status, at:MCHK.doc.at, by:MCHK.doc.by, logged:MCHK.doc.logged, graded:MCHK.doc.graded}, err:MCHK.err, busy:MCHK.busy});
+
+/* v94: the Tracked universe card never silently disappears. If it can't be built on this device it shows why, and
+   when this device hasn't scanned anything yet it says so and points to the shared Model results. */
+(function(){
+  try{
+    if (typeof uniResultsHTML!=='function') return;
+    const base = uniResultsHTML;
+    const head = `<div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</span></div>`;
+    uniResultsHTML = function(){
+      let html = '';
+      try{ html = base.apply(this, arguments); }
+      catch(e){ window.__uniErr = String(e && (e.stack||e.message) || e).slice(0, 400); console.warn('tracked universe card', e);
+        return `<div class="card uni-card">${head}<div class="hint">This card couldn't be built on this device (${esc(String(e && e.message || e).slice(0, 120))}). The Model results above still include every device's picks.</div></div>`; }
+      try{
+        const local = (typeof UNI!=='undefined' ? UNI.size : 0) + (typeof UNI_SUM!=='undefined' ? UNI_SUM.size : 0);
+        let note = '';
+        if (typeof UNI_ST!=='undefined' && UNI_ST.idb===false) note = 'This browser blocked local storage, so this device can\'t keep its own tracking history. The Model results above still include every device\'s picks.';
+        else if (!local) note = 'This device hasn\'t tracked any markets yet (this card counts only what this device has scanned). The Model results above include every device\'s picks.';
+        if (note) html = html.replace('<div class="v42-grid">', `<div class="hint uni-local">${note}</div><div class="v42-grid">`);
+      }catch(e){}
+      return html;
+    };
+    const st = document.createElement('style'); st.textContent = '.uni-local{color:#fde68a;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.28);border-radius:10px;padding:7px 10px;margin:0 0 12px}'; document.head.appendChild(st);
+  }catch(e){}
+})();
 </script>
 </body>
 </html>
