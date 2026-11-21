@@ -1436,6 +1436,18 @@ th,.k,.kpi .k,.trk-kpi .k{overflow-wrap:normal !important;word-break:normal !imp
 @media (max-width:440px){ .mkt-table td{padding:6px 3px} .mkt-table td:first-child{width:54px;letter-spacing:.03em} .mkt-table .badge{font-size:10.5px;padding:2px 7px;gap:3px;min-height:0} .mkt-table td:nth-child(2) div{white-space:normal !important} .mkt-table td:nth-child(2) b{white-space:nowrap} }
 input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
 .ui-edge-track>i.mid{background:linear-gradient(90deg,#b45309,#f59e0b)}
+.fca{margin-top:2px}.fca>summary{font-weight:800}
+.fca-body{display:grid;gap:12px;margin-top:10px;min-width:0}.fca-body>*{min-width:0}
+.fca-sec{border:1px solid var(--line);border-radius:var(--ui-rad,12px);padding:10px 12px;background:rgba(15,23,42,.35);display:grid;gap:8px;min-width:0}
+.fca-h{font-size:11.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--acc-hi)}
+.fca-more{margin:0}.fca-gloss{margin:0;padding-left:18px;display:grid;gap:4px;font-size:12.5px;color:var(--txt2)}.fca-gloss b{color:var(--txt)}
+.fca-odds-row{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px}.fca-odds-row>span{white-space:normal;min-width:0}.fca-odds-row b{white-space:nowrap}.fca-move{font-size:12.5px}
+.fca-cov{display:grid;gap:4px;font-size:12.5px}.fca-body .p10,.fca-body table{max-width:100%}
+.nw{white-space:nowrap}
+.oc{display:inline-flex;flex-wrap:wrap;column-gap:5px;row-gap:1px}
+@media (max-width:420px){.mu-table .oc{font-size:11px;letter-spacing:-.1px}.mu-table td:first-child{max-width:68px}}
+.ftab.prop-stats.kv{display:table}.ftab.prop-stats.kv td{min-width:0 !important;white-space:normal}.ftab.prop-stats.kv td:first-child{color:var(--mut,#9aa4b2);width:62%}.ftab.prop-stats.kv td:last-child{text-align:right;font-weight:700;white-space:nowrap}
+.ui-edge-lab .r{text-align:right}
 </style>
 </head>
 <body>
@@ -2581,6 +2593,16 @@ function fmtPx(am, c){
   return fmtCents(cc)+' / '+fmtAmRaw(a);
 }
 const fmtAm = a => fmtPx(a);
+// v80: cents plus American odds, e.g. "91¢ (-1,011)" / "14¢ (+614)" (Additional stats)
+function fmtPxBoth(am, c){
+  const a = (am==null || am==='' || !isFinite(+am)) ? null : +am;
+  const cc = (c!=null && isFinite(+c)) ? +c : (a!=null ? imp(a) : null);
+  if (a==null && cc==null) return '—';
+  const a2 = a!=null ? a : (cc>0 && cc<1 ? (cc>=0.5 ? -100*cc/(1-cc) : 100*(1-cc)/cc) : null);
+  const r = a2==null ? null : Math.round(a2);
+  const amS = r==null ? '' : (r>0?'+':r<0?'-':'')+Math.abs(r).toLocaleString('en-US');
+  return cc==null ? amS : (amS ? fmtCents(cc)+' ('+amS+')' : fmtCents(cc));
+}
 // value pre-filled into the tail form: cents when only prediction markets are selected, American otherwise
 function tailOddsDefault(am, c){
   if (pxMode()==='c'){ const cc = c!=null ? +c : imp(+am); if (cc!=null && cc>0 && cc<1) return {oddsType:'polymarket', odds:String(Math.round(cc*100))}; }
@@ -4086,10 +4108,10 @@ function betOnText(p){
   if (r.none){
     const hint = (!NO_ODDS_KEY && my && my.required) ? ' (add an Odds API key in Settings to see your sportsbooks)' : '';
     const ref = sd && sd.best && sd.best.price!=null ? sd.best.price : null;
-    return {line: ref!=null ? worthLine(`Best price ${fmtAm(ref)}`, estP, imp(ref)) : `Worth about ${fmtAm(Math.round(fair))}`, max:`Reference line · ${refTxt}`, ok:false, none:true};
+    return {line: ref!=null ? worthLine(`Best price ${fmtAm(ref)}`, estP, imp(ref)) : `Worth about ${fmtAm(Math.round(fair))}`, max:'Reference line (not on your book)', ok:false, none:true};
   }
   const line = (r.pm ? `Buy ${p.mk==='ml'?'YES on '+sideName:sideName} on ${r.book} at ${fmtPx(r.price, r.cents)}` : `Bet on: ${r.book} at ${fmtAm(r.price)}`) + missingBovadaHint(my);
-  return {line: worthLine(line, estP, r.cost), max: refTxt.charAt(0).toUpperCase()+refTxt.slice(1), ok:(estP - r.cost)>=0, thin:r.thin, rec:r};
+  return {line: worthLine(line, estP, r.cost), max: '', ok:(estP - r.cost)>=0, thin:r.thin, rec:r};
 }
 
 /* ================= POLYMARKET (public API, no key) ================= */
@@ -5487,7 +5509,8 @@ function histForTeam(lg, teamId){
   return teamHist[lg+':'+teamId] || null;
 }
 function naCell(why){ return {html:`<span class="mut tip" title="${String(why||'').replace(/"/g,'')}">n/a</span>`, txt:null}; }
-function loadingCell(why){ return {html:`<span class="mut tip loading-rec" title="${String(why||'Loading past moneylines…').replace(/"/g,'')}">loading records…</span>`, txt:null, loading:true}; }
+var ODDS_HIST_T0 = 0;
+function loadingCell(why){ const t0 = ODDS_HIST_T0 || (typeof PAGE_STARTED!=='undefined' ? PAGE_STARTED : Date.now()); if (Date.now() - t0 > 45000) return {html:'<span class="mut tip" title="Past moneylines for this team have not loaded yet">No record yet</span>', txt:null}; return {html:`<span class="mut tip loading-rec" title="${String(why||'Loading past moneylines…').replace(/"/g,'')}">loading records…</span>`, txt:null, loading:true}; }
 function favDogCell(hist, todayML, status){
   if (status==='unavailable') return naCell('ESPN did not post historical moneylines for this sport');
   if (status==='empty' && (!hist || !(hist.games))) return naCell('No completed games with moneylines yet this season');
@@ -5552,7 +5575,7 @@ function histTeamRank(tm){
   return band*1e16 + t;
 }
 async function loadOddsHistory(){
-  if (oddsHistBusy) return; oddsHistBusy = true;
+  if (oddsHistBusy) return; oddsHistBusy = true; if (!ODDS_HIST_T0) ODDS_HIST_T0 = Date.now();
   try{
     const pre = (typeof games!=='undefined' && games) ? games.filter(g=>g && g.state==='pre' && g.league && (g.home&&g.home.id || g.away&&g.away.id) && corePath(g.league)) : [];
     const teams = [];
@@ -6257,21 +6280,21 @@ function courtModel(p){
 }
 function courtroomHTML(p, C){
   C = C || courtModel(p);
-  const li = x => `<li><span>${esc(x.txt)}</span></li>`;
   const cls = C.J==='BET'?'b-good':C.J==='MAYBE LATER'?'b-watch':'b-avoid';
-  const wr = C.wr || hitRateFor(C.P && C.P.am, p.g && p.g.league, p.mk);
   const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]};
-  return `<div class="court2">
-    ${chanceBarHTML(p, C)}
-    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win,'win','Nothing clear is leaning this way.')}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(DD.lose,'lose','No red flags recorded.')}</ul></div>
-    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
-      <div class="c-sent">${esc(C.sentence)}</div>
-      ${uiEdgeBarHTML(C.E&&C.E.final, C.P&&C.P.need)}
-      ${unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game")}</div>
-    ${matchupTableHTML(p, C)}
-    ${marginChartsHTML(p)}
-  </div>`;
+  const g = p.g || {};
+  const have = ['last 5 and last 10 form', 'points scored and allowed', 'offense and defense ranks', 'home and road records', 'rest days', 'line movement'];
+  if (g.inj || (g.fx && g.fx.inj) || /without|missing|\(out/i.test(JSON.stringify(DD))) have.unshift('injury report');
+  const lack = ['pace', 'shooting %', 'rebounds and turnovers', 'travel', 'coaching news'];
+  return uiCourtroomHTML({
+    chanceHTML: chanceBarHTML(p, C), win: DD.win, lose: DD.lose,
+    judgeHTML: `<span class="ct">The Judge says</span> <span class="badge ${cls}">${C.J}</span> ${p.j&&p.j.conf?confDots(p.j.conf.v, C.J||p.verdict):''}`,
+    sentence: C.sentence, edgeHTML: uiEdgeBarHTML(C.E&&C.E.final, C.P&&C.P.need),
+    unitHTML: unitJudgeLineHTML(Object.assign({}, p, {p:C&&C.E?C.E.final:p.p}), "game"),
+    fullHTML: `${matchupTableHTML(p, C)}${marginChartsHTML(p)}`, ddKey: (p.id||'')+'|stats', gid: g.id!=null ? String(g.id) : '',
+    odds: C.P ? {am:C.P.am, openAm: uiOpenFor(g, p.mk, p.side), est: C.E&&C.E.final, ref: !!C.P.ref} : null,
+    coverage: {have, lack}
+  });
 }
 function chanceCaptionHTML(C){
   return ''; // v79: no 'odds imply' caption under the win-chance bar
@@ -6328,13 +6351,15 @@ function matchupTableHTML(p, C){
   const mv = lineMovePlain(p, p.side==='away'?A.short:H.short);
   const openTxt = sd && sd.openTxt;
   let openAway = 'n/a', openHome = 'n/a', nowAway='n/a', nowHome='n/a';
-  nowAway = awayNow && awayNow.price!=null ? fmtAm(awayNow.price) : 'n/a';
-  nowHome = homeNow && homeNow.price!=null ? fmtAm(homeNow.price) : 'n/a';
-  // we often only have the open string for the picked side
-  if (openTxt && p.side==='away') openAway = openTxt.replace(/\s*\(.*\)/,'').trim();
-  else if (openTxt && p.side==='home') openHome = openTxt.replace(/\s*\(.*\)/,'').trim();
-  const openCell = (o, n) => (o==='n/a' && n==='n/a') ? '<span class="mut">n/a</span>' : `${esc(o)} → <b>${esc(n)}</b>`;
-  rows.push(`<tr><td class="k">Open → now</td>${cell(openCell(openAway, nowAway))}${cell(openCell(openHome, nowHome))}</tr>`);
+  nowAway = awayNow && awayNow.price!=null ? fmtPxBoth(awayNow.price) : 'n/a';
+  nowHome = homeNow && homeNow.price!=null ? fmtPxBoth(homeNow.price) : 'n/a';
+  // v80: opening price per side (cents + American); when there's no real opening price show just the current one
+  { const oA = typeof uiOpenFor==='function' ? uiOpenFor(g, p.mk, 'away') : null, oH = typeof uiOpenFor==='function' ? uiOpenFor(g, p.mk, 'home') : null;
+    if (oA!=null) openAway = fmtPxBoth(oA); if (oH!=null) openHome = fmtPxBoth(oH);
+    // the picked side shows the same price the courtroom uses (your book), so the table and "The odds" agree
+    if (p.mk==='ml' && C && C.P && C.P.am!=null && !C.P.ref){ if (p.side==='away') nowAway = fmtPxBoth(C.P.am); else nowHome = fmtPxBoth(C.P.am); } }
+  const openCell = (o, n) => (n==='n/a') ? '<span class="mut">n/a</span>' : (o==='n/a' || o===n) ? `<b>${esc(n)}</b>` : `<span class="oc"><span class="mut nw">${esc(o)}</span><span class="nw">→ <b>${esc(n)}</b></span></span>`;
+  rows.push(`<tr><td class="k">${(openAway!=='n/a'||openHome!=='n/a')?'Open → now':'Price now'}</td>${cell(openCell(openAway, nowAway))}${cell(openCell(openHome, nowHome))}</tr>`);
 
   const ra = slateRanks(g.league);
   if (ra && ra.n>=8 && ra.byId[String(A.id)] && ra.byId[String(H.id)]){
@@ -6582,7 +6607,7 @@ function softRender(){ // live update without wiping forms on Tracker/Settings
     if (ui.tab==='picks' && typeof PK!=='undefined' && PK.ran && !PK.busy && document.activeElement && document.activeElement.id!=='pkText' && typeof renderPicks==='function') renderPicks();
     return;
   }
-  const y = window.scrollY; render(); window.scrollTo(0, y);
+  render(); // v80: render() keeps the card in view anchored (see 32_v77.js)
 }
 function updateOddsPill(){
   const d=$('#dotOdds'), t=$('#oddsTxt');
@@ -6741,7 +6766,7 @@ function playCard(p){
     ${move?`<div class="${move.kind==='up'?'moved-up':'moved-down'}">${esc(move.text)}</div>`:''}
     <div class="pick"><div><div class="mk">${MKN[p.mk]}${p.rank?` · #${p.rank}`:''}</div><div class="what">${esc(p.label)}</div></div>
       ${recPriceHTML(p, bo)}</div>
-    <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div>${uiValueBarHTML(C.E&&C.E.final, (bo.rec&&bo.rec.cost!=null)?bo.rec.cost:(sd.best&&sd.best.price!=null?imp(sd.best.price):null))}<div class="mut">${esc(bo.max)}</div>${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
+    <div class="beton ${C.P.edge>=0?'ok':'bad'}"><div>${esc(bo.line)}</div>${uiValueBarHTML(C.E&&C.E.final, (bo.rec&&bo.rec.cost!=null)?bo.rec.cost:(sd.best&&sd.best.price!=null?imp(sd.best.price):null))}${bo.max?`<div class="mut">${esc(bo.max)}</div>`:''}${pmq&&pmq.thin?'<div class="neg">Thin Polymarket market: wide gap or little money</div>':''}</div>
     ${S.strictMode && p.verdict!=='good' && p.strictFails && p.strictFails.length ? (()=>{ const f = p.strictFails.slice().sort((a,b)=>(/^excluded/.test(b)?1:0)-(/^excluded/.test(a)?1:0)); return /^excluded/.test(f[0]) ? `<div class="hint" style="margin:6px 2px 0"><b>No picks for this sport</b> (turned off in Settings)</div>` : ''; })() : ''}
     ${typeof wrLineHTML==='function'?wrLineHTML(p, C):''}
     ${lazy(cid, '⚖️ Courtroom', 'court', courtBody, ' court-dd')}
@@ -9059,13 +9084,15 @@ ${resultBan}
     </div>
     ${resultBan}
     ${research || `<details class="dd court-dd" data-dd="verdict|${i}|court" ${ui.open.has('verdict|'+i+'|court')?'open':''}><summary>⚖️ Courtroom</summary>
-    <div class="court2">
-      ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win.filter(x=>uiCleanTxt(x&&x.txt!=null?x.txt:x)).slice(0,4),'win')}</ul></div>
-      <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(DD.lose.filter(x=>uiCleanTxt(x&&x.txt!=null?x.txt:x)).slice(0,4),'lose')}`; })()}${leg.p!=null?uiReasonLi('No side wins every night — even a good look will lose sometimes','lose'):''}</ul></div>
-      <div class="c-judge"><div><span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf, leg.verdict):''}</div>
-        <div class="c-sent">${esc(legJudgeText(leg))}</div>${uiEdgeBarHTML(leg.p, leg.implied)}${unitJudgeLineHTML(leg, leg.L&&leg.L.kind==='prop'?"prop":"game")}
-        </div>
-    </div></details>`}
+    ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(legSort(leg.yes,1), legSort(leg.no,-1)) : {win:legSort(leg.yes,1), lose:legSort(leg.no,-1)};
+      const isProp = leg.L && leg.L.kind==='prop';
+      const mk = leg.L && leg.L.kind, sd = leg.side;
+      return uiCourtroomHTML({ win: DD.win, lose: DD.lose,
+        judgeHTML: `<span class="ct">The Judge says</span> ${verdictBadge(leg.verdict)} ${leg.conf!=null?confDots(leg.conf, leg.verdict):''}`,
+        ddKey: 'verdict|'+i+'|stats', gid: leg.g && leg.g.id!=null ? String(leg.g.id) : '', sentence: legJudgeText(leg), edgeHTML: uiEdgeBarHTML(leg.p, leg.implied), unitHTML: unitJudgeLineHTML(leg, isProp?"prop":"game"),
+        odds: leg.price!=null ? {am:leg.price, openAm: (!isProp && leg.g && (mk==='ml'||mk==='spread'||mk==='total')) ? uiOpenFor(leg.g, mk, sd) : null, est:leg.p, ref: leg.userOdds==null && !!leg.noBook} : null,
+        coverage: isProp ? {have:['last 5 and last 10 games','season average','home and road splits','minutes'], lack:['usage rate','projected lineups']} : {have:['last 5 and last 10 form','points scored and allowed','offense and defense ranks','home and road records','rest days','line movement'], lack:['pace','shooting %','travel','coaching news']} }); })()}
+    </details>`}
     ${!research ? `<details class="dd" data-dd="verdict|${i}|math" ${ui.open.has('verdict|'+i+'|math')?'open':''}><summary>📐 Nerd stats / Show the math</summary><div style="margin-top:6px">
       ${leg.E?`<table class="ftab"><tr><th>Step</th><th>Change</th><th>Running</th><th>How</th></tr><tr><td>Start: ${esc(leg.E.src)}</td><td></td><td>${fmtPct(leg.E.start)}</td><td></td></tr>${(()=>{ let run=leg.E.start; return leg.E.steps.map(x=>{ run+=x.dp; return `<tr><td>${esc(x.key)}</td><td class="${x.dp>0?'pos':x.dp<0?'neg':'mut'}">${fmtEdge(x.dp)}</td><td>${fmtPct(run)}</td><td class="mut">${esc(x.math||'')}</td></tr>`; }).join(''); })()}<tr><td><b>Final</b></td><td></td><td><b>${fmtPct(leg.p)}</b></td><td></td></tr></table>`:''}
       <div class="hint">${esc(leg.formula||'—')}</div>
@@ -10784,12 +10811,14 @@ function propStatTableHTML(p){
   const f = p.feat||{};
   const cell = (v) => v==null||v==='' ? '<span class="mut">n/a</span>' : v;
   const pct = (r,n) => (r==null||!n) ? 'n/a' : `${Math.round(r*n)}/${n}`;
-  return `<table class="ftab prop-stats" style="margin-top:10px">
-    <tr><td>L5 avg</td><td>${cell(f.l5avg!=null?f.l5avg.toFixed(1):null)}</td><td>L10 avg</td><td>${cell(f.l10avg!=null?f.l10avg.toFixed(1):null)}</td></tr>
-    <tr><td>Season avg</td><td>${cell(f.seasonAvg!=null?f.seasonAvg.toFixed(1):null)}</td><td>Hit rate L10</td><td>${cell(pct(f.l10hit,f.l10n))}</td></tr>
-    <tr><td>Minutes L5 / Szn</td><td>${cell(f.minL5!=null && f.minSzn!=null ? f.minL5.toFixed(1)+' / '+f.minSzn.toFixed(1) : null)}</td><td>Home / Away</td><td>${cell(f.splitN? ((p.home?'Home':'Away')+' '+pct(f.splitHit,f.splitN)) : null)}</td></tr>
-    <tr><td>Vs opp</td><td>${cell(f.h2hn?pct(f.h2hhit,f.h2hn):null)}</td><td>Rest</td><td>${cell(f.rest==null?null:f.rest<=1?'B2B / 1 day':f.rest+' days')}</td></tr>
-  </table>`;
+  // v80: one stat per row (label | value) so it never squeezes at 360px
+  const rows = [
+    ['Last 5 avg', f.l5avg!=null?f.l5avg.toFixed(1):null], ['Last 10 avg', f.l10avg!=null?f.l10avg.toFixed(1):null],
+    ['Season avg', f.seasonAvg!=null?f.seasonAvg.toFixed(1):null], ['Hit rate, last 10', f.l10n?pct(f.l10hit,f.l10n):null],
+    ['Minutes (last 5 / season)', f.minL5!=null && f.minSzn!=null ? f.minL5.toFixed(1)+' / '+f.minSzn.toFixed(1) : null],
+    [p.home?'Hit rate at home':'Hit rate on the road', f.splitN?pct(f.splitHit,f.splitN):null],
+    ['Vs this opponent', f.h2hn?pct(f.h2hhit,f.h2hn):null], ['Rest', f.rest==null?null:f.rest<=1?'B2B / 1 day':f.rest+' days']];
+  return `<table class="ftab prop-stats kv" style="margin-top:10px">${rows.map(r=>`<tr><td>${r[0]}</td><td>${cell(r[1])}</td></tr>`).join('')}</table>`;
 }
 function propCourtroomHTML(p){
   const C = p.C || {};
@@ -10806,17 +10835,18 @@ function propCourtroomHTML(p){
   const cls = C.J==='BET'?'b-good':C.J==='MAYBE LATER'?'b-watch':'b-avoid';
   const be = p.implied, est = p.p;
   const wr = '';   // v55: break-even line removed (Stanley)
-  return `<div class="court2">
-    ${bar}
-    ${(()=>{ const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]}; return `<div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(DD.win,'win','Nothing clear is leaning this way yet.')}</ul></div>
-    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(DD.lose,'lose','No red flags recorded.')}</ul></div>`; })()}
-    <div class="c-judge"><div><span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span> ${p.j&&p.j.conf&&typeof confDots==='function'?confDots(p.j.conf.v, C.J||p.verdict):''}</div>
-      <div class="c-sent">${esc(C.sentence||'')}</div>
-      ${uiEdgeBarHTML(p.p, p.implied, p.side==='under'?'Under':'Over')}
-      ${unitJudgeLineHTML(p,"prop")}</div>
-    ${propStatTableHTML(p)}
-    ${l10PropChartHTML(p)}
-  </div>`;
+  const DD = typeof dedupeWinLose==='function' ? dedupeWinLose(C.win||[], C.lose||[]) : {win:C.win||[], lose:C.lose||[]};
+  const have = ['last 5 and last 10 games', 'season average', 'home and road splits', 'minutes', 'rest days', 'blowout risk'];
+  if (p.feat && p.feat.h2hn) have.push('games vs this opponent');
+  return uiCourtroomHTML({
+    chanceHTML: bar, win: DD.win, lose: DD.lose,
+    judgeHTML: `<span class="ct">The Judge says</span> <span class="badge ${cls}">${esc(C.J||'SKIP')}</span> ${p.j&&p.j.conf&&typeof confDots==='function'?confDots(p.j.conf.v, C.J||p.verdict):''}`,
+    sentence: C.sentence, edgeHTML: uiEdgeBarHTML(p.p, p.implied, p.side==='under'?'Under':'Over'),
+    unitHTML: unitJudgeLineHTML(p,"prop"),
+    fullHTML: `${propStatTableHTML(p)}${l10PropChartHTML(p)}`, ddKey: (p.id||'')+'|stats',
+    odds: p.price!=null ? {am:p.price, openAm:null, est:p.p} : null,
+    coverage: {have, lack:['usage rate', 'projected lineups', 'opponent defense vs position', 'travel']}
+  });
 }
 function propNumbersHTML(p){
   const f = p.feat||{};
@@ -10880,8 +10910,8 @@ function propCard(p){
   const recLine = (p.price==null || !rec) ? '' : (rec.none && p.pmNote)
     ? `<div class="beton"><div>Bet on: ${esc(typeof bookLabelOf==='function'?bookLabelOf(p.pmNote.book):p.pmNote.book)} <span class="mut av-differ">· Polymarket line may differ</span></div><div class="mut">${fairAm!=null?`Worth about ${esc(fmtAm(Math.round(fairAm)))} · `:''}reference line from ${esc(propRefLabel(p))}</div></div>`
     : rec.none
-    ? `<div class="beton ${(p.p!=null && p.price!=null && p.p-imp(p.price)>=0)?'ok':'bad'}"><div>${esc(p.price!=null ? worthLine(`Best price ${fmtAm(p.price)}`, p.p, imp(p.price)) : 'No price yet')}</div>${p.price!=null?uiValueBarHTML(p.p, imp(p.price)):''}<div class="mut">Reference line · fair line from ${esc(propRefLabel(p))}</div></div>`
-    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(worthLine(rec.pm?`Buy on ${rec.book} at ${fmtPx(rec.price, rec.cents)}`:`Bet on ${rec.book} at ${fmtAm(rec.price)}`, p.p, rec.cost))}</div>${uiValueBarHTML(p.p, rec.cost)}<div class="mut">Fair line from ${esc(propRefLabel(p))}</div></div>`;
+    ? `<div class="beton ${(p.p!=null && p.price!=null && p.p-imp(p.price)>=0)?'ok':'bad'}"><div>${esc(p.price!=null ? worthLine(`Best price ${fmtAm(p.price)}`, p.p, imp(p.price)) : 'No price yet')}</div>${p.price!=null?uiValueBarHTML(p.p, imp(p.price)):''}<div class="mut">Reference line (not on your book)</div></div>`
+    : `<div class="beton ${(p.p!=null && p.p-rec.cost>=0)?'ok':'bad'}"><div>${esc(worthLine(rec.pm?`Buy on ${rec.book} at ${fmtPx(rec.price, rec.cents)}`:`Bet on ${rec.book} at ${fmtAm(rec.price)}`, p.p, rec.cost))}</div>${uiValueBarHTML(p.p, rec.cost)}</div>`;
   const lazy = (id, sum, kind, body) => {
     const open = ui.open.has(id);
     return `<details class="dd${kind==='court'?' court-dd':''}" data-dd="${esc(id)}" data-lazy="${kind}" data-lazy-id="${esc(p.id)}" ${open?'open':''}><summary>${sum}</summary>${open?body:''}</details>`;
@@ -18109,7 +18139,7 @@ function uiColorNums(html){
 }
 function uiReasonLi(x, side){
   const raw = uiCleanTxt((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x);
-  if (!raw) return '';
+  if (!raw || (typeof UI_NOISE!=='undefined' && UI_NOISE.test(raw))) return '';
   const tag = (x && typeof x==='object' && x.tag && / /.test(x.tag) && !/^rule points|^context$/i.test(x.tag)) ? x.tag : '';
   const P = uiReasonParts(raw);
   const sideCls = side==='lose' ? 'lose' : side==='win' ? 'win' : 'neu';
@@ -18201,7 +18231,7 @@ function betStrengthPillHTML(conf, verdict){
 var UI_PRICEISH = /no side wins every night|priced this|prediction markets|break-?even|odds pay|odds imply|implied|the price|price is|prices? (?:stays?|built)|wins in 10|fair shake|overpay|asked to be right|at your [+−-]?\d|juice|we couldn'?t get|haven'?t loaded|not loaded|nothing (measurable|clear)|no red flags|not enough history|app record|ranking-only/i;
 function uiFactorText(x, who){
   let t = uiCleanTxt((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x || '').trim();
-  if (!t || UI_PRICEISH.test(t)) return '';
+  if (!t || UI_PRICEISH.test(t) || (typeof UI_NOISE!=='undefined' && UI_NOISE.test(t))) return '';
   t = t.replace(/\s*\((?:see Matchup|burden [^)]*|worth about[^)]*|rule points[^)]*|can't be measured[^)]*)\)\s*/gi, ' ').replace(/\s+/g,' ').trim();
   let m;
   if ((m = t.match(/^Last (\d+): (over|under) in (\d+) of (\d+)(.*)$/i))) t = `${m[2].toLowerCase()} in ${m[3]} of the last ${m[4]}${m[5]}`;
@@ -18255,6 +18285,183 @@ function uiCleanTxt(t){
 }
 var UI_NEUTRAL_WHY = 'Nothing in the recent numbers clearly favors this side.';
 function uiPullWhy(t){ const c = uiCleanTxt(String(t||'').replace(/^Strict mode: missed\s*/i,'')); return c || 'the case for it got weaker'; }
+
+/* ===== v80 courtroom layout: top 3 reasons per side, concise Judge, everything else in "Full Courtroom Analysis" ===== */
+var UI_NOISE = /no side wins every night|even a good look will lose|\bvariance\b|swing a lot game to game|less predictable than it looks|cold shooting night|hot shooting night|foul trouble|slow pace or a cold|normal game variance|only (?:one book|\w+) priced|priced (?:it|this)|reference line|fair line from|prediction markets checked|we couldn'?t get|haven'?t loaded|not loaded yet|still loading|rule engine|missing\/uncertain|no factor supports|nothing measurable|book(?:s)? (?:disagree|agree)|one book/i;
+function uiReasonOk(x){ const t = uiCleanTxt((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x); return !!t && !UI_NOISE.test(t); }
+// the 3 strongest reasons: keep the model's ranking, but prefer rows that carry a real number
+function uiTop3(list){
+  const ok = (list||[]).filter(uiReasonOk);
+  const num = x => /\d/.test(String((x && typeof x==='object') ? (x.txt!=null ? x.txt : x.t) : x));
+  const top = ok.filter(num).slice(0,3);
+  for (const x of ok){ if (top.length>=3) break; if (!top.includes(x)) top.push(x); }
+  return {top, rest: ok.filter(x=>!top.includes(x))};
+}
+var UI_GLOSSARY = [
+  [/offense|offensive/i, 'Offense rank', 'how many points a team scores compared with the other teams (1st = scores the most).'],
+  [/defense|defensive/i, 'Defense rank', 'how few points a team allows (1st = allows the fewest).'],
+  [/last 5|last 10/i, 'Last 5 / last 10', 'the team’s or player’s most recent games, which show current form better than the season average.'],
+  [/blowout/i, 'Blowout risk', 'the chance the game gets lopsided, so starters sit late and stats come in low.'],
+  [/back-to-back|short rest|days of rest|rest/i, 'Rest', 'days off before this game; a back-to-back (games on consecutive days) usually means tired legs.'],
+  [/line (?:has )?(?:steamed|moved)|since open/i, 'Line movement', 'how the betting line changed since it opened; it moves when big money comes in on one side.'],
+  [/spread|favored by|favorites/i, 'Spread', 'how many points the favorite is expected to win by.'],
+  [/total|over|under/i, 'Total (over/under)', 'the combined points both teams are expected to score.'],
+  [/minutes/i, 'Minutes', 'playing time; more minutes usually means bigger stat lines.'],
+  [/home|road|away/i, 'Home / road split', 'how the team or player does at home versus on the road.'],
+];
+function uiGlossaryHTML(txt){
+  const rows = UI_GLOSSARY.filter(([re])=>re.test(txt)).slice(0,6);
+  if (!rows.length) return '';
+  return `<div class="fca-sec"><div class="fca-h">What these terms mean</div><ul class="fca-gloss">${rows.map(([,k,v])=>`<li><b>${esc(k)}</b>: ${esc(v)}</li>`).join('')}</ul></div>`;
+}
+// small odds row (only inside the full analysis): current vs opening odds, what moved, $25 profit, read vs break-even
+function uiOddsRowHTML(o){
+  if (!o || o.am==null || !isFinite(+o.am)) return '';
+  const am = +o.am, win25 = am>0 ? 25*am/100 : 25*100/Math.abs(am);
+  const fmt$ = v => '$'+v.toFixed(2);
+  let move = '';
+  if (o.openAm!=null && isFinite(+o.openAm) && Math.round(+o.openAm)!==Math.round(am)){
+    const d = imp(am) - imp(+o.openAm), w0 = +o.openAm>0 ? 25*(+o.openAm)/100 : 25*100/Math.abs(+o.openAm);
+    move = Math.abs(d) < 0.015 ? `Barely moved since it opened at ${fmtPxBoth(+o.openAm)}.`
+      : d > 0 ? `Opened at ${fmtPxBoth(+o.openAm)}. The market now sees this side as more likely, so the payout shrank (a $25 bet would have won ${fmt$(w0)} at the open).`
+      : `Opened at ${fmtPxBoth(+o.openAm)}. The market has cooled on this side, so it pays more now (a $25 bet would have won ${fmt$(w0)} at the open).`;
+  }
+  const need = imp(am), est = o.est;
+  const bar = (est!=null && isFinite(est)) ? `<div class="ui-edge fca-edge"><div class="ui-edge-lab"><span class="l">Our read <b>${fmtPct(est,0)}</b></span><span></span><span class="r">Break-even <b>${fmtPct(need,0)}</b></span></div><div class="ui-edge-track"><i class="${est>=need?'pos':'neg'}" style="width:${(Math.max(0,Math.min(1,est))*100).toFixed(1)}%"></i><span class="ui-edge-need" style="left:${(need*100).toFixed(1)}%"></span></div></div>` : '';
+  return `<div class="fca-sec fca-odds"><div class="fca-h">💵 The odds</div>
+    <div class="fca-odds-row"><span>Now <b>${esc(fmtPxBoth(am))}</b>${o.ref?' <span class="mut">(reference, not on your book)</span>':''}</span><span>$25 wins <b>${fmt$(win25)}</b></span></div>
+    ${move?`<div class="mut fca-move">${esc(move)}</div>`:''}${bar}</div>`;
+}
+function uiOpenFor(g, mk, side){
+  try{ const qs = (g && g.quotes && g.quotes[mk] && g.quotes[mk][side]) || []; const q = qs.find(q=>q && q.openPrice!=null && !q.openIsFirstSeen && (mk==='ml' || q.openPoint==null || q.openPoint===q.point)); return q ? q.openPrice : null; }catch(e){ return null; }
+}
+/* o: {win, lose, judgeHTML, sentence, edgeHTML, unitHTML, chanceHTML, fullHTML, odds, coverage:{have:[], lack:[]}, extraWin, extraLose} */
+function uiCourtroomHTML(o){
+  const W = uiTop3(o.win), L = uiTop3(o.lose);
+  const fullTxt = [].concat(W.top, W.rest, L.top, L.rest).map(x=>(x && x.txt) || x || '').join(' ') + ' ' + (o.sentence||'');
+  const more = (W.rest.length || L.rest.length) ? `<div class="fca-sec"><div class="fca-h">More of the case</div>
+      ${W.rest.length?`<div class="c-col win fca-more"><div class="ct">✅ Also for it</div><ul>${uiReasonList(W.rest,'win')}</ul></div>`:''}
+      ${L.rest.length?`<div class="c-col lose fca-more"><div class="ct">⚠️ Also against it</div><ul>${uiReasonList(L.rest,'lose')}</ul></div>`:''}</div>` : '';
+  const cov = o.coverage ? `<div class="fca-sec"><div class="fca-h">What we checked</div><div class="fca-cov"><span class="pos">✓ ${esc(o.coverage.have.join(', '))}</span>${o.coverage.lack&&o.coverage.lack.length?`<span class="mut">Not available yet: ${esc(o.coverage.lack.join(', '))}</span>`:''}</div></div>` : '';
+  return `<div class="court2">
+    ${o.chanceHTML||''}
+    <div class="c-col win"><div class="ct">✅ Why this could win</div><ul>${uiReasonList(W.top,'win')}</ul></div>
+    <div class="c-col lose"><div class="ct">⚠️ Why this could lose</div><ul>${uiReasonList(L.top,'lose','No major red flags in the numbers we have.')}</ul></div>
+    <div class="c-judge"><div>${o.judgeHTML||''}</div>
+      <div class="c-sent">${esc(o.sentence||'')}</div>
+      ${o.edgeHTML||''}${o.unitHTML||''}</div>
+    <details class="dd fca"${o.ddKey?` data-dd="${esc(o.ddKey)}" ${ui.open.has(o.ddKey)?'open':''}`:''}${o.gid?` data-gid="${esc(o.gid)}"`:''}><summary>📊 Additional stats</summary><div class="fca-body">
+      ${more}${o.fullHTML||''}${uiOddsRowHTML(o.odds)}${cov}${uiGlossaryHTML(fullTxt)}
+    </div></details>
+  </div>`;
+}
+
+/* ===== v80: scroll-jump fix (Stanley: "the mobile app sometimes goes back to the top for no reason when scrolling down").
+   Root cause: background data refreshes (team-matchup prefetch + availability check every 60s, prop/enrich loads,
+   live ticks) call softRender(), which rebuilt the whole #view and then did window.scrollTo(0, oldY). With lazy cards
+   (content-visibility:auto) the rebuilt page is briefly shorter/differently sized, so oldY got clamped or landed on a
+   different card, and on iPhone a programmatic scrollTo during momentum scrolling snaps the page. Several other
+   background paths called render() with no scroll restore at all.
+   Fix: every render keeps the card you are looking at in the same spot (anchor by card, not by pixel), and background
+   refreshes wait until you stop touching/scrolling. Explicit tab changes still scroll to the top (they call scrollTo after). */
+var UI_SCROLL = {lastMove:0, touching:false, pending:false, timer:null, hold:null, expectY:-1};
+function uiUserScroll(){ UI_SCROLL.hold = null; UI_SCROLL.lastMove = Date.now(); }
+addEventListener('scroll', ()=>{ if (Math.abs((window.scrollY||0) - UI_SCROLL.expectY) < 2) return; UI_SCROLL.lastMove = Date.now(); }, {passive:true});
+addEventListener('touchstart', ()=>{ UI_SCROLL.touching = true; uiUserScroll(); }, {passive:true});
+addEventListener('touchend', ()=>{ UI_SCROLL.touching = false; UI_SCROLL.lastMove = Date.now(); }, {passive:true});
+addEventListener('touchcancel', ()=>{ UI_SCROLL.touching = false; }, {passive:true});
+addEventListener('wheel', uiUserScroll, {passive:true});
+addEventListener('mousedown', uiUserScroll, {passive:true});
+addEventListener('keydown', uiUserScroll, {passive:true});
+function uiCardKey(c){
+  const a = c.querySelector('[data-log],[data-plog],[data-log-prop],[data-nob],[data-logleg]');
+  if (a){ for (const k of ['log','plog','logProp','nob','logleg']) if (a.dataset[k]) return k+':'+a.dataset[k]; }
+  const w = c.querySelector('.what,.chead,.pl-title,h3'); return 't:'+((w&&w.textContent)||c.textContent||'').trim().slice(0,90);
+}
+const UI_ANCHOR_SEL = '#view .card, #view .pk-ticket, #view .ag-sec';
+// the dropdown you just opened/closed is the best anchor while it's on screen (opening one must never move the page)
+document.addEventListener('toggle', e=>{ const d = e.target; if (d && d.dataset && d.dataset.dd && e.isTrusted !== false) UI_SCROLL.focus = {k:d.dataset.dd, t:Date.now()}; }, true);
+function uiDdSummary(k){ try{ return document.querySelector(`#view details[data-dd="${CSS.escape(k)}"] > summary`); }catch(e){ return null; } }
+function uiScrollAnchor(){
+  const y = window.scrollY || 0; if (y < 40) return null;
+  const top = 70; // below the sticky header
+  const F = UI_SCROLL.focus;
+  if (F && Date.now() - F.t < 120000){ const s = uiDdSummary(F.k); if (s){ const r = s.getBoundingClientRect(); if (r.top > top && r.bottom < innerHeight) return {key:'dd:'+F.k, off:r.top, y}; } }
+  for (const c of document.querySelectorAll(UI_ANCHOR_SEL)){ if (c.querySelector('.card')) continue; const r = c.getBoundingClientRect(); if (r.bottom > top) return {key:uiCardKey(c), off:r.top, y}; }
+  return {key:null, off:0, y};
+}
+function uiFindAnchor(A){ if (!A || !A.key) return null; if (A.key.startsWith('dd:')) return uiDdSummary(A.key.slice(3)); for (const c of document.querySelectorAll(UI_ANCHOR_SEL)){ if (!c.querySelector('.card') && uiCardKey(c)===A.key) return c; } return null; }
+function uiScrollRestore(A){
+  if (!A) return false;
+  const target = uiFindAnchor(A);
+  if (target){ const d = target.getBoundingClientRect().top - A.off; if (Math.abs(d) > 1){ UI_SCROLL.expectY = Math.round((window.scrollY||0) + d); window.scrollBy(0, d); } return true; }
+  if (Math.abs((window.scrollY||0) - A.y) > 1){ UI_SCROLL.expectY = A.y; window.scrollTo(0, A.y); }
+  return false;
+}
+/* After a rebuild, cards above the anchor fill in over the next ~second (lazy court/injury/matchup blocks,
+   content-visibility placeholders). Keep the anchored card pinned for 2s unless the user touches/scrolls. */
+function uiHoldAnchor(A){
+  if (!A || !A.key) return;
+  const t0 = Date.now(), h = UI_SCROLL.hold = {A, until: t0 + 2000};
+  const tick = () => { const now = Date.now(); if (UI_SCROLL.hold !== h || now > h.until || UI_SCROLL.touching) { if (UI_SCROLL.hold===h) UI_SCROLL.hold = null; return; }
+    const t = uiFindAnchor(A); if (!t){ UI_SCROLL.hold = null; return; }
+    if (Math.abs(t.getBoundingClientRect().top - A.off) > 1){ uiScrollRestore(A); h.until = Math.min(t0 + 6000, now + 1500); }
+    requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}
+function uiKeepScroll(fn){
+  const A = (UI_SCROLL.hold && UI_SCROLL.hold.A) || uiScrollAnchor();
+  const v = document.getElementById('view');
+  // our own anchoring replaces the browser's while we rebuild (its native anchor node gets thrown away by the rebuild
+  // and it can pick a far-away one for a frame, which flashes the page)
+  if (A){ document.documentElement.style.overflowAnchor = 'none'; clearTimeout(UI_SCROLL.oaT); UI_SCROLL.oaT = setTimeout(()=>{ document.documentElement.style.overflowAnchor = ''; }, 2600); }
+  if (A && v){ v.style.minHeight = v.offsetHeight + 'px'; } // don't let the rebuild collapse the page (that clamps scrollY)
+  const r = fn();
+  if (uiScrollRestore(A)) uiHoldAnchor(A);
+  if (A && v){ setTimeout(()=>{ v.style.minHeight = ''; }, 2500); }
+  return r;
+}
+(function(){
+  if (typeof render!=='function') return;
+  const baseRender = render;
+  // Renders the user caused (tab taps, buttons, typing) keep the old behaviour; only background renders are anchored.
+  const userEv = () => { const e = window.event; return !!(e && /click|touch|key|input|change|submit|pointer|mouse/.test(e.type)); };
+  render = function(){ const a = arguments; if (userEv()){ UI_SCROLL.hold = null; return baseRender.apply(this, a); } return uiKeepScroll(()=>baseRender.apply(this, a)); };
+  if (typeof softRender==='function'){
+    const baseSoft = softRender;
+    const busy = () => UI_SCROLL.touching || (Date.now() - UI_SCROLL.lastMove) < 900;
+    const run = () => { UI_SCROLL.timer = null; if (busy()){ UI_SCROLL.timer = setTimeout(run, 500); return; } UI_SCROLL.pending = false; uiKeepScroll(()=>baseSoft()); };
+    softRender = function(){ if (userEv()){ UI_SCROLL.pending = false; return uiKeepScroll(()=>baseSoft()); } UI_SCROLL.pending = true; if (busy()){ if (!UI_SCROLL.timer) UI_SCROLL.timer = setTimeout(run, 500); return; } run(); };
+  }
+})();
+
+/* v80: "As fav / underdog" and "At these odds" stuck on "loading records…" because the background loader only pulls
+   ~16 past games per minute across every team on the slate. Opening Additional stats now loads that game's two teams first. */
+const UI_HIST_BUSY = new Set();
+async function uiHistFor(g){
+  if (!g || !g.league || typeof loadTeamSchedule!=='function' || !corePath(g.league)) return;
+  const gk = g.league+':'+(g.eventId||g.id); if (UI_HIST_BUSY.has(gk)) return; UI_HIST_BUSY.add(gk);
+  try{
+    for (const side of ['away','home']){
+      const t = g[side]; if (!t || !t.id) continue;
+      const k = g.league+':'+t.id;
+      if (teamHist[k] && teamHist[k].n>0 && !teamHist[k].pending) continue;
+      let gamesT = null; try{ gamesT = await loadTeamSchedule(g.league, t.id); }catch(e){ continue; }
+      const cutoff = g.start && g.start.getTime ? g.start.getTime() : Date.now();
+      const past = (gamesT||[]).filter(x=>x.eventId && (!x.date || isNaN(x.date.getTime()) || x.date.getTime() < cutoff-3600000));
+      const need = past.filter(ev=>!oddsCacheFresh(oddsHistCache[g.league+':'+ev.eventId])).slice(-30);
+      if (need.length) await pool(need.map(ev=>async()=>{ try{ await loadEventCloseOdds(g.league, ev.eventId); }catch(e){} }), 4);
+      teamHist[k] = recordFromGames(g.league, t.id, past);
+    }
+    try{ saveJSON(ODDS_HIST_KEY, oddsHistCache); }catch(e){}
+    if (typeof softRender==='function') softRender();
+  } finally { setTimeout(()=>UI_HIST_BUSY.delete(gk), 120000); }
+}
+document.addEventListener('toggle', e=>{
+  const d = e.target; if (!d || !d.open || !d.classList || !d.classList.contains('fca') || !d.dataset.gid) return;
+  const g = (typeof games!=='undefined' && games || []).find(x=>x && String(x.id)===d.dataset.gid);
+  if (g) uiHistFor(g).catch(()=>{});
+}, true);
 </script>
 </body>
 </html>
