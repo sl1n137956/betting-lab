@@ -9806,7 +9806,7 @@ function learnProgHTML(have, need, readyLabel){
   const n = Math.max(0, +have||0), m = Math.max(1, +need||1);
   const pct = Math.min(100, Math.round((n/m)*100));
   const ready = n>=m;
-  const msg = ready ? (readyLabel||'Ready for weekly walk-forward retune') : `${n} / ${m} graded picks toward next auto-retune`;
+  const msg = ready ? (readyLabel||'Ready for next auto retune') : `${n} / ${m} graded toward next auto retune`;
   return `<div class="ln-prog"><div class="ln-prog-top"><span>${ready?'<b>'+msg+'</b>':msg}</span><span class="mut">${pct}%</span></div><div class="ln-prog-track"><div class="ln-prog-fill" style="width:${pct}%"></div></div></div>`;
 }
 function learnKnobsHTML(pills){
@@ -10046,7 +10046,7 @@ function bindGamesBacktest(){
 function renderResults(){
   const rb = ui.resultsBoard || 'games';
   const switcher = `<div class="s-row results-board-row"><div class="s-h">Which board?</div>${resultsBoardSegHTML('resultsBoardSeg')}<div class="s-note">This switcher changes the entire Results page: live record, model learning, and backtest for Games, Props, Parlay, or Verdict.</div></div>`;
-  const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, weekly auto-learn, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
+  const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results &amp; Backtest</h2><span class="hint">Each board has its own live record, auto retune, and historical backtest. This is the model's track record — separate from your personal bets in Tracker.</span></div>`;
   const live = (typeof v42ResultsHTML==='function' ? v42ResultsHTML() : '') + (typeof uniResultsHTML==='function' ? uniResultsHTML() : '') + (typeof v41ScoreboardHTML==='function' ? v41ScoreboardHTML() : '') + liveRecordHTML(rb);
   let body = '';
   if (rb==='props'){
@@ -10499,9 +10499,7 @@ function learnPanelHTML(){
       <td>${n ? `${r.w}-${r.l} · ${pctS(r.wr)}${small(n)}` : '<span class="mut">no graded plays yet</span>'}</td>
       <td>${(v.games||0).toLocaleString()}${v.live?`<div class="hint">${v.live} live</div>`:''}</td></tr>`; }).join('');
   const off = Object.entries(LEARN.autoOff||{});
-  const nextTxt = LEARN.paused ? 'Paused' : due.due ? 'Due now (runs on the next refresh)' : `${dt(due.next.getTime())}`;
-  const sooner = LEARN.paused ? '' : `or sooner (from ${dt(due.soonest.getTime())}) once ${LEARN_NEW_GAMES} new live games are graded: ${due.newLive}/${LEARN_NEW_GAMES} so far`;
-  const needN = (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50);
+  const needN = (typeof RT_NEED!=='undefined' && RT_NEED.games) || (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:300);
   const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('games'):[];
   return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Games</h2><span class="hint">The app re-learns from new results by itself. No AI, no tokens: the same statistics, re-run on fresh games, with safety checks. This panel follows the board chosen under Which board? at the top.</span></div>
   <div class="ln-card ln-panel">
@@ -10513,7 +10511,6 @@ function learnPanelHTML(){
       <div class="kpi"><div class="k">Model v${cur.id} picks record</div><div class="v">${lvN ? `${lv.w}-${lv.l}` : '—'}</div><div class="hint">${lvN ? pctS(lv.wr)+(lvN<100?' · small sample':'') : 'no graded strict plays yet'}</div></div>
       <div class="kpi"><div class="k">Games learned from</div><div class="v">${(cur.games||0).toLocaleString()}</div><div class="hint">${cur.live ? cur.live+' captured live' : 'past games (backtest)'}</div></div>
       <div class="kpi"><div class="k">Live snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting for a final</div></div>
-      <div class="kpi"><div class="k">Next learning check</div><div class="v" style="font-size:16px">${esc(nextTxt)}</div><div class="hint">${esc(sooner)}</div></div>
     </div>
     <div class="ln-actions">
       <button class="btn primary sm ln-btn" id="lnRun" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
@@ -10529,7 +10526,7 @@ function learnPanelHTML(){
     <details class="dd" style="margin-top:10px" data-dd="learn-log" ${ui.open.has('learn-log')?'open':''}><summary>Learning log (${LEARN.log.length})</summary><ul class="why" style="margin-top:6px">${LEARN.log.slice(0,15).map(l=>`<li><span class="mut">${dtt(l.at)}</span> — ${esc(l.txt)}</li>`).join('')}</ul></details>
     <details class="dd" data-dd="learn-how" ${ui.open.has('learn-how')?'open':''}><summary>How learning works and its safety checks</summary><ul class="why" style="margin-top:6px">
       <li><b>Collects:</b> every upcoming game the app shows is saved with what was known before it started: odds, ESPN's pick, injuries, goalies or pitchers, and your Bovada/Polymarket price. Once a day it downloads finished games and grades them, including closing line value. Stored on this PC (IndexedDB), ${learnState.idb===false?'<span class="neg">IndexedDB unavailable here, using smaller browser storage</span>':'no size limit to worry about'}.</li>
-      <li><b>When:</b> every ${LEARN_EVERY} days, or after ${LEARN_SOONEST}+ days once ${LEARN_NEW_GAMES} new live games are graded. Pressing Check &amp; retune restarts that clock on every device.</li>
+      <li><b>When:</b> after ${needN} new games have been graded since the last run, but never within 48 hours of that run. Pressing Check &amp; retune resets the count on every device.</li>
       <li><b>How:</b> uses the last ${LEARN_WINDOW} days (newer games count more, live-captured games count 1.5×). It learns on the older days, then tests on the newest ${LEARN_HOLD} days it never saw.</li>
       <li><b>Only keeps a change if</b> it wins more often on those unseen days (at least 1 point better) with at least ${LEARN_MIN_HOLD_PLAYS} plays and no loss of money. Weights must also predict the unseen games better. Each step is small: one notch per bar, at most ${LEARN_CAP} per weight.</li>
       <li><b>Sports and markets:</b> any that lose over 40+ strict plays (losing money and winning less than the odds expected) get switched off for strict picks, and switched back on if they recover.</li>
@@ -12495,7 +12492,7 @@ function parlayLegPullCheck(b, k){
 const PROP_STAT_KEYS = {pts:['points'], reb:['rebounds','totalRebounds'], ast:['assists'], threes:['threePointFieldGoalsMade','threes'], pra:null, pr:null, ra:null, pa:null};
 const BOARD_LEARN_RELEASE = new Date(2026,10,18,21,0).getTime(); // Nov 18, 2026 9:00 PM PT — first ship of Props/Parlay tracks
 function boardLearnSeed(kind){
-  return {v:1, cur:1, paused:false, lastTune:BOARD_LEARN_RELEASE, lastTry:0, lastCollect:0, autoOff:{}, log:[{at:Date.now(), txt:`${kind} learning is on, starting at v1. The first weekly check is in about 7 days, or sooner if 50 new live ${kind} are graded.`}], versions:[{id:1, at:BOARD_LEARN_RELEASE, status:'current', title:'Starting model', changes:[`Shipped as ${kind} v1.`], games:0}]};
+  return {v:1, cur:1, paused:false, lastTune:BOARD_LEARN_RELEASE, lastTry:0, lastCollect:0, autoOff:{}, log:[{at:Date.now(), txt:`${kind} learning is on, starting at v1. Auto retune runs once enough new graded ${kind} are in, with a 48-hour floor.`}], versions:[{id:1, at:BOARD_LEARN_RELEASE, status:'current', title:'Starting model', changes:[`Shipped as ${kind} v1.`], games:0}]};
 }
 const VERDICT_LEARN_DEFAULTS = {probShrink:0, edgeFloor:0.015, betMinProb:0.56, watchMinProb:0.51, dogAdj:0};
 function ensureVerdictTrack(tr){
@@ -13039,9 +13036,9 @@ function propsLearnPanelHTML(){
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
   const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
-  const needN = (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50);
+  const needN = (typeof RT_NEED!=='undefined' && RT_NEED.props) || (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:300);
   const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('props'):[];
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Props</h2><span class="hint">Snapshots, daily box-score grading, and weekly walk-forward retunes are independent from Games, Parlay, and Verdict.</span></div>
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Props</h2><span class="hint">Snapshots, daily box-score grading, and count-based walk-forward retunes are independent from Games, Parlay, and Verdict.</span></div>
   <div class="ln-card ln-panel">
     ${typeof learnCardHead==='function'?learnCardHead('props',{paused:!!t.paused, version:t.cur||1, cur:t.cur||1}):''}
     ${typeof learnProgHTML==='function'?learnProgHTML(due.newLive||0, needN):''}
@@ -13050,13 +13047,12 @@ function propsLearnPanelHTML(){
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
       <div class="kpi"><div class="k">Model picks graded</div><div class="v">${st.n?`${st.w}–${st.l}`:'—'}</div><div class="hint">${st.wr==null?'no graded props yet':fmtPct(st.wr,1)}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
-      <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
     <div class="ln-actions">
       <button class="btn primary sm ln-btn" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
       <button class="btn sm ln-btn-ghost" id="lnPauseBoard">${t.paused?'Resume auto-learning':'Pause auto-learning'}</button>
     </div>
-    <p class="hint">Every upcoming prop card (Picks, Watch, and Avoid) is snapshotted. Once a day the app downloads ESPN box scores and grades the line. After a week, and once enough props are graded, it walk-forward tunes the Props win-chance bar and can auto-pause a cold sport or stat. Odds range is never changed automatically.</p>
+    <p class="hint">Every upcoming prop card (Picks, Watch, and Avoid) is snapshotted. Once a day the app downloads ESPN box scores and grades the line. After ${needN} new props are graded since the last run (and at least 48 hours later), it walk-forward tunes the Props win-chance bar and can auto-pause a cold sport or stat. Odds range is never changed automatically.</p>
     ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
     <details class="dd" data-dd="props-learn-log" ${ui.open.has('props-learn-log')?'open':''}><summary>Learning log (${(t.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
   </div>`;
@@ -13075,9 +13071,9 @@ function parlayLearnPanelHTML(){
   const dt = ms => ms?new Date(ms).toLocaleDateString([], {month:'short', day:'numeric'}):'—';
   const log=(t.log||[]).slice(0,8).map(l=>`<li><span class="mut">${new Date(l.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}</span> — ${esc(l.txt)}</li>`).join('') || '<li class="mut">No learning runs yet.</li>';
   const vers=(t.versions||[]).slice().reverse().map(v=>`<tr><td><b>v${v.id}</b></td><td>${dt(v.at)}</td><td>${(v.changes||[]).map(c=>esc(c)).join('<br>')||'—'}</td></tr>`).join('');
-  const needN = (typeof LEARN_NEW_GAMES==='number'?LEARN_NEW_GAMES:50);
+  const needN = (typeof RT_NEED!=='undefined' && RT_NEED.parlay) || 200;
   const knobs = typeof boardLearnKnobs==='function'?boardLearnKnobs('parlay'):[];
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Parlays</h2><span class="hint">Every generated ticket is snapshotted and graded from finished legs. Weekly retunes are independent from Games, Props, and Verdict.</span></div>
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Parlays</h2><span class="hint">Every generated ticket is snapshotted and graded from finished legs. Count-based retunes are independent from Games, Props, and Verdict.</span></div>
   <div class="ln-card ln-panel">
     ${typeof learnCardHead==='function'?learnCardHead('parlay',{paused:!!t.paused, version:t.cur||1, cur:t.cur||1}):''}
     ${typeof learnProgHTML==='function'?learnProgHTML(due.newLive||0, needN):''}
@@ -13086,13 +13082,12 @@ function parlayLearnPanelHTML(){
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||1}</div></div>
       <div class="kpi"><div class="k">Model picks graded</div><div class="v">${settled.length?`${w}–${l}`:'—'}</div><div class="hint">${settled.length?`2-leg ${two.filter(x=>x.y===1).length}–${two.filter(x=>x.y===0).length} · 3-leg ${three.filter(x=>x.y===1).length}–${three.filter(x=>x.y===0).length}`:'no graded parlays yet'}</div></div>
       <div class="kpi"><div class="k">Snapshots</div><div class="v">${graded}</div><div class="hint">graded · ${waiting} waiting</div></div>
-      <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
     <div class="ln-actions">
       <button class="btn primary sm ln-btn" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
       <button class="btn sm ln-btn-ghost" id="lnPauseBoard">${t.paused?'Resume auto-learning':'Pause auto-learning'}</button>
     </div>
-    <p class="hint">Every generated parlay across Picks, Watch, and Avoid is snapshotted. Legs are graded from finished game finals and prop box scores (a ticket hits only if every leg hits). Weekly walk-forward tuning can nudge the per-leg win bar once enough live parlays are graded. The 2.0x–3.0x payout window is never changed automatically.</p>
+    <p class="hint">Every generated parlay across Picks, Watch, and Avoid is snapshotted. Legs are graded from finished game finals and prop box scores (a ticket hits only if every leg hits). After ${needN} new parlays are graded since the last run (and at least 48 hours later), walk-forward tuning can nudge the per-leg win bar. The 2.0x–3.0x payout window is never changed automatically.</p>
     ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
     <details class="dd" data-dd="parlay-learn-log" ${ui.open.has('parlay-learn-log')?'open':''}><summary>Learning log (${(t.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
   </div>`;
@@ -13210,10 +13205,10 @@ function verdictLearnPanelHTML(){
     `Watch: ${fmtPct(vp.watchMinProb,0)}`,
     `Edge floor: ${typeof fmtEdge==='function'?fmtEdge(vp.edgeFloor):(((vp.edgeFloor||0)*100).toFixed(1)+'%')}`
   ];
-  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Verdict</h2><span class="hint">Independent from Games, Props, and Parlay. Daily grading and weekly 65/35 walk-forward retunes calibrate Verdict's own probabilities and BET bar.</span></div>
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning · Verdict</h2><span class="hint">Independent from Games, Props, and Parlay. Daily grading and count-based 65/35 walk-forward retunes calibrate Verdict's own probabilities and BET bar.</span></div>
   <div class="ln-card ln-panel">
     ${typeof learnCardHead==='function'?learnCardHead('verdict',{paused:!!t.paused, version:t.cur||t.version||1, cur:t.cur||t.version||1}):''}
-    ${typeof learnProgHTML==='function'?learnProgHTML(graded.length, VERDICT_LEARN_MIN):''}
+    ${typeof learnProgHTML==='function'?learnProgHTML(due.newLive||0, (typeof RT_NEED!=='undefined' && RT_NEED.verdict) || 50):''}
     ${typeof learnKnobsHTML==='function'?learnKnobsHTML(knobs):''}
     <div class="kpis ln-kpis">
       <div class="kpi"><div class="k">Model in use</div><div class="v">v${t.cur||t.version||1}</div></div>
@@ -13221,13 +13216,12 @@ function verdictLearnPanelHTML(){
       <div class="kpi"><div class="k">BET hit rate</div><div class="v" style="font-size:18px">${wr(bet)}</div></div>
       <div class="kpi"><div class="k">MAYBE LATER</div><div class="v" style="font-size:18px">${wr(maybe)}</div></div>
       <div class="kpi"><div class="k">SKIP hit rate</div><div class="v" style="font-size:18px">${wr(skip)}</div></div>
-      <div class="kpi"><div class="k">Next weekly check</div><div class="v" style="font-size:16px">${t.paused?'Paused':due.due?'Due now':dt(+due.next)}</div></div>
     </div>
     <div class="ln-actions">
       <button class="btn primary sm ln-btn" id="lnRunBoard" ${learnState.busy?'disabled':''}>${learnState.busy?'Learning…':'Check & retune now'}</button>
       <button class="btn sm ln-btn-ghost" id="lnPauseBoard">${t.paused?'Resume auto-learning':'Pause auto-learning'}</button>
     </div>
-    <p class="hint">Every pick checked in Verdict is saved and graded from ESPN finals. Once ${VERDICT_LEARN_MIN} graded checks are in, a weekly chronological 65/35 walk-forward test can nudge shrink, the BET bar, and the underdog adjustment — only if the unseen 35% improves Brier score or BET accuracy without shrinking the sample. Games, Props, and Parlay keep their own independent models.</p>
+    <p class="hint">Every pick checked in Verdict is saved and graded from ESPN finals. After ${(typeof RT_NEED!=='undefined' && RT_NEED.verdict) || 50} new graded checks since the last run (and at least 48 hours later) it can retune. It still needs ${VERDICT_LEARN_MIN} graded checks in total before a 65/35 walk-forward test will change shrink, the BET bar, or the underdog adjustment — and only if the unseen 35% improves Brier score or BET accuracy without shrinking the sample. Games, Props, and Parlay keep their own independent models.</p>
     ${vers?`<h3 style="margin-top:16px">Version history</h3><div class="overflow"><table class="ln-tab"><tr><th>Version</th><th>Date</th><th>What changed</th></tr>${vers}</table></div>`:''}
     <h3 style="margin-top:16px">Recent Verdict checks</h3>
     <div class="overflow"><table class="ln-tab"><tr><th>When</th><th>Pick</th><th>Call</th><th>Est.</th><th>Result</th></tr>${recent}</table></div>
@@ -15227,7 +15221,7 @@ function AUTO(){
   o.boards = o.boards || {};
   const D = v42Def();
   for (const b of ['games','props','parlay']){
-    o.boards[b] = Object.assign({preset:D[b], presetWhy:'Starting on the tested default. The model re-checks it on every weekly learning run.', presetAt:0, presetChecked:0,
+    o.boards[b] = Object.assign({preset:D[b], presetWhy:'Starting on the tested default. The model re-checks it on every auto retune.', presetAt:0, presetChecked:0,
       lock:30, lockWhy:'30 minutes before start is the default (closer to game time = fewer pulls). The model only moves to 60 minutes if that is clearly more profitable.', lockAt:0, lockChecked:0}, o.boards[b]);
   }
   o.boards.parlay = Object.assign({level:0, base:{picky:0.62, super:0.68}, levelAt:0, levelWhy:'', cold:false, recent:null, coldChecked:0}, o.boards.parlay);
@@ -15596,7 +15590,7 @@ function v42PickReason(board){
   if (board==='parlay'){ const P = B; return (P.level>0 ? v42ParlayColdNote() : `Tested default (Picky v2, every leg ${Math.round(v42ParlayBar(0)*100)}%+).`) + (P.levelWhy ? ' ' + P.levelWhy : ''); }
   return B.presetWhy || '';
 }
-function v42Checked(board){ const B = AUTO().boards[board]; const t = Math.max(+B.presetChecked||0, board==='parlay' ? (+B.coldChecked||0) : 0); return t ? 'Last checked ' + v42When(t) : 'Not checked yet: the first check runs with the weekly learning'; }
+function v42Checked(board){ const B = AUTO().boards[board]; const t = Math.max(+B.presetChecked||0, board==='parlay' ? (+B.coldChecked||0) : 0); return t ? 'Last checked ' + v42When(t) : 'Not checked yet: the first check runs with the next auto retune'; }
 function v42SportsOffList(board){
   const out = [];
   if (typeof LEARN==='undefined' || !LEARN) return out;
@@ -21037,15 +21031,16 @@ function v98LabelTables(){
 .v98-flat table.ln-tab td{padding:2px 0;border:0;overflow-wrap:anywhere}
 .v98-flat table.ln-tab td[data-l]::before{content:attr(data-l) " · ";color:var(--mut);font-weight:600}
 .v98-flat .overflow{overflow-x:visible}}`; document.head.appendChild(st); })();
-/* ================= v101: one retune schedule for every device =================
-   Each learner (Games, Props, Verdict) runs when 7 days have passed since its last run, or sooner once enough new
-   graded results are in (Games and Props 150, Verdict 30 checks) but never within 3 days of the last run.
-   "Last run" counts manual Check & retune presses too, and it lives in the account (learnShare/sched), so a press on
-   the phone pushes the next automatic run back for the Mac and the always-on VPS as well. An automatic run first
-   claims the slot in a Firestore transaction, so only one device runs it. The learners stay bounded and logged. */
+/* ================= v101/v105: one retune schedule for every device =================
+   v105: count-only. Each learner (Games, Props, Verdict, Parlays) auto-retunes when enough new graded results have
+   come in since its last run (Games and Props 300, Verdict 50 checks, Parlays 200), but never within 48 hours of
+   the last run. There is no weekly timer. A manual Check & retune press resets the counter (and the 48-hour floor)
+   on every device via learnShare/sched. An automatic run first claims the slot in a Firestore transaction, so only
+   one device runs it. The learners stay bounded and logged. */
 var RT101 = {doc:null, at:0, manual:false, err:'', sig:''};
-var RT_NEED = {games:150, props:150, verdict:30, parlay:50};
-var RT_MIN_DAYS = 3, RT_MAX_DAYS = 7;
+var RT_NEED = {games:300, props:300, verdict:50, parlay:200};
+var RT_MIN_DAYS = 2;   // 48-hour floor, so a retune never fires twice back-to-back
+var RT_MAX_DAYS = 0;   // no weekly / calendar trigger
 function rtKeyOf(track){ try{ if (track===LEARN.props) return 'props'; if (track===LEARN.verdict) return 'verdict'; if (track===LEARN.parlay) return 'parlay'; }catch(e){} return 'games'; }
 function rtShared(k){ const d = RT101.doc; return d && d[k] ? (+d[k].last||0) : 0; }
 function rtLast(k, local){ return Math.max(+local||0, rtShared(k)); }
@@ -21058,9 +21053,11 @@ async function rtLoad(force){
   return RT101.doc;
 }
 function rtDueAt(last, newN, need){
-  const now = Date.now(), d = last ? (now - last)/86400000 : Infinity;
-  return {due: d >= RT_MAX_DAYS || (d >= RT_MIN_DAYS && newN >= need), days:d, newLive:newN,
-    next:new Date((last||now) + RT_MAX_DAYS*86400000), soonest:new Date((last||now) + RT_MIN_DAYS*86400000)};
+  const now = Date.now(), lastN = +last||0, needN = need || 300;
+  const d = lastN ? (now - lastN)/86400000 : 0;
+  const soonest = lastN ? new Date(lastN + RT_MIN_DAYS*86400000) : null;
+  return {due: lastN>0 && d >= RT_MIN_DAYS && newN >= needN, days:d, newLive:newN, need:needN,
+    next:soonest, soonest};
 }
 /* Games */
 learnDue = function(){
@@ -21071,11 +21068,11 @@ learnDue = function(){
 /* Props / Verdict / Parlay */
 boardLearnDue = function(track, snaps){
   const k = rtKeyOf(track), last = rtLast(k, track && track.lastTune);
-  if (!last) return {due:false, days:0, newLive:0, next:new Date(Date.now() + RT_MAX_DAYS*86400000), soonest:new Date(Date.now() + RT_MIN_DAYS*86400000)};
+  if (!last) return {due:false, days:0, newLive:0, need:RT_NEED[k]||300, next:null, soonest:null};
   let n = 0; for (const x of snaps||[]) if ((x.y===0||x.y===1) && (x.graded||x.t||0) > last) n++;
-  return rtDueAt(last, n, RT_NEED[k] || 150);
+  return rtDueAt(last, n, RT_NEED[k] || 300);
 };
-/* automatic runs claim the slot first; it fails if any device ran (or pressed) within 3 days, or is running now */
+/* automatic runs claim the slot first; it fails if any device ran (or pressed) within 48 hours, or is running now */
 async function rtClaim(k){
   if (typeof mlogOn!=='function' || !mlogOn()) return true;          // signed out: local schedule only
   const dev = mchkDev(), now = Date.now(), db = mlogFS(), ref = rtRef();
@@ -21577,6 +21574,8 @@ window.cap4Debug = function(n){
   for (const p of (props||[]).slice(0, n||5)){ const K = capProp(p); if (K) out.props.push({label:(p.playerName||'')+' '+p.label, win:K.win.map(x=>x.txt), lose:K.lose.map(x=>x.txt), judge:K.sentence}); }
   return out;
 };
+/* v105: model learning auto-retunes on a graded-count threshold, not a weekly timer. */
+APP_BUILD = 105;
 </script>
 </body>
 </html>
