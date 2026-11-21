@@ -15593,7 +15593,7 @@ function v42ResultsHTML(){
   return `<div class="card v42-auto">
     <div class="section-title" style="margin:0 0 8px"><h2><span class="h-emo" aria-hidden="true">🤖</span>What the model picked (automatic)</h2><span class="hint">Pickiness, lock time and sports are chosen per board from real graded results. None of it needs a manual setting.</span></div>
     <div class="v42-grid">${cards}</div>
-    ${hard.length ? `<div class="hint" style="margin-top:10px">Off in your Settings (hard off, the model never turns these on): ${esc(hard.join(', '))}.</div>` : ''}
+    ${hard.length ? `<div class="hint" style="margin-top:10px">Off in Settings (hard off, the model never turns these on): ${esc(hard.join(', '))}.</div>` : ''}
     <details class="dd" data-dd="v42-log" ${ui.open && ui.open.has('v42-log')?'open':''} style="margin-top:10px"><summary>Automatic changes (${(A.log||[]).length})</summary><ul class="why" style="margin-top:6px">${log}</ul></details>
   </div>`;
 }
@@ -17737,33 +17737,24 @@ function v55DD(key, title, inner){
   return `<details class="dd v55-dd" data-dd="${key}" ${open?'open':''}><summary>${title}</summary><div class="v55-dd-body">${inner}</div></details>`;
 }
 function renderResults(){
+  // v95: Results is the model's page only: What the model picked + Model learning (with Tracked universe and the weekly check inside)
   const safe = f => { try{ return f() || ''; }catch(e){ console.warn('results part', e); return ''; } };
   const title = `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results</h2><span class="hint">Games, Props and Verdict checks on one page.</span></div>`;
-  const uni = safe(()=>typeof uniResultsHTML==='function' ? uniResultsHTML() : '');
-  const money = safe(moneySectionHTML);
+  const uni = safe(()=>typeof uniInnerHTML==='function' ? uniInnerHTML() : '');
+  const chk = safe(()=>typeof mchkInnerHTML==='function' ? mchkInnerHTML() : '');
   const learnV = safe(()=>typeof verdictLearnPanelHTML==='function' ? verdictLearnPanelHTML() : '');
   const learnG = safe(()=>typeof learnPanelHTML==='function' ? learnPanelHTML() : '');
   const learnP = safe(()=>typeof propsLearnPanelHTML==='function' ? propsLearnPanelHTML() : '');
   const learning = `<div class="card v55-learn"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning</h2><span class="hint">How each model is tuning itself from graded results.</span></div>
-    ${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}</div>`;
-  const auto = safe(()=>typeof v42ResultsHTML==='function' ? v42ResultsHTML() : '');
-  // v57: these two cards get a real header like Model learning, with the dropdowns below it (no empty band, comfortable padding)
-  const autoBody = auto.replace(/^<div class="card v42-auto">/, '<div class="v42-auto">').replace(/<div class="section-title"[\s\S]*?<\/h2>[\s\S]*?<\/div>/, '');
-  const head = (emo, t, sub) => `<div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">${emo}</span>${t}</h2><span class="hint">${sub}</span></div>`;
-  const picked = `<div class="card v55-learn v55-auto">${head('🤖', 'What the model picked', 'Pickiness, lock time and sports, chosen automatically from graded results.')}
-    ${v55DD('v55-auto', '⚙️ Games and Props settings', autoBody)}</div>`;
-  const recs = `<div class="card v55-learn v55-recs">${head('📋', 'Board picks', 'Win–loss by type: what the board picked.')}
-    ${v55DD('v55-rec-games', '🏟️ Games', v55Scope(safe(()=>liveRecordHTML('games')), 'rg'))}${v55DD('v55-rec-props', '🏀 Props', v55Scope(safe(()=>liveRecordHTML('props')), 'rp'))}${v55DD('v55-rec-verdict', '⚖️ Verdict checks', v55Scope(safe(()=>liveRecordHTML('verdict')), 'rv'))}</div>`;
-  $('#view').innerHTML = title + money + uni + learning + picked + recs;
-  v55BindScoped('rg', ()=>bindLiveRecordGrade('games'));
-  v55BindScoped('rp', ()=>bindLiveRecordGrade('props'));
-  v55BindScoped('rv', ()=>bindLiveRecordGrade('verdict'));
+    ${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}${v55DD('v55-learn-uni', '🌐 Tracked universe', uni)}${v55DD('v55-learn-check', '🩺 Weekly model check', chk)}</div>`;
+  const picked = safe(()=>typeof modelResultsHTML==='function' ? modelResultsHTML() : '');
+  $('#view').innerHTML = title + picked + learning;
+  try{ if (typeof mrBind==='function') mrBind(); }catch(e){}
   v55BindScoped('lg', ()=>{ if (typeof learnBind==='function') learnBind(); });
   v55BindScoped('lp', ()=>{ if (typeof boardLearnBind==='function') boardLearnBind('props'); });
   v55BindScoped('lv', ()=>{ if (typeof boardLearnBind==='function') boardLearnBind('verdict'); });
-  if (Date.now() - MONEY.at >= 90000 && !MONEY.busy){
-    moneyLoad().then(()=>{ if (ui.tab==='results'){ const el = document.querySelector('#view .v55-money'); if (el){ const t = document.createElement('div'); t.innerHTML = moneySectionHTML(); el.replaceWith(t.firstElementChild); } } }).catch(()=>{});
-  }
+  // keeps the unit-size gates current (model behavior); nothing from it is shown here
+  if (Date.now() - MONEY.at >= 90000 && !MONEY.busy) moneyLoad().catch(()=>{});
 }
 /* ---------- Parlay board removed (Stanley: too risky). Tracked parlay bets in history are untouched. ---------- */
 (function v55NoParlayBoard(){
@@ -20411,6 +20402,232 @@ window.mchkStatus = () => ({week:mchkWeek(Date.now()), doc:MCHK.doc && {wk:MCHK.
     const st = document.createElement('style'); st.textContent = '.uni-local{color:#fde68a;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.28);border-radius:10px;padding:7px 10px;margin:0 0 12px}'; document.head.appendChild(st);
   }catch(e){}
 })();
+/* ================= v95: Results = What the model picked + Model learning; account-synced Tracked universe + learning =================
+   - "What the model picked" is fed by the shared graded model log (v93), so it's filled in on every admin device.
+   - Tracked universe and learner state used to live only on the device that scanned / learned. Each admin device now
+     publishes its universe summary (uniShare/{device}) and every device shows the merge (max per day·board·source·sport·verdict,
+     so the same markets seen on two devices aren't counted twice). Learner state syncs per track (learnShare/state):
+     a newer retune on any device wins, logs are merged. Admin-only in firestore.rules. */
+
+/* ---------- What the model picked (replaces the Model results card) ---------- */
+modelResultsHTML = function(){
+  const autoSig = (typeof AUTO==='function') ? (+AUTO().at||0) : 0;
+  const sig = ['v95', MLOG.ver, MR.range, MR.board, MR.sport, MR.res, MR.show, typeof pxMode==='function'?pxMode():'', mlogDay(Date.now()), autoSig, MLOG.err, !!MLOG.at, ui.open && ui.open.has('v55-auto') ? 1 : 0, ui.open && ui.open.has('v95-picks') ? 1 : 0].join('|');
+  if (MR_CACHE.sig===sig && MR_CACHE.html) return MR_CACHE.html;
+  const head = `<div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🤖</span>What the model picked</h2><span class="hint">Pickiness, lock time and sports, chosen automatically from graded results.</span></div>`;
+  let autoBody = '';
+  try{ const auto = typeof v42ResultsHTML==='function' ? v42ResultsHTML() : ''; autoBody = auto.replace(/^<div class="card v42-auto">/, '<div class="v42-auto">').replace(/<div class="section-title"[\s\S]*?<\/h2>[\s\S]*?<\/div>/, ''); }catch(e){}
+  const settingsDD = v55DD('v55-auto', '⚙️ Games and Props settings', autoBody);
+  if (!mlogOn()){ const h = `<div class="card v55-learn v55-auto mr-card">${head}${settingsDD}</div>`; MR_CACHE.sig = sig; MR_CACHE.html = h; return h; }
+  const days = mrDays(MR.range);
+  const all = mrSum(days, (v, dim)=>dim==='all');
+  const vt = v => all.get(`${v}|all|all`) || mrT();
+  const byVerdict = ['good','watch','avoid'].map(v=>mrRow(MLOG_VN[v], vt(v), v)).join('');
+  const lgLab = id => (typeof LMAP!=='undefined' && LMAP[id] && LMAP[id].label) || id;
+  const sel = (id, opts, cur, lab) => `<label class="mr-f"><span>${lab}</span><select data-mr="${id}">${opts.map(([v, l])=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`).join('')}</select></label>`;
+  const filters = `<div class="mr-filters">${sel('range', [[7,'Last 7 days'],[30,'Last 30 days']], MR.range, 'Range')}${sel('board', [['all','Games + Props'],['games','Games'],['props','Props']], MR.board, 'Board')}</div>`;
+  const L = []; const sports = new Set();
+  for (const d of days){ const m = MLOG.raw.get(d); if (!m) continue; for (const [id, o] of m){ if (MR.board!=='all' && o.b!==MR.board) continue; sports.add(o.l); if (MR.sport!=='all' && o.l!==MR.sport) continue; if (MR.res==='open' ? !!o.res : MR.res==='graded' ? !o.res || o.res==='ungradeable' : false) continue; if (MR.res!=='open' && MR.res!=='graded' && MR.res!=='all' && o.v!==MR.res) continue; L.push([id, o]); } }
+  L.sort((a,b)=>b[1].t - a[1].t);
+  const listFrom = MLOG.listFrom || mlogDay(Date.now() - 3*86400000);
+  const rows = L.slice(0, MR.show).map(([id, o])=>{
+    const res = o.res==='win' ? (o.v==='avoid' ? ['Won', 'neg'] : ['Won', 'pos']) : o.res==='loss' ? (o.v==='avoid' ? ['Lost', 'pos'] : ['Lost', 'neg']) : o.res==='push' ? ['Push', ''] : o.res==='void' ? ['Void', 'mut'] : o.res ? ['No grade', 'mut'] : ['Waiting', 'mut'];
+    const px = o.pr!=null && typeof fmtPx==='function' ? fmtPx(o.pr) : '—';
+    const when = new Date(o.t); const dt = `${when.getMonth()+1}/${when.getDate()}`;
+    return `<div class="mr-li"><span class="mr-v mr-${o.v}">${MLOG_VN[o.v]}</span><div class="yb-l"><div class="yb-k mr-pick">${esc(mrLabel(o))}</div><div class="yb-s">${dt} · ${esc(lgLab(o.l))} · ${esc(mlogVenue(o))} · ${esc(px)}${o.p!=null?` · est ${Math.round(o.p*100)}%`:''}</div></div><b class="mr-res ${res[1]}">${res[0]}</b></div>`;
+  }).join('');
+  const listFilters = `<div class="mr-filters">${sel('sport', [['all','All sports']].concat([...sports].filter(Boolean).sort().map(s=>[s, lgLab(s)])), MR.sport, 'Sport')}${sel('res', [['all','All'],['good','BET'],['watch','WATCH'],['avoid','AVOID'],['graded','Graded'],['open','Waiting']], MR.res, 'Show')}</div>`;
+  const more = L.length > MR.show ? `<button type="button" class="btn sm" data-mr-more>Show more (${(L.length-MR.show).toLocaleString()} left)</button>` : '';
+  const older = listFrom > days[days.length-1] ? `<button type="button" class="btn sm" data-mr-older>Load older picks</button>` : '';
+  const err = MLOG.err ? `<div class="hint mr-err">Couldn't reach the pick log (${esc(String(MLOG.err))}). Showing what's loaded.</div>` : '';
+  const picksDD = v55DD('v95-picks', `📋 Every pick (${L.length.toLocaleString()})`, `<div class="hint mr-since">Since ${esc(mlogFmt(listFrom))}, newest first.</div>${listFilters}
+    <div class="mr-list">${rows || '<div class="hint" style="padding:12px">No picks logged for these filters yet.</div>'}</div>${more||older ? `<div class="mr-more">${more}${older}</div>` : ''}`);
+  const html = `<div class="card v55-learn v55-auto mr-card">${head}${filters}${err}${!MLOG.at ? '<div class="hint">Loading the model\'s pick log…</div>' : ''}
+    <div class="v42-b yb-b mr-verdicts"><h3>⚖️ By verdict</h3>${byVerdict}<div class="hint yb-note">AVOID is right when the side it warned about lost.</div></div>
+    ${picksDD}${settingsDD}</div>`;
+  MR_CACHE.sig = sig; MR_CACHE.html = html;
+  return html;
+};
+
+/* ---------- account-synced Tracked universe ---------- */
+var USH = {docs:[], at:0, busy:false, pushAt:0, pushSig:'', err:''};
+var USH_MAX_KEYS = 6000;
+function ushLocal(){
+  const sums = {}, open = {};
+  const list = [...UNI_SUM.values()].sort((a,b)=>String(b.fd).localeCompare(String(a.fd))).slice(0, USH_MAX_KEYS);
+  for (const s of list){ if (!s || !s.i) continue; sums[s.i] = [s.n|0, s.w|0, s.ls|0, s.pu|0, s.vd|0, s.un|0, +s.stake||0, Math.round((+s.pf||0)*100)/100, s.sh|0]; }
+  for (const r of UNI.values()){ if (!r || (r.b!=='games' && r.b!=='props')) continue; const k = `${r.fd}|${r.b}|${r.src}|${r.l}|${uniV(r)}`; open[k] = (open[k]||0) + 1; }
+  return {sums, open};
+}
+async function ushPush(force){
+  if (!mlogOn() || typeof UNI_ST==='undefined' || !UNI_ST.ready) return false;
+  const dev = mchkDev(); const L = ushLocal();
+  if (!Object.keys(L.sums).length && !Object.keys(L.open).length) return false;
+  const sig = JSON.stringify([Object.keys(L.sums).length, Object.values(L.sums).reduce((a,x)=>a+x[0]+x[1]+x[2],0), Object.values(L.open).reduce((a,x)=>a+x,0)]);
+  if (!force && sig===USH.pushSig && Date.now() - USH.pushAt < 60*60000) return false;
+  try{ await mlogFS().collection('uniShare').doc(dev.id).set({dev:dev.id, by:dev.lab, at:Date.now(), today:uniDay(Date.now()), sums:L.sums, open:L.open, lastTick:+UNI_ST.lastTick||0});
+    USH.pushSig = sig; USH.pushAt = Date.now(); return true; }catch(e){ USH.err = (e && (e.code||e.message)) || 'upload failed'; return false; }
+}
+async function ushLoad(force){
+  if (!mlogOn() || USH.busy) return false;
+  if (!force && USH.at && Date.now() - USH.at < 10*60000) return true;
+  USH.busy = true;
+  try{ const qs = await mlogFS().collection('uniShare').get(); const out = []; qs.forEach(d=>{ const x = d.data(); if (x && x.sums) out.push(x); }); USH.docs = out; USH.at = Date.now(); USH.err = ''; return true; }
+  catch(e){ USH.err = (e && (e.code||e.message)) || 'load failed'; return false; }
+  finally{ USH.busy = false; }
+}
+/* merged view: per summary key keep the copy with the most markets (any device); open rows likewise */
+function ushMerged(){
+  const me = mchkDev().id; const L = ushLocal();
+  const sums = new Map(), open = new Map(); let lastTick = +UNI_ST.lastTick||0, devs = 1;
+  const takeS = (k, a) => { const o = sums.get(k); if (!o || a[0] > o[0]) sums.set(k, a); };
+  const takeO = (k, n) => { if ((open.get(k)||0) < n) open.set(k, n); };
+  for (const k in L.sums) takeS(k, L.sums[k]); for (const k in L.open) takeO(k, L.open[k]);
+  const cut = uniDay(Date.now() - UNI_SUM_DAYS*86400000);
+  for (const x of USH.docs){ if (x.dev===me) continue; devs++; for (const k in x.sums) if (k >= cut) takeS(k, x.sums[x.sums ? k : k]);
+    // a remote device's open rows are only "open" until they'd have been graded: keep the last 2 days of them
+    const oc = uniDay(Date.now() - 2*86400000); for (const k in (x.open||{})) if (k >= oc) takeO(k, x.open[k]);
+    lastTick = Math.max(lastTick, +x.lastTick||0); }
+  return {sums, open, lastTick, devs};
+}
+function uniCountsMerged(){
+  const today = uniDay(Date.now()); const M = ushMerged();
+  const mk = () => ({today:0, total:0, open:0, graded:0, tv:{good:0, watch:0, avoid:0, nocall:0}, src:{}, bucket:{good:{w:0,l:0,pf:0,st:0,n:0}, watch:{w:0,l:0,pf:0,st:0,n:0}, avoid:{w:0,l:0,pf:0,st:0,n:0}, nocall:{w:0,l:0,pf:0,st:0,n:0}}, un:0, vd:0, pu:0});
+  const B = {games:mk(), props:mk()};
+  for (const [k, n] of M.open){ const [fd, b, src, , v] = k.split('|'); const c = B[b]; if (!c) continue; c.open += n; c.total += n; c.src[src] = (c.src[src]||0) + n; if (fd===today){ c.today += n; c.tv[v] = (c.tv[v]||0) + n; } }
+  for (const [k, a] of M.sums){ const [fd, b, src, , v] = k.split('|'); const c = B[b]; if (!c) continue; const [n, w, ls, pu, vd, un, stake, pf] = a;
+    c.total += n; c.src[src] = (c.src[src]||0) + n; c.graded += w + ls + pu; c.un += un; c.vd += vd; c.pu += pu;
+    if (fd===today){ c.today += n; c.tv[v] = (c.tv[v]||0) + n; }
+    const q = c.bucket[v] || (c.bucket[v] = {w:0,l:0,pf:0,st:0,n:0}); q.w += w; q.l += ls; q.pf += pf; q.st += stake; q.n += w + ls; }
+  B.lastTick = M.lastTick; B.devs = M.devs;
+  return B;
+}
+function uniInnerHTML(){
+  const B = uniCountsMerged();
+  const f = n => (+n||0).toLocaleString();
+  const pct = x => x==null ? '—' : Math.round(x*100)+'%';
+  const roiS = x => x==null ? '—' : (x>=0?'+':'')+(x*100).toFixed(1)+'%';
+  const NAMES = {good:'Picks', watch:'Watch', avoid:'Avoid', nocall:'No call'};
+  const card = (b, title) => {
+    const c = B[b];
+    const tv = ['good','watch','avoid','nocall'].map(v=>`${NAMES[v]} ${f(c.tv[v]||0)}`).join(' · ');
+    const rows = ['good','watch','avoid','nocall'].map(v=>{
+      const k = c.bucket[v] || {w:0,l:0,pf:0,st:0,n:0}; const r = k.st ? k.pf/k.st : null, hr = k.n ? k.w/k.n : null; const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
+      return `<div class="uni-row"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `${pct(hr)} hit · <b class="${cls}">${roiS(r)}</b> ROI` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
+    }).join('');
+    const src = Object.entries(c.src).map(([k,v])=>`${({sb:'sportsbook',pm:'Polymarket',kalshi:'Kalshi',px:'ProphetX',cc:'Crypto.com',nv:'Novig'})[k]||k} ${f(v)}`).join(' · ');
+    const extra = (c.un||c.vd||c.pu) ? ` Pushes ${f(c.pu)}, voids ${f(c.vd)} (did not play / postponed), ungradeable ${f(c.un)}.` : '';
+    return `<div class="v42-b uni-b"><h3>${title}</h3>
+      <div class="v42-kv"><span class="k">Tracked today</span><span class="v">${f(c.today)} markets</span></div><div class="hint">${tv}</div>
+      <div class="v42-kv"><span class="k">All time (120 days)</span><span class="v">${f(c.total)} tracked · ${f(c.graded)} graded</span></div><div class="hint">${esc(src||'Nothing yet.')} · ${f(c.open)} waiting on a final.${extra}</div>
+      <div class="uni-buckets">${rows}</div></div>`;
+  };
+  const when = B.lastTick ? `Last scan ${new Date(B.lastTick).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.';
+  const loading = mlogOn() && !USH.at ? ' Loading from your account…' : '';
+  return `<div class="uni-card uni-in"><div class="hint uni-intro">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</div>
+    <div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>
+    <div class="hint" style="margin-top:10px">Synced across ${B.devs} signed-in device${B.devs===1?'':'s'}. ${when}${loading}${USH.err ? ` Couldn't reach the account copy (${esc(String(USH.err))}).` : ''}</div></div>`;
+}
+uniResultsHTML = function(){ return uniInnerHTML(); };
+
+/* ---------- weekly check: inner version for the Model learning dropdown ---------- */
+mchkHTML = function(){
+  const d = MCHK.doc;
+  const intro = `<div class="hint mchk-intro">Runs once a week on one signed-in admin device. It checks the model against the last 7 days of graded picks; it doesn't change the model.</div>`;
+  if (!d || !d.at || d.status!=='done'){
+    const msg = MCHK.err ? `Couldn't reach the check log (${esc(String(MCHK.err))}).` : d && d.status==='running' ? 'This week\'s check is running now.' : 'No check has run yet. The first one runs within a few minutes on a signed-in admin device.';
+    return `<div class="mchk-card">${intro}<div class="hint">${msg}</div></div>`;
+  }
+  const BN = {games:'Games', props:'Props'}; const rows = [];
+  for (const b of ['games','props']) for (const v of ['good','watch','avoid']){
+    const s = (d.stats||{})[b+'|'+v]; if (!s) continue;
+    const est = s.est!=null && v!=='avoid' ? ` <span class="mut">· est ${Math.round(s.est*100)}%</span>` : '';
+    rows.push(mrRow(`${BN[b]} ${MLOG_VN[v]}`, {w:s.w, l:s.l, p:s.p, vd:0, pf:s.pf, st:s.st}, v).replace('</div></div><span', `${est}</div></div><span`));
+  }
+  const ch = (d.changes||[]).length ? d.changes.map(c=>`<li><b>${esc(c.who)}</b> <span class="mut">${esc(mchkWhen(c.at))}</span> · ${esc(c.txt)}</li>`).join('') : '<li>No model settings changed this week.</li>';
+  const fd = (d.findings||[]).map(f=>`<li>${esc(f)}</li>`).join('');
+  return `<div class="mchk-card">${intro}
+    <div class="mchk-last"><b>Last model check:</b> ${esc(mchkWhen(d.at))} <span class="mut">· ${esc(String(d.by||''))} · ${(+d.graded||0).toLocaleString()} graded of ${(+d.logged||0).toLocaleString()} picks</span></div>
+    <div class="yb-grid">
+      <div class="v42-b yb-b"><h3>🔎 What it found</h3><ul class="mchk-ul">${fd}</ul></div>
+      <div class="v42-b yb-b"><h3>🛠️ What changed</h3><ul class="mchk-ul">${ch}</ul></div>
+      <div class="v42-b yb-b mchk-wide"><h3>📊 Last 7 days vs the model's estimate</h3>${rows.join('') || '<div class="hint">No graded picks in that week.</div>'}</div>
+    </div></div>`;
+};
+function mchkInnerHTML(){ return mchkHTML(); }
+
+/* ---------- account-synced learner state (Games / Props / Parlays / Verdict tracks) ---------- */
+var LSH = {at:0, busy:false, err:'', adopted:0};
+function lshTracks(){
+  if (typeof LEARN==='undefined' || !LEARN) return null;
+  const g = {}; for (const k in LEARN) if (!['props','parlay','verdict','notices'].includes(k)) g[k] = LEARN[k];
+  return {games:g, props:LEARN.props||null, parlay:LEARN.parlay||null, verdict:LEARN.verdict||null};
+}
+function lshScore(t){ if (!t) return [0, 0]; const vs = t.versions || t.history || []; return [+t.lastTune||0, Array.isArray(vs) ? vs.length : 0]; }
+function lshNewer(a, b){ const A = lshScore(a), B = lshScore(b); return A[0]!==B[0] ? A[0] > B[0] : A[1] > B[1]; }
+function lshMergeLog(a, b){ const seen = new Set(), out = []; for (const x of [].concat((a&&a.log)||[], (b&&b.log)||[])){ if (!x || !x.txt) continue; const k = /learning (is on|switched on)/i.test(x.txt) ? x.txt : (+x.at||0)+'|'+x.txt; if (seen.has(k)) continue; seen.add(k); out.push(x); } out.sort((p,q)=>(+q.at||0)-(+p.at||0)); return out.slice(0, 40); }
+async function lshSync(){
+  if (!mlogOn() || LSH.busy || typeof LEARN==='undefined' || !LEARN) return false;
+  // while a Games retune is running (it stamps lastTry when it starts), only publish; adopt on the next pass
+  const retuning = typeof learnState!=='undefined' && learnState.busy && Date.now() - (+LEARN.lastTry||0) < 30*60000;
+  LSH.busy = true;
+  try{
+    const db = mlogFS(), ref = db.collection('learnShare').doc('state'); const dev = mchkDev();
+    const snap = await ref.get(); const remote = snap.exists ? snap.data() : {};
+    const local = lshTracks(); const write = {}; let adopt = 0;
+    for (const k of ['games','props','parlay','verdict']){
+      let r = null; try{ r = remote[k] ? JSON.parse(remote[k]) : null; }catch(e){}
+      const l = local[k];
+      if (r && (!l || lshNewer(r, l))){
+        if (retuning) continue;
+        // another device retuned more recently: take its track (its log merged with ours)
+        r.log = lshMergeLog(r, l); r.lastTry = Math.max(+r.lastTry||0, +(l&&l.lastTry)||0); r.lastCollect = (l && l.lastCollect) || r.lastCollect || 0;
+        if (k==='games'){ for (const x in r) LEARN[x] = r[x]; try{ const v = LEARN.versions.find(x=>x.id===LEARN.cur) || LEARN.versions[0]; if (v) learnApply(v, false); }catch(e){} }
+        else LEARN[k] = r;
+        adopt++;
+      } else if (l && (!r || lshNewer(l, r) || JSON.stringify(lshMergeLog(l, r).slice(0,5))!==JSON.stringify(((r&&r.log)||[]).slice(0,5)))){
+        const out = Object.assign({}, l, {log:lshMergeLog(l, r)}); const s = JSON.stringify(out);
+        if (s.length < 700000) write[k] = s;
+      }
+    }
+    if (adopt){ try{ if (typeof ensureBoardLearn==='function') ensureBoardLearn(); }catch(e){} learnSave(); LSH.adopted += adopt; }
+    if (Object.keys(write).length){ write.at = Date.now(); write.by = dev.lab; await ref.set(write, {merge:true}); }
+    LSH.at = Date.now(); LSH.err = '';
+    return true;
+  }catch(e){ LSH.err = (e && (e.code||e.message)) || 'learn sync failed'; console.warn('learn sync', LSH.err); return false; }
+  finally{ LSH.busy = false; }
+}
+
+/* ---------- loops + Results refresh ---------- */
+function v95RefreshLearning(){
+  if (typeof ui==='undefined' || ui.tab!=='results') return;
+  try{ const el = document.querySelector('#view .uni-in'); if (el){ const t = document.createElement('div'); t.innerHTML = uniInnerHTML(); el.replaceWith(t.firstElementChild); } }catch(e){}
+}
+async function v95Tick(){ if (!mlogOn()) return; try{ await ushPush(false); }catch(e){} try{ await ushLoad(false); }catch(e){} try{ await lshSync(); }catch(e){} v95RefreshLearning(); }
+setTimeout(function v95Kick(){ if (mlogOn()) v95Tick(); else setTimeout(v95Kick, 20000); }, 30000);
+setInterval(()=>{ if (mlogOn()) v95Tick(); }, 15*60000);
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='hidden' && mlogOn()) ushPush(false).catch(()=>{}); });
+(function(){
+  try{
+    const base = renderResults;
+    renderResults = function(){
+      const out = base.apply(this, arguments);
+      try{ if (ui.tab==='results' && mlogOn() && (!USH.at || Date.now() - USH.at > 10*60000)) ushLoad(false).then(ok=>{ if (ok) v95RefreshLearning(); }); }catch(e){}
+      return out;
+    };
+  }catch(e){}
+  try{
+    const st = document.createElement('style');
+    st.textContent = `.mr-card .mr-verdicts{margin:0 0 12px}
+.mr-card > .v55-dd + .v55-dd{margin-top:10px}
+.mr-since{margin:0 0 10px}
+.uni-in .uni-intro,.mchk-intro{margin:0 0 12px}
+.uni-in .v42-grid{margin-top:0}
+.mchk-card .yb-grid{margin-top:0}`;
+    document.head.appendChild(st);
+  }catch(e){}
+})();
+window.v95Status = () => ({ush:{docs:USH.docs.length, at:USH.at, err:USH.err, pushAt:USH.pushAt}, lsh:{at:LSH.at, adopted:LSH.adopted, err:LSH.err}});
 </script>
 </body>
 </html>
