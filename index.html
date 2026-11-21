@@ -1322,7 +1322,8 @@ table.ftab th,.ftab th{white-space:nowrap;overflow-wrap:normal;word-break:normal
 .ui-mini,.ui-rec{grid-area:viz;justify-self:end;display:flex;width:84px;height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;gap:2px}
 .ui-mini>i{display:block;height:100%;border-radius:999px}
 .ui-mini.win>i{background:var(--ui-g)}.ui-mini.lose>i{background:var(--ui-r)}.ui-mini.neu>i{background:#94a3b8}
-.ui-dots{grid-area:viz;justify-self:end;display:inline-flex;gap:3px;flex-wrap:nowrap}.ui-dots>i{width:9px;height:9px;border-radius:50%;display:block}.ui-dots>i.w{background:var(--ui-g)}.ui-dots>i.l{background:var(--ui-r)}
+.ui-dots{grid-area:viz;justify-self:end;display:inline-flex;gap:3px;flex-wrap:nowrap}.ui-dots>i{width:9px;height:9px;border-radius:50%;display:block}.ui-dots>i.w{background:var(--ui-g)}.ui-dots>i.l{background:var(--ui-r)}.ui-dots>i.p{background:#64748b}
+@media (max-width:380px){ .ui-seq{gap:2px} .ui-seq>i{width:8px;height:8px} }
 .ui-rec>i{display:block;height:100%}.ui-rec>i.w{background:var(--ui-g)}.ui-rec>i.l{background:var(--ui-r)}
 /* Judge */
 .court2 .c-judge,.c-judge{border:1px solid rgba(96,165,250,.35);border-radius:var(--ui-rad);background:linear-gradient(180deg,rgba(37,99,235,.14),rgba(15,32,64,.28));padding:12px;gap:8px}
@@ -6047,11 +6048,11 @@ function contextFacts(p){
   const T = team ? g[side] : null, opp = team ? other(side) : null, O = team ? g[opp] : null;
   const unit = (sp && sp.goalie) || (g && g.league==='nhl') ? 'goals' : (g && g.league==='mlb') ? 'runs' : (typeof SOCCER!=='undefined' && SOCCER.has(g && g.league)) ? 'goals' : 'points';
   const facts = [], win = [], lose = [];
-  const addFact = (kind, txt, good) => {
+  const addFact = (kind, txt, good, seq) => {
     if (!txt) return;
-    facts.push({kind, txt, good});
-    if (good===true) win.push({txt, tag:'context', ctx:true, kind});
-    else if (good===false) lose.push({txt, tag:'context', ctx:true, kind});
+    facts.push({kind, txt, good, seq});
+    if (good===true) win.push({txt, tag:'context', ctx:true, kind, seq});
+    else if (good===false) lose.push({txt, tag:'context', ctx:true, kind, seq});
   };
   if (!g) return {facts, win, lose, unit};
 
@@ -6060,7 +6061,8 @@ function contextFacts(p){
     const evs = fx && fx.sides && fx.sides[s2] && fx.sides[s2].l5;
     if (evs && evs.length>=3){
       const w = evs.filter(e=>e.res==='W').length, n = evs.length, m = evs.reduce((a,e)=>a+e.pf-e.pa,0)/n;
-      return {w, l:n-w, n, m, str: evs.map(e=>e.res).join('')};
+      const ord = evs.every(e=>e.d) ? evs.slice().sort((x,y)=>new Date(x.d)-new Date(y.d)) : evs.slice().reverse();   // oldest → newest
+      return {w, l:n-w, n, m, str: evs.map(e=>e.res).join(''), seq: ord.map(e=>e.res==='W'?'w':e.res==='L'?'l':'p')};
     }
     const fo = fx && fx.sides && fx.sides[s2] && fx.sides[s2].form;
     if (fo && fo.n) return {w:fo.w, l:fo.l, n:fo.n, m:null, str:fo.str||''};
@@ -6068,9 +6070,9 @@ function contextFacts(p){
   };
   if (team){
     const a = l5of(side), b = l5of(opp);
-    if (a) addFact('l5', `${T.short} are ${a.w}–${a.l} in their last ${a.n}${a.m!=null?`, ${a.m>=0?'winning':'losing'} by ${Math.abs(a.m).toFixed(1)} ${unit} a game`:''}`, a.w>=4?true:a.l>=4?false:null);
+    if (a) addFact('l5', `${T.short} are ${a.w}–${a.l} in their last ${a.n}${a.m!=null?`, ${a.m>=0?'winning':'losing'} by ${Math.abs(a.m).toFixed(1)} ${unit} a game`:''}`, a.w>=4?true:a.l>=4?false:null, a.seq);
     else addFact('l5', `ESPN didn't post ${T.short}'s last 5 results`, null);
-    if (b) addFact('l5', `${O.short} are ${b.w}–${b.l} in their last ${b.n}${b.m!=null?`, ${b.m>=0?'winning':'losing'} by ${Math.abs(b.m).toFixed(1)} ${unit} a game`:''}`, b.l>=4?true:b.w>=4?false:null);
+    if (b) addFact('l5', `${O.short} are ${b.w}–${b.l} in their last ${b.n}${b.m!=null?`, ${b.m>=0?'winning':'losing'} by ${Math.abs(b.m).toFixed(1)} ${unit} a game`:''}`, b.l>=4?true:b.w>=4?false:null, b.seq);
   }
 
   // last 10
@@ -6294,8 +6296,8 @@ function courtModel(p){
   const seen = new Set();
   const pushU = (arr, item) => { const k = String(item.txt||'').toLowerCase(); if (seen.has(k)) return; seen.add(k); arr.push(item); };
   // context first (concrete, human)
-  for (const x of CF.win) pushU(win, {txt:x.txt, imp:0.04, tag:'', ctx:true, kind:x.kind});
-  for (const x of CF.lose) pushU(lose, {txt:x.txt, imp:-0.04, tag:'', ctx:true, kind:x.kind});
+  for (const x of CF.win) pushU(win, {txt:x.txt, imp:0.04, tag:'', ctx:true, kind:x.kind, seq:x.seq});
+  for (const x of CF.lose) pushU(lose, {txt:x.txt, imp:-0.04, tag:'', ctx:true, kind:x.kind, seq:x.seq});
   // measured injuries / GTD from the estimate (already in the odds; explanation only here)
   const alreadyInj = txt => [...win, ...lose].some(x=>x.kind==='inj' && txt && x.txt.toLowerCase().includes(String(txt).toLowerCase()));
   for (const i of E.info){ if (alreadyInj(i.who)) continue; pushU(i.worth>=0?win:lose, {txt:i.plain, imp:i.worth, tag:'', ctx:true, kind:'inj'}); }
@@ -6360,7 +6362,7 @@ function courtModel(p){
   else J='SKIP';
   const wr = hitRateFor(P.am, g && g.league, p.mk);
   const leftover = CF.facts.filter(f => !winOut.some(x=>x.txt===f.txt) && !loseOut.some(x=>x.txt===f.txt));
-  return {E, P, win:winOut, lose:loseOut, cwin:leftover.filter(f=>f.good!==false).map(f=>({txt:f.txt, tag:'context', ctx:true})), close:leftover.filter(f=>f.good===false).map(f=>({txt:f.txt, tag:'context', ctx:true})), facts:CF.facts, J, sentence, who, wr};
+  return {E, P, win:winOut, lose:loseOut, cwin:leftover.filter(f=>f.good!==false).map(f=>({txt:f.txt, tag:'context', ctx:true, seq:f.seq})), close:leftover.filter(f=>f.good===false).map(f=>({txt:f.txt, tag:'context', ctx:true, seq:f.seq})), facts:CF.facts, J, sentence, who, wr};
 }
 function courtroomHTML(p, C){
   C = C || courtModel(p);
@@ -10468,7 +10470,7 @@ function propFeatures(rows, kind, line, g, homeFlag){
     l10meta: vals.slice(Math.max(0, vals.length-10)).map(x=>({opp:x.r.opp||'', home:x.r.home, date:+x.r.date, res:x.r.res||''})),
     seasonAvg:mean(series), seasonHit:hitRate(series,line,true),
     minL5:mean(minsL5), minSzn:mean(mins),
-    home:!!homeFlag, splitN:split.length, splitHit:hitRate(split,line,true), splitAvg:mean(split),
+    home:!!homeFlag, splitVals:split.slice(-10), h2hVals:h2h.slice(-10), splitN:split.length, splitHit:hitRate(split,line,true), splitAvg:mean(split),
     rest, h2hn:h2h.length, h2hhit:hitRate(h2h,line,true), h2havg:mean(h2h)
   };
 }
@@ -10568,15 +10570,18 @@ function buildPropPlay(raw, side, feat, est){
   //  rate for the side > 55% → win · < 45% → lose · 45–55% → one combined "coin flip" note · fewer than 5 games → dropped
   const sw = isUnder ? 'under' : 'over', L0 = +raw.line;
   const neutral = [];
-  const rateRow = (label, hit, n, extra) => {
+  // v82: per-game hit/miss for the circles (oldest → newest); only when we have exactly those n games
+  const seqOf = (vals, n) => (Array.isArray(vals) && vals.length===n && n<=10) ? vals.map(v => v===L0 ? 'p' : ((isUnder ? v<L0 : v>L0) ? 'w' : 'l')) : null;
+  const rateRow = (label, hit, n, extra, vals) => {
     if (hit==null || !n || n<5) return;
     const k = Math.round((isUnder ? 1-hit : hit)*n), r = k/n;
     const txt = `${label}: ${sw} in ${k} of ${n}${extra||''}`;
-    if (r>0.55) win.push({txt, kind:'rate'}); else if (r<0.45) lose.push({txt, kind:'rate'}); else neutral.push(`${label.toLowerCase()} ${k} of ${n}`);
+    const seq = seqOf(vals, n);
+    if (r>0.55) win.push({txt, kind:'rate', seq}); else if (r<0.45) lose.push({txt, kind:'rate', seq}); else neutral.push(`${label.toLowerCase()} ${k} of ${n}`);
   };
   const avgLean = a => { if (a==null || !L0) return 0; const d = (a-L0)/L0; const s2 = isUnder ? -d : d; return s2>=0.08 ? 1 : s2<=-0.08 ? -1 : 0; };
   // last 10 (hit rate, with the average)
-  rateRow((f.l10n||0)>=10 ? 'Last 10' : `Last ${f.l10n||0}`, f.l10hit, f.l10n||0, f.l10avg!=null ? ` (avg ${f.l10avg.toFixed(1)})` : '');
+  rateRow((f.l10n||0)>=10 ? 'Last 10' : `Last ${f.l10n||0}`, f.l10hit, f.l10n||0, f.l10avg!=null ? ` (avg ${f.l10avg.toFixed(1)})` : '', f.l10vals);
   // last 5 average vs the line: only when it clearly leans (8%+ off the line)
   if (f.l5avg!=null && (f.l5n||5)>=5){ const lean = avgLean(f.l5avg); const txt = `Last 5: averaging ${f.l5avg.toFixed(1)} vs the ${L0} line`; if (lean>0) win.push({txt}); else if (lean<0) lose.push({txt}); }
   // season: hit rate first; if that's a coin flip, the average decides only when it clearly leans
@@ -10597,9 +10602,9 @@ function buildPropPlay(raw, side, feat, est){
     ((up !== isUnder) ? win : lose).push({txt});
   }
   // home / road split
-  rateRow(f.home ? 'Home games' : 'Road games', f.splitHit, f.splitN||0);
+  rateRow(f.home ? 'Home games' : 'Road games', f.splitHit, f.splitN||0, '', f.splitVals);
   // vs this opponent (needs 5+ games, so usually skipped)
-  rateRow(`Vs ${((raw.opp&&raw.opp.short)||'this opponent')}`, f.h2hhit, f.h2hn||0);
+  rateRow(`Vs ${((raw.opp&&raw.opp.short)||'this opponent')}`, f.h2hhit, f.h2hn||0, '', f.h2hVals);
   if (neutral.length) lose.push({txt:`No clear edge from ${neutral.join(', ')}: close to a coin flip`, kind:'neutral'});
   // blowout: one short line (details live in the Matchup block)
   if (bx && bx.lvl>=1 && bx.fav){
@@ -18269,7 +18274,10 @@ function uiReasonLi(x, side){
   const P = uiReasonParts(raw);
   const sideCls = side==='lose' ? 'lose' : side==='win' ? 'win' : 'neu';
   let viz = '';
-  if (P.frac){ const pct = Math.round(P.frac[0]/P.frac[1]*100); viz = `<span class="ui-mini ${sideCls}" title="${P.frac[0]} of ${P.frac[1]}"><i style="width:${pct}%"></i></span>`; }
+  const seq = (x && typeof x==='object' && Array.isArray(x.seq) && x.seq.length && x.seq.length<=10) ? x.seq : null;
+  if (seq){ const nm = {w:'hit', l:'miss', p:'push'}; const isRec = !P.frac;
+    viz = `<span class="ui-dots ui-seq" title="Oldest → newest: ${seq.map(s=>isRec?({w:'W',l:'L',p:'T'}[s]):nm[s]).join(', ')}">${seq.map(s=>`<i class="${s}"></i>`).join('')}</span>`; }
+  else if (P.frac){ const pct = Math.round(P.frac[0]/P.frac[1]*100); viz = `<span class="ui-mini ${sideCls}" title="${P.frac[0]} of ${P.frac[1]}"><i style="width:${pct}%"></i></span>`; }
   else if (P.rec){ const tot = P.rec[0]+P.rec[1];
     viz = tot<=10 ? `<span class="ui-dots" title="${P.rec[0]} wins, ${P.rec[1]} losses">${'<i class="w"></i>'.repeat(P.rec[0])}${'<i class="l"></i>'.repeat(P.rec[1])}</span>`
       : `<span class="ui-rec" title="${P.rec[0]}-${P.rec[1]}"><i class="w" style="width:${(P.rec[0]/tot*100).toFixed(1)}%"></i><i class="l" style="width:${(P.rec[1]/tot*100).toFixed(1)}%"></i></span>`; }
