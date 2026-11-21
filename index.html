@@ -15629,6 +15629,14 @@ function v42FilterPickHTML(board){
    Storage: open rows in IndexedDB "uni" (and memory); graded rows move to "uniDone" (kept 30 days, used by the learners)
    and are counted into daily summary rows in "uniSum" (kept 120 days). Snapshot writes are throttled to once per market
    per 15 minutes, plus one at the board's lock time and one near the start. */
+const UNI_ROLL_DAYS = 60;
+/* add one daily summary row into its monthly row (same board/source/league/verdict) */
+function uniRollInto(M, x){
+  const fd = 'm' + String(x.fd).slice(0, 6), k = `${fd}|${x.b}|${x.src}|${x.l}|${x.v}`;
+  let s = M.get(k); if (!s){ s = {i:k, fd, b:x.b, src:x.src, l:x.l, v:x.v, n:0, w:0, ls:0, pu:0, vd:0, un:0, stake:0, pf:0, sp:0, spn:0, si:0, sin:0, sh:0}; M.set(k, s); }
+  for (const f of ['n','w','ls','pu','vd','un','stake','pf','sp','spn','si','sin','sh']) s[f] = (+s[f]||0) + (+x[f]||0);
+  s.pf = Math.round(s.pf*100)/100; if (M===UNI_SUM) UNI_SUM_DIRTY.add(k);
+}
 const UNI_THROTTLE = 15*60000, UNI_HORIZON = 36*3600000, UNI_RAW_DAYS = 30, UNI_SUM_DAYS = 120, UNI_TICK_MS = 5*60000;
 const UNI_LEARN_CAP = 40000, UNI_EXPIRE_DAYS = 4;
 const UNI = new Map(), UNI_SUM = new Map(), UNI_DIRTY = new Set(), UNI_SUM_DIRTY = new Set(), UNI_GAMES = new Map();
@@ -16262,9 +16270,16 @@ async function uniCompact(force){
   try{
     // raw graded rows: 30 days (what the learners read); daily summary rows: 120 days
     await uniDeleteBelow('uniDone', uniDay(now - UNI_RAW_DAYS*86400000));
-    const cut = uniDay(now - UNI_SUM_DAYS*86400000);
-    await uniDeleteBelow('uniSum', cut);
-    for (const k of [...UNI_SUM.keys()]) if (k < cut) UNI_SUM.delete(k);
+    // v97: daily summary rows older than 60 days roll up into one row per month (key 'mYYYYMM|…'), kept forever,
+    // so This year / All time keep their history and the synced copy stays small
+    const cut = uniDay(now - UNI_ROLL_DAYS*86400000);
+    const old = [...UNI_SUM.values()].filter(x=>x && /^\d{8}$/.test(String(x.fd)) && x.fd < cut);
+    if (old.length){
+      for (const x of old) uniRollInto(UNI_SUM, x);
+      await uniFlush();
+      await uniDeleteBelow('uniSum', cut);
+      for (const x of old) UNI_SUM.delete(x.i);
+    }
     // games the universe no longer needs
     for (const [k, gm] of UNI_GAMES) if (gm.t < now - 12*3600000) UNI_GAMES.delete(k);
     for (const k in UNI_ST.evAt) if (now - UNI_ST.evAt[k] > 2*86400000) delete UNI_ST.evAt[k];
@@ -17747,10 +17762,13 @@ function renderResults(){
   const learnV = safe(()=>typeof verdictLearnPanelHTML==='function' ? verdictLearnPanelHTML() : '');
   const learnG = safe(()=>typeof learnPanelHTML==='function' ? learnPanelHTML() : '');
   const learnP = safe(()=>typeof propsLearnPanelHTML==='function' ? propsLearnPanelHTML() : '');
+  // v97: Tracked universe is the only results section; the model's own pick log keeps running in the background.
+  // Its 'Games and Props settings' dropdown moved into Model learning.
+  const autoBody = safe(()=>{ const a = typeof v42ResultsHTML==='function' ? v42ResultsHTML() : ''; return a.replace(/^<div class="card v42-auto">/, '<div class="v42-auto">').replace(/<div class="section-title"[\s\S]*?<\/h2>[\s\S]*?<\/div>/, ''); });
   const learning = `<div class="card v55-learn"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning</h2><span class="hint">How each model is tuning itself from graded results.</span></div>
-    ${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}${v55DD('v55-learn-check', '🩺 Weekly model check', chk)}</div>`;
-  const picked = safe(()=>typeof modelResultsHTML==='function' ? modelResultsHTML() : '');
-  // v96: Tracked universe is its own section again, between What the model picked and Model learning
+    ${autoBody ? v55DD('v55-auto', '⚙️ Games and Props settings', autoBody) : ''}${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}${v55DD('v55-learn-check', '🩺 Weekly model check', chk)}</div>`;
+  const picked = '';
+  // Tracked universe first, then Model learning
   const uniCard = `<div class="card v55-learn uni-card"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</span></div>${uni}</div>`;
   $('#view').innerHTML = title + picked + uniCard + learning;
   try{ if (typeof mrBind==='function') mrBind(); }catch(e){}
@@ -20649,7 +20667,7 @@ window.v95Status = () => ({ush:{docs:USH.docs.length, at:USH.at, err:USH.err, pu
      last upload, so Settings › Account shows exactly which device is behind and why.
    - Sync now = full pull + push of everything (settings, bets, filters, Tracked universe, learning, pick log).
    - Auto-update: an open tab (e.g. the always-on VPS) reloads itself into a new version when it's idle. */
-var APP_BUILD = 96;
+var APP_BUILD = 97;
 MR.range = 7;
 var DEVS = {list:[], at:0, err:'', busy:false};
 function devLabel(){ return (typeof mchkDev==='function') ? mchkDev() : {id:AUTH.deviceId, lab:'a device'}; }
@@ -20781,6 +20799,103 @@ document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState
   document.head.appendChild(st);
 })();
 window.syncDiag = () => ({status:AUTH.status, err:AUTH.err, mode:AUTH.mode||'live', lastSync:AUTH.lastSync, devices:(DEVS.list||[]).map(d=>({lab:d.lab, ver:d.ver, seen:d.seen, uniAt:d.uniAt})), build:APP_BUILD, pendingUpdate:UPD.pending});
+/* ================= v97: Tracked universe is the Results page, with one range for every number =================
+   Ranges: Today / Last 7 days / Last 30 days / This year / All time. Daily summary rows are kept 60 days, then
+   rolled into monthly rows (kept for good), so This year and All time keep their history. */
+modelResultsHTML = function(){ return ''; };          // pick logging + grading keep running (mlogPush / mlogLoad loops)
+var UR = {range:(()=>{ try{ const v = localStorage.getItem('bl_uni_range'); return ['today','7','30','year','all'].includes(v) ? v : '7'; }catch(e){ return '7'; } })()};
+var UR_LABEL = {today:'Today', '7':'Last 7 days', '30':'Last 30 days', year:'This year', all:'All time'};
+var UR_KV = {today:'Tracked today', '7':'Tracked · last 7 days', '30':'Tracked · last 30 days', year:'Tracked · this year', all:'Tracked · all time'};
+function urFrom(){
+  const now = Date.now();
+  if (UR.range==='today') return uniDay(now);
+  if (UR.range==='7') return uniDay(now - 6*86400000);
+  if (UR.range==='30') return uniDay(now - 29*86400000);
+  if (UR.range==='year') return new Date().getFullYear() + '0101';
+  return '';
+}
+/* does a summary key's day (YYYYMMDD) or month ('mYYYYMM') fall in the range? */
+function urIn(fd, from){
+  fd = String(fd||'');
+  if (fd[0]==='m') return UR.range==='all' || (UR.range==='year' && fd.slice(1, 5)===String(new Date().getFullYear()));
+  return fd >= from;
+}
+function urAdd(a, b){ const o = a.slice(); for (let i=0;i<9;i++) o[i] = Math.round(((+o[i]||0) + (+b[i]||0))*100)/100; return o; }
+/* one device's summaries with days past the daily window folded into months (so old and new devices line up) */
+function urNorm(sums){
+  const cut = uniDay(Date.now() - UNI_ROLL_DAYS*86400000), out = {};
+  for (const k in sums){ const a = sums[k]; if (!Array.isArray(a)) continue; const i = k.indexOf('|'); const fd = k.slice(0, i);
+    const kk = (/^\d{8}$/.test(fd) && fd < cut) ? 'm' + fd.slice(0, 6) + k.slice(i) : k;
+    out[kk] = out[kk] ? urAdd(out[kk], a) : a.slice(); }
+  return out;
+}
+ushMerged = function(){
+  const me = mchkDev().id; const L = ushLocal();
+  const sums = new Map(), open = new Map(); let lastTick = +UNI_ST.lastTick||0, devs = 1;
+  const takeS = (k, a) => { const o = sums.get(k); if (!o || a[0] > o[0]) sums.set(k, a); };
+  const takeO = (k, n) => { if ((open.get(k)||0) < n) open.set(k, n); };
+  const mine = urNorm(L.sums); for (const k in mine) takeS(k, mine[k]); for (const k in L.open) takeO(k, L.open[k]);
+  const oc = uniDay(Date.now() - 2*86400000);
+  for (const x of USH.docs){ if (x.dev===me) continue; devs++; const n = urNorm(x.sums||{}); for (const k in n) takeS(k, n[k]);
+    for (const k in (x.open||{})) if (k >= oc) takeO(k, x.open[k]);
+    lastTick = Math.max(lastTick, +x.lastTick||0); }
+  return {sums, open, lastTick, devs};
+};
+uniCountsMerged = function(){
+  const M = ushMerged(), from = urFrom();
+  const mk = () => ({total:0, open:0, graded:0, tv:{good:0, watch:0, avoid:0, nocall:0}, src:{}, bucket:{good:{w:0,l:0,pf:0,st:0,n:0}, watch:{w:0,l:0,pf:0,st:0,n:0}, avoid:{w:0,l:0,pf:0,st:0,n:0}, nocall:{w:0,l:0,pf:0,st:0,n:0}}, un:0, vd:0, pu:0});
+  const B = {games:mk(), props:mk()}; let first = '';
+  const seen = fd => { const d = fd[0]==='m' ? fd.slice(1) + '00' : fd; if (!first || d < first) first = d; };
+  for (const [k, n] of M.open){ const [fd, b, src, , v] = k.split('|'); const c = B[b]; if (!c) continue; seen(fd); if (!urIn(fd, from)) continue;
+    c.open += n; c.total += n; c.src[src] = (c.src[src]||0) + n; c.tv[v] = (c.tv[v]||0) + n; }
+  for (const [k, a] of M.sums){ const [fd, b, src, , v] = k.split('|'); const c = B[b]; if (!c) continue; seen(fd); if (!urIn(fd, from)) continue;
+    const [n, w, ls, pu, vd, un, stake, pf] = a;
+    c.total += n; c.src[src] = (c.src[src]||0) + n; c.tv[v] = (c.tv[v]||0) + n; c.graded += w + ls + pu; c.un += un; c.vd += vd; c.pu += pu;
+    const q = c.bucket[v] || (c.bucket[v] = {w:0,l:0,pf:0,st:0,n:0}); q.w += w; q.l += ls; q.pf += pf; q.st += stake; q.n += w + ls; }
+  B.lastTick = M.lastTick; B.devs = M.devs; B.first = first;
+  return B;
+};
+function urDate(d){ if (d.slice(6)==='00'){ const m = new Date(+d.slice(0,4), +d.slice(4,6) - 1, 15); return m.toLocaleDateString([], {month:'short', year:'numeric'}); } const t = new Date(+d.slice(0,4), +d.slice(4,6) - 1, +d.slice(6,8), 12); return t.toLocaleDateString([], t.getFullYear()===new Date().getFullYear() ? {month:'short', day:'numeric'} : {month:'short', day:'numeric', year:'numeric'}); }
+uniInnerHTML = function(){
+  const B = uniCountsMerged();
+  const f = n => (+n||0).toLocaleString();
+  const pct = x => x==null ? '—' : Math.round(x*100)+'%';
+  const roiS = x => x==null ? '—' : (x>=0?'+':'')+(x*100).toFixed(1)+'%';
+  const NAMES = {good:'Picks', watch:'Watch', avoid:'Avoid', nocall:'No call'};
+  const SRC = {sb:'sportsbook', pm:'Polymarket', kalshi:'Kalshi', px:'ProphetX', cc:'Crypto.com', nv:'Novig'};
+  const card = (b, title) => {
+    const c = B[b];
+    const tv = ['good','watch','avoid','nocall'].map(v=>`${NAMES[v]} ${f(c.tv[v]||0)}`).join(' · ');
+    const rows = ['good','watch','avoid','nocall'].map(v=>{
+      const k = c.bucket[v] || {w:0,l:0,pf:0,st:0,n:0}; const r = k.st ? k.pf/k.st : null, hr = k.n ? k.w/k.n : null; const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
+      return `<div class="uni-row"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `${pct(hr)} hit · <b class="${cls}">${roiS(r)}</b> ROI` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
+    }).join('');
+    const src = Object.entries(c.src).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${SRC[k]||k} ${f(v)}`).join(' · ');
+    const extra = (c.un||c.vd||c.pu) ? ` Pushes ${f(c.pu)}, voids ${f(c.vd)} (did not play / postponed), ungradeable ${f(c.un)}.` : '';
+    return `<div class="v42-b uni-b"><h3>${title}</h3>
+      <div class="v42-kv"><span class="k">${UR_KV[UR.range]}</span><span class="v">${f(c.total)} markets · ${f(c.graded)} graded</span></div><div class="hint">${tv}</div>
+      <div class="hint uni-src">${esc(src||'Nothing yet.')} · ${f(c.open)} waiting on a final.${extra}</div>
+      <div class="uni-buckets">${rows}</div></div>`;
+  };
+  const sel = `<div class="mr-filters uni-filters"><label class="mr-f"><span>Range</span><select data-uni-range aria-label="Tracked universe range">${['today','7','30','year','all'].map(v=>`<option value="${v}" ${UR.range===v?'selected':''}>${UR_LABEL[v]}</option>`).join('')}</select></label></div>`;
+  const fromD = urFrom();
+  const cover = B.first && (UR.range==='all' || (UR.range==='year' && B.first > fromD) || ((UR.range==='7' || UR.range==='30') && B.first > fromD))
+    ? `${UR_LABEL[UR.range]} covers what's been tracked since ${urDate(B.first)}. ` : '';
+  const when = B.lastTick ? `Last scan ${new Date(B.lastTick).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.';
+  const loading = mlogOn() && !USH.at ? ' Loading from your account…' : '';
+  return `<div class="uni-in">${sel}
+    <div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>
+    <div class="hint" style="margin-top:10px">${cover}Synced across ${B.devs} signed-in device${B.devs===1?'':'s'}. ${when}${loading}${USH.err ? ` Couldn't reach the account copy (${esc(String(USH.err))}).` : ''}</div></div>`;
+};
+uniResultsHTML = function(){ return uniInnerHTML(); };
+document.addEventListener('change', e=>{
+  const s = e.target && e.target.closest && e.target.closest('[data-uni-range]'); if (!s) return;
+  UR.range = s.value; try{ localStorage.setItem('bl_uni_range', UR.range); }catch(e){}
+  const y = window.scrollY; v95RefreshLearning(); if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  const n = document.querySelector('#view [data-uni-range]'); if (n) n.focus({preventScroll:true});
+});
+(function(){ const st = document.createElement('style'); st.textContent = `.uni-in .uni-filters{margin:0 0 12px}
+.uni-in .uni-src{margin-top:4px}`; document.head.appendChild(st); })();
 </script>
 </body>
 </html>
