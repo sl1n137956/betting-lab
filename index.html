@@ -21576,6 +21576,318 @@ window.cap4Debug = function(n){
 };
 /* v105: model learning auto-retunes on a graded-count threshold, not a weekly timer. */
 APP_BUILD = 105;
+/* ===== v106: plain-English courtroom (Stanley: "fix the wording so that the reason why it can win or lose is easier
+   and not too repetitive so it should talk about everything easy to understand").
+   Same verified data as v104, rewritten as short everyday sentences. One bullet per angle (form, record on this
+   number, home/road, matchup history, injuries/returns, rest, game script, team strength), overlapping angles merged
+   (last 5 + streak + last-10 = one "Form" bullet; scoring + ranks = one; all outs on a team = one). The Judge weighs
+   the sides in words and never repeats the bullets' numbers. No price talk. Labels unchanged. */
+APP_BUILD = 106;
+function c6R(x){ x = Math.abs(+x); return x>=3 ? String(Math.round(x)) : x.toFixed(1).replace(/\.0$/,''); }
+function c6Pl(n, one, many){ return `${n} ${n===1?one:many}`; }
+function c6It(label, txt, s, kind, tp, key){ return {txt: label ? `${label}: ${txt}` : txt, s: s||0, kind: kind||'cap', cap4:true, tp: tp||'', key: key||''}; }
+function c6Join(list){ list = list.filter(Boolean); return list.length<=1 ? (list[0]||'') : list.slice(0,-1).join(', ') + ' and ' + list[list.length-1]; }
+function c6Judge(o){
+  // plain summary: which angles back it, the main risk, then the call. No numbers (they're in the bullets).
+  if (o.started) return 'The game already started, so this one is off the table.';
+  const tw = [], tl = [];
+  for (const x of o.win||[]) if (x.tp && !tw.includes(x.tp) && tw.length<2) tw.push(x.tp);
+  for (const x of o.lose||[]) if (x.tp && !tl.includes(x.tp) && !tw.includes(x.tp) && tl.length<1) tl.push(x.tp);
+  const ws = (o.win||[]).slice(0,3).reduce((s,x)=>s+(x.s||0),0), ls = (o.lose||[]).slice(0,3).reduce((s,x)=>s+(x.s||0),0);
+  if (tw.length===2){ const m1 = /^(\S+)'s /.exec(tw[0]); if (m1 && tw[1].startsWith(m1[1]+"'s ")) tw[1] = 'their ' + tw[1].slice(m1[1].length+3); }
+  let first;
+  if (tw.length && tl.length) first = `${cap4Up(c6Join(tw))} ${tw.length>1?'point':'points'} to ${o.pick}, but the ${ls>=ws?'big':'main'} risk is ${tl[0]}.`;
+  else if (tw.length) first = `${cap4Up(c6Join(tw))} ${tw.length>1?'point':'points'} to ${o.pick}, and nothing big works against it.`;
+  else if (tl.length) first = `Not much points to ${o.pick}, and ${tl[0]} works against it.`;
+  else first = 'Nothing in the numbers stands out either way.';
+  const V = String(o.v||'').toUpperCase();
+  let fail = o.fail ? String(o.fail).replace(/\.$/,'') : '';
+  { const m = /turned (.+?) off for strict picks/i.exec(fail); if (m) fail = `the app has ${m[1]} switched off for picks after it lost in testing`; }
+  fail = fail.replace(/\s*\((?:needs|under|over|lost money)[^)]*\)+/gi,'').replace(/\bsmall sample\b/i,'he hasn’t played enough games yet').replace(/\bshort recent sample\b/i,'there aren’t enough recent games').replace(/\b(\d)\b/g, (m0, d)=>['no','one','two','three','four','five','six','seven','eight','nine'][+d]).trim();
+  if (/\d/.test(fail)) fail = '';
+  if (fail && ((typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(fail)) || (typeof uiCleanTxt==='function' && !uiCleanTxt(fail)))) fail = '';
+  let call;
+  if (/^(BET|GOOD)$/.test(V)) call = 'That’s enough to bet it.';
+  else if (/^(WATCH|WATCHLIST|MAYBE LATER)$/.test(V)) call = fail ? `It’s close, but ${uiLc(fail)}, so wait and check again before the game.` : 'It’s close, so wait and check again before the game.';
+  else if (ws > ls && fail) call = `There’s a case, but ${uiLc(fail)}, so skip it.`;
+  else if (ls >= ws && ls > 0) call = 'The risks outweigh the reasons for it, so skip it.';
+  else call = 'It isn’t strong enough, so skip it.';
+  return first + ' ' + call;
+}
+
+/* ---------- props ---------- */
+function capProp(p){
+  if (!p || !p.feat || p.line==null) return null;
+  const f = p.feat, L = +p.line, under = p.side==='under', g = p.g || {}, lg = p.league || g.league;
+  const SD = under ? 'under' : 'over', OT = under ? 'over' : 'under';
+  const hit = v => under ? v < L : v > L, miss = v => under ? v > L : v < L;
+  const who = typeof shortPlayerName==='function' ? shortPlayerName(p.playerName) : (p.playerName||'He');
+  const win = [], lose = [], put = (good, it) => (good ? win : lose).push(it);
+  const opp = p.opp && typeof p.opp==='string' ? p.opp : ((p.home ? g.away : g.home) || {}).short || '';
+  const tk = p.home ? 'home' : 'away';
+  // injuries and returns: one bullet
+  const ms = cap4PropMissed(p), inj = cap4PropInj(p), out = inj && /^out$/i.test(inj.st);
+  const back = ms && ms.n>=2 && !out, q = inj && /questionable|doubtful|day-to-day/i.test(inj.st);
+  if (back || q){
+    const what = inj && inj.typ ? ` (${inj.typ})` : '';
+    let t;
+    if (back && q) t = `${who} has missed ${ms.team}'s last ${ms.n}${ms.all5?' or more':''} games${what} and is listed ${inj.st.toLowerCase()}. If he plays, it's his first game back, so his minutes may be limited.`;
+    else if (back) t = `${who} has missed ${ms.team}'s last ${ms.n}${ms.all5?' or more':''} games. If he plays, it's his first game back, so his minutes may be limited.`;
+    else t = `${who} is listed ${inj.st.toLowerCase()}${what}. Even if he plays, he may not play his usual minutes.`;
+    put(under, c6It('Injuries', t, back ? 2.6 : 1.8, 'avail', back ? 'his return from injury' : 'his injury status', 'p-inj'));
+  }
+  // form: last 10 + current streak + last 5 average, merged
+  const t10 = f.l10vals || [], sv = f.seasonVals || [];
+  let a = 0; for (let i=sv.length-1;i>=0 && hit(sv[i]);i--) a++;
+  let bm = 0; for (let i=sv.length-1;i>=0 && miss(sv[i]);i--) bm++;
+  let formSide = null;
+  if (t10.length>=5){
+    const n = t10.length, k = cap4Cnt(t10, hit), ko = cap4Cnt(t10, miss);
+    if (k/n>=0.6 || ko/n>=0.6){
+      const good = k/n>=0.6, kk = good ? k : ko, dir = good ? SD : OT, run = good ? a : bm;
+      let t = `He's gone ${dir} ${L} in ${kk} of his last ${n} games`;
+      if (run>=3) t += `, including the last ${run} in a row`;
+      t += '.';
+      if (good && kk>=Math.ceil(n*0.8)) t += under ? ` Even his best game in that stretch was ${cap4Num(Math.max(...t10))}.` : ` His worst game in that stretch was ${cap4Num(Math.min(...t10))}.`;
+      formSide = good;
+      put(good, c6It('Form', t, cap4Rs(kk,n)+0.4+(run>=3?0.3:0), 'l10', 'his recent form', 'p-form'));
+    }
+  }
+  if (formSide==null && (a>=3 || bm>=3)){
+    const good = a>=3; formSide = good;
+    put(good, c6It('Form', `He's gone ${good?SD:OT} ${L} in each of his last ${good?a:bm} games.`, 0.35*(good?a:bm)+0.3, 'streak', 'his recent form', 'p-form'));
+  }
+  if (f.l5n>=3 && f.l5avg!=null){
+    const d = f.l5avg - L, good = under ? d<0 : d>0, gap = Math.abs(d);
+    // only when it adds something: no form bullet yet, or it points the other way
+    if (gap >= Math.max(0.5, L*0.08) && (formSide==null || formSide!==good))
+      put(good, c6It('Last 5', `Lately he's averaging ${cap4F(f.l5avg)}, which is ${cap4F(gap)} ${d>0?'above':'below'} the ${L} line.`, Math.min(2, gap/Math.max(1, L*0.15)), 'l5', good ? 'his last few games' : 'his last few games', 'p-l5'));
+  }
+  // this exact number over the season
+  if (f.n>=8){
+    let k, ko, n, where = 'this season';
+    if (f.n<=sv.length){ n = sv.length; k = cap4Cnt(sv, hit); ko = cap4Cnt(sv, miss); }
+    else if (!Number.isInteger(L) && f.seasonHit!=null){ n = f.n; const ov = Math.round(f.seasonHit*n); k = under ? n-ov : ov; ko = n-k; }
+    else { n = sv.length; k = cap4Cnt(sv, hit); ko = cap4Cnt(sv, miss); where = `over his last ${n} games`; }
+    if (n>=8){
+      if (k/n>=0.6) put(true, c6It('Season', `${cap4Up(where)}, he's gone ${SD} ${L} in ${k} of ${n} games${k/n>=0.7?' — a strong track record on this number':''}.`, cap4Rs(k,n)+0.3, 'season', 'his season-long record on this number', 'p-szn'));
+      else if (ko/n>=0.6) put(false, c6It('Season', `${cap4Up(where)}, he's gone ${OT} ${L} in ${ko} of ${n} games.`, cap4Rs(ko,n)+0.3, 'season', 'his season-long record on this number', 'p-szn'));
+    }
+  }
+  // home / road
+  const spv = f.splitVals || [];
+  if (spv.length>=5){
+    const n = spv.length, k = cap4Cnt(spv, hit), ko = cap4Cnt(spv, miss), where = f.home ? 'At home' : 'On the road', lab = f.home ? 'Home games' : 'Road games';
+    if (k/n>=0.6) put(true, c6It(lab, `${where}, he's gone ${SD} in ${k} of ${n} games.`, cap4Rs(k,n), 'split', f.home ? 'his home numbers' : 'his road numbers', 'p-split'));
+    else if (ko/n>=0.6) put(false, c6It(lab, `${where}, he's gone ${OT} in ${ko} of ${n} games.`, cap4Rs(ko,n), 'split', f.home ? 'his home numbers' : 'his road numbers', 'p-split'));
+  }
+  // this opponent
+  const hv = f.h2hVals || [];
+  if (hv.length>=2 && opp){
+    const n = hv.length, k = cap4Cnt(hv, hit), ko = cap4Cnt(hv, miss), avg = hv.reduce((s,x)=>s+x,0)/n;
+    if (k/n>=0.65) put(true, c6It(`Vs ${opp}`, `Against ${opp} this season he's gone ${SD} in ${k} of ${n} games, averaging ${cap4F(avg)}.`, cap4Rs(k,n)+0.2, 'h2h', `how he's done against ${opp}`, 'p-h2h'));
+    else if (ko/n>=0.65) put(false, c6It(`Vs ${opp}`, `Against ${opp} this season he's gone ${OT} in ${ko} of ${n} games, averaging ${cap4F(avg)}.`, cap4Rs(ko,n)+0.2, 'h2h', `how he's done against ${opp}`, 'p-h2h'));
+  }
+  // minutes (skip right after an absence: the injury bullet already covers it)
+  if (f.minL5!=null && f.minSzn!=null && f.minSzn>=10 && Math.abs(f.minL5-f.minSzn)>=2 && !back){
+    const up = f.minL5 > f.minSzn;
+    put(up !== under, c6It('Minutes', `He's playing ${up?'more':'less'} lately: ${cap4F(f.minL5)} minutes a game over his last 5, ${up?'up':'down'} from ${cap4F(f.minSzn)} on the season. ${up?'More':'Fewer'} minutes means ${up?'more':'fewer'} chances.`, Math.min(1.6, Math.abs(f.minL5-f.minSzn)/3), 'min', up ? 'his bigger minutes' : 'his smaller minutes', 'p-min'));
+  }
+  // game script
+  const LN = cap4Lines(g);
+  if (LN && (cap4Basket(lg) || cap4Foot(lg))){
+    const pt = LN[tk], itt = LN.total/2 - pt/2, team = (g[tk] && g[tk].short) || '';
+    const comp = cap4Foot(lg) ? 7 : 7.5, blow = cap4Foot(lg) ? 11.5 : (lg==='ncaab' ? 14 : 11), sp = Math.abs(pt);
+    const role = pt===0 ? `${team} are even with their opponent` : `${team} are ${cap4Num(sp)}-point ${pt<0?'favorites':'underdogs'}`;
+    if (sp<=comp) put(!under, c6It('Game script', `${role} and expected to score about ${Math.round(itt)}. The game should stay close, so he should play his normal minutes.`, 0.6, 'script', 'a close game', 'p-script'));
+    else if (sp>=blow) put(under, c6It('Game script', `${role}, so this could turn into a blowout and starters may sit late.`, 1.2, 'script', 'the blowout risk', 'p-script'));
+  }
+  // opponent defense for scoring props
+  if (cap4Basket(lg) && /^(pts|pra|pr|pa)$/.test(p.kind||'') && typeof slateRanks==='function'){
+    const ra = slateRanks(lg), O = g[p.home ? 'away' : 'home'], r = ra && O && ra.byId[String(O.id)];
+    if (r && ra.n>=8){
+      if (r.def <= Math.ceil(ra.n/4)) put(under, c6It('Matchup', `${O.short} give up just ${cap4F(r.pa)} points a game, the ${ordN(r.def)} fewest of the ${ra.n} ${cap4LgLabel(lg)} teams playing today. That's a tough defense to score on.`, 1.0, 'opp', `${O.short}'s tough defense`, 'p-opp'));
+      else if (r.def > ra.n - Math.ceil(ra.n/4)) put(!under, c6It('Matchup', `${O.short} give up ${cap4F(r.pa)} points a game, the ${ordN(ra.n - r.def + 1)} most of the ${ra.n} ${cap4LgLabel(lg)} teams playing today. That's an easy defense to score on.`, 1.0, 'opp', `${O.short}'s weak defense`, 'p-opp'));
+    }
+  }
+  // rest
+  if (!back && f.rest!=null){
+    if (f.rest<=1) put(under, c6It('Rest', `He played yesterday, so this is the second game of a back-to-back and he may be tired.`, 0.9, 'rest', 'tired legs', 'p-rest'));
+    else if (f.rest>=3 && f.rest<=6) put(!under, c6It('Rest', `He's had ${f.rest} days off, so he should be fresh.`, 0.4, 'rest', 'the extra rest', 'p-rest'));
+  }
+  // how much he swings
+  if (t10.length>=6 && f.l10sd!=null && L && f.l10sd > L*0.45){
+    const lo = Math.min(...t10), hi = Math.max(...t10);
+    if (hi-lo >= Math.max(2, L*0.8)) lose.push(c6It('Swings', `His numbers jump around a lot: anywhere from ${cap4Num(lo)} to ${cap4Num(hi)} in his last ${t10.length} games, so one quiet or big night decides this.`, 0.8, 'var', 'how much his numbers swing', 'p-var'));
+  }
+  const R = cap4Finish(win, lose);
+  const C = p.C || {};
+  const fail = ((p.strictFails||p._fails||[]).find(x=>!(typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(String(x))) && !(typeof UI_BANNED!=='undefined' && UI_BANNED.test(String(x)))) || '');
+  const v = C.J==='BET' ? 'BET' : C.J==='MAYBE LATER' ? 'WATCH' : (p.verdict==='good'?'BET':p.verdict==='watch'?'WATCH':'SKIP');
+  R.sentence = !((p.raw && p.raw.rows) || []).length ? (C.sentence || '') : c6Judge({v, win:R.win, lose:R.lose, pick:`the ${SD}`, fail});
+  return R;
+}
+
+/* ---------- games ---------- */
+function c6Form(g, s, ctx){
+  const fx = g.fx, X = (g[s] && g[s].short) || s;
+  const rows = ((fx && fx.sides && fx.sides[s] && fx.sides[s].l5) || []).filter(r=>r && isFinite(+r.pf) && isFinite(+r.pa));
+  if (rows.length<3) return null;
+  const n = rows.length, w = cap4Cnt(rows, r=>+r.pf>+r.pa), l = cap4Cnt(rows, r=>+r.pf<+r.pa), d = n-w-l, sum = rows.reduce((a,r)=>a+(+r.pf)-(+r.pa),0), m = sum/n;
+  if (w===l) return null;
+  const u = ctx.unit; let t;
+  if (ctx.soccer){
+    const parts = []; if (d) parts.push(c6Pl(d,'draw','draws')); if (l) parts.push(c6Pl(l,'loss','losses'));
+    t = w===0 ? `${X} haven't won in their last ${n} games (${c6Join(parts)})` : `${X} have won ${w} of their last ${n} games${parts.length?` (${c6Join(parts)})`:''}`;
+    t += sum>0 ? `, scoring ${c6Pl(sum,'more goal','more goals')} than they've allowed.` : sum<0 ? `, allowing ${c6Pl(-sum,'more goal','more goals')} than they've scored.` : '.';
+  } else if (w===n) t = `${X} have won all of their last ${n} games, by about ${c6R(m)} ${u} a game.`;
+  else if (l===n) t = `${X} have lost all of their last ${n} games, by about ${c6R(m)} ${u} a game.`;
+  else if (w>l) t = `${X} have won ${w} of their last ${n} games${m>0?`, outscoring teams by about ${c6R(m)} ${u} a game`:''}.`;
+  else t = `${X} have lost ${l} of their last ${n} games${m<0?`, getting outscored by about ${c6R(m)} ${u} a game`:''}.`;
+  // a longer streak than the last-5 window shows
+  const sf = (ctx.facts||[]).find(f=>f.kind==='streak' && new RegExp('^'+X.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+' have (won|lost) (\\d+) in a row').test(f.txt));
+  if (sf){ const mm = /have (won|lost) (\d+) in a row/.exec(sf.txt); if (+mm[2] > n) t += ` That's ${mm[2]} straight ${mm[1]==='won'?'wins':'losses'}.`; }
+  const hot = w>l;
+  return {X, hot, it: c6It('Form', t, cap4Rs(Math.max(w,l), n)+0.3, 'form', `${X}'s recent form`)};
+}
+function capGame(p, C){
+  if (!p || !p.g || !C) return null;
+  const g = p.g, lg = g.league, team = p.side==='home' || p.side==='away', fx = g.fx;
+  const opp = team ? (p.side==='home' ? 'away' : 'home') : null;
+  const ctx = {unit: cap4UnitWord(lg), soccer: cap4Soccer(lg), facts: C.facts || []};
+  const us = team ? g[p.side].short : '', them = team ? g[opp].short : '';
+  const win = [], lose = [], put = (good, it) => it && (good ? win : lose).push(it);
+  const facts = C.facts || [];
+  const fact = k => facts.filter(f=>f.kind===k);
+  if (team){
+    // form, one bullet per team
+    for (const s of [p.side, opp]){ const F = c6Form(g, s, ctx); if (F) put((F.X===us) === F.hot, F.it); }
+    if (!fx || !fx.sides) for (const f of fact('l10')){ const m = /^(.+?) are (\d+)–(\d+)(?:–\d+)? in their last 10$/.exec(f.txt); if (m && !ctx.soccer && +m[2]!==+m[3]) put(f.good!==false && ((m[1]===us) === (+m[2]>+m[3])), c6It('Form', `${m[1]} have won ${m[2]} of their last ${+m[2]+(+m[3])} games.`, cap4Rs(Math.max(+m[2],+m[3]), +m[2]+(+m[3])), 'form', `${m[1]}'s recent form`)); }
+    // season strength: scoring + rank, one bullet
+    const a = fx && fx.sides && typeof pfpa==='function' ? pfpa(fx.sides[p.side] && fx.sides[p.side].stats) : null;
+    const b = fx && fx.sides && typeof pfpa==='function' ? pfpa(fx.sides[opp] && fx.sides[opp].stats) : null;
+    if (a && b){
+      const da = a.pf-a.pa, db = b.pf-b.pa, gap = da-db, thr = (ctx.unit==='points') ? 2 : 0.3;
+      if (Math.abs(gap) >= thr){
+        const usBetter = gap>0, B = usBetter ? a : b, W = usBetter ? b : a, BN = usBetter ? us : them, WN = usBetter ? them : us;
+        let t = `${BN} have been the better team this season: they score ${cap4F(B.pf)} and allow ${cap4F(B.pa)} ${ctx.unit} a game, while ${WN} score ${cap4F(W.pf)} and allow ${cap4F(W.pa)}.`;
+        const ra = typeof slateRanks==='function' ? slateRanks(lg) : null, Bid = usBetter ? g[p.side].id : g[opp].id, rr = ra && ra.n>=8 && ra.byId[String(Bid)];
+        if (rr){ const best = rr.off<=rr.def ? ['offense', rr.off] : ['defense', rr.def]; if (best[1]<=3) t += ` That's the ${best[1]===1?'best':ordN(best[1])+'-best'} ${best[0]} of the ${ra.n} ${cap4LgLabel(lg)} teams playing today.`; }
+        put(usBetter, c6It('Scoring', t, Math.min(2, Math.abs(gap)/(ctx.unit==='points'?6:0.6)), 'scoring', usBetter ? `${us}'s stronger season numbers` : `${them}'s stronger season numbers`));
+      }
+    }
+    // cover check vs today's spread
+    if (p.mk==='spread' && p.sd && p.sd.point!=null && !ctx.soccer && fx && fx.sides){
+      const pt = +p.sd.point, R = ((fx.sides[p.side] && fx.sides[p.side].l5) || []).filter(r=>isFinite(+r.pf) && isFinite(+r.pa));
+      if (R.length>=4 && isFinite(pt) && pt!==0){
+        const k = cap4Cnt(R, r => (r.pf - r.pa) + pt > 0), n = R.length, ab = Math.abs(pt), half = !Number.isInteger(ab);
+        const u = ctx.unit;
+        if (pt<0){
+          const by = half ? `${Math.ceil(ab)} or more ${u}` : `more than ${ab} ${u}`;
+          if (k/n>=0.6) put(true, c6It('Cover check', `They've won by ${by} in ${k} of their last ${n} games, which is what they need today.`, cap4Rs(k,n)+0.2, 'cover', 'how often they win by enough'));
+          else if (k/n<=0.4) put(false, c6It('Cover check', `They've won by ${by} in only ${k} of their last ${n} games, and they need that today.`, cap4Rs(n-k,n)+0.2, 'cover', 'how rarely they win by enough'));
+        } else {
+          const by = half ? `${Math.floor(ab)} or fewer` : `fewer than ${ab}`;
+          if (k/n>=0.6) put(true, c6It('Cover check', `In ${k} of their last ${n} games, ${us} either won or lost by ${by} ${u}, which is enough today.`, cap4Rs(k,n)+0.2, 'cover', 'how often they stay close'));
+          else if (k/n<=0.4) put(false, c6It('Cover check', `In ${n-k} of their last ${n} games, ${us} lost by more than ${ab} ${u}.`, cap4Rs(n-k,n)+0.2, 'cover', 'how often they lose big'));
+        }
+      }
+    }
+    // home / road records
+    for (const f of fact('split')){
+      const m = /^(.+?) are (\d+)-(\d+)(?:-(\d+))? (at home|on the road); (.+?) are (\d+)-(\d+)(?:-(\d+))? (at home|on the road)/.exec(f.txt); if (!m || f.good==null) continue;
+      const rec = (w,l,t) => `${w}-${l}${t!=null?'-'+t:''}`, A = m[1], Bn = m[6], ar = rec(m[2],m[3],m[4]), br = rec(m[7],m[8],m[9]);
+      const winless = (+m[7]===0 && (+m[8])+(+(m[9]||0))>=4) ? `${Bn} haven't won ${m[10]} this season (${br}), while ${A} are ${ar} ${m[5]}.` : (+m[2]===0 && (+m[3])+(+(m[4]||0))>=4) ? `${A} haven't won ${m[5]} this season (${ar}), while ${Bn} are ${br} ${m[10]}.` : `${A} are ${ar} ${m[5]} this season, and ${Bn} are ${br} ${m[10]}.`;
+      const pa = +m[2]/Math.max(1,(+m[2])+(+m[3])+(+(m[4]||0))), pb = +m[7]/Math.max(1,(+m[7])+(+m[8])+(+(m[9]||0)));
+      put(f.good, c6It('Venue', winless, Math.min(1.5, Math.abs(pa-pb)*1.6), 'split', 'the home and road records'));
+    }
+    // head to head
+    for (const f of fact('h2h')){
+      const m = /^(.+?) are (\d+)–(\d+) against (.+?) in the games we have(?:\. Last meeting(?: \(([^)]+)\))?: (.+?) won(?: (\d+)–(\d+))?)?$/.exec(f.txt);
+      if (!m || f.good==null) continue;
+      const A = m[1], w = +m[2], l = +m[3], Bn = m[4];
+      let t = w+l>=2 && l===0 ? `${A} have won all ${w} meetings with ${Bn} that we have.` : w+l>=2 && w===0 ? `${A} have lost all ${l} meetings with ${Bn} that we have.` : `${A} have won ${w} of their ${w+l} meetings with ${Bn} that we have.`;
+      if (m[6] && !(w+l===1)) t += ` The last one went to ${m[6]}${m[7]?`, ${m[7]}–${m[8]}`:''}${m[5]?` on ${m[5]}`:''}.`;
+      else if (m[6]) t = `${m[6]} won the only meeting we have between these two${m[7]?`, ${m[7]}–${m[8]}`:''}${m[5]?` on ${m[5]}`:''}.`;
+      put(f.good, c6It('Head to head', t, cap4Rs(Math.max(w,l), w+l)+0.2, 'h2h', 'the head-to-head history'));
+    }
+    // injuries: one bullet per team and status
+    if (fx && fx.inj){
+      for (const s2 of [p.side, opp]){
+        const T = g[s2].short, list = (fx.inj[s2]||[]).filter(x=>x.key || x.w>=0.4);
+        const st = i => typeof prettyInjStatus==='function' ? prettyInjStatus(i.st) : String(i.st||'');
+        const nm = i => `${i.n}${i.typ?` (${String(i.typ).toLowerCase()})`:''}`;
+        const outs = list.filter(i=>/^out$/i.test(st(i))), qs = list.filter(i=>!/^out$/i.test(st(i)));
+        const rec = outs.find(i=>i.missed && i.missed.n>=2);
+        const good = s2!==p.side;
+        if (outs.length){
+          let t = `${T} will be without ${c6Join(outs.slice(0,3).map(nm))}${outs.length>3?` and ${outs.length-3} more`:''}.`;
+          if (rec){ const last = rec.n.split(' ').slice(-1)[0]; t += ` They've gone ${rec.missed.w}–${rec.missed.l} in the ${rec.missed.n} games ${last} has missed.`; }
+          put(good, c6It('Injuries', t, rec ? 1.6 + cap4Rs(Math.max(rec.missed.w, rec.missed.l), rec.missed.w+rec.missed.l) : 0.7, 'inj', `${T}'s injuries`));
+        }
+        if (qs.length){
+          const word = qs.length===1 ? `is ${st(qs[0]).toLowerCase()}` : 'are not sure to play';
+          put(good, c6It('Injuries', `${c6Join(qs.slice(0,3).map(nm))}${qs.length>3?` and ${qs.length-3} more`:''} ${word} for ${T}.`, 0.5, 'inj', `${T}'s injury questions`));
+        }
+      }
+    }
+    // rest: one bullet
+    const sp = s => typeof scheduleSpot==='function' ? (()=>{ try{ return scheduleSpot(g, s); }catch(e){ return null; } })() : null;
+    const rd = s => fx && fx.sides && fx.sides[s] && fx.sides[s].restDays;
+    const tired = s => { const x = sp(s); if (x && x.tough) return x.txt.replace(/^is /,'are ').replace(/\s*\(played yesterday\)/,''); const r = rd(s); return r!=null && r<1.6 ? 'played yesterday' : ''; };
+    const tu = tired(p.side), tt = tired(opp);
+    if (tu && !tt) put(false, c6It('Rest', `${us} ${tu}, so they may be tired. ${them} are more rested.`, 0.8, 'rest', `${us}'s tired legs`));
+    else if (tt && !tu) put(true, c6It('Rest', `${them} ${tt}, so they may be tired. ${us} are more rested.`, 0.8, 'rest', `${them}'s tired legs`));
+    else if (!tu && !tt && rd(p.side)!=null && rd(opp)!=null && Math.abs(Math.floor(rd(p.side))-Math.floor(rd(opp)))>=2){
+      const r1 = Math.floor(rd(p.side)), r2 = Math.floor(rd(opp)), more = r1>r2;
+      put(more, c6It('Rest', `${more?us:them} have had ${r1>r2?r1:r2} days off, compared with ${Math.min(r1,r2)} for ${more?them:us}.`, 0.4, 'rest', 'the rest edge'));
+    }
+    // favorite / underdog record
+    for (const f of fact('favdog')){ const m = /^(.+?) are (\d+)–(\d+) as (a favorite|an underdog) this season/.exec(f.txt); if (m && f.good!=null) put(f.good, c6It('Role', `${m[1]} are ${m[2]}-${m[3]} this season when they're ${m[4]==='a favorite'?'favored':'the underdog'}.`, cap4Rs(Math.max(+m[2],+m[3]), +m[2]+(+m[3])), 'favdog', `${m[1]}'s record in this role`)); }
+    // soccer: the other side's leaky defense
+    if (ctx.soccer && fx && fx.sides && p.mk!=='total'){
+      const R = ((fx.sides[opp] && fx.sides[opp].l5) || []).filter(r=>isFinite(+r.pa));
+      if (R.length>=5 && cap4Cnt(R, r=>+r.pa===0)===0) put(true, c6It('Defense', `${them} haven't kept a clean sheet (held a team scoreless) in their last ${R.length} games.`, 0.8, 'cs', `${them}'s leaky defense`));
+    }
+  }
+  if (p.mk==='total' && (p.side==='over' || p.side==='under') && p.sd && p.sd.point!=null){
+    const line = +p.sd.point, over = p.side==='over', u = ctx.unit;
+    // season scoring level + recent games, merged when they agree
+    let sea = null;
+    for (const f of fact('total')){ const m = /^Season averages for these two land around ([\d.]+) total (\w+); the line is ([\d.]+)/.exec(f.txt); if (m) sea = {avg:+m[1], d:+m[1]-line}; }
+    let rec = null;
+    if (fx && fx.sides){
+      const A = ((fx.sides.away && fx.sides.away.l5) || []).filter(r=>isFinite(+r.pf)), B = ((fx.sides.home && fx.sides.home.l5) || []).filter(r=>isFinite(+r.pf));
+      if (A.length>=4 && B.length>=4){ const n = A.length+B.length, ko = cap4Cnt(A.concat(B), r=>+r.pf + +r.pa > line), ku = cap4Cnt(A.concat(B), r=>+r.pf + +r.pa < line); rec = {n, ko, ku, A, B}; }
+    }
+    const seaGood = sea && Math.abs(sea.d)>=0.05 ? ((sea.d>0) === over) : null;
+    const recK = rec ? (over ? rec.ko : rec.ku) : 0, recO = rec ? (over ? rec.ku : rec.ko) : 0;
+    const recGood = rec ? (recK/rec.n>=0.6 ? true : recO/rec.n>=0.6 ? false : null) : null;
+    const seaTxt = sea ? `These two teams combine for about ${cap4F(sea.avg)} ${u} a game this season, ${sea.d>0?'above':'below'} the ${line} line.` : '';
+    const recTxt = rec ? (n => `${recGood ? recK : recO} of their last ${rec.n} games went ${recGood ? p.side : (over?'under':'over')} ${line}.`)() : '';
+    if (seaGood!=null && recGood!=null && seaGood===recGood) put(seaGood, c6It('Total', `${seaTxt} ${cap4Up(recTxt)}`, Math.min(1.8, Math.abs(sea.d)/(u==='points'?5:0.4)) + cap4Rs(seaGood?recK:recO, rec.n), 'total', 'how much these teams score'));
+    else {
+      if (seaGood!=null) put(seaGood, c6It('Total', seaTxt, Math.min(1.8, Math.abs(sea.d)/(u==='points'?5:0.4)), 'total', 'their season scoring'));
+      if (recGood!=null) put(recGood, c6It('Recent totals', cap4Up(recTxt), cap4Rs(recGood?recK:recO, rec.n)+0.3, 'rtot', 'their recent games'));
+    }
+    if (ctx.soccer && rec){
+      const all = rec.A.concat(rec.B), bt = cap4Cnt(all, r=>+r.pf>0 && +r.pa>0), cs = cap4Cnt(all, r=>+r.pa===0), n = rec.n;
+      const lean = (bt/n>=0.6 || cs<=1) ? true : (cs/n>=0.5 || bt/n<=0.3) ? false : null;
+      if (lean!=null) put(lean===over, c6It('Defense', `Both teams scored in ${bt} of their last ${n} games combined, and they kept ${c6Pl(cs,'clean sheet','clean sheets')} (held a team scoreless) between them.`, 0.9 + cap4Rs(lean?bt:n-bt, n)*0.5, 'btts', lean ? 'leaky defenses' : 'tight defenses'));
+    }
+  }
+  // weather, goalies / pitchers, and notes the model flagged
+  for (const f of fact('wx')){ if (f.good==null) continue; const m = /wind (\d+) mph(?:, (\d+)% chance of rain)?/.exec(f.txt); if (m) put(f.good, c6It('Weather', `${m[2]?`Rain is likely (${m[2]}% chance)`:'It should be windy'} with ${m[1]} mph wind, which can slow down scoring.`, 0.5, 'wx', 'the weather')); }
+  for (const f of fact('starter')){ if (f.good==null) continue; put(f.good, c6It('', f.txt.replace(/\((\w+)\)/g, (m0, s)=>`(${s.toLowerCase()})`).replace(/^Goalies:/, 'Starting goalies:').replace(/^Pitchers:/, 'Starting pitchers:'), 0.3, 'starter', 'the starting matchup')); }
+  for (const x of C.lose||[]){ const t = cap4Txt(x); if (!t || /\d/.test(t) || x.kind || (typeof UI_NOISE!=='undefined' && UI_NOISE.test(t)) || (typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(t)) || CAP4_DROP.test(t)) continue; if (/goalie|pitcher|lineup|starter/i.test(t)) lose.push(c6It('', t, 0.15, 'note', 'unconfirmed starters')); }
+  const R = cap4Finish(win, lose);
+  const who = C.who || p.label || 'this side';
+  const nm = /s$/.test(who) && !ctx.soccer ? `the ${who}` : who;
+  const pick = p.mk==='total' ? who : p.mk==='spread' && p.sd && p.sd.point!=null ? `${nm} at ${p.sd.point>0?'+':''}${cap4Num(p.sd.point)}` : nm;
+  const fail = (p.strictFails || []).map(String).find(x=>x && !(typeof UI_PRICEISH!=='undefined' && UI_PRICEISH.test(x)) && !(typeof UI_BANNED!=='undefined' && UI_BANNED.test(x))) || '';
+  R.sentence = p.verdict==='started' ? 'The game already started, so this one is off the table.' : c6Judge({v: C.J==='BET'?'BET':C.J==='MAYBE LATER'?'WATCH':'SKIP', win:R.win, lose:R.lose, pick, fail: typeof softFail==='function' && fail ? softFail(fail) : fail});
+  return R;
+}
 </script>
 </body>
 </html>
