@@ -20741,7 +20741,7 @@ window.v95Status = () => ({ush:{docs:USH.docs.length, at:USH.at, err:USH.err, pu
      last upload, so Settings › Account shows exactly which device is behind and why.
    - Sync now = full pull + push of everything (settings, bets, filters, Tracked universe, learning, pick log).
    - Auto-update: an open tab (e.g. the always-on VPS) reloads itself into a new version when it's idle. */
-var APP_BUILD = 101;
+var APP_BUILD = 103;
 MR.range = 7;
 var DEVS = {list:[], at:0, err:'', busy:false};
 function devLabel(){ return (typeof mchkDev==='function') ? mchkDev() : {id:AUTH.deviceId, lab:'a device'}; }
@@ -20944,6 +20944,7 @@ uniInnerHTML = function(){
     const rows = ['good','locked','watch','avoid','nocall'].map(v=>{
       const k = c.bucket[v] || {w:0,l:0,pf:0,st:0,n:0}; const r = k.st ? k.pf/k.st : null, hr = k.n ? k.w/k.n : null; const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
       const u = k.pf/100, uS = (u>=0?'+':'−') + Math.abs(u).toFixed(1) + 'u';   // 1 unit per market
+      if (v==='locked' && !k.n) return `<div class="uni-row uni-lock"><span class="k">${NAMES[v]}</span><span class="v uni-wide mut">None graded in this range</span></div>`;   // v103
       return `<div class="uni-row${v==='locked'?' uni-lock':''}"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `<span class="nw">${f(k.w)}–${f(k.l)}</span> · <span class="nw">${pct(hr)} hit</span> · <span class="nw"><b class="${cls}">${uS}</b></span> · <span class="nw">${roiS(r)} ROI</span>` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
     }).join('');
     const src = Object.entries(c.src).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${SRC[k]||k} ${f(v)}`).join(' · ');
@@ -20978,7 +20979,7 @@ document.addEventListener('change', e=>{
 .uni-row .nw{white-space:nowrap}
 .uni-b .v42-kv{flex-wrap:wrap;row-gap:2px}
 .uni-b .v42-kv .k,.uni-b .v42-kv .v{white-space:nowrap}
-.uni-row.uni-lock .k{padding-left:10px}`; document.head.appendChild(st); })();
+.uni-row .uni-wide{grid-column:2 / 4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}`; document.head.appendChild(st); })();
 /* ================= v98: Model learning fully expanded; master filters never shape what Results tracks =================
    - Results › Model learning: no dropdowns. Subsections render open; nested dropdowns are opened and can't collapse.
    - Tracked universe / pick log: sports turned off in Settings are still tracked with the model's call (20_universe),
@@ -21130,6 +21131,57 @@ parlayLearnRetune = rtWrap(parlayLearnRetune, 'parlay');
 window.rtStatus = () => ({doc:RT101.doc, err:RT101.err, games:learnDue(), props:LEARN && LEARN.props ? boardLearnDue(LEARN.props, typeof propLearnRows==='function' ? propLearnRows() : []) : null});
 /* v102: "Did you mean" replaces the leg in place and always sits under "You typed". */
 var APP_BUILD = 102;
+/* ================= v103: Locked in Results, backfilled =================
+   Locked (v101) was only stamped on locks that happened after v101 went live (Nov 21, 11:36 AM PT), so every play
+   that locked earlier, including this morning's games, counted as a Pick but never as Locked. This backfills them
+   once per device from what the device already kept: graded universe rows since Nov 19 (30-day raw store) and rows
+   still waiting on a final. Rule, as close to v101 as the old data allows: the model's call was a Pick when the lock
+   window hit. Old rows have no record of how long it had been a Pick, so the 30-minute steady check is skipped for them.
+   Every sport, market and venue the universe tracks is included, whatever is selected on the boards. */
+var V101_LIVE = new Date(2026, 10, 21, 11, 36).getTime();
+var LOCK_BF = {done:false, added:0, open:0, err:''};
+/* a lock from before v101: Pick at lock time, no v101 stamp, and no v101 Pick record made before the lock */
+function lockLegacy(r){ return !!(r && r.lk && r.lk.v==='good' && !r.lk.L && (!r.pk || +r.pk.at > +r.lk.at)); }
+async function lockBackfill(){
+  const KEY = 'bl_lockbf_v103';
+  if (LOCK_BF.done || typeof UNI_ST==='undefined' || !UNI_ST.ready || UNI_ST.idb===false) return LOCK_BF;
+  try{ if (localStorage.getItem(KEY)){ LOCK_BF.done = true; return LOCK_BF; } }catch(e){}
+  try{
+    const d = await idbOpen(); const fix = [];
+    await new Promise((res, rej)=>{ const q = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound('20261119'));
+      q.onsuccess = ()=>{ const c = q.result; if (!c) return res(); const r = c.value;
+        if (r && !r._cloud && (r.b==='games' || r.b==='props') && r.res && String(r.fd) >= '20261119' && lockLegacy(r)){
+          r.lk.L = 1; r.lk.bf = 1; uniSumAddAs(r, 'locked', uniPrice(r), uniP(r)); fix.push(r); }
+        c.continue(); };
+      q.onerror = ()=>rej(q.error); });
+    if (fix.length) await storeWrite('uniDone', fix, []);
+    for (const r of fix){ try{ mlogQueue(Object.assign({}, r, {i:r.id||r.i})); }catch(e){} }
+    LOCK_BF.added = fix.length;
+    for (const r of UNI.values()) if (lockLegacy(r)){ r.lk.L = 1; r.lk.bf = 1; UNI_DIRTY.add(r.i); LOCK_BF.open++; }
+    await uniFlush();
+    try{ localStorage.setItem(KEY, String(Date.now())); }catch(e){}
+    LOCK_BF.done = true;
+    try{ if (typeof mlogOn==='function' && mlogOn()){ ushPush(true).catch(()=>{}); mlogPush().catch(()=>{}); } }catch(e){}
+    try{ if (ui.tab==='results') v95RefreshLearning(); }catch(e){}
+  }catch(e){ LOCK_BF.err = String(e && e.message || e); console.warn('lock backfill', e); }
+  return LOCK_BF;
+}
+setTimeout(function lbKick(){ if (typeof UNI_ST!=='undefined' && UNI_ST.ready) lockBackfill(); else setTimeout(lbKick, 15000); }, 20000);
+/* shared pick log: a copy that knows it locked beats one that doesn't, so the cloud copy gets the Locked mark */
+(function(){
+  const base = mlogRank;
+  mlogRank = function(o){ const r = base(o); return r < 0 ? r : r + (o && o.lkd ? 0.5 : 0); };
+})();
+/* compact: legacy locks carry the Locked mark into the pick log too (uniLocked already sees lk.L) */
+/* weekly check: cloud rows logged before v101 that locked as a Pick count as Locked */
+(function(){
+  const base = mchkStats;
+  mchkStats = function(rows){
+    rows = (rows||[]).map(o=>(o && !o.lkd && o.lk && o.v==='good' && +(o.g||o.at||0) && +(o.g||o.at) < V101_LIVE) ? Object.assign({}, o, {lkd:1}) : o);
+    return base(rows);
+  };
+})();
+window.lockStatus103 = () => ({backfill:LOCK_BF, legacyOpen:[...UNI.values()].filter(r=>r.lk && r.lk.L).length});
 </script>
 </body>
 </html>
