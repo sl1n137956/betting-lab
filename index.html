@@ -15736,7 +15736,8 @@ function uniCaptureGames(){
   const now = Date.now(); let n = 0;
   const onBoard = new Set();
   for (const g of (typeof games!=='undefined' ? games : [])||[]){
-    if (!g || !g.eventId || !g.start || g.pickOnly) continue;
+    // v98: sports turned off in Settings (agOnly) are still evaluated by the model; track them with its call, never as shown
+    if (!g || !g.eventId || !g.start || (g.pickOnly && !g.agOnly)) continue;
     const t = +g.start; if (t - now > UNI_HORIZON || t < now - 5*60000) continue;
     onBoard.add(String(g.eventId));
     for (const mk of ['ml','spread','total']){
@@ -15750,6 +15751,7 @@ function uniCaptureGames(){
           v = play.verdict==='started' ? (play.base||'avoid') : play.verdict; if (play.est!=null) p = play.est; shown = v==='good'||v==='watch' ? 1 : 0;
         } else { const jv = sd.judge && sd.judge.verdict; v = jv==='good' ? 'watch' : jv==='watch' ? 'watch' : 'avoid'; }
         if (v==='none' || v==='started' || !v) v = 'avoid';
+        if (g.agOnly) shown = 0;
         if (typeof isFinalPulled==='function' && play && play.side===s && isFinalPulled(play.id)) v = 'avoid';
         const id = `g:${g.eventId}:${mk}:${s}:${pt==null?'':pt}`;
         if (uniUpsert('games', 'sb', id, {l:g.league, ev:String(g.eventId), t, mk, side:s, pt, game:`${g.away.short} @ ${g.home.short}`, book:sd.best.book||''}, {price:sd.best.price, v, p, shown, u: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').u : null, tu: (play && play.side===s && v==='good' && typeof recommendedUnits==='function') ? recommendedUnits(play,'game').tier : null, X: mk==='ml' && (s==='home'||s==='away') ? uniFeatX(g, s) : null})) n++;
@@ -17753,6 +17755,9 @@ function v55DD(key, title, inner){
   const open = ui.open && ui.open.has(key);
   return `<details class="dd v55-dd" data-dd="${key}" ${open?'open':''}><summary>${title}</summary><div class="v55-dd-body">${inner}</div></details>`;
 }
+/* v98: Model learning shows everything expanded: plain subsections, and any dropdown inside them is opened for good */
+function v98Open(h){ return String(h||'').replace(/<details\b([^>]*)>/g, (m, a)=>'<details' + (/\sopen\b/.test(a) ? a : a + ' open') + ' data-flat="1">'); }
+function v98Sec(key, title, inner){ return `<section class="v98-sec" data-sec="${key}"><h3 class="v98-h">${title}</h3><div class="v55-dd-body">${v98Open(inner)}</div></section>`; }
 function renderResults(){
   // v95: Results is the model's page only: What the model picked + Model learning (with Tracked universe and the weekly check inside)
   const safe = f => { try{ return f() || ''; }catch(e){ console.warn('results part', e); return ''; } };
@@ -17765,8 +17770,8 @@ function renderResults(){
   // v97: Tracked universe is the only results section; the model's own pick log keeps running in the background.
   // Its 'Games and Props settings' dropdown moved into Model learning.
   const autoBody = safe(()=>{ const a = typeof v42ResultsHTML==='function' ? v42ResultsHTML() : ''; return a.replace(/^<div class="card v42-auto">/, '<div class="v42-auto">').replace(/<div class="section-title"[\s\S]*?<\/h2>[\s\S]*?<\/div>/, ''); });
-  const learning = `<div class="card v55-learn"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning</h2><span class="hint">How each model is tuning itself from graded results.</span></div>
-    ${autoBody ? v55DD('v55-auto', '⚙️ Games and Props settings', autoBody) : ''}${v55DD('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v55DD('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v55DD('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}${v55DD('v55-learn-check', '🩺 Weekly model check', chk)}</div>`;
+  const learning = `<div class="card v55-learn v98-flat"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🧠</span>Model learning</h2><span class="hint">How each model is tuning itself from graded results.</span></div>
+    ${autoBody ? v98Sec('v55-auto', '⚙️ Games and Props settings', autoBody) : ''}${v98Sec('v55-learn-games', '🏟️ Games', v55Scope(learnG, 'lg'))}${v98Sec('v55-learn-props', '🏀 Props', v55Scope(learnP, 'lp'))}${v98Sec('v55-learn-verdict', '⚖️ Verdict', v55Scope(learnV, 'lv'))}${v98Sec('v55-learn-check', '🩺 Weekly model check', chk)}</div>`;
   const picked = '';
   // Tracked universe first, then Model learning
   const uniCard = `<div class="card v55-learn uni-card"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Every market Verdict can see for free, on every side, whatever the verdict. Graded from finals and box scores, so you can see whether Avoid really loses. ROI is per $100 at the price when it locked.</span></div>${uni}</div>`;
@@ -20667,7 +20672,7 @@ window.v95Status = () => ({ush:{docs:USH.docs.length, at:USH.at, err:USH.err, pu
      last upload, so Settings › Account shows exactly which device is behind and why.
    - Sync now = full pull + push of everything (settings, bets, filters, Tracked universe, learning, pick log).
    - Auto-update: an open tab (e.g. the always-on VPS) reloads itself into a new version when it's idle. */
-var APP_BUILD = 97;
+var APP_BUILD = 98;
 MR.range = 7;
 var DEVS = {list:[], at:0, err:'', busy:false};
 function devLabel(){ return (typeof mchkDev==='function') ? mchkDev() : {id:AUTH.deviceId, lab:'a device'}; }
@@ -20896,6 +20901,63 @@ document.addEventListener('change', e=>{
 });
 (function(){ const st = document.createElement('style'); st.textContent = `.uni-in .uni-filters{margin:0 0 12px}
 .uni-in .uni-src{margin-top:4px}`; document.head.appendChild(st); })();
+/* ================= v98: Model learning fully expanded; master filters never shape what Results tracks =================
+   - Results › Model learning: no dropdowns. Subsections render open; nested dropdowns are opened and can't collapse.
+   - Tracked universe / pick log: sports turned off in Settings are still tracked with the model's call (20_universe),
+     and on a signed-in admin device every venue (Kalshi, ProphetX, Crypto.com, Novig) is loaded in the background
+     even when it's off in your books, so venue rows don't depend on the filters. The boards still only show your books. */
+(function(){
+  // prediction venues: load all of them for the tracker; what the boards show still follows avWantVenues()
+  try{
+    const base = avRefresh;
+    avRefresh = function(){
+      if (!(typeof mlogOn==='function' && mlogOn())) return base.apply(this, arguments);
+      const real = avWantVenues; const sel = real();
+      avWantVenues = () => Object.assign({}, sel, {ka:true, px:true, cc:true, nv:true});
+      try{ return base.apply(this, arguments); }      // venues are decided synchronously at the start
+      finally{ avWantVenues = real; }
+    };
+  }catch(e){ console.warn('v98 venues', e); }
+  // Kalshi moneylines: every sport (games for sports turned off are off the boards anyway)
+  try{
+    const baseK = fetchKalshi;
+    fetchKalshi = function(){
+      if (!(typeof mlogOn==='function' && mlogOn()) || !wantsKalshi()) return baseK.apply(this, arguments);
+      const en = S.enabled; S.enabled = LEAGUES.map(L=>L.id);
+      try{ return baseK.apply(this, arguments); }      // the league list is read before the first await
+      finally{ S.enabled = en; }
+    };
+  }catch(e){ console.warn('v98 kalshi', e); }
+})();
+// a flattened dropdown can't be closed
+document.addEventListener('click', e=>{ const s = e.target && e.target.closest && e.target.closest('.v98-flat details[data-flat] > summary'); if (s) e.preventDefault(); }, true);
+document.addEventListener('keydown', e=>{ const s = e.target && e.target.closest && e.target.closest('.v98-flat details[data-flat] > summary'); if (s && (e.key==='Enter' || e.key===' ')) e.preventDefault(); }, true);
+(function(){ const st = document.createElement('style'); st.textContent = `.v98-flat .v98-sec{margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(15,23,42,.25)}
+.v98-flat .v98-h{margin:0 0 10px;font-size:14px;font-weight:700;color:var(--txt);line-height:1.3}
+.v98-flat .v98-sec > .v55-dd-body{padding:0}
+.v98-flat details[data-flat] > summary{cursor:default;pointer-events:none;min-height:0}
+.v98-flat details[data-flat] > summary::before{display:none!important;content:none!important}
+.v98-flat details[data-flat]{padding-top:10px}`; document.head.appendChild(st); })();
+/* tables inside Model learning stack into labeled rows on phones (no sideways scrolling) */
+function v98LabelTables(){
+  document.querySelectorAll('#view .v98-flat table.ln-tab:not([data-lab])').forEach(t=>{
+    t.dataset.lab = '1'; const head = t.rows[0]; if (!head || !head.querySelector('th')) return; head.classList.add('v98-thead');
+    const labs = [...head.cells].map(c=>c.textContent.trim());
+    for (let i=1;i<t.rows.length;i++){ [...t.rows[i].cells].forEach((c, j)=>{ if ((+c.colSpan||1) > 1 || !labs[j]) return; c.dataset.l = labs[j]; }); }
+  });
+}
+(function(){ let tm = 0; const run = () => { tm = 0; try{ v98LabelTables(); }catch(e){} };
+  const mo = new MutationObserver(()=>{ if (!tm && typeof ui!=='undefined' && ui.tab==='results') tm = setTimeout(run, 30); });
+  const v = document.querySelector('#view'); if (v) mo.observe(v, {childList:true, subtree:true});
+  const st = document.createElement('style'); st.textContent = `@media (max-width:700px){
+.v98-flat .v98-sec{padding:10px 11px}
+.v98-flat table.ln-tab,.v98-flat table.ln-tab tbody,.v98-flat table.ln-tab tr,.v98-flat table.ln-tab td{display:block;width:auto!important;min-width:0!important;max-width:100%}
+.v98-flat table.ln-tab tr.v98-thead{display:none}
+.v98-flat table.ln-tab tr{padding:8px 0;border-top:1px solid var(--line)}
+.v98-flat table.ln-tab tr:nth-child(2){border-top:0}
+.v98-flat table.ln-tab td{padding:2px 0;border:0;overflow-wrap:anywhere}
+.v98-flat table.ln-tab td[data-l]::before{content:attr(data-l) " · ";color:var(--mut);font-weight:600}
+.v98-flat .overflow{overflow-x:visible}}`; document.head.appendChild(st); })();
 </script>
 </body>
 </html>
