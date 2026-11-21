@@ -26,7 +26,11 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 Inter,"Segoe UI Variable Text","Segoe UI Variable","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
-body{background:radial-gradient(1100px 520px at 50% -170px,rgba(59,130,246,.22),transparent 70%),radial-gradient(720px 380px at 100% 0,rgba(125,211,252,.07),transparent 55%),var(--bg);min-height:100vh}
+body{background:var(--bg);min-height:100vh}
+/* v87: the top glow used to be part of the page background, so any change in page height (hiding a sport on All Games,
+   cards loading) made the browser repaint the whole background: ~120-150ms per tap on desktop. It is now a fixed-height
+   layer at the top of the page that never changes size, so it is painted once. Same look. */
+body::before{content:"";position:absolute;left:0;right:0;top:0;height:640px;z-index:-1;pointer-events:none;background:radial-gradient(1100px 520px at 50% -170px,rgba(59,130,246,.22),transparent 70%),radial-gradient(720px 380px at 100% 0,rgba(125,211,252,.07),transparent 55%)}
 html,body{overscroll-behavior-y:contain}
 ::selection{background:rgba(59,130,246,.35)}
 a{color:var(--acc);text-decoration:none}a:hover{color:var(--acc-hi)}
@@ -18216,7 +18220,7 @@ document.addEventListener('click', e=>{
   const c = e.target.closest && e.target.closest('[data-ag-sport]'); if (!c) return;
   e.stopPropagation();
   const id = c.getAttribute('data-ag-sport');
-  if (id==='all') AG_SEL = LEAGUES.map(L=>L.id);
+  if (id==='all') AG_SEL = LEAGUES.every(L=>AG_SEL.includes(L.id)) ? [] : LEAGUES.map(L=>L.id);   // v87: All toggles: all on -> none, otherwise -> all
   else { const i = AG_SEL.indexOf(id); if (i>=0) AG_SEL.splice(i,1); else AG_SEL.push(id); }
   if (ui.tab==='all' && typeof agApply==='function' && document.querySelector('#view .ag-body')){ agApply(); agSaveLater(); return; }   // v86: instant, no render
   agSave();
@@ -18795,7 +18799,7 @@ function agChipsRowHTML(){
   const order = LEAGUES.map((L,i)=>({L,i,n:counts[L.id]||0})).sort((a,b)=>(b.n>0)-(a.n>0) || a.i-b.i);
   const chip = (id, lab, n, sel, title) => `<button type="button" class="agc${sel?' on':''}${n?'':' zero'}" data-ag-sport="${id}" aria-pressed="${sel?'true':'false'}" title="${esc(title)}">${lab}<span class="n">${n}</span></button>`;
   return `<div class="agc-row" role="group" aria-label="Sports shown in All Games">`
-    + chip('all', 'All', total, allOn, 'Show every sport')
+    + chip('all', 'All', total, allOn, allOn ? 'Every sport is shown. Tap to hide them all.' : 'Tap to show every sport.')
     + order.map(o=>chip(o.L.id, sportChipLabel(o.L), o.n, on.has(o.L.id), on.has(o.L.id) ? `${o.L.label} is shown. Tap to hide.` : `${o.L.label} is hidden. Tap to show.`)).join('')
     + `</div>`;
 }
@@ -18862,7 +18866,8 @@ function agApply(){
   for (const c of v ? v.querySelectorAll('.agc[data-ag-sport]') : []){
     const id = c.getAttribute('data-ag-sport'), sel = id==='all' ? allOn : on.has(id);
     if (c.classList.contains('on')!==sel){ c.classList.toggle('on', sel); c.setAttribute('aria-pressed', sel?'true':'false'); }
-    if (id!=='all'){ const L = LMAP[id]; c.title = sel ? `${L.label} is shown. Tap to hide.` : `${L.label} is hidden. Tap to show.`; }
+    if (id==='all') c.title = sel ? 'Every sport is shown. Tap to hide them all.' : 'Tap to show every sport.';
+    else { const L = LMAP[id]; c.title = sel ? `${L.label} is shown. Tap to hide.` : `${L.label} is hidden. Tap to show.`; }
   }
   if (!body) return false;
   body.setAttribute('data-agoff', agOffList());
@@ -18886,10 +18891,13 @@ document.addEventListener('pointerdown', e=>{ if (e.target.closest && e.target.c
   if (typeof uiBackgroundPatch!=='function') return;
   const base = uiBackgroundPatch;
   uiBackgroundPatch = function(fn){
-    const wait = 1500 - (Date.now() - AG_TAP_AT);
-    if (wait > 0 && ui.tab==='all'){
+    // v87: also wait while you're scrolling (a full board diff is ~100-150ms even on desktop, which showed up as scroll hitches)
+    const quiet = () => { const sc = (typeof UI_SCROLL!=='undefined') ? (UI_SCROLL.touching ? 1200 : 1200 - (Date.now() - (UI_SCROLL.lastMove||0))) : 0;
+      return Math.max(ui.tab==='all' ? 1500 - (Date.now() - AG_TAP_AT) : 0, sc); };
+    const wait = quiet();
+    if (wait > 0){
       AG_PATCH_Q = fn; clearTimeout(AG_PATCH_T);
-      AG_PATCH_T = setTimeout(function again(){ const w = 1500 - (Date.now() - AG_TAP_AT); if (w > 0){ AG_PATCH_T = setTimeout(again, w + 30); return; }
+      AG_PATCH_T = setTimeout(function again(){ const w = quiet(); if (w > 0){ AG_PATCH_T = setTimeout(again, w + 30); return; }
         const f = AG_PATCH_Q; AG_PATCH_Q = null; if (f) uiIdle(()=>base(f)); }, wait + 30);
       return;
     }
