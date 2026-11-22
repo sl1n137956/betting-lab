@@ -26012,6 +26012,56 @@ window.v133 = {load: v133Load, paint: v133Paint, kinds: v133Kinds};
   const st = document.createElement('style'); st.textContent = `#btnPullAlerts + .v132-alerts,.s-row #btnPullAlerts{margin-bottom:6px}
 .v132-alerts{margin-top:14px !important}`; document.head.appendChild(st);
 })();
+/* ================= v134: no Locked section on Picks =================
+   Lock logic keeps running (lock records, signals, pick log, Picks of the Day promotion). On the Picks tab a locked
+   play that isn't a Pick of the Day just stays in the normal Picks list with a "Locked" tag and its lock signals.
+   Tailed plays keep sorting to the top. Filters > Show keeps only Picks of the Day. Results is unchanged. */
+APP_BUILD = 134;
+try{ const o = JSON.parse(localStorage.getItem('bl_v132_secs')||'null'); if (o && o.locked===false){ o.locked = true; localStorage.setItem('bl_v132_secs', JSON.stringify(o)); } }catch(e){}
+(function(){
+  const base = splitLockedEarly;
+  splitLockedEarly = function(list, board){
+    const r = base.apply(this, arguments);
+    if (board!=='games' && board!=='props') return r;
+    try{
+      // Picks of the Day hidden in Filters: its plays go back into the list instead of vanishing
+      if (typeof v132Secs==='function' && !v132Secs().potd && Array.isArray(V131.stash)){
+        const back = V131.stash.filter(it=>it.board===board).map(it=>it.x);
+        V131.stash = V131.stash.filter(it=>it.board!==board);
+        for (const x of back) if (!r.locked.includes(x) && !r.early.includes(x)) r.locked.push(x);
+      }
+      for (const x of r.locked) x._v134lk = !x.pulledNote;
+      for (const x of r.early) x._v134lk = false;
+      let items = r.locked.concat(r.early).map(x=>({x, t:(typeof itemStartMs==='function' ? itemStartMs(x) : 0)||0}));
+      if (typeof v121ArrangeItems==='function') items = v121ArrangeItems(items); else items.sort((a,c)=>a.t-c.t);
+      r.early = items.map(o=>o.x); r.locked = [];
+    }catch(e){ console.warn('v134 split', e); }
+    return r;
+  };
+  const cf = v119CardFn;
+  v119CardFn = function(raw){
+    const fn = cf.apply(this, arguments);
+    return x => { const h = fn(x); if (!x || !x._v134lk) return h; const b = x.isProp ? 'props' : 'games';
+      const why = typeof v131WhyHTML==='function' ? v131WhyHTML(b, x) : '';
+      return String(h).replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>`<div class="${c} locked-pick"${rest}><div class="lk-tag v134-lk"><span aria-hidden="true">🔒</span> Locked</div>${why}`); };
+  };
+  // Picks of the Day only (no Locked section)
+  v119LockedHTML = function(){
+    const show = typeof v132Secs!=='function' || v132Secs().potd;
+    const html = show ? v131PotdHTML() : ''; V131.stash = [];
+    return html;
+  };
+  const pb = picksBoardHTML;
+  picksBoardHTML = function(){
+    return String(pb.apply(this, arguments)).replace('Not locked yet. A pick moves up to Locked once it locks.', 'Locked plays are tagged 🔒. The best locks move up to Picks of the Day.').replace('No other picks right now.', 'No picks right now.');
+  };
+})();
+(function(){
+  if (typeof activeFilterCount==='function'){ const b = activeFilterCount; activeFilterCount = function(){ return b.apply(this, arguments); }; }
+  const st = document.createElement('style'); st.textContent = `#filterBar [data-v132sec="locked"]{display:none !important}
+#filterBar .v132-chips{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}
+.v131-potd{margin-bottom:10px}`; document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
