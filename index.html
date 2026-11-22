@@ -26895,6 +26895,18 @@ body.filters-open #filterBar:not([hidden]){overflow-y:auto;overscroll-behavior:c
 html body #tabs [data-tab="results"],html body #moreSheet [data-tab="results"]{display:none !important}
 .v140-stats{margin:4px 0 10px}
 .v140-quiet{display:none}`; document.head.appendChild(st); })();
+/* ---------- v141: install tip never overlaps the Filters panel ---------- */
+(function(){
+  const st = document.createElement('style');
+  st.textContent = `body.filters-open #installTip{display:none !important}`;
+  document.head.appendChild(st);
+  const resync = ()=>{ try{ if (typeof syncFilterDrawerPos==='function') syncFilterDrawerPos(); }catch(e){} };
+  const kick = ()=>{ resync(); requestAnimationFrame(resync); };
+  new MutationObserver(kick).observe(document.body, {attributes:true, attributeFilter:['class']});
+  const tip = document.getElementById('installTip');
+  if (tip) new MutationObserver(kick).observe(tip, {attributes:true, attributeFilter:['hidden','style','class']});
+  addEventListener('resize', kick, {passive:true});
+})();
 </script>
 </body>
 </html>
