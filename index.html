@@ -26910,7 +26910,7 @@ html body #tabs [data-tab="results"],html body #moreSheet [data-tab="results"]{d
      final games always hidden. A pick that cools just leaves the list (a tailed one goes to Pulled, as before).
    - Filters: no When, no Hide started/final, no Show (Picks of the Day) row. Tailed bets sits above More filters.
    - Tracker: [Tailed | Model] and, for Model, [Picks of the Day | Locked | Picks]. The calendar is the main view
-     (Daily, Weekly, Monthly, Yearly). Tap any cell for that period's stats. Personal bets and model numbers never mix. */
+     (Daily, Monthly, Yearly; Weekly removed in v144). Tap any cell for that period's stats. Personal bets and model numbers never mix. */
 APP_BUILD = 142;
 var V142 = { cal:{mode:'', month:'', year:0}, pub2:null, pub2At:0, pub2Got:false, unsub:null, uid:'', lastPub:0, lastPubJ:'', pop:null, lockY:null };
 function v142LearnOK(){ try{ return v138Admin(); }catch(e){ return false; } }
@@ -27020,7 +27020,7 @@ document.addEventListener('click', e=>{
 (function(){ const b = trackerStats; trackerStats = function(){ const f = V138.force; V138.force = 'all'; try{ return b.apply(this, arguments); } finally { V138.force = f; } }; })();
 const V142_MET = [['potd','Picks of the Day'],['locked','Locked'],['good','Picks']];
 function v142Metric(){ const m = S && S.trkMetric; return (m==='potd' || m==='locked' || m==='good') ? m : 'potd'; }
-function v142Mode(){ const m = V142.cal.mode || (S && S.trkCalMode); return ['day','week','month','year'].includes(m) ? m : 'day'; }
+function v142Mode(){ const m = V142.cal.mode || (S && S.trkCalMode); return ['day','month','year'].includes(m) ? m : 'day'; }
 function v142HeadHTML(){
   const v = v140View(), m = v142Metric();
   return `<div class="v140-head v142-head"><h2 class="v140-title"><span class="h-emo" aria-hidden="true">📊</span>Tracker</h2>
@@ -27117,11 +27117,9 @@ function v142Listen(){
 function v142D(d8){ return new Date(+d8.slice(0,4), +d8.slice(4,6)-1, +d8.slice(6,8), 12); }
 function v142K(dt){ return dt.getFullYear() + String(dt.getMonth()+1).padStart(2,'0') + String(dt.getDate()).padStart(2,'0'); }
 function v142Add(d8, n){ const t = v142D(d8); t.setDate(t.getDate()+n); return v142K(t); }
-function v142WeekStart(d8){ const t = v142D(d8); t.setDate(t.getDate() - t.getDay()); return v142K(t); }
 function v142Short(d8){ return CAL_MON[+d8.slice(4,6)-1] + ' ' + (+d8.slice(6,8)); }
 function v142Range(kind, key){
   if (kind==='day') return [key, key];
-  if (kind==='week') return [key, v142Add(key, 6)];
   if (kind==='month') return [key+'01', key+'31'];
   return [key+'0101', key+'1231'];
 }
@@ -27154,17 +27152,6 @@ function v142CalHTML(I){
     const cells = [...ys].sort((a,b)=>b-a).map(y=>{ const [a, b] = v142Range('year', String(y)); const e = v142Sum(I, a, b); v142AddE(T, e);
       return `<button type="button" class="pcal-cell pcal-y ${v142Cls(e)}${y===ty?' today':''}" data-v142-open="year:${y}" aria-label="${y}"><span class="pc-n">${y}</span>${uSpan(e) || '<span class="pc-d">Nothing yet</span>'}</button>`; }).join('');
     html = sum('All time', T) + `<div class="pcal-grid pcal-years">${cells}</div>`;
-  } else if (mode==='week'){
-    const y = +C.month.slice(0,4), m = +C.month.slice(4,6); const first = C.month+'01', last = v142K(new Date(y, m, 0, 12));
-    const rows = []; const T = v142E();
-    for (let w = v142WeekStart(first); w <= last; w = v142Add(w, 7)){
-      const e = v142Sum(I, w, v142Add(w, 6)); const t = v142Tot(e); const end = v142Add(w, 6);
-      const lab = w.slice(4,6)===end.slice(4,6) ? `${v142Short(w)} – ${+end.slice(6,8)}` : `${v142Short(w)} – ${v142Short(end)}`;
-      const cur = today >= w && today <= end ? ' today' : '';
-      rows.push(`<button type="button" class="v142-wk ${v142Cls(e)}${cur}" data-v142-open="week:${w}"><span class="v142-wk-l">${lab}</span><span class="v142-wk-r">${(t.w+t.l+t.p) ? `<span class="v142-wk-rec">${v142Rec(t)}</span><b>${v142UTxt(t.u)}</b>` : '<span class="mut">No graded picks</span>'}</span></button>`);
-    }
-    const [a, b] = v142Range('month', C.month); v142AddE(T, v142Sum(I, a, b));
-    html = nav(`${CAL_MON_L[m-1]} ${y}`, 'month') + sum(`${CAL_MON[m-1]} ${y}`, T) + `<div class="v142-weeks">${rows.join('')}</div>`;
   } else {
     const y = +C.month.slice(0,4), m = +C.month.slice(4,6);
     const lead = new Date(y, m-1, 1).getDay(), nd = new Date(y, m, 0).getDate(); const cells = []; const T = v142E();
@@ -27175,7 +27162,7 @@ function v142CalHTML(I){
     const head = ['S','M','T','W','T','F','S'].map(x=>`<span class="pcal-wd">${x}</span>`).join('');
     html = nav(`${CAL_MON_L[m-1]} ${y}`, 'month') + sum(`${CAL_MON[m-1]} ${y}`, T) + `<div class="pcal-grid pcal-days">${head}${cells.join('')}</div>`;
   }
-  const modes = [['day','Daily'],['week','Weekly'],['month','Monthly'],['year','Yearly']].map(([k,l])=>`<button type="button" class="v142-mb${mode===k?' on':''}" data-v142-mode="${k}" aria-pressed="${mode===k}">${l}</button>`).join('');
+  const modes = [['day','Daily'],['month','Monthly'],['year','Yearly']].map(([k,l])=>`<button type="button" class="v142-mb${mode===k?' on':''}" data-v142-mode="${k}" aria-pressed="${mode===k}">${l}</button>`).join('');
   return `<div class="v142-modes" role="group" aria-label="Calendar view">${modes}</div><div class="pcal v142-pcal" data-period="${mode}">${html}</div>`;
 }
 function v142CalCard(){
@@ -27185,7 +27172,7 @@ function v142CalCard(){
     else if (!V142.pub2) note = 'The model\'s results show up here once they\'re published.';
     else if (V142.pub2At) note = `Updated ${new Date(V142.pub2At).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}`;
   }
-  return `<div class="card v142-calcard">${v142CalHTML(v142Index())}<div class="hint v142-tap">Tap a day, week, month or year for its stats.${note ? ' ' + esc(note) : ''}</div></div>`;
+  return `<div class="card v142-calcard">${v142CalHTML(v142Index())}<div class="hint v142-tap">Tap a day, month or year for its stats.${note ? ' ' + esc(note) : ''}</div></div>`;
 }
 function v142RenderModel(){
   const view = $('#view'); if (!view) return;
@@ -27234,7 +27221,6 @@ setInterval(()=>{ try{ if (ui.tab==='tracker' && v140View()==='model' && v138Adm
 /* ---- period popup ---- */
 function v142Title(kind, key){
   if (kind==='day') return v142D(key).toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
-  if (kind==='week'){ const end = v142Add(key, 6); return `Week of ${v142Short(key)} – ${key.slice(4,6)===end.slice(4,6) ? +end.slice(6,8) : v142Short(end)}, ${end.slice(0,4)}`; }
   if (kind==='month') return `${CAL_MON_L[+key.slice(4,6)-1]} ${key.slice(0,4)}`;
   return key;
 }
@@ -27321,15 +27307,6 @@ html body.is-admin #moreSheet [data-tab="results"]:not([hidden]){display:flex !i
 .v142-sum b.pos{color:var(--good)} .v142-sum b.neg{color:var(--avoid)}
 .v142-pcal button.pcal-cell{cursor:pointer}
 .v142-pcal .pcal-cell.pcal-d.none{opacity:.55}
-.v142-weeks{display:flex;flex-direction:column;gap:6px}
-.v142-wk{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:8px 14px;border-radius:12px;border:1px solid rgba(148,163,184,.18);background:rgba(255,255,255,.03);color:inherit;font:inherit;cursor:pointer;text-align:left}
-.v142-wk.pos{border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.08)}
-.v142-wk.neg{border-color:rgba(240,113,103,.35);background:rgba(240,113,103,.08)}
-.v142-wk.today{box-shadow:inset 0 0 0 1px rgba(96,165,250,.6)}
-.v142-wk-l{font-weight:700;white-space:nowrap}
-.v142-wk-r{display:flex;align-items:center;gap:10px;white-space:nowrap;font-size:14px}
-.v142-wk-rec{color:var(--mut);font-variant-numeric:tabular-nums}
-.v142-wk.pos b{color:var(--good)} .v142-wk.neg b{color:var(--avoid)}
 .v142-tap{margin-top:10px}
 /* popup */
 html.v142-lock{overflow:hidden !important;overscroll-behavior:none}
@@ -27433,6 +27410,40 @@ APP_BUILD = 143;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
   addEventListener('resize', ()=>{ clearTimeout(fit._t); fit._t = setTimeout(fit, 80); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+})();
+/* v144: Tracker calendar is Daily / Monthly / Yearly (Weekly removed; an old saved "week" falls back to Daily).
+   Picks tab tier switch gets round icons: ⭐ Picks of the Day, 🔒 Locked, 🎯 Picks (same icon set as the Tracker tiers),
+   count badge on the circle, short label underneath. One line at every width. */
+APP_BUILD = 144;
+try{ if (S && S.trkCalMode==='week'){ S.trkCalMode = 'day'; saveJSON(LS.settings, S); } if (V142 && V142.cal && V142.cal.mode==='week') V142.cal.mode = 'day'; }catch(e){}
+var V144_IC = {potd:'⭐', locked:'🔒', picks:'🎯'};
+(function(){
+  const css = `
+.v142-seg{grid-template-columns:repeat(3,minmax(0,1fr))}
+.v142-sb{flex-direction:column;gap:5px;min-height:70px;padding:8px 4px 7px;line-height:1.1}
+.v144-ic{position:relative;flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:17px;line-height:1;background:rgba(59,130,246,.14);border:1px solid rgba(96,165,250,.38);box-sizing:border-box}
+.v142-sb.on .v144-ic{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.6)}
+.v144-ic .v142-sn{position:absolute;top:-6px;right:-14px;min-width:20px;height:20px;padding:0 5px;font-size:11px;font-weight:800;border-radius:10px;background:#1e3a8a;color:#dbeafe;border:1.5px solid rgba(10,20,38,.9)}
+.v142-sb.on .v144-ic .v142-sn{background:#fff;color:#1d4ed8;border-color:#2563eb}
+.v142-sl{font-size:13px;max-width:100%;overflow:hidden;text-overflow:clip}
+@media (max-width:380px){ .v142-seg{gap:3px;padding:3px} .v142-sb{padding:8px 2px 7px} .v142-sl{font-size:12px;letter-spacing:-.1px} }
+@media (min-width:700px){ .v142-sb{flex-direction:row;gap:20px;min-height:56px} .v142-sl{font-size:14.5px} }`;
+  const st = document.createElement('style'); st.id = 'v144css'; st.textContent = css; document.head.appendChild(st);
+  function deco(){
+    const seg = document.getElementById('v142Seg'); if (!seg) return;
+    seg.querySelectorAll('[data-v142-seg]').forEach(b=>{
+      if (b.querySelector('.v144-ic')) return;
+      const k = b.dataset.v142Seg; const ic = document.createElement('span'); ic.className = 'v144-ic'; 
+      ic.innerHTML = `<span aria-hidden="true">${V144_IC[k]||''}</span>`;
+      const n = b.querySelector('.v142-sn'); if (n) ic.appendChild(n);
+      b.prepend(ic);
+    });
+    if (typeof window.v143Fit==='function') window.v143Fit();
+  }
+  window.v144Deco = deco;
+  const mo = new MutationObserver(deco);
+  const start = () => { mo.observe(document.getElementById('kindsBar') || document.body, {childList:true, subtree:true}); deco(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
 </script>
 </body>
