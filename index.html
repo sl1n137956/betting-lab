@@ -1578,8 +1578,8 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
       <button type="button" data-tab="good"><span class="tab-emo" aria-hidden="true">🎯</span>Picks<span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></button>
       <button type="button" data-tab="watch"><span class="tab-emo" aria-hidden="true">👀</span>Watchlist<span class="cnt" data-cnt="watch">0</span><span class="tab-dot" data-pull-dot="watch" hidden></span></button>
       <button type="button" data-tab="avoid"><span class="tab-emo" aria-hidden="true">🚫</span>Avoid<span class="cnt" data-cnt="avoid">0</span><span class="tab-dot" data-pull-dot="avoid" hidden></span></button>
-      <button data-tab="tracker"><span class="tab-emo" aria-hidden="true">📊</span>Tracker</button>
       <button data-tab="all"><span class="tab-emo" aria-hidden="true">📋</span>All Games<span class="cnt" id="c-all" data-cnt="all">0</span></button>
+      <button data-tab="tracker"><span class="tab-emo" aria-hidden="true">📊</span>Tracker</button>
       <button data-tab="results" aria-label="Results and Backtest" hidden><span class="tab-emo" aria-hidden="true">🧪</span>Results</button>
       <button data-tab="settings"><span class="tab-emo" aria-hidden="true">⚙️</span>Settings</button>
     </nav>
@@ -1675,10 +1675,10 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
 <div class="more-backdrop" id="moreBackdrop" hidden></div>
 <div class="more-sheet" id="moreSheet" hidden role="menu" aria-label="More">
   <div class="more-handle" aria-hidden="true"></div>
-  <button type="button" data-tab="pulled" role="menuitem" aria-label="Pulled: bets you tailed that flipped to Avoid"><span class="tab-ic tab-emo" aria-hidden="true">⛔</span><span class="tab-lab">Pulled</span><span class="cnt pull-cnt" data-cnt="pulled" hidden>0</span></button>
-  <button type="button" data-tab="parlay" role="menuitem" aria-label="Parlays"><span class="tab-ic tab-emo" aria-hidden="true">🎟️</span><span class="tab-lab">Parlays</span><span class="cnt" data-cnt="parlay-good">0</span></button>
-  <button type="button" data-tab="tracker" role="menuitem" aria-label="Tracker"><span class="tab-ic tab-emo" aria-hidden="true">📊</span><span class="tab-lab">Tracker</span></button>
   <button type="button" data-tab="all" role="menuitem" aria-label="All Games"><span class="tab-ic tab-emo" aria-hidden="true">🏟️</span><span class="tab-lab">All Games</span><span class="cnt" data-cnt="all">0</span></button>
+  <button type="button" data-tab="pulled" role="menuitem" aria-label="Pulled: bets you tailed that flipped to Avoid"><span class="tab-ic tab-emo" aria-hidden="true">⛔</span><span class="tab-lab">Pulled</span><span class="cnt pull-cnt" data-cnt="pulled" hidden>0</span></button>
+  <button type="button" data-tab="tracker" role="menuitem" aria-label="Tracker"><span class="tab-ic tab-emo" aria-hidden="true">📊</span><span class="tab-lab">Tracker</span></button>
+  <button type="button" data-tab="results" role="menuitem" aria-label="Results" hidden><span class="tab-ic tab-emo" aria-hidden="true">🧪</span><span class="tab-lab">Results</span></button>
   <button type="button" data-tab="settings" role="menuitem" aria-label="Settings"><span class="tab-ic tab-emo" aria-hidden="true">⚙️</span><span class="tab-lab">Settings</span></button>
 </div>
 <div class="ptr" id="ptr" hidden aria-live="polite"><div class="ptr-pill"><span class="ptr-spin" hidden></span><span class="ptr-txt">Pull to refresh</span></div></div>
@@ -24931,6 +24931,54 @@ window.v129Status = function(){
   try{ for (const b of ['games','props']){ const src = b==='props' ? (props||[]) : (plays||[]); const days = new Set(src.filter(x=>x && x.verdict==='good').map(x=>v129Day(itemStartMs(x))));
     out[b] = [...days].sort().map(d=>({d, elite:[...v129EliteKeys(b, d)].length})); } }catch(e){ out.err = String(e); }
   return out;
+};
+/* v130: mobile More menu drops Parlays and is ordered All Games, Pulled,
+   Tracker, Results, Settings. Desktop nav puts All Games before Tracker. */
+APP_BUILD = 130;
+const V130_MORE = ['all','pulled','tracker','results','settings'];
+
+function v130OrderMore(){
+  const sheet = document.getElementById('moreSheet');
+  if (!sheet) return;
+  const handle = sheet.querySelector('.more-handle');
+  const byTab = {};
+  sheet.querySelectorAll('button[data-tab]').forEach(b=>{
+    const t = b.getAttribute('data-tab');
+    if (t) byTab[t] = b;
+  });
+  // Parlays is mobile-only in More; drop it from this menu.
+  if (byTab.parlay) byTab.parlay.remove();
+  const rest = [...sheet.querySelectorAll('button[data-tab]')].filter(b=>!V130_MORE.includes(b.getAttribute('data-tab')));
+  const wanted = V130_MORE.map(t=>byTab[t]).filter(Boolean).concat(rest);
+  const anchor = handle || sheet.firstChild;
+  let after = anchor;
+  for (const b of wanted){
+    if (after && after.nextSibling!==b){
+      if (after.nextSibling) sheet.insertBefore(b, after.nextSibling);
+      else sheet.appendChild(b);
+    } else if (!after) sheet.appendChild(b);
+    after = b;
+  }
+}
+function v130OrderTabs(){
+  const nav = document.getElementById('tabs');
+  if (!nav) return;
+  const all = nav.querySelector('[data-tab="all"]');
+  const trk = nav.querySelector('[data-tab="tracker"]');
+  if (all && trk && all.compareDocumentPosition(trk) & Node.DOCUMENT_POSITION_PRECEDING){
+    nav.insertBefore(all, trk);
+  }
+}
+(function(){
+  try{ v130OrderMore(); v130OrderTabs(); }catch(e){}
+  const st = document.createElement('style');
+  st.textContent = '@media (max-width:767.98px){ #moreSheet [data-tab="parlay"]{display:none !important} }';
+  document.documentElement.appendChild(st);
+})();
+window.v130Status = function(){
+  const more = [...document.querySelectorAll('#moreSheet button[data-tab]')].map(b=>b.getAttribute('data-tab'));
+  const tabs = [...document.querySelectorAll('#tabs button[data-tab]')].map(b=>b.getAttribute('data-tab'));
+  return {build:APP_BUILD, more, tabs, moreHasParlay: more.includes('parlay')};
 };
 </script>
 </body>
