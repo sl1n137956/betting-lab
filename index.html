@@ -27445,6 +27445,382 @@ var V144_IC = {potd:'⭐', locked:'🔒', picks:'🎯'};
   const start = () => { mo.observe(document.getElementById('kindsBar') || document.body, {childList:true, subtree:true}); deco(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
+/* ================= v145: honest model counts + database read cuts =================
+   A) Tracker Model "Locked" and "Picks" count each bet once, straight from the shared pick log (same one-per-bet
+      key as Picks of the Day: game+market+side, or player+stat+side+line). Per-device summaries are no longer used
+      for these numbers. pub/uniDays2 is built from the same computation. Picks of the Day stay lock-first.
+        Picks  = every bet the model called a Pick (one per bet), graded at its first Pick price.
+        Locked = every bet that locked as a Pick (one per bet), graded at its lock price (first Pick price if unchanged).
+   B) Reads: pub/uni + pub/uniDays retired (no publish, no listeners); uniDays2 published at most every 20 min and only
+      when graded numbers changed; admin devices keep the pick log in IndexedDB and only pull the change notes on
+      reload (one full fill per device, or Settings → Resync); new log rows go to smaller shards (old docs stay and
+      are still read; nothing is deleted); unattended tabs (the always-on server) reload into a new version at most
+      every 6 hours; slower model-check polling; quota errors keep the last cached numbers on screen. */
+APP_BUILD = 145;
+var V145 = {db:null, mode:'', at:0, stat:{}, sig:{}, saving:false, err:'', fillAt:0, hydrated:false, v131:{}, reads:0};
+var V145_FIRST = '20261119';            // first day of the shared pick log
+var V145_RAW_KEEP = 6;                  // days of full rows kept in the cache (older days keep their one-per-bet totals)
+var V145_NOTE_OK = 60*3600000;          // change notes live 3 days: a cache older than this needs a top-up of recent days
+
+/* ---------- IndexedDB ---------- */
+function v145Open(){
+  if (V145.db) return Promise.resolve(V145.db);
+  return new Promise((res, rej)=>{ try{ const rq = indexedDB.open('verdict_mlog_v145', 1);
+    rq.onupgradeneeded = ()=>{ rq.result.createObjectStore('kv'); };
+    rq.onsuccess = ()=>{ V145.db = rq.result; res(V145.db); }; rq.onerror = ()=>rej(rq.error); }catch(e){ rej(e); } });
+}
+function v145Get(keys){ return v145Open().then(db=>new Promise((res, rej)=>{ const tx = db.transaction('kv', 'readonly'), st = tx.objectStore('kv'); const out = {};
+  keys.forEach(k=>{ const r = st.get(k); r.onsuccess = ()=>{ out[k] = r.result; }; }); tx.oncomplete = ()=>res(out); tx.onerror = ()=>rej(tx.error); })); }
+function v145AllKeys(){ return v145Open().then(db=>new Promise((res, rej)=>{ const r = db.transaction('kv', 'readonly').objectStore('kv').getAllKeys(); r.onsuccess = ()=>res(r.result||[]); r.onerror = ()=>rej(r.error); })); }
+function v145Put(obj, del){ return v145Open().then(db=>new Promise((res, rej)=>{ const tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv');
+  for (const k in obj) st.put(obj[k], k); for (const k of (del||[])) st.delete(k); tx.oncomplete = ()=>res(); tx.onerror = ()=>rej(tx.error); })); }
+function v145Clear(){ return v145Open().then(db=>new Promise((res, rej)=>{ const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').clear(); tx.oncomplete = ()=>res(); tx.onerror = ()=>rej(tx.error); })); }
+function v145Uid(){ try{ return (AUTH && AUTH.user && AUTH.user.uid) || ''; }catch(e){ return ''; } }
+
+/* ---------- A) honest per-day counts from the log ---------- */
+function v145Grade(z, o, price){
+  const st = o.res; if (!st || st==='ungradeable') return;
+  if (st==='win'){ z.w++; z.s += 1; z.u += (price!=null && isFinite(+price)) ? profitOn(+price, 1) : 1; }
+  else if (st==='loss'){ z.l++; z.s += 1; z.u -= 1; }
+  else if (st==='push') z.p++; else if (st==='void') z.v++;
+}
+function v145DayStat(m){
+  const rows = [...m.values()];
+  const good = mlogOnePerBet(rows.filter(o=>o && o.v==='good'));
+  const locked = mlogOnePerBet(rows.filter(o=>o && o.lkd));
+  const eg = v142E(), el = v142E();
+  for (const o of good) v145Grade(o.b==='props' ? eg.p : eg.g, o, o.pr);
+  for (const o of locked) v145Grade(o.b==='props' ? el.p : el.g, o, o.lpr!=null ? o.lpr : o.pr);
+  return {good:v142Pack(eg), locked:v142Pack(el), n:m.size};
+}
+function v145RefreshStats(){
+  for (const [d, m] of MLOG.raw){ if (!m || !m.size) continue; const s = V145.stat[d]; if (s && s.n===m.size && s.ver===MLOG.ver) continue;
+    const x = v145DayStat(m); x.ver = MLOG.ver; V145.stat[d] = x; }
+}
+function v145ModelIndex(metric){
+  const days = {}, months = {};
+  try{ v145RefreshStats(); }catch(e){ console.warn('v145 stats', e); }
+  const seen = new Set();
+  for (const d in V145.stat){ const s = V145.stat[d]; if (s && s[metric]){ const e = v142Unpack(s[metric]); if (v142N(e)) days[d] = e; seen.add(d); } }
+  // days with no rows on this device: Picks from the final day summary (already one per bet); Locked isn't in it
+  if (metric==='good') for (const [d, s] of MLOG.sums){ if (seen.has(d) || !s || !s.dd || !s.agg) continue; const e = v142E();
+    for (const b of ['games','props']){ const a = s.agg[`${b}|good|all|all`]; if (!a) continue; const z = b==='props' ? e.p : e.g; z.w += a[0]; z.l += a[1]; z.p += a[2]; z.v += a[3]; z.u += a[4]/100; z.s += a[5]/100; }
+    if (v142N(e)) days[d] = e; }
+  return {days, months, kind:'model'};
+}
+(function(){
+  const base = v142AdminIndex;
+  v142AdminIndex = function(m){ if (m==='locked' || m==='good') return v145ModelIndex(m); return base.apply(this, arguments); };
+})();
+
+/* ---------- B1) retire pub/uni and pub/uniDays ---------- */
+v138Publish = function(){}; v140PublishDays = function(){};
+v138Listen = function(){ try{ if (V138.unsub){ V138.unsub(); V138.unsub = null; } }catch(e){} };
+v140ListenDays = function(){ try{ if (V140.daysUnsub){ V140.daysUnsub(); V140.daysUnsub = null; } }catch(e){} };
+
+/* ---------- B2) uniDays2: every 20 min at most, only when the numbers changed; last copy kept for quota errors ---------- */
+var V145_PUB_KEY = 'bl_v145_pubj', V145_PUB_COPY = 'bl_v145_pub2';
+try{ V142.lastPubJ = localStorage.getItem(V145_PUB_KEY) || ''; }catch(e){}
+v142Publish = function(){
+  try{
+    if (!v138Admin() || typeof firebase==='undefined' || !firebase.firestore || !MLOG.at) return;
+    const now = Date.now(); if (now - (V142.lastPub||0) < 20*60000) return;
+    const cut = uniDay(now - 400*86400000); const d = {}, mo = {};
+    for (const [m] of V142_MET){ const I = v142AdminIndex(m);
+      for (const k in I.days) if (k >= cut && v142N(I.days[k])) (d[k] || (d[k] = {}))[m] = v142Pack(I.days[k]); }
+    if (!Object.keys(d).length) return;
+    const j = JSON.stringify(d); V142.lastPub = now; if (j===V142.lastPubJ) return;
+    firebase.firestore().collection('pub').doc('uniDays2').set({at: now, d, m: mo, v:145})
+      .then(()=>{ V142.lastPubJ = j; try{ localStorage.setItem(V145_PUB_KEY, j); }catch(e){} })
+      .catch(e=>console.warn('v145 pub', e && (e.code||e.message)));
+  }catch(e){ console.warn('v145 publish', e); }
+};
+v142Listen = function(){
+  try{
+    const uid = (v138Signed() && !v138Admin()) ? AUTH.user.uid : '';
+    if (!V142.pub2){ try{ const c = JSON.parse(localStorage.getItem(V145_PUB_COPY)||'null'); if (c && c.uid===uid && c.p){ V142.pub2 = c.p; V142.pub2At = c.at||0; V142.pub2Got = true; } }catch(e){} }
+    if (uid===V142.uid) return; V142.uid = uid;
+    if (V142.unsub){ try{ V142.unsub(); }catch(e){} V142.unsub = null; }
+    if (!uid) return;
+    V142.unsub = firebase.firestore().collection('pub').doc('uniDays2').onSnapshot(s=>{
+      const x = s.exists ? (s.data()||{}) : null;
+      if (x){ V142.pub2 = {d:x.d||{}, m:x.m||{}}; V142.pub2At = +x.at||0; try{ localStorage.setItem(V145_PUB_COPY, JSON.stringify({uid, at:V142.pub2At, p:V142.pub2})); }catch(e){} }
+      else if (!V142.pub2) V142.pub2 = null;
+      V142.pub2Got = true; v142Repaint();
+    }, e=>{ V142.unsub = null; V142.pub2Got = true; V142.pubErr = String(e && (e.code||e.message)); setTimeout(()=>{ V142.uid = ''; }, 10*60000); v142Repaint(); });
+  }catch(e){}
+};
+
+/* ---------- B3) the pick log cache ---------- */
+async function v145Hydrate(){
+  if (V145.hydrated || !mlogOn()) return false;
+  V145.hydrated = true;
+  try{
+    const g = await v145Get(['meta', 'stat', 'sums']); const meta = g.meta;
+    if (!meta || meta.uid!==v145Uid() || meta.v!==145){ V145.mode = 'empty'; return false; }
+    if (g.stat) Object.assign(V145.stat, g.stat);
+    if (Array.isArray(g.sums)) for (const s of g.sums) if (s && s.d && !MLOG.sums.has(s.d)) MLOG.sums.set(s.d, s);
+    const keys = (await v145AllKeys()).filter(k=>/^day:|^v131:/.test(k));
+    const got = await v145Get(keys);
+    for (const k of keys){ const v = got[k]; if (!v) continue;
+      if (k.startsWith('day:')){ const d = k.slice(4); let m = MLOG.raw.get(d); if (!m){ m = new Map(); MLOG.raw.set(d, m); }
+        for (const [id, o] of v){ const old = m.get(id); if (!old || mlogRank(o) >= mlogRank(old)) m.set(id, o); } V145.sig[d] = v.length; }
+      else { const d = k.slice(5); if (Array.isArray(v) && typeof V131!=='undefined' && !V131.rows.has(d)){ V131.rows.set(d, v); V145.v131[d] = 1; } } }
+    MLOG.loadedFrom = meta.loadedFrom || mlogDay(Date.now() - 30*86400000);
+    if (meta.cur && typeof firebase!=='undefined' && firebase.firestore) MLOG.cur = firebase.firestore.Timestamp.fromMillis(meta.cur);
+    V145.at = meta.at || 0; MLOG.ver++;
+    const fresh = meta.cur && Date.now() - meta.at < V145_NOTE_OK;
+    if (fresh){ MLOG.at = meta.at; MLOG.curOk = true; V145.mode = 'cache'; }   // next sync pulls only the change notes
+    else V145.mode = 'cache-old';                                              // recent days get topped up once
+    try{ if (ui.tab==='tracker') v142Repaint(); }catch(e){}
+    return true;
+  }catch(e){ V145.err = String(e && e.message || e); V145.mode = 'empty'; return false; }
+}
+(function(){
+  const full = mlogLoadFull;
+  mlogLoadFull = async function(force, fromDay){
+    if (!V145.hydrated) await v145Hydrate();
+    if (V145.mode==='cache' && MLOG.at && !fromDay) return mlogDeltaSync(force);
+    if (V145.mode==='empty' && !fromDay){
+      // one full fill for this device: every day since the log started, then only change notes from here on
+      const keep = MLOG.listFrom; MLOG.listFrom = V145_FIRST; V145.mode = 'filling';
+      let ok = false; try{ ok = await full.call(this, true, V145_FIRST); } finally { MLOG.listFrom = keep; }
+      if (ok){ V145.mode = 'cache'; V145.fillAt = Date.now(); v145Save(true); } else V145.mode = 'empty';
+      return ok;
+    }
+    const ok = await full.apply(this, arguments);
+    if (ok){ if (V145.mode==='cache-old') V145.mode = 'cache'; v145Save(true); }
+    return ok;
+  };
+  const delta = mlogDeltaSync;
+  mlogDeltaSync = async function(){ const ok = await delta.apply(this, arguments); if (ok) v145Save(false); return ok; };
+})();
+async function v145Save(now){
+  if (V145.saving || !MLOG.at || !mlogOn()) return;
+  if (!now && Date.now() - (V145.savedAt||0) < 60000) return;
+  V145.saving = true;
+  try{
+    v145RefreshStats();
+    const put = {}, del = []; const today = mlogDay(Date.now()); const keepFrom = mlogDay(Date.now() - V145_RAW_KEEP*86400000);
+    for (const [d, m] of MLOG.raw){ if (d < keepFrom){ if (V145.sig[d]!=null){ del.push('day:'+d); delete V145.sig[d]; } continue; }
+      if (V145.sig[d]===m.size + ':' + MLOG.ver) continue; put['day:'+d] = [...m.entries()]; V145.sig[d] = m.size + ':' + MLOG.ver; }
+    const stat = {}; for (const d in V145.stat){ const s = V145.stat[d]; stat[d] = {good:s.good, locked:s.locked, n:s.n}; }
+    put.stat = stat;
+    put.sums = [...MLOG.sums.values()].filter(s=>s && s.final);
+    if (typeof V131!=='undefined') for (const [d, rows] of V131.rows){ if (V145.v131[d] || d > v131DayAdd(today, -2)) continue; put['v131:'+d] = rows; V145.v131[d] = 1; }
+    put.meta = {v:145, uid:v145Uid(), at:MLOG.at, cur:MLOG.cur && MLOG.cur.toMillis ? MLOG.cur.toMillis() : 0, loadedFrom:MLOG.loadedFrom || V145_FIRST, fillAt:V145.fillAt || 0};
+    await v145Put(put, del); V145.savedAt = Date.now(); V145.err = '';
+  }catch(e){ V145.err = String(e && e.message || e); console.warn('v145 cache save', V145.err); }
+  finally{ V145.saving = false; }
+}
+// show the cached numbers as soon as this admin device is signed in (no database reads)
+setTimeout(function v145Kick(){ try{ if (typeof mlogOn==='function' && mlogOn()) v145Hydrate(); else setTimeout(v145Kick, 3000); }catch(e){ setTimeout(v145Kick, 5000); } }, 1500);
+setInterval(()=>{ if (MLOG.at && mlogOn()) v145Save(false); }, 5*60000);
+async function v145Resync(){
+  if (!mlogOn()) return;
+  try{ await v145Clear(); }catch(e){}
+  V145.sig = {}; V145.v131 = {}; V145.mode = 'empty'; V145.hydrated = true; MLOG.at = 0; MLOG.curOk = false;
+  const ok = await mlogLoadFull(true);
+  try{ toast(ok ? 'Pick log re-downloaded' : 'Couldn\'t reach the database. Showing the last saved copy.'); }catch(e){}
+  try{ if (ui.tab==='settings') render(); }catch(e){}
+}
+
+/* ---------- B4) smaller shards for new writes (old docs untouched and still read by day) ---------- */
+MLOG_SHARDS = {games:8, props:32};
+mlogDocId = function(id, o){ return `${mlogDay(o.t)}_${o.b}_x${mlogH(id) % (MLOG_SHARDS[o.b]||8)}`; };
+
+/* ---------- B5) unattended tabs (the always-on server) reload into a new version at most every 6 hours ---------- */
+(function(){
+  const base = updMaybeReload; const K = 'bl_v145_autoreload';
+  updMaybeReload = async function(){
+    const unattended = Date.now() - UPD.lastInput > 60*60000;
+    if (unattended){ let last = 0; try{ last = +localStorage.getItem(K)||0; }catch(e){}
+      if (Date.now() - last < 6*3600000) return; try{ localStorage.setItem(K, String(Date.now())); }catch(e){} }
+    try{ if (MLOG.at) await v145Save(true); }catch(e){}
+    return base.apply(this, arguments);
+  };
+})();
+
+/* ---------- slower background polling (alerts, Pulled and the board are unaffected) ---------- */
+(function(){
+  if (typeof mchkMaybe==='function'){ const base = mchkMaybe; let last = 0; mchkMaybe = function(){ if (Date.now() - last < 3*3600000) return; last = Date.now(); return base.apply(this, arguments); }; }
+})();
+
+/* ---------- quota errors: keep the cached numbers, say so quietly ---------- */
+(function(){
+  const base = v142CalCard;
+  v142CalCard = function(){
+    let h = base.apply(this, arguments);
+    try{
+      let note = '';
+      if (v140View()==='model' && v138Admin() && MLOG.err && /quota|resource-exhausted|unavailable/i.test(MLOG.err)) note = 'Database limit reached for today. Showing the last saved numbers.';
+      else if (v140View()==='model' && !v138Admin() && V142.pubErr && V142.pub2) note = 'Showing the last saved numbers.';
+      if (note) h = h.replace('<div class="hint v142-tap">', `<div class="hint v142-tap">${esc(note)} `);
+    }catch(e){}
+    return h;
+  };
+})();
+
+/* ---------- Settings → Resync (admin only) ---------- */
+(function(){
+  const base = renderSettings;
+  renderSettings = function(){
+    const out = base.apply(this, arguments);
+    v145SyncCard(); setTimeout(v145SyncCard, 0); setTimeout(v145SyncCard, 400);
+    return out;
+  };
+  function v145SyncCard(){
+    try{
+      if (ui.tab==='settings' && v138Admin() && !document.getElementById('v145Sync')){
+        const v = document.getElementById('view');
+        const when = MLOG.at ? new Date(MLOG.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'not yet';
+        const days = [...MLOG.raw.keys()].length;
+        v && v.insertAdjacentHTML('beforeend', `<div class="card v145-sync" id="v145Sync"><h3 style="margin:0 0 6px">Pick log</h3>
+          <div class="hint">Saved on this device and kept up to date with small change updates. Last sync ${esc(when)} · ${days} day${days===1?'':'s'} on this device.</div>
+          <button type="button" class="btn sm" id="btnV145Resync" style="margin-top:10px">Resync</button>
+          <div class="hint" style="margin-top:6px">Resync re-downloads the whole log. Only needed if the numbers look wrong.</div></div>`);
+        const b = document.getElementById('btnV145Resync'); if (b) b.onclick = ()=>{ b.disabled = true; b.textContent = 'Resyncing…'; v145Resync(); };
+      }
+    }catch(e){}
+  }
+})();
+/* v145 (UI only): Picks tier circles pop in when the Picks tab opens (staggered scale + fade, light spring),
+   the tapped circle gets a short glow pulse. Frosted-glass circles. Transform/opacity only (no layout shift).
+   prefers-reduced-motion: no animation. */
+(function(){
+  const css = `
+.v144-ic{background:linear-gradient(160deg,rgba(148,163,184,.16),rgba(30,58,138,.22));border:1px solid rgba(191,219,254,.28);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 4px 12px rgba(2,6,23,.35);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.v142-sb.on .v144-ic{background:linear-gradient(160deg,rgba(255,255,255,.32),rgba(255,255,255,.14));border-color:rgba(255,255,255,.6)}
+@keyframes v145In{0%{opacity:0;transform:scale(.55)}70%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
+@keyframes v145LabIn{0%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:none}}
+@keyframes v145Tap{0%{transform:scale(1);box-shadow:0 0 0 0 rgba(147,197,253,.55)}40%{transform:scale(1.12)}100%{transform:scale(1);box-shadow:0 0 0 12px rgba(147,197,253,0)}}
+.v142-seg.v145-play .v144-ic{animation:v145In 300ms cubic-bezier(.34,1.56,.64,1) both;animation-delay:calc(var(--v145i,0) * 70ms)}
+.v142-seg.v145-play .v142-sl{animation:v145LabIn 260ms ease-out both;animation-delay:calc(var(--v145i,0) * 70ms + 60ms)}
+.v144-ic.v145-tap{animation:v145Tap 380ms ease-out}
+.v144-ic{will-change:transform}
+@media (prefers-reduced-motion:reduce){ .v142-seg.v145-play .v144-ic,.v142-seg.v145-play .v142-sl,.v144-ic.v145-tap{animation:none !important} }`;
+  const st = document.createElement('style'); st.id = 'v145anim'; st.textContent = css; document.head.appendChild(st);
+  const reduce = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let lastTab = '';
+  function play(){
+    const seg = document.getElementById('v142Seg'); if (!seg || seg.hidden || reduce()) return;
+    seg.querySelectorAll('[data-v142-seg]').forEach((b, i)=>b.style.setProperty('--v145i', i));
+    seg.classList.remove('v145-play'); void seg.offsetWidth; seg.classList.add('v145-play');
+    clearTimeout(play._t); play._t = setTimeout(()=>seg.classList.remove('v145-play'), 700);
+  }
+  window.v145Play = play;
+  // play when the Picks tab becomes the active tab (first paint included)
+  function check(){ const t = (typeof ui!=='undefined' && ui) ? ui.tab : ''; if (t==='good' && lastTab!=='good') requestAnimationFrame(()=>requestAnimationFrame(play)); lastTab = t; }
+  if (typeof setTab==='function'){ const base = setTab; setTab = function(){ const r = base.apply(this, arguments); try{ check(); }catch(e){} return r; }; }
+  setTimeout(check, 0);
+  document.addEventListener('click', e=>{
+    const b = e.target && e.target.closest && e.target.closest('[data-v142-seg]'); if (!b || reduce()) return;
+    const ic = b.querySelector('.v144-ic'); if (!ic) return;
+    ic.classList.remove('v145-tap'); void ic.offsetWidth; ic.classList.add('v145-tap');
+    setTimeout(()=>ic.classList.remove('v145-tap'), 420);
+  });
+})();
+
+/* v145 (t316): on phones, tapping Picks in the bottom bar pops up the three circles first (⭐ Picks of the Day,
+   🔒 Locked, 🎯 Picks); tap one to open that list. Backdrop, Picks again or Escape closes it. Inside a list the
+   header names the tier and "Switch" reopens the circles. PC keeps the inline switch. */
+var V145_TN = {potd:'Picks of the Day', locked:'Locked', picks:'Picks'};
+function v145Mobile(){ const n = document.getElementById('bottomNav'); return !!(n && getComputedStyle(n).display!=='none'); }
+function v145Counts(){ const out = {}; document.querySelectorAll('#v142Seg [data-v142-n]').forEach(el=>{ out[el.dataset.v142N] = el.textContent; }); return out; }
+(function(){
+  const css = `
+.v145-ov{position:fixed;inset:0;z-index:33;display:none}
+.v145-ov.open{display:block}
+.v145-bd{position:absolute;inset:0;background:rgba(3,8,20,.62);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);opacity:0;transition:opacity .2s ease}
+.v145-ov.show .v145-bd{opacity:1}
+.v145-row{position:absolute;left:0;right:0;bottom:calc(8px + 68px + 22px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;gap:22px;padding:0 12px}
+.v145-c{display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:0;padding:0;margin:0;color:#e6eef8;cursor:pointer;-webkit-tap-highlight-color:transparent;width:84px;opacity:0;transform:translateY(18px) scale(.6)}
+.v145-ov.show .v145-c{opacity:1;transform:none;transition:transform 320ms cubic-bezier(.34,1.56,.64,1),opacity 220ms ease;transition-delay:calc(var(--i) * 70ms)}
+.v145-ov.closing .v145-c{opacity:0;transform:translateY(10px) scale(.8);transition:transform 160ms ease-in,opacity 140ms ease-in;transition-delay:0ms}
+.v145-cc{position:relative;width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-size:30px;line-height:1;background:linear-gradient(160deg,rgba(148,163,184,.22),rgba(30,58,138,.30));border:1px solid rgba(191,219,254,.34);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 10px 26px rgba(2,6,23,.55);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.v145-c.on .v145-cc{border-color:rgba(147,197,253,.85);box-shadow:0 0 0 3px rgba(59,130,246,.35),0 10px 26px rgba(2,6,23,.55)}
+.v145-c:active .v145-cc{transform:scale(.93)}
+.v145-cn{position:absolute;top:-4px;right:-6px;min-width:24px;height:24px;padding:0 6px;border-radius:12px;background:#2563eb;color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;border:2px solid rgba(10,18,34,.95);box-sizing:border-box;font-variant-numeric:tabular-nums}
+.v145-cl{font-size:13px;font-weight:750;white-space:nowrap;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+html.v145-lock,html.v145-lock body{overflow:hidden}
+.v145-th{display:none}
+@media (max-width:699px){
+  html.v145-mob .v142-seg{display:none !important}
+  html.v145-mob .v145-th:not([hidden]){display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:8px 8px 8px 10px;border-radius:16px;background:rgba(10,20,38,.72);border:1px solid rgba(59,130,246,.24)}
+}
+.v145-th .v145-tc{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:19px;flex:none;background:linear-gradient(160deg,rgba(148,163,184,.18),rgba(30,58,138,.26));border:1px solid rgba(191,219,254,.32)}
+.v145-th .v145-tt{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.v145-th h2{margin:0;font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v145-th .v145-tn{color:var(--mut);font-size:13px;font-variant-numeric:tabular-nums}
+.v145-th .v145-sw{flex:none;min-height:40px;padding:0 14px;border-radius:12px;border:1px solid rgba(96,165,250,.45);background:rgba(37,99,235,.18);color:#dbeafe;font-weight:700;font-size:13.5px}
+@media (prefers-reduced-motion:reduce){ .v145-c,.v145-ov.show .v145-c,.v145-ov.closing .v145-c{transition:none !important;transform:none !important;opacity:1} .v145-bd{transition:none} }`;
+  const st = document.createElement('style'); st.id = 'v145tiers'; st.textContent = css; document.head.appendChild(st);
+
+  let ov = null, closeT = 0;
+  function build(){
+    if (ov) return ov;
+    ov = document.createElement('div'); ov.id = 'v145Tiers'; ov.className = 'v145-ov'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Choose picks');
+    ov.innerHTML = `<div class="v145-bd" data-v145-close></div><div class="v145-row">${['potd','locked','picks'].map((k, i)=>`<button type="button" class="v145-c" data-v145-tier="${k}" style="--i:${i}"><span class="v145-cc"><span aria-hidden="true">${V144_IC[k]}</span><span class="v145-cn" data-v145-n="${k}" hidden></span></span><span class="v145-cl">${V145_TN[k]}</span></button>`).join('')}</div>`;
+    document.body.appendChild(ov);
+    return ov;
+  }
+  function isOpen(){ return !!(ov && ov.classList.contains('open') && !ov.classList.contains('closing')); }
+  function open(){
+    build(); clearTimeout(closeT);
+    const c = v145Counts(), cur = (ui && ui.tab==='good') ? v142Seg() : '';
+    ov.querySelectorAll('[data-v145-tier]').forEach(b=>{ const k = b.dataset.v145Tier; b.classList.toggle('on', k===cur); const n = b.querySelector('[data-v145-n]'); const v = c[k]; n.hidden = v==null || v===''; n.textContent = v||''; b.setAttribute('aria-label', `${V145_TN[k]}${v!=null&&v!==''?`, ${v}`:''}`); });
+    ov.classList.remove('closing', 'show'); ov.classList.add('open'); document.documentElement.classList.add('v145-lock');
+    requestAnimationFrame(()=>requestAnimationFrame(()=>ov.classList.add('show')));
+    setTimeout(()=>{ try{ (ov.querySelector('.v145-c.on') || ov.querySelector('.v145-c')).focus({preventScroll:true}); }catch(e){} }, 60);
+  }
+  function close(){
+    if (!ov || !ov.classList.contains('open')) return;
+    const quick = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ov.classList.add('closing'); document.documentElement.classList.remove('v145-lock');
+    clearTimeout(closeT); closeT = setTimeout(()=>{ ov.classList.remove('open', 'show', 'closing'); }, quick ? 0 : 180);
+  }
+  function pick(k){
+    close(); S.pkSeg = k; try{ v142Save(); }catch(e){}
+    if (!(ui && ui.tab==='good')){ setTab('good', {board: ui.board||'games'}); render(); }
+    else { v142SegChrome(); const p = document.querySelector('#view .v142-panes'); if (p) p.dataset.seg = k; }
+    v145Head(); window.scrollTo({top:0});
+  }
+  window.v145OpenTiers = open; window.v145CloseTiers = close;
+  // bottom bar Picks: open the circles instead of the list (phones only)
+  document.addEventListener('click', e=>{
+    const nb = e.target && e.target.closest && e.target.closest('#bottomNav [data-tab="good"]');
+    if (nb && v145Mobile()){ e.preventDefault(); e.stopImmediatePropagation(); if (isOpen()) close(); else open(); return; }
+    if (!ov || !ov.contains(e.target)) return;
+    const t = e.target.closest('[data-v145-tier]'); if (t){ pick(t.dataset.v145Tier); return; }
+    if (e.target.closest('[data-v145-close]')) close();
+  }, true);
+  document.addEventListener('keydown', e=>{ if (e.key==='Escape' && isOpen()){ e.preventDefault(); close(); } });
+  // other bottom-bar taps close it too
+  document.addEventListener('click', e=>{ if (isOpen() && e.target.closest && e.target.closest('#bottomNav button:not([data-tab="good"])')) close(); }, true);
+
+  // tier header inside the list (phones)
+  function v145Head(){
+    try{
+      const mob = v145Mobile(); if (document.documentElement.classList.contains('v145-mob') !== mob) document.documentElement.classList.toggle('v145-mob', mob);
+      const bar = document.getElementById('kindsBar'); if (!bar) return;
+      let h = document.getElementById('v145Head');
+      if (!h){ h = document.createElement('div'); h.id = 'v145Head'; h.className = 'v145-th';
+        h.innerHTML = `<span class="v145-tc" aria-hidden="true"></span><div class="v145-tt"><h2></h2><span class="v145-tn"></span></div><button type="button" class="v145-sw" aria-haspopup="dialog">Switch</button>`;
+        h.querySelector('.v145-sw').onclick = ()=>open();
+        const seg = document.getElementById('v142Seg'); if (seg && seg.parentNode===bar) seg.after(h); else bar.insertBefore(h, bar.firstChild); }
+      const hid = !(ui && ui.tab==='good'); if (h.hidden !== hid) h.hidden = hid;
+      const k = v142Seg(), c = v145Counts()[k];
+      const tc = h.querySelector('.v145-tc'); if (tc.textContent !== V144_IC[k]) tc.textContent = V144_IC[k];
+      if (h.querySelector('h2').textContent !== V145_TN[k]) h.querySelector('h2').textContent = V145_TN[k];
+      const nt = (c!=null && c!=='') ? `${c} ${c==='1'?'play':'plays'}` : ''; if (h.querySelector('.v145-tn').textContent !== nt) h.querySelector('.v145-tn').textContent = nt;
+    }catch(e){}
+  }
+  window.v145Head = v145Head;
+  const mo = new MutationObserver(()=>v145Head());
+  const go = () => { const kb = document.getElementById('kindsBar'); if (kb) mo.observe(kb, {childList:true, subtree:true, characterData:true, attributes:true, attributeFilter:['hidden','class']}); v145Head(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+  addEventListener('resize', ()=>{ v145Head(); if (!v145Mobile()) close(); });
+})();
 </script>
 </body>
 </html>
