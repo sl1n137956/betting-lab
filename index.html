@@ -518,7 +518,7 @@ body.filters-open #filterBar:not([hidden]){display:flex}
   .bottom-nav{display:flex;position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:30;gap:2px;align-items:stretch;min-height:60px;padding:4px;border-radius:26px;background:rgba(10,18,34,.95);border:1px solid rgba(59,122,235,.16);box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 14px 36px -12px rgba(0,0,0,.75),0 0 0 1px rgba(0,0,0,.25)}
   .bottom-nav button{flex:1 1 0;min-width:48px;min-height:48px;margin:0;padding:4px 2px 3px;border:0;border-radius:20px;background:transparent;color:var(--mut);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;font-weight:600;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:transform .16s var(--ease),background .2s var(--ease),color .2s var(--ease),box-shadow .2s var(--ease),flex-basis .2s var(--ease)}
   .bottom-nav button:active{transform:scale(.92)}
-  .bottom-nav button.on{flex:1.25 1 0;color:#fff;background:linear-gradient(180deg,#4784f2,#1d4ed8);box-shadow:0 0 0 1px rgba(255,255,255,.12) inset,0 8px 18px -6px rgba(37,99,235,.7),0 0 12px rgba(37,99,235,.22)}
+  .bottom-nav button.on{flex:1.25 1 0;color:#e6eef8;background:#1a2d44;box-shadow:0 0 0 1px rgba(147,180,230,.32) inset}
   .bottom-nav button.on:active{transform:scale(.96)}
   .bottom-nav .tab-ic{position:relative;width:24px;height:24px;display:grid;place-items:center;flex:none}
   .bottom-nav .tab-ic svg{width:22px;height:22px;display:block}
@@ -547,8 +547,8 @@ body.filters-open #filterBar:not([hidden]){display:flex}
   .more-sheet button .tab-ic svg{width:22px;height:22px;display:block}
   .more-sheet button .tab-lab{flex:1}
   .more-sheet button .cnt{margin-left:auto;min-width:22px;padding:0 7px;border-radius:999px;font-size:12px;line-height:22px;text-align:center;background:rgba(255,255,255,.08);color:var(--txt2);font-variant-numeric:tabular-nums;font-weight:650}
-  .more-sheet button.on{color:#fff;background:linear-gradient(180deg,#4784f2,#1d4ed8);border-color:transparent;box-shadow:0 0 0 1px rgba(255,255,255,.1) inset,0 8px 18px -6px rgba(37,99,235,.65)}
-  .more-sheet button.on .tab-ic,.more-sheet button.on .cnt{color:#fff;background:rgba(255,255,255,.2)}
+  .more-sheet button.on{color:#e6eef8;background:#1a2d44;border-color:rgba(147,180,230,.4);box-shadow:none}
+  .more-sheet button.on .tab-ic,.more-sheet button.on .cnt{color:#e6eef8;background:rgba(147,180,230,.16)}
   .more-sheet button[data-tab=pulled] .cnt{background:rgba(249,115,22,.22);color:var(--pull-hi)}
   .more-sheet button[data-tab=pulled].has-logged-pull .cnt{background:rgba(196,35,56,.35);color:#fecaca}
   .more-sheet button[data-tab=pulled].on .cnt{background:rgba(255,255,255,.2);color:#fff}
@@ -796,6 +796,13 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 .horizon-filter{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .horizon-filter .horizon-lab{font-size:12px;font-weight:650;color:var(--txt2)}
 .horizon-filter .seg{border-radius:999px;overflow:hidden}
+.odds-filter{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.odds-filter .horizon-lab{font-size:12px;font-weight:650;color:var(--txt2);padding-top:8px}
+.odds-chips{display:flex;flex-wrap:wrap;gap:8px;flex:1 1 200px}
+.odds-chips .chip{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;white-space:normal;word-break:normal;overflow-wrap:normal;hyphens:manual;max-width:100%;text-align:center;line-height:1.15;padding:6px 10px}
+.odds-chips .odds-name{font-weight:650}
+.odds-chips .odds-rng{font-size:10.5px;font-weight:550;opacity:.88}
+
 .lock-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:650;color:#ead48a;background:rgba(227,169,53,.14);border:1px solid rgba(227,169,53,.28);white-space:nowrap;letter-spacing:.01em}
 .lock-badge-row{margin:2px 0 8px}
 .early-note{margin:0 0 14px;padding:11px 14px;border-radius:14px;background:rgba(125,211,252,.08);border:1px solid rgba(125,211,252,.18);color:var(--txt2);font-size:13.5px;line-height:1.45}
@@ -845,7 +852,7 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
   .nav-bubble .bub svg{width:22px;height:22px;display:block}
   .nav-bubble .lab{font-size:11px;font-weight:750;letter-spacing:.02em;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.75)}
   .nav-bubble .cnt{position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;font-size:9.5px;line-height:16px;background:rgba(255,255,255,.2);color:#fff}
-  .nav-bubble.on .bub{background:linear-gradient(180deg,#4784f2,#1d4ed8);color:#fff;border-color:rgba(255,255,255,.28);box-shadow:0 0 12px rgba(37,99,235,.28),0 0 0 1px rgba(255,255,255,.14) inset}
+  .nav-bubble.on .bub{background:#1a2d44;color:#e6eef8;border-color:rgba(147,180,230,.45);box-shadow:none}
   .nav-bubble.on .lab{color:#fff}
   .bottom-nav [data-board-parent].pop-on{color:var(--acc-hi)}
   @media (prefers-reduced-motion:reduce){
@@ -866,7 +873,7 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 #kindsBar[hidden]{display:none !important}
 #kindsBar .kinds-seg{display:inline-flex;flex-wrap:wrap;align-items:stretch;gap:10px;padding:0;border:0;background:none;border-radius:0;box-shadow:none}
 #kindsBar .kinds-seg button{flex:0 0 auto;min-width:108px;min-height:40px;margin:0;padding:8px 16px;border-radius:999px;border:1px solid rgba(148,163,184,.32);background:rgba(255,255,255,.03);color:var(--mut);cursor:pointer;font-weight:650;white-space:nowrap;font-size:13px;box-shadow:none}
-#kindsBar .kinds-seg button.on{border-color:transparent;background:linear-gradient(180deg,#4784f2,#1d4ed8);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.12) inset,0 8px 18px -6px rgba(37,99,235,.7)}
+#kindsBar .kinds-seg button.on{border-color:rgba(147,180,230,.48);background:#1a2d44;color:#d7e4f6;box-shadow:none}
 #kindsBar .kinds-seg button:disabled{opacity:1;cursor:default}
 @media(max-width:899.98px){
   #kindsBar .kinds-seg{display:flex;width:100%;gap:10px}
@@ -1616,6 +1623,17 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
         <label class="on"><input type="radio" name="horizon" value="24h" checked hidden>Next 24</label>
         <label><input type="radio" name="horizon" value="all" hidden>All</label>
       </div>
+    </div>
+    <div class="filters horizon-filter" id="sortRow">
+      <span class="mut horizon-lab">Sort</span>
+      <div class="seg" id="sortSeg" role="group" aria-label="Sort plays">
+        <label class="on"><input type="radio" name="boardSort" value="time" checked hidden>Time</label>
+        <label><input type="radio" name="boardSort" value="conf" hidden>Confidence</label>
+      </div>
+    </div>
+    <div class="filters odds-filter" id="oddsRow">
+      <span class="mut horizon-lab">Odds</span>
+      <div class="odds-chips" id="oddsChips" role="group" aria-label="Show or hide by price"></div>
     </div>
     <div class="filters" id="mixChips" hidden></div>
     <div class="filters" id="mktChips">
@@ -8203,7 +8221,12 @@ function renderTracker(pf){
   const prePick = pf.pick || '';
   // v40: the list shows only pending bets; settled ones still count in the stats above and sit behind "Show settled"
   const isPendingBet = b => !b.result || b.result==='pending';
-  const sortedBets = bets.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.created||0)-(a.created||0));
+  const sortedBets = bets.slice().sort((a,b)=>{
+    const pa = (typeof isPendingBet==='function' && isPendingBet(a)) ? 1 : 0;
+    const pb = (typeof isPendingBet==='function' && isPendingBet(b)) ? 1 : 0;
+    if (pb!==pa) return pb-pa;
+    return (b.date||'').localeCompare(a.date||'')||(b.created||0)-(a.created||0);
+  });
   const pendingN = sortedBets.filter(isPendingBet).length, settledN = sortedBets.length - pendingN;
   const betCardOf = b=>{
     const pr = betProfit(b);
@@ -23059,16 +23082,21 @@ function v115WithBoard(board, fn){
 function v115GamesBody(tab){
   return v115WithBoard('games', ()=>{
     const vis = v => (typeof filtered==='function' ? filtered((plays||[]).filter(p=>p.verdict===v), true) : (plays||[]).filter(p=>p.verdict===v));
-    let good = vis('good').sort((a,b)=>(a.rank||99)-(b.rank||99));
-    const watch = vis('watch').sort((a,b)=>(b.score||0)-(a.score||0));
-    const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
-    try{ if (typeof tailedPlaysToKeep==='function') good = good.concat(tailedPlaysToKeep([...good, ...watch, ...avoid])); }catch(e){}
+    const arrange = (list, fallback) => (typeof v121Arrange==='function' ? v121Arrange(list) : (list||[]).slice().sort(fallback));
+    const emptyOdds = (orig, raw, arranged) => (typeof v121EmptyMsg==='function' ? v121EmptyMsg(orig, raw, arranged) : orig);
+    const rawGood = vis('good'), rawWatch = vis('watch'), rawAvoid = vis('avoid');
+    let good = rawGood.slice();
+    try{ if (typeof tailedPlaysToKeep==='function') good = good.concat(tailedPlaysToKeep([...good, ...rawWatch, ...rawAvoid])); }catch(e){}
     try{ if (typeof lockedKeepItems==='function') good = good.concat(lockedKeepItems('games', good)); }catch(e){}
     try{ if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'games'); }catch(e){}
+    const goodBefore = good.slice();
+    good = arrange(good, (a,b)=>(a.rank||99)-(b.rank||99));
+    const watch = arrange(rawWatch, (a,b)=>(b.score||0)-(a.score||0));
+    const avoid = arrange(rawAvoid, (a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
     const both = v115Kinds(tab).games && v115Kinds(tab).props;
-    const empty = (typeof sportFilterEmpty==='function')
+    const empty = emptyOdds((typeof sportFilterEmpty==='function')
       ? sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')
-      : 'No plays passed today.';
+      : 'No plays passed today.', goodBefore, good);
     if (tab==='good'){
       const title = both ? '<span class="h-emo" aria-hidden="true">🏟️</span>Game Picks' : '<span class="h-emo" aria-hidden="true">🎯</span>Picks';
       const list = good;
@@ -23077,32 +23105,40 @@ function v115GamesBody(tab){
     }
     if (tab==='watch'){
       const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test((p.reasons&&p.reasons[0])||'');
-      const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
+      const mainRaw = rawWatch.filter(p=>!isOver(p)), overRaw = rawWatch.filter(isOver);
+      const main = arrange(mainRaw, (a,b)=>(b.score||0)-(a.score||0)), over = arrange(overRaw, (a,b)=>(b.score||0)-(a.score||0));
       const title = both ? '<span class="h-emo" aria-hidden="true">🏟️</span>Game Watchlist' : '<span class="h-emo" aria-hidden="true">👀</span>Watchlist';
-      const emptyW = (typeof sportFilterEmpty==='function') ? sportFilterEmpty(over.length?'No other watchlist items.':'Nothing on the watchlist.') : 'Nothing on the watchlist.';
+      const emptyW0 = (typeof sportFilterEmpty==='function') ? sportFilterEmpty(overRaw.length?'No other watchlist items.':'Nothing on the watchlist.') : 'Nothing on the watchlist.';
+      const emptyW = emptyOdds(emptyW0, mainRaw, main);
       return (typeof section==='function' ? section(title, 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, emptyW) : '')
         + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '');
     }
     const title = both ? '<span class="h-emo" aria-hidden="true">🏟️</span>Game Avoid' : '<span class="h-emo" aria-hidden="true">🚫</span>Avoid';
-    const emptyA = (typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing flagged to avoid.') : 'Nothing flagged to avoid.';
+    const emptyA = emptyOdds((typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing flagged to avoid.') : 'Nothing flagged to avoid.', rawAvoid, avoid);
     return (typeof section==='function') ? section(title, 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, emptyA) : '';
   });
 }
 function v115PropsBody(tab){
   return v115WithBoard('props', ()=>{
     const vis = v => (typeof filteredProps==='function' ? filteredProps((props||[]).filter(p=>p.verdict===v)) : (props||[]).filter(p=>p.verdict===v));
-    let good = vis('good').sort((a,b)=>(b.p||0)-(a.p||0));
-    const watch = vis('watch').sort((a,b)=>(b.p||0)-(a.p||0));
-    const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
-    try{ if (typeof tailedPropsToKeep==='function') good = good.concat(tailedPropsToKeep([...good, ...watch, ...avoid])); }catch(e){}
+    const arrange = (list, fallback) => (typeof v121Arrange==='function' ? v121Arrange(list) : (list||[]).slice().sort(fallback));
+    const emptyOdds = (orig, raw, arranged) => (typeof v121EmptyMsg==='function' ? v121EmptyMsg(orig, raw, arranged) : orig);
+    const rawGood = vis('good'), rawWatch = vis('watch'), rawAvoid = vis('avoid');
+    let good = rawGood.slice();
+    try{ if (typeof tailedPropsToKeep==='function') good = good.concat(tailedPropsToKeep([...good, ...rawWatch, ...rawAvoid])); }catch(e){}
     try{ if (typeof lockedKeepItems==='function') good = good.concat(lockedKeepItems('props', good)); }catch(e){}
     try{ if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'props'); }catch(e){}
+    const goodBefore = good.slice();
+    good = arrange(good, (a,b)=>(b.p||0)-(a.p||0));
+    const watch = arrange(rawWatch, (a,b)=>(b.p||0)-(a.p||0));
+    const avoid = arrange(rawAvoid, (a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
     const both = v115Kinds(tab).games && v115Kinds(tab).props;
     const st = (typeof propStatusHTML==='function') ? propStatusHTML() : '';
     const bookNote = (typeof propsUnsupportedNote==='function') ? propsUnsupportedNote() : '';
     const bookEmpty = bookNote ? (esc(bookNote) + ` <div style="margin-top:12px"><button type="button" class="btn primary" data-open-settings="1">Open Settings</button></div>`) : '';
     if (tab==='good'){
-      const empty = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('No player props passed today. <b>Zero picks is fine.</b> Never force a bet. You can still type a prop in Verdict.') : 'No player props passed today.');
+      const empty0 = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('No player props passed today. <b>Zero picks is fine.</b> Never force a bet. You can still type a prop in Verdict.') : 'No player props passed today.');
+      const empty = bookEmpty || emptyOdds(empty0, goodBefore, good);
       const title = both ? '<span class="h-emo" aria-hidden="true">🏀</span>Prop Picks' : '<span class="h-emo" aria-hidden="true">🎯</span>Prop Picks';
       const body = (typeof picksBoardHTML==='function') ? picksBoardHTML(title, '', empty, good, 'props', propCard)
         : (typeof sectionProps==='function' ? sectionProps(title, '', good, empty) : '');
@@ -23110,34 +23146,37 @@ function v115PropsBody(tab){
     }
     if (tab==='watch'){
       const title = both ? '<span class="h-emo" aria-hidden="true">🏀</span>Prop Watchlist' : '<span class="h-emo" aria-hidden="true">👀</span>Prop Watchlist';
-      const empty = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing on the prop watchlist.') : 'Nothing on the prop watchlist.');
+      const empty0 = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing on the prop watchlist.') : 'Nothing on the prop watchlist.');
+      const empty = bookEmpty || emptyOdds(empty0, rawWatch, watch);
       return st + (typeof sectionProps==='function' ? sectionProps(title, 'Leans that are close, thin-sample, or just outside the singles gates.', watch, empty) : '');
     }
     const title = both ? '<span class="h-emo" aria-hidden="true">🏀</span>Prop Avoid' : '<span class="h-emo" aria-hidden="true">🚫</span>Prop Avoid';
-    const empty = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing flagged to avoid.') : 'Nothing flagged to avoid.');
+    const empty0 = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing flagged to avoid.') : 'Nothing flagged to avoid.');
+    const empty = bookEmpty || emptyOdds(empty0, rawAvoid, avoid);
     return st + (typeof sectionProps==='function' ? sectionProps(title, 'No edge, heavy juice, or not enough of a sample to trust the lean.', avoid, empty) : '');
   });
 }
 function v115CountVisible(tab, kind){
+  const countList = list => (typeof v121Arrange==='function' ? v121Arrange(list) : list).length;
   if (kind==='props'){
     return v115WithBoard('props', ()=>{
       const vis = (typeof filteredProps==='function' ? filteredProps((props||[]).filter(p=>p.verdict===tab)) : (props||[]).filter(p=>p.verdict===tab));
-      let n = vis.length;
+      let list = vis.slice();
       if (tab==='good'){
-        try{ if (typeof tailedPropsToKeep==='function') n += (tailedPropsToKeep(vis)||[]).length; }catch(e){}
-        try{ if (typeof lockedKeepItems==='function') n += (lockedKeepItems('props', vis)||[]).length; }catch(e){}
+        try{ if (typeof tailedPropsToKeep==='function') list = list.concat(tailedPropsToKeep(vis)||[]); }catch(e){}
+        try{ if (typeof lockedKeepItems==='function') list = list.concat(lockedKeepItems('props', vis)||[]); }catch(e){}
       }
-      return n;
+      return countList(list);
     });
   }
   return v115WithBoard('games', ()=>{
     const vis = (typeof filtered==='function' ? filtered((plays||[]).filter(p=>p.verdict===tab), true) : (plays||[]).filter(p=>p.verdict===tab));
-    let n = vis.length;
+    let list = vis.slice();
     if (tab==='good'){
-      try{ if (typeof tailedPlaysToKeep==='function') n += (tailedPlaysToKeep(vis)||[]).length; }catch(e){}
-      try{ if (typeof lockedKeepItems==='function') n += (lockedKeepItems('games', vis)||[]).length; }catch(e){}
+      try{ if (typeof tailedPlaysToKeep==='function') list = list.concat(tailedPlaysToKeep(vis)||[]); }catch(e){}
+      try{ if (typeof lockedKeepItems==='function') list = list.concat(lockedKeepItems('games', vis)||[]); }catch(e){}
     }
-    return n;
+    return countList(list);
   });
 }
 function v115UpdateCombinedCounts(){
@@ -23873,7 +23912,8 @@ function v119LockedHTML(items){
   function lockedTop(tab){
     const k = v115Kinds(tab); const items = [];
     for (const [on, fn] of [[k.games, G], [k.props, P]]) if (on) for (const g of collect(fn, tab)){ const cf = v119CardFn(g.cardFnRaw); for (const x of g.locked) items.push({x, fn:cf, t:(typeof itemStartMs==='function' ? itemStartMs(x) : 0)||0}); }
-    items.sort((a,b)=>a.t-b.t);
+    if (typeof v121ArrangeItems==='function') items = v121ArrangeItems(items);
+    else items.sort((a,b)=>a.t-b.t);
     return v119LockedHTML(items);
   }
   v115GamesBody = function(tab){ if (tab!=='good') return G.apply(this, arguments); return lockedTop(tab) + rest(G, tab); };
@@ -23902,6 +23942,299 @@ window.v120Status = function(){
     avoid: cs.getPropertyValue('--avoid').trim(),
     logged: cs.getPropertyValue('--logged').trim(),
     loggedHi: cs.getPropertyValue('--logged-hi').trim()
+  };
+};
+/* v121: calmer Games/Props (and similar toggle) fills, tailed bets first,
+   sort by Time or Confidence, and a display-only odds show/hide filter. */
+APP_BUILD = 121;
+const V121_ODDS = ['bigfav','fav','coin','dog','long'];
+const V121_EMPTY = 'No plays in the odds you\'ve turned on — tap a price to show some.';
+
+function v121Sort(){ return (typeof ui!=='undefined' && ui.sort==='conf') ? 'conf' : 'time'; }
+function v121OddsSel(){
+  const raw = (typeof ui!=='undefined' && Array.isArray(ui.odds)) ? ui.odds : V121_ODDS;
+  return V121_ODDS.filter(k => raw.includes(k));
+}
+function v121OddsAllOn(){ return v121OddsSel().length===V121_ODDS.length; }
+
+function v121IsTailed(x){
+  if (!x) return false;
+  if (x.tailedKeep || x.pulledNote) return true;
+  try{
+    if (typeof isTailedPending==='function' && isTailedPending(x)) return true;
+    if (typeof primaryLoggedBet==='function' && primaryLoggedBet(x)) return true;
+  }catch(e){}
+  return false;
+}
+function v121Start(x){
+  try{ if (typeof itemStartMs==='function') return itemStartMs(x)||0; }catch(e){}
+  return (x && x.g && x.g.start) ? +x.g.start || 0 : 0;
+}
+function v121Conf(x){
+  if (!x) return 0;
+  try{
+    const v = x.j && x.j.conf && x.j.conf.v;
+    if (v!=null && isFinite(+v)) return +v;
+    if (typeof betStarsN==='function'){
+      const n = betStarsN(v, x.verdict);
+      if (n!=null) return n*20;
+    }
+  }catch(e){}
+  if (x.score!=null && isFinite(+x.score)) return +x.score;
+  if (x.p!=null && isFinite(+x.p)) return +x.p;
+  if (x.rank!=null && isFinite(+x.rank)) return -x.rank;
+  return 0;
+}
+function v121PriceOf(p){
+  if (!p) return null;
+  try{
+    if (typeof recBookFor==='function'){
+      const r = recBookFor(p);
+      if (r && !r.none){
+        const am = (r.price!=null && isFinite(+r.price)) ? +r.price : null;
+        let c = (r.cents!=null && isFinite(+r.cents)) ? +r.cents : ((r.cost!=null && isFinite(+r.cost)) ? +r.cost : null);
+        if (c!=null && c>1 && c<=100) c = c/100;
+        if ((c==null || !(c>0 && c<1)) && am!=null && typeof imp==='function') c = imp(am);
+        if (am!=null || (c!=null && c>0 && c<1)) return {am, c};
+      }
+    }
+  }catch(e){}
+  try{
+    const am = (p.price!=null && isFinite(+p.price)) ? +p.price
+      : (p.sd && p.sd.best && p.sd.best.price!=null && isFinite(+p.sd.best.price) ? +p.sd.best.price : null);
+    let c = (p.cents!=null && isFinite(+p.cents)) ? +p.cents : (p.cost!=null && isFinite(+p.cost) ? +p.cost : null);
+    if (c!=null && c>1 && c<=100) c = c/100;
+    if ((c==null || !(c>0 && c<1)) && am!=null && typeof imp==='function') c = imp(am);
+    if (am!=null || (c!=null && c>0 && c<1)) return {am, c};
+  }catch(e){}
+  return null;
+}
+function v121Bucket(p){
+  const px = v121PriceOf(p);
+  if (!px) return null;
+  const mode = (typeof pxMode==='function') ? pxMode() : 'am';
+  const useC = (mode==='c' && px.c!=null && px.c>0 && px.c<1) || (px.am==null && px.c!=null && px.c>0 && px.c<1);
+  if (useC){
+    const cc = Math.round(px.c*100);
+    if (cc>=67) return 'bigfav';
+    if (cc>=52) return 'fav';
+    if (cc>=48) return 'coin';
+    if (cc>=34) return 'dog';
+    return 'long';
+  }
+  const a = px.am;
+  if (a==null || !isFinite(a)) return null;
+  if (a<=-200) return 'bigfav';
+  if (a<=-110) return 'fav';
+  if (a>=-109 && a<=109) return 'coin';
+  if (a<=199) return 'dog';
+  return 'long';
+}
+function v121OddsAllows(x){
+  if (v121IsTailed(x)) return true;
+  const b = v121Bucket(x);
+  if (!b) return true;
+  return v121OddsSel().includes(b);
+}
+function v121EmptyMsg(orig, raw, arranged){
+  if (arranged && arranged.length) return orig;
+  if (v121OddsAllOn()) return orig;
+  if (raw && raw.length) return V121_EMPTY;
+  return orig;
+}
+function v121ArrangeItems(items){
+  const arr = (items||[]).filter(it => v121OddsAllows(it && (it.x||it)));
+  const conf = v121Sort()==='conf';
+  return arr.slice().sort((A,B)=>{
+    const a = A && (A.x||A), b = B && (B.x||B);
+    const ta = v121IsTailed(a)?1:0, tb = v121IsTailed(b)?1:0;
+    if (tb!==ta) return tb-ta;
+    if (conf){
+      const d = v121Conf(b)-v121Conf(a);
+      if (d) return d;
+    }
+    const sa = (A && A.t!=null && isFinite(+A.t) && A.x) ? +A.t : v121Start(a);
+    const sb = (B && B.t!=null && isFinite(+B.t) && B.x) ? +B.t : v121Start(b);
+    return sa-sb;
+  });
+}
+function v121Arrange(list){ return v121ArrangeItems((list||[]).map(x=>({x}))).map(i=>i.x); }
+
+function v121OddsLabels(){
+  const m = (typeof pxMode==='function') ? pxMode() : 'am';
+  const names = {bigfav:'Big fav', fav:'Fav', coin:'Coin flip', dog:'Dog', long:'Long shot'};
+  const am = {bigfav:'≤ -200', fav:'-199 to -110', coin:'-109 to +109', dog:'+110 to +199', long:'+200+'};
+  const c = {bigfav:'≥67¢', fav:'52–66¢', coin:'48–52¢', dog:'34–47¢', long:'≤33¢'};
+  const range = m==='c' ? c : m==='both' ? {
+    bigfav:'≤ -200 / ≥67¢', fav:'-199 to -110 / 52–66¢', coin:'-109 to +109 / 48–52¢',
+    dog:'+110 to +199 / 34–47¢', long:'+200+ / ≤33¢'
+  } : am;
+  const out = {};
+  for (const k of V121_ODDS) out[k] = {name:names[k], range:range[k], text:names[k]+' '+range[k]};
+  return out;
+}
+function v121OddsChipHTML(k, on, labs){
+  const L = labs[k] || {name:k, range:'', text:k};
+  return `<span class="chip${on?' on':''}" data-odds="${k}" role="button" tabindex="0" aria-pressed="${on?'true':'false'}"><span class="odds-name">${L.name}</span><span class="odds-rng">${L.range}</span></span>`;
+}
+
+function v121Persist(){
+  try{
+    if (typeof ui==='undefined') return;
+    if (typeof saveJSON==='function' && typeof LS!=='undefined' && LS.filters){
+      const f = (typeof loadJSON==='function' ? (loadJSON(LS.filters, {})||{}) : {});
+      f.sort = v121Sort();
+      f.odds = v121OddsSel();
+      if (typeof ui.sport!=='undefined') f.sport = ui.sport||'all';
+      if (typeof ui.mkt!=='undefined') f.mkt = ui.mkt||'all';
+      f.hideLogged = !!ui.hideLogged;
+      f.hideStarted = !!ui.hideStarted;
+      if (ui.horizon) f.horizon = (typeof normalizeHorizon==='function'?normalizeHorizon(ui.horizon):ui.horizon);
+      f.board = ui.board||'games';
+      f.tab = ui.tab;
+      saveJSON(LS.filters, f);
+    }
+    if (typeof filterViews!=='undefined' && typeof filterViewKey==='function' && typeof saveJSON==='function' && typeof LS!=='undefined'){
+      const key = filterViewKey(ui.board||'games', ui.tab);
+      if (key && filterViews[key]){
+        filterViews[key].sort = v121Sort();
+        filterViews[key].odds = v121OddsSel();
+        try{ saveJSON(LS.filterViews, filterViews); }catch(e){}
+      }
+    }
+  }catch(e){}
+}
+function v121Load(){
+  try{
+    if (typeof ui==='undefined') return;
+    const f = (typeof loadJSON==='function' && typeof LS!=='undefined') ? (loadJSON(LS.filters, {})||{}) : {};
+    ui.sort = (f.sort==='conf') ? 'conf' : 'time';
+    ui.odds = Array.isArray(f.odds) ? V121_ODDS.filter(k=>f.odds.includes(k)) : V121_ODDS.slice();
+  }catch(e){
+    try{ ui.sort='time'; ui.odds=V121_ODDS.slice(); }catch(e2){}
+  }
+}
+
+function v121PaintFilters(){
+  const sort = v121Sort();
+  const seg = document.getElementById('sortSeg');
+  if (seg) seg.querySelectorAll('label').forEach(lab=>{
+    const inp = lab.querySelector('input');
+    const on = !!(inp && inp.value===sort);
+    if (inp) inp.checked = on;
+    lab.classList.toggle('on', on);
+  });
+  const box = document.getElementById('oddsChips');
+  if (!box) return;
+  const labs = v121OddsLabels();
+  const on = new Set(v121OddsSel());
+  const mode = (typeof pxMode==='function') ? pxMode() : 'am';
+  if (box.dataset.ready!=='1' || box.dataset.mode!==mode){
+    box.innerHTML = V121_ODDS.map(k=>v121OddsChipHTML(k, on.has(k), labs)).join('');
+    box.dataset.ready = '1';
+    box.dataset.mode = mode;
+  } else {
+    box.querySelectorAll('[data-odds]').forEach(ch=>{
+      const k = ch.getAttribute('data-odds');
+      const yes = on.has(k);
+      ch.classList.toggle('on', yes);
+      ch.setAttribute('aria-pressed', yes?'true':'false');
+      const L = labs[k];
+      if (L){
+        const name = ch.querySelector('.odds-name');
+        const rng = ch.querySelector('.odds-rng');
+        if (name && name.textContent!==L.name) name.textContent = L.name;
+        if (rng && rng.textContent!==L.range) rng.textContent = L.range;
+      }
+    });
+  }
+}
+
+(function(){
+  v121Load();
+  if (typeof saveFilters==='function'){
+    const base = saveFilters;
+    saveFilters = function(){
+      const out = base.apply(this, arguments);
+      v121Persist();
+      return out;
+    };
+  }
+  if (typeof applyFilterView==='function'){
+    const base = applyFilterView;
+    applyFilterView = function(key){
+      const out = base.apply(this, arguments);
+      try{
+        const v = (typeof ensureFilterView==='function') ? ensureFilterView(key) : null;
+        if (v && (v.sort==='conf'||v.sort==='time')) ui.sort = v.sort;
+        if (v && Array.isArray(v.odds)) ui.odds = V121_ODDS.filter(k=>v.odds.includes(k));
+      }catch(e){}
+      return out;
+    };
+  }
+  if (typeof activeFilterCount==='function'){
+    const base = activeFilterCount;
+    activeFilterCount = function(){
+      let n = base.apply(this, arguments) || 0;
+      if (v121Sort()==='conf') n++;
+      if (!v121OddsAllOn()) n++;
+      return n;
+    };
+  }
+  if (typeof updateFilterChrome==='function'){
+    const base = updateFilterChrome;
+    updateFilterChrome = function(){
+      const out = base.apply(this, arguments);
+      try{ v121PaintFilters(); }catch(e){}
+      return out;
+    };
+  }
+  function setSort(val){
+    if (typeof ui==='undefined') return;
+    ui.sort = (val==='conf') ? 'conf' : 'time';
+    v121Persist();
+    v121PaintFilters();
+    if (typeof render==='function') render();
+  }
+  function toggleOdds(k){
+    if (!V121_ODDS.includes(k) || typeof ui==='undefined') return;
+    const cur = new Set(v121OddsSel());
+    if (cur.has(k)) cur.delete(k); else cur.add(k);
+    ui.odds = V121_ODDS.filter(x=>cur.has(x));
+    v121Persist();
+    v121PaintFilters();
+    if (typeof render==='function') render();
+  }
+  document.addEventListener('change', e=>{
+    const inp = e.target && e.target.closest && e.target.closest('#sortSeg input');
+    if (!inp) return;
+    setSort(inp.value);
+  });
+  document.addEventListener('click', e=>{
+    const lab = e.target && e.target.closest && e.target.closest('#sortSeg label');
+    if (lab){
+      const inp = lab.querySelector('input');
+      if (inp){ inp.checked = true; setSort(inp.value); }
+      return;
+    }
+    const chip = e.target && e.target.closest && e.target.closest('#oddsChips [data-odds]');
+    if (chip) toggleOdds(chip.getAttribute('data-odds'));
+  });
+  document.addEventListener('keydown', e=>{
+    if (e.key!=='Enter' && e.key!==' ') return;
+    const chip = e.target && e.target.closest && e.target.closest('#oddsChips [data-odds]');
+    if (!chip) return;
+    e.preventDefault();
+    toggleOdds(chip.getAttribute('data-odds'));
+  });
+})();
+
+window.v121Status = function(){
+  return {
+    build: APP_BUILD,
+    sort: v121Sort(),
+    odds: v121OddsSel(),
+    buckets: V121_ODDS.slice()
   };
 };
 </script>
