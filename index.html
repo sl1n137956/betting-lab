@@ -26475,6 +26475,56 @@ try{ applyAdminGate(); }catch(e){}
 (function(){ const st = document.createElement('style'); st.textContent = `.v138-uni .v138-period select{min-height:40px}
 .v138-uni .uni-b .hint{overflow-wrap:break-word}`; document.head.appendChild(st); })();
 window.v138 = {publish: v138Publish, build: v138BuildPub, V: V138};
+/* ================= v139: non-admin Results = profit only =================
+   Non-admins see three lines for the chosen period: Picks of the Day, Locked and Picks, each as units won or lost
+   (games + props together). The published summary (pub/uni) now carries only those three numbers per period. */
+APP_BUILD = 139;
+function v139Sum(B){
+  const o = {};
+  for (const k of ['potd','locked','good']){
+    let pf = 0, n = 0;
+    for (const b of ['games','props']){ const q = B && B[b] && B[b].bucket && B[b].bucket[k]; if (q){ pf += +q.pf||0; n += +q.n||0; } }
+    o[k] = {u: Math.round(pf)/100, n};
+  }
+  return o;
+}
+v138BuildPub = function(){
+  const out = {};
+  try{ for (const r of V138_RANGES){ V138.force = r; out[r] = v139Sum(uniCountsMerged()); } }
+  finally{ V138.force = null; }
+  return out;
+};
+v138UserHTML = function(){
+  v138Listen();
+  let R = null;
+  if (V138.pub){ const r = UR.range, stale = V138.pubDay && V138.pubDay < uniDay(Date.now());
+    R = stale && r==='today' ? null : stale && r==='yday' && V138.pubDay===v138Yday() ? V138.pub.today : V138.pub[r];
+    if (R && R.games) R = v139Sum(R); }            // older summary format
+  const NAMES = {potd:'Picks of the Day', locked:'Locked', good:'Picks'};
+  const ICON = {potd:'⭐', locked:'🔒', good:'🎯'};
+  const fmt = u => (u>=0 ? '+' : '−') + Math.abs(u).toFixed(1) + 'u';
+  let body;
+  if (!R) body = `<div class="hint v139-empty">${V138.pub ? 'Nothing graded in this period yet.' : V138.err ? 'Couldn\'t load results right now.' : V138.loaded ? 'Results will show here shortly.' : 'Loading…'}</div>`;
+  else body = '<div class="v139-rows">' + ['potd','locked','good'].map(k=>{
+    const x = R[k] || {u:0, n:0}; const has = (+x.n||0) > 0; const u = +x.u||0;
+    return `<div class="v139-row"><span class="v139-k"><span aria-hidden="true">${ICON[k]}</span> ${NAMES[k]}</span><span class="v139-v ${has ? (u>=0?'pos':'neg') : 'mut'}">${has ? fmt(u) : '—'}</span></div>`;
+  }).join('') + '</div>';
+  const sel = `<div class="mr-filters uni-filters v138-period"><label class="mr-f"><span>Period</span><select data-uni-range aria-label="Results period">${V138_RANGES.map(v=>`<option value="${v}" ${UR.range===v?'selected':''}>${UR_LABEL[v]}</option>`).join('')}</select></label></div>`;
+  const upd = V138.pubAt ? `Updated ${new Date(V138.pubAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : '';
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results</h2></div>
+    <div class="card v55-learn uni-card v138-uni v139-uni"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Units won or lost, games and props together.</span></div>
+    <div class="uni-in">${sel}${body}${upd ? `<div class="hint v139-upd">${upd}</div>` : ''}</div></div>`;
+};
+(function(){ const st = document.createElement('style'); st.textContent = `.v139-uni{max-width:640px}
+.v139-rows{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(255,255,255,.02)}
+.v139-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:10px 14px;box-sizing:border-box}
+.v139-row + .v139-row{border-top:1px solid var(--line)}
+.v139-k{font-weight:650;font-size:14.5px;min-width:0;overflow-wrap:break-word}
+.v139-v{font-weight:750;font-size:17px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.v139-v.pos{color:#5fd39a}.v139-v.neg{color:#f07a7a}
+.v139-upd{margin-top:10px}.v139-empty{padding:12px 2px}`; document.head.appendChild(st); })();
+// publish the slimmer summary right away on admin devices
+V138.lastJSON = ''; setTimeout(()=>{ try{ v138Publish(true); }catch(e){} }, 45000);
 </script>
 </body>
 </html>
