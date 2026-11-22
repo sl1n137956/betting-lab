@@ -859,6 +859,28 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 .board-seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
 .board-seg button{background:none;border:0;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;padding:7px 14px;border-radius:999px;font-size:13px}
 .board-seg button.on{background:var(--acc-dim);color:var(--acc-hi);box-shadow:0 0 0 1px rgba(125,211,252,.16)}
+
+/* v115: Games/Props toggles on Picks, Watchlist, Avoid */
+#kindsBar{display:none;margin:0 0 12px}
+#kindsBar.show:not([hidden]){display:block}
+#kindsBar[hidden]{display:none !important}
+#kindsBar .kinds-seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+#kindsBar .kinds-seg button{background:none;border:0;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;padding:7px 14px;border-radius:999px;font-size:13px}
+#kindsBar .kinds-seg button.on{background:var(--acc-dim);color:var(--acc-hi);box-shadow:0 0 0 1px rgba(125,211,252,.16)}
+#kindsBar .kinds-seg button:disabled{opacity:1;cursor:default}
+@media(max-width:899.98px){
+  #kindsBar .kinds-seg{display:flex;width:100%}
+  #kindsBar .kinds-seg button{flex:1 1 0;min-height:40px;padding:8px 10px}
+  .bottom-nav .lab-short{display:none}
+}
+@media(max-width:369.98px){
+  .bottom-nav .tab-lab{font-size:8px;letter-spacing:0}
+  .bottom-nav button.on .tab-lab{font-size:8.5px}
+  .bottom-nav .lab-full{display:none}
+  .bottom-nav .lab-short{display:inline}
+}
+nav.tabs button{white-space:nowrap}
+
 .learn-banner{display:flex;gap:10px;align-items:flex-start;margin:8px 0 16px;padding:10px 14px;border-radius:14px;background:rgba(37,99,235,.12);border:1px solid rgba(125,211,252,.22);color:var(--txt)}
 .learn-banner[hidden]{display:none}
 .learn-banner .lb-txt{flex:1;min-width:0;font-size:13.5px;line-height:1.45}
@@ -1546,8 +1568,9 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="picks" class="on"><span class="tab-emo" aria-hidden="true">⚖️</span>Verdict</button>
-      <button type="button" class="tab-parent" data-board-parent="games"><span class="tab-emo" aria-hidden="true">🏟️</span>Games<span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></button>
-      <button type="button" class="tab-parent" data-board-parent="props"><span class="tab-emo" aria-hidden="true">🏀</span>Props<span class="cnt" data-cnt="props-good">0</span></button>
+      <button type="button" data-tab="good"><span class="tab-emo" aria-hidden="true">🎯</span>Picks<span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></button>
+      <button type="button" data-tab="watch"><span class="tab-emo" aria-hidden="true">👀</span>Watchlist<span class="cnt" data-cnt="watch">0</span><span class="tab-dot" data-pull-dot="watch" hidden></span></button>
+      <button type="button" data-tab="avoid"><span class="tab-emo" aria-hidden="true">🚫</span>Avoid<span class="cnt" data-cnt="avoid">0</span><span class="tab-dot" data-pull-dot="avoid" hidden></span></button>
       <button data-tab="tracker"><span class="tab-emo" aria-hidden="true">📊</span>Tracker</button>
       <button data-tab="all"><span class="tab-emo" aria-hidden="true">📋</span>All Games<span class="cnt" id="c-all" data-cnt="all">0</span></button>
       <button data-tab="results" aria-label="Results and Backtest" hidden><span class="tab-emo" aria-hidden="true">🧪</span>Results</button>
@@ -1578,6 +1601,12 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
 
 <main class="wrap">
   <div id="learnBanner" class="learn-banner" hidden></div>
+    <div id="kindsBar" hidden>
+      <div class="kinds-seg" id="kindsSeg">
+        <button type="button" data-kind="games" class="on" aria-pressed="true">🏟️ Games</button>
+        <button type="button" data-kind="props" class="on" aria-pressed="true">🏀 Props</button>
+      </div>
+    </div>
   <div id="filterBar">
     <div class="filters" id="sportChips"></div>
     <div class="chip-note" id="chipNote" hidden></div>
@@ -1632,9 +1661,9 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
 </footer>
 <nav class="bottom-nav" id="bottomNav" aria-label="Primary">
   <button type="button" data-tab="picks" class="on" aria-label="Verdict"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 9.4l6.2-6.2 2.8 2.8-6.2 6.2z"/><path d="M6.2 7.8l2.8 2.8"/><path d="M12.4 11.2L20 20"/><path d="M3.5 19.8h8"/></svg></span><span class="tab-lab">Verdict</span></button>
-  <button type="button" data-board-parent="games" aria-label="Games"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V7l6-3 6 3 4-2v12l-4 2-6-3-6 3z"/><path d="M10 4v12"/><path d="M16 7v12"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Games</span></button>
-  <button type="button" data-board-parent="props" aria-label="Props"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/><circle cx="12" cy="10" r="7" opacity=".0"/></svg><span class="cnt" data-cnt="props-good">0</span></span><span class="tab-lab">Props</span></button>
-  <button type="button" data-tab="pulled" aria-label="Pulled: bets you tailed that flipped to Avoid"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M8.2 3h7.6L21 8.2v7.6L15.8 21H8.2L3 15.8V8.2z"/><path d="M8.5 12h7"/></svg><span class="cnt pull-cnt" data-cnt="pulled" hidden>0</span></span><span class="tab-lab">Pulled</span></button>
+  <button type="button" data-tab="good" aria-label="Picks"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5.4"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg><span class="cnt" data-cnt="good">0</span><span class="tab-dot" data-pull-dot="good" hidden></span></span><span class="tab-lab">Picks</span></button>
+  <button type="button" data-tab="watch" aria-label="Watchlist"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.6-7 9.5-7 9.5 7 9.5 7-3.6 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg><span class="cnt" data-cnt="watch">0</span><span class="tab-dot" data-pull-dot="watch" hidden></span></span><span class="tab-lab"><span class="lab-full">Watchlist</span><span class="lab-short">Watch</span></span></button>
+  <button type="button" data-tab="avoid" aria-label="Avoid"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3.2v5.5c0 5-3.3 8.5-8 9.8-4.7-1.3-8-4.8-8-9.8V6.2L12 3z"/><path d="M9 10.2l6 6M15 10.2l-6 6"/></svg><span class="cnt" data-cnt="avoid">0</span><span class="tab-dot" data-pull-dot="avoid" hidden></span></span><span class="tab-lab">Avoid</span></button>
   <button type="button" id="btnMore" aria-haspopup="true" aria-expanded="false" aria-label="More"><span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg><span class="tab-dot" data-more-pull hidden></span></span><span class="tab-lab">More</span></button>
 </nav>
 <div class="nav-pop-back" id="navPopBack" hidden></div>
@@ -1642,6 +1671,8 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
 <div class="more-backdrop" id="moreBackdrop" hidden></div>
 <div class="more-sheet" id="moreSheet" hidden role="menu" aria-label="More">
   <div class="more-handle" aria-hidden="true"></div>
+  <button type="button" data-tab="pulled" role="menuitem" aria-label="Pulled: bets you tailed that flipped to Avoid"><span class="tab-ic tab-emo" aria-hidden="true">⛔</span><span class="tab-lab">Pulled</span><span class="cnt pull-cnt" data-cnt="pulled" hidden>0</span></button>
+  <button type="button" data-tab="parlay" role="menuitem" aria-label="Parlays"><span class="tab-ic tab-emo" aria-hidden="true">🎟️</span><span class="tab-lab">Parlays</span><span class="cnt" data-cnt="parlay-good">0</span></button>
   <button type="button" data-tab="tracker" role="menuitem" aria-label="Tracker"><span class="tab-ic tab-emo" aria-hidden="true">📊</span><span class="tab-lab">Tracker</span></button>
   <button type="button" data-tab="all" role="menuitem" aria-label="All Games"><span class="tab-ic tab-emo" aria-hidden="true">🏟️</span><span class="tab-lab">All Games</span><span class="cnt" data-cnt="all">0</span></button>
   <button type="button" data-tab="settings" role="menuitem" aria-label="Settings"><span class="tab-ic tab-emo" aria-hidden="true">⚙️</span><span class="tab-lab">Settings</span></button>
@@ -13571,13 +13602,8 @@ function renderSettings(){
   <div class="panel simple">
     <div class="s-row"><div class="s-h">Which board?</div>
       <div class="board-seg" id="settingsBoardSeg">${['games','props'].map(b=>`<button type="button" data-set-board="${b}" class="${sb===b?'on':''}">${boardLabs[b]}</button>`).join('')}</div>
-      <div class="s-note">Pickiness and lock time are picked by the model for each board separately, based on which is making more money. Your odds range is yours. Shared settings (sports, books, refresh, alerts, bet size) stay below.</div></div>
+      <div class="s-note">Pickiness and lock time are picked by the model for each board separately, based on which is making more money. Shared settings (books, refresh, alerts, bet size) stay below. Use the sport chips on Picks, Watchlist and Avoid to hide sports you don't want to see — that never changes a Pick or Lock.</div></div>
     ${typeof v42AutoSettingsHTML==='function' ? v42AutoSettingsHTML(sb) : ''}
-    ${oddsRow}
-
-    <div class="s-row"><div class="s-h">Sports I want picks from</div>
-      <div class="filters" id="settingsSports">${LEAGUES.map(L=>`<label class="chip ${S.enabled.includes(L.id)?'on':''}"><input type="checkbox" name="en_${L.id}" ${S.enabled.includes(L.id)?'checked':''} hidden>${sportChipLabel(L)}</label>`).join('')}</div>
-      <div class="s-note">This is your master list. Off here = off everywhere, and the model never turns it back on. Inside this list, the model turns sports off and back on by itself on each board (Games, Props, Parlays), based on whether they're making money. You'll see those as <b>auto-off</b> in Filters, with the reason.</div></div>
 
     <div class="s-row"><div class="s-h">My books</div>
       <div class="mybooks-sel" id="myBooksSel">${myBooksSummaryHTML(books)}</div>
@@ -13623,7 +13649,7 @@ function renderSettings(){
   <div class="panel"><h3>Refresh & which sports to load</h3><div class="form">
     <label>Days ahead to load (1–7)<input name="lookaheadDays" type="number" min="1" max="7" value="${S.lookaheadDays}"></label>
   </div>
-  <div class="hint">Which sports load is set under <b>Sports I want picks from</b> above. ESPN's free feed carries DraftKings odds for NBA, NHL, NFL, MLB, NCAA, WNBA and soccer.</div></div>
+    <div class="hint">Every sport the app covers is loaded. Hide sports with the chips on Picks, Watchlist and Avoid — that only changes what you see, not what the model calls. ESPN's free feed carries DraftKings odds for NBA, NHL, NFL, MLB, NCAA, WNBA and soccer.</div></div>
 
   <div class="panel"><h3>Strict checks & prediction markets</h3><div class="form">
     <label>Markets in strict (set by the model)<select name="sMarkets" disabled>${[['ml','Moneyline only (tested)'],['ml,spread','ML + spreads'],['ml,spread,total','All']].map(([v,l])=>`<option value="${v}" ${S.sMarkets===v?'selected':''}>${l}</option>`).join('')}</select></label>
@@ -13657,7 +13683,7 @@ function renderSettings(){
     <li><b>Spreads/totals</b>: a Pick needs price no worse than ${fmtAmRaw(S.maxJuice)}, no adverse move, and the factor score below. Model edge on spreads uses ESPN win probability at 60% weight (it is a win %, not a cover %).</li>
     <li><b>Factor model</b>: each market side gets points from price range, ESPN model vs market, best price vs books, line movement, injuries (team leaders and QBs count most; IR/long-term ignored), last-5 form, home/away split, rest/back-to-backs, head-to-head, season scoring margin or projections vs the line, starting goalies (GAA), and weather for outdoor totals. Composite ≥ ${S.goodScore} with 2+ supporting factors and confidence ≥ ${S.minConfGood} can land on Picks. Underdogs need ≥ ${S.dogGoodScore}, ${S.dogMinFactors}+ strong factors and a ${S.dogMinEdge}% model or price edge.</li>
     <li><b>Data completeness</b> (shown when you tap a card's Bet strength) starts at 100 and drops for missing data: no game page, no model, no injury report, only one book, unconfirmed goalie/pitcher, key game-time decisions, unknown outdoor weather.</li>
-    <li><b>Strict mode</b> (${S.strictMode?'on':'off'}): no cap, built for win rate on singles. A play lands on Picks only if it passes every check: ${S.sMarkets==='ml'?'moneyline only, ':''}price between ${fmtAmRaw(S.sFavMin)} and ${fmtAmRaw(S.sDogMax)} at your book, estimated win chance ≥ ${(S.sMinWin*100).toFixed(0)}%, ESPN's computer agrees (≥ ${(S.sModelMin*100).toFixed(0)}% and not less sure than the odds, where it exists), no line move against of more than ${S.sMaxAdvPct}%, ${S.sMinPos}+ supporting factors, nothing strongly against, ${S.sExclude?`not ${esc(S.sExclude.toUpperCase())}, `:''}full data (confidence ≥ ${S.sMinConf}, injury report, confirmed goalie/pitcher, no key game-time decisions) and not a thin Polymarket market. Value (price vs estimate) is shown but ${+S.sMinEV>-99?`must be at least ${S.sMinEV}%`:'is not required'}. Picks are ranked by estimated win chance. Misses go to the Watchlist with the missed check named.</li>
+    <li><b>The model's call</b>: Picks, Watchlist and Avoid are whatever the model calls, including heavy favorites and long shots. An odds range, strict mode and a master sports list no longer change a call. Tags may flag a heavy favorite, a long shot, or a book price worse than fair. Sports chips and the Games/Props buttons only hide plays from view. Your books setting only decides the hidden (not on your books) section and how prices are shown.</li>
   </ul></div>
   </div></details>
   </form>`;
@@ -13691,7 +13717,7 @@ function renderSettings(){
     for (const k of ['lookaheadDays','unit','summaryTTL','summaryHorizonHrs','maxSummaries',...TH.map(t=>t[0]),...WT.map(t=>t[0]),...ST.map(t=>t[0])]){ if (skipGlobal.has(k)) continue; const v=parseFloat(f.get(k)); if (isFinite(v)) S[k]=v; }
     const rs = parseFloat(f.get('refreshSec')); if (isFinite(rs)){ S.refreshSec = rs; S.refreshMin = rs>=60 ? rs/60 : rs/60; }
     S.oddsKey = ''; S.oddsBooks = '';   // v52: Odds API removed
-    S.enabled = LEAGUES.filter(L=>f.get('en_'+L.id)).map(L=>L.id);
+    S.enabled = LEAGUES.map(L=>L.id);   // v115: master sports filter removed; never let a leftover form empty this
     S.deepData = f.get('deepData')==='1'; S.pmOn = f.get('pmOn')==='1'; S.kalshiOn = f.get('kalshiOn')!=='0'; S.kalshiRelay = String(f.get('kalshiRelay')||'').trim(); if (typeof KALSHI_RELAY_DEFAULT!=='undefined' && S.kalshiRelay.replace(/\/+$/,'')===KALSHI_RELAY_DEFAULT) S.kalshiRelay = ''; if (typeof kalshiCache!=='undefined' && kalshiCache) kalshiCache.failT = 0;
     const extra = myBookList().filter(k=>!MY_BOOK_CHOICES.some(c=>c[0]===k));
     S.myBooks = MY_BOOK_CHOICES.filter(([k])=>f.get('book_'+k)).map(c=>c[0]).join(',') || DEFAULT_BOOKS_ON.join(',');
@@ -13707,9 +13733,6 @@ function renderSettings(){
       if (typeof syncGamesBoard==='function') syncGamesBoard();
     } else {
       const B = typeof boardS==='function' ? boardS(sb) : S;
-      const fav = parseFloat(f.get('sFavMin')); const dog = parseFloat(f.get('sDogMax'));
-      if (isFinite(fav)) B.sFavMin = fav;
-      if (isFinite(dog)) B.sDogMax = dog;
       if (sb==='parlay'){
         const pmn=parseFloat(f.get('payoutMin')), pmx=parseFloat(f.get('payoutMax'));
         if (isFinite(pmn)) B.payoutMin = pmn;
@@ -13727,8 +13750,8 @@ function renderSettings(){
 }
 
 /* ================= EVENTS ================= */
-const MORE_TABS = {tracker:1, all:1, results:1, settings:1};
-const SLATE_TABS = {good:1};
+const MORE_TABS = {tracker:1, all:1, results:1, settings:1, pulled:1, parlay:1};
+const SLATE_TABS = {good:1, watch:1, avoid:1};
 function setMoreOpen(open){
   const sheet = $('#moreSheet'), back = $('#moreBackdrop'), btn = $('#btnMore');
   if (sheet) sheet.hidden = !open;
@@ -13785,8 +13808,7 @@ function syncTabChrome(){
     const pb = b.getAttribute('data-board-parent');
     b.classList.toggle('on', slate && board===pb);
   });
-  document.querySelectorAll('#bottomNav button[data-tab="picks"]').forEach(b=>b.classList.toggle('on', tab==='picks'));
-  document.querySelectorAll('#bottomNav button[data-tab="pulled"]').forEach(b=>b.classList.toggle('on', tab==='pulled'));
+  document.querySelectorAll('#bottomNav button[data-tab]').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   document.querySelectorAll('#bottomNav [data-board-parent]').forEach(b=>{
     const pb = b.getAttribute('data-board-parent');
     b.classList.toggle('on', slate && board===pb && tab!=='pulled');
@@ -13848,7 +13870,6 @@ function setNavPop(board){
 function isMobileViewport(){ return !!(window.matchMedia && window.matchMedia('(max-width:899.98px)').matches); }
 window.addEventListener('resize', function resizeResultsGuard(){ if (ui.tab==='results' && !(typeof canOpenResults==='function' && canOpenResults())){ setTab((typeof isMobileViewport==='function' && isMobileViewport())?'tracker':'picks'); if (typeof render==='function') render(); } });
 function setTab(t, opts){
-  if (t==='watch' || t==='avoid') t = 'good';
   if (t==='results' && !(typeof canOpenResults==='function' && canOpenResults())) t = (typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks';
   const prev = ui.tab;
   const prevBoard = ui.board||'games';
@@ -22828,6 +22849,615 @@ try{
   st.textContent = '.bd-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 2px 0}.bd-tag{display:inline-block;max-width:100%;padding:3px 8px;border-radius:999px;font-size:11px;line-height:1.35;font-weight:600;color:var(--txt2);background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.22);overflow-wrap:anywhere;word-break:break-word}';
   document.head.appendChild(st);
 }catch(e){}
+/* v115: Board = the model's own call. Odds range, strict mode and the master sports
+   filter no longer change any Pick, Lock, Watch or Avoid. Picks / Watchlist / Avoid
+   are top-level tabs; each has Games and Props toggles (both on by default). Books
+   are only for the hidden (not on your books) section and price display. */
+APP_BUILD = 115;
+
+/* ---------- settings migration: ignore leftover range / strict / master-off ---------- */
+function v115AllSports(){
+  try{ return (typeof LEAGUES!=='undefined' && LEAGUES.length) ? LEAGUES.map(L=>L.id) : []; }catch(e){ return []; }
+}
+function v115NeutralizeSettings(){
+  try{
+    if (typeof S==='undefined' || !S) return;
+    S.sExclude = '';
+    S.sNoSoccer = false;
+    const all = v115AllSports();
+    if (all.length) S.enabled = all;
+    if (!S.boardKinds || typeof S.boardKinds!=='object') S.boardKinds = {};
+    if (!(+S.sVer >= 12)){
+      S.sVer = 12;
+      try{ if (typeof LS!=='undefined') localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+    }
+  }catch(e){}
+}
+v115NeutralizeSettings();
+
+/* User exclusion and auto-off must not change a call or hide a model Pick. */
+if (typeof isExcluded==='function'){
+  isExcluded = function(){ return false; };
+}
+if (typeof inMyRange==='function'){
+  inMyRange = function(){ return true; };
+}
+if (typeof sportOnFilter==='function'){
+  sportOnFilter = function(lg){
+    if (!lg) return false;
+    if (!Array.isArray(ui.sports) || !ui.sports.length) return true;
+    return ui.sports.includes(lg);
+  };
+}
+
+/* Props: never let the user's odds range change the model's call. */
+(function(){
+  if (typeof strictPropGates!=='function') return;
+  const orig = strictPropGates;
+  strictPropGates = function(){
+    const prev = (typeof VERDICT_NO_RANGE!=='undefined') ? VERDICT_NO_RANGE : 0;
+    try{ if (typeof VERDICT_NO_RANGE!=='undefined') VERDICT_NO_RANGE = prev+1; return orig.apply(this, arguments); }
+    finally{ if (typeof VERDICT_NO_RANGE!=='undefined') VERDICT_NO_RANGE = prev; }
+  };
+})();
+
+/* Tags: drop range / strict / settings-off wording; add a neutral price-extreme tag. */
+if (typeof bdTagFromReason==='function'){
+  const origTag = bdTagFromReason;
+  bdTagFromReason = function(s){
+    s = String(s||'');
+    if (/^Outside your /.test(s) || /^odds outside /.test(s)) return null;
+    if (/^Strict mode: missed/.test(s) || /^Missed a strict check/.test(s)) return null;
+    if (/does not recommend this sport/.test(s) || /off in Settings/.test(s)) return null;
+    return origTag(s);
+  };
+}
+function v115PriceTag(p){
+  if (!p) return null;
+  const pr = (p.my && p.my.best && p.my.best.price!=null) ? +p.my.best.price
+    : (p.sd && p.sd.best && p.sd.best.price!=null) ? +p.sd.best.price
+    : (p.price!=null ? +p.price : NaN);
+  if (!isFinite(pr)) return null;
+  if (pr <= -300) return 'Heavy favorite';
+  if (pr >= 200) return 'Long shot';
+  return null;
+}
+function v115RestoreRaw(p){
+  if (!p || p.verdict==='started') return p;
+  const raw = (p._v0!=null) ? p._v0 : p.verdict;
+  if (raw && p.verdict!==raw && raw!=='started'){
+    if (typeof bdIsDemoteReason==='function'){
+      p.reasons = (p.reasons||[]).filter(s=>!bdIsDemoteReason(s));
+    }
+    if (raw==='good' && typeof bdHushLockAlert==='function') bdHushLockAlert(p, p.isProp ? 'props' : 'games');
+    p.verdict = raw;
+  }
+  const tags = [];
+  const ext = v115PriceTag(p);
+  if (ext) tags.push(ext);
+  if (typeof bdKeepModelPick==='function' && raw==='good') bdKeepModelPick(p, tags);
+  else if (tags.length && typeof bdUnique==='function') p.boardTags = bdUnique([].concat(p.boardTags||[], tags));
+  else if (tags.length) p.boardTags = (p.boardTags||[]).concat(tags);
+  return p;
+}
+
+/* After v114's evaluateAll wrap, restore every play to the model's raw call and tag price extremes. */
+(function(){
+  if (typeof evaluateAll!=='function') return;
+  const orig = evaluateAll;
+  evaluateAll = function(){
+    v115NeutralizeSettings();
+    const out = orig.apply(this, arguments);
+    try{ for (const p of (plays||[])) v115RestoreRaw(p); }catch(e){ console.warn('v115 restore', e); }
+    try{ v115HushRolloutAlerts(); }catch(e){}
+    return out;
+  };
+})();
+(function(){
+  if (typeof buildPropPlay!=='function') return;
+  const orig = buildPropPlay;
+  buildPropPlay = function(){
+    const p = orig.apply(this, arguments);
+    try{ if (p){ p.isProp = true; v115RestoreRaw(p); } }catch(e){}
+    return p;
+  };
+})();
+
+/* First load after v115: don't spam lock alerts for sports that were master-off. */
+function v115HushRolloutAlerts(){
+  try{
+    if (typeof newPlayNotified==='undefined' || typeof lockItemKey!=='function') return;
+    if (S && S.v115AlertHush) return;
+    const mark = (board, item)=>{
+      const lk = lockItemKey(board, item); if (lk) newPlayNotified[lk] = Date.now();
+      if (board==='games' && typeof playResultKey==='function') newPlayNotified[playResultKey(item)] = Date.now();
+    };
+    for (const p of (plays||[])) if (p && p.verdict==='good') mark('games', p);
+    for (const p of (typeof props!=='undefined' && props)||[]) if (p && p.verdict==='good') mark('props', p);
+    S.v115AlertHush = 1;
+    try{ if (typeof LS!=='undefined') localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+  }catch(e){}
+}
+
+/* ---------- Games / Props toggles (per call-tab, saved on the account settings doc) ---------- */
+function v115Kinds(tab){
+  tab = tab || (ui && ui.tab) || 'good';
+  let k = (typeof S!=='undefined' && S.boardKinds && S.boardKinds[tab]) || null;
+  const g = !k || k.games!==false, p = !k || k.props!==false;
+  if (!g && !p) return {games:true, props:true};
+  return {games:g, props:p};
+}
+function v115SetKind(tab, kind, on){
+  tab = tab || ui.tab || 'good';
+  if (!S.boardKinds || typeof S.boardKinds!=='object') S.boardKinds = {};
+  const cur = Object.assign({games:true, props:true}, S.boardKinds[tab]||{});
+  cur[kind] = !!on;
+  if (!cur.games && !cur.props) return false;   // keep at least one on
+  S.boardKinds[tab] = cur;
+  try{ if (typeof LS!=='undefined') localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+  try{ if (typeof scheduleCloudPush==='function') scheduleCloudPush(); }catch(e){}
+  return true;
+}
+function v115SyncKindsBar(){
+  const bar = document.getElementById('kindsBar');
+  if (!bar) return;
+  const slate = ui && (ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid');
+  bar.hidden = !slate;
+  bar.classList.toggle('show', !!slate);
+  if (!slate) return;
+  const k = v115Kinds(ui.tab);
+  bar.querySelectorAll('[data-kind]').forEach(b=>{
+    const on = !!k[b.getAttribute('data-kind')];
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on?'true':'false');
+  });
+}
+document.addEventListener('click', e=>{
+  const b = e.target && e.target.closest && e.target.closest('#kindsSeg [data-kind]');
+  if (!b) return;
+  const kind = b.getAttribute('data-kind');
+  const tab = (ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid')) ? ui.tab : 'good';
+  const cur = v115Kinds(tab);
+  const next = !cur[kind];
+  if (!v115SetKind(tab, kind, next)) return;
+  if (typeof render==='function') render();
+});
+
+/* Shared sport/horizon filters per call tab (not per Games/Props board). */
+(function(){
+  if (typeof filterViewKey!=='function') return;
+  const orig = filterViewKey;
+  filterViewKey = function(board, tab){
+    if (tab==='good' || tab==='watch' || tab==='avoid') return 'slate:'+tab;
+    return orig.apply(this, arguments);
+  };
+})();
+function v115MigrateSlateViews(){
+  try{
+    if (typeof filterViews==='undefined' || !filterViews) return;
+    for (const tab of ['good','watch','avoid']){
+      const k = 'slate:'+tab;
+      if (filterViews[k] && filterViews[k]._v115) continue;
+      const a = filterViews['games:'+tab] || filterViews['games:good'] || {};
+      const b = filterViews['props:'+tab] || filterViews['props:good'] || {};
+      const sa = Array.isArray(a.sports) ? a.sports : [];
+      const sb = Array.isArray(b.sports) ? b.sports : [];
+      let sports;
+      if (sa.length || sb.length){
+        const set = new Set(sa.concat(sb).filter(id=>typeof LMAP==='undefined' || LMAP[id]));
+        sports = set.size ? [...set] : (typeof defaultSportsList==='function' ? defaultSportsList('games') : v115AllSports());
+      } else {
+        sports = typeof defaultSportsList==='function' ? defaultSportsList('games') : v115AllSports();
+      }
+      const base = (typeof defaultFilterView==='function') ? defaultFilterView('games') : {horizon:'24h', hideStarted:true, mkt:'all', sports:sports};
+      filterViews[k] = Object.assign({}, base, a, {sports:sports, _v115:1});
+    }
+    try{ if (typeof LS!=='undefined') localStorage.setItem(LS.filterViews, JSON.stringify(filterViews)); }catch(e){}
+  }catch(e){ console.warn('v115 slate views', e); }
+}
+v115MigrateSlateViews();
+
+/* ---------- Combined Games + Props render for Picks / Watchlist / Avoid ---------- */
+function v115WithBoard(board, fn){
+  const saved = ui.board;
+  ui.board = board;
+  try{ return fn(); } finally { ui.board = saved; }
+}
+function v115GamesBody(tab){
+  return v115WithBoard('games', ()=>{
+    const vis = v => (typeof filtered==='function' ? filtered((plays||[]).filter(p=>p.verdict===v), true) : (plays||[]).filter(p=>p.verdict===v));
+    let good = vis('good').sort((a,b)=>(a.rank||99)-(b.rank||99));
+    const watch = vis('watch').sort((a,b)=>(b.score||0)-(a.score||0));
+    const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
+    try{ if (typeof tailedPlaysToKeep==='function') good = good.concat(tailedPlaysToKeep([...good, ...watch, ...avoid])); }catch(e){}
+    try{ if (typeof lockedKeepItems==='function') good = good.concat(lockedKeepItems('games', good)); }catch(e){}
+    try{ if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'games'); }catch(e){}
+    const both = v115Kinds(tab).games && v115Kinds(tab).props;
+    const empty = (typeof sportFilterEmpty==='function')
+      ? sportFilterEmpty('No plays passed today. <b>Zero picks is fine.</b> Never force a bet.')
+      : 'No plays passed today.';
+    if (tab==='good'){
+      const title = both ? '<span class="h-emo" aria-hidden="true">🏟️</span>Game Picks' : '<span class="h-emo" aria-hidden="true">🎯</span>Picks';
+      const list = good;
+      if (typeof picksBoardHTML==='function') return picksBoardHTML(title, '', empty, list, 'games', playCard);
+      return (typeof section==='function') ? section(title, '', list, empty) : '';
+    }
+    if (tab==='watch'){
+      const isOver = p => /^Moved to Watchlist|^Strict mode: missed/.test((p.reasons&&p.reasons[0])||'');
+      const main = watch.filter(p=>!isOver(p)), over = watch.filter(isOver);
+      const title = both ? '<span class="h-emo" aria-hidden="true">🏟️</span>Game Watchlist' : '<span class="h-emo" aria-hidden="true">👀</span>Watchlist';
+      const emptyW = (typeof sportFilterEmpty==='function') ? sportFilterEmpty(over.length?'No other watchlist items.':'Nothing on the watchlist.') : 'Nothing on the watchlist.';
+      return (typeof section==='function' ? section(title, 'Close calls, small edges, short dogs, pricey favorites, lines on the move, or lines that moved against.', main, emptyW) : '')
+        + (over.length ? `<div class="section-title"><h2 style="font-size:15px">Passed the normal rules but missed a strict check</h2><span class="hint">${over.length} more, ranked lower</span></div><div class="grid">${over.map(playCard).join('')}</div>` : '');
+    }
+    const title = both ? '<span class="h-emo" aria-hidden="true">🏟️</span>Game Avoid' : '<span class="h-emo" aria-hidden="true">🚫</span>Avoid';
+    const emptyA = (typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing flagged to avoid.') : 'Nothing flagged to avoid.';
+    return (typeof section==='function') ? section(title, 'Extreme favorites, longshots without edge, heavy juice, or heavy adverse line movement.', avoid, emptyA) : '';
+  });
+}
+function v115PropsBody(tab){
+  return v115WithBoard('props', ()=>{
+    const vis = v => (typeof filteredProps==='function' ? filteredProps((props||[]).filter(p=>p.verdict===v)) : (props||[]).filter(p=>p.verdict===v));
+    let good = vis('good').sort((a,b)=>(b.p||0)-(a.p||0));
+    const watch = vis('watch').sort((a,b)=>(b.p||0)-(a.p||0));
+    const avoid = vis('avoid').sort((a,b)=>((a.g&&a.g.start)||0)-((b.g&&b.g.start)||0));
+    try{ if (typeof tailedPropsToKeep==='function') good = good.concat(tailedPropsToKeep([...good, ...watch, ...avoid])); }catch(e){}
+    try{ if (typeof lockedKeepItems==='function') good = good.concat(lockedKeepItems('props', good)); }catch(e){}
+    try{ if (typeof withPulledTailed==='function') good = withPulledTailed(good, 'props'); }catch(e){}
+    const both = v115Kinds(tab).games && v115Kinds(tab).props;
+    const st = (typeof propStatusHTML==='function') ? propStatusHTML() : '';
+    const bookNote = (typeof propsUnsupportedNote==='function') ? propsUnsupportedNote() : '';
+    const bookEmpty = bookNote ? (esc(bookNote) + ` <div style="margin-top:12px"><button type="button" class="btn primary" data-open-settings="1">Open Settings</button></div>`) : '';
+    if (tab==='good'){
+      const empty = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('No player props passed today. <b>Zero picks is fine.</b> Never force a bet. You can still type a prop in Verdict.') : 'No player props passed today.');
+      const title = both ? '<span class="h-emo" aria-hidden="true">🏀</span>Prop Picks' : '<span class="h-emo" aria-hidden="true">🎯</span>Prop Picks';
+      const body = (typeof picksBoardHTML==='function') ? picksBoardHTML(title, '', empty, good, 'props', propCard)
+        : (typeof sectionProps==='function' ? sectionProps(title, '', good, empty) : '');
+      return st + body;
+    }
+    if (tab==='watch'){
+      const title = both ? '<span class="h-emo" aria-hidden="true">🏀</span>Prop Watchlist' : '<span class="h-emo" aria-hidden="true">👀</span>Prop Watchlist';
+      const empty = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing on the prop watchlist.') : 'Nothing on the prop watchlist.');
+      return st + (typeof sectionProps==='function' ? sectionProps(title, 'Leans that are close, thin-sample, or just outside the singles gates.', watch, empty) : '');
+    }
+    const title = both ? '<span class="h-emo" aria-hidden="true">🏀</span>Prop Avoid' : '<span class="h-emo" aria-hidden="true">🚫</span>Prop Avoid';
+    const empty = bookEmpty || ((typeof sportFilterEmpty==='function') ? sportFilterEmpty('Nothing flagged to avoid.') : 'Nothing flagged to avoid.');
+    return st + (typeof sectionProps==='function' ? sectionProps(title, 'No edge, heavy juice, or not enough of a sample to trust the lean.', avoid, empty) : '');
+  });
+}
+function v115CountVisible(tab, kind){
+  if (kind==='props'){
+    return v115WithBoard('props', ()=>{
+      const vis = (typeof filteredProps==='function' ? filteredProps((props||[]).filter(p=>p.verdict===tab)) : (props||[]).filter(p=>p.verdict===tab));
+      let n = vis.length;
+      if (tab==='good'){
+        try{ if (typeof tailedPropsToKeep==='function') n += (tailedPropsToKeep(vis)||[]).length; }catch(e){}
+        try{ if (typeof lockedKeepItems==='function') n += (lockedKeepItems('props', vis)||[]).length; }catch(e){}
+      }
+      return n;
+    });
+  }
+  return v115WithBoard('games', ()=>{
+    const vis = (typeof filtered==='function' ? filtered((plays||[]).filter(p=>p.verdict===tab), true) : (plays||[]).filter(p=>p.verdict===tab));
+    let n = vis.length;
+    if (tab==='good'){
+      try{ if (typeof tailedPlaysToKeep==='function') n += (tailedPlaysToKeep(vis)||[]).length; }catch(e){}
+      try{ if (typeof lockedKeepItems==='function') n += (lockedKeepItems('games', vis)||[]).length; }catch(e){}
+    }
+    return n;
+  });
+}
+function v115UpdateCombinedCounts(){
+  const kGood = v115Kinds('good'), kWatch = v115Kinds('watch'), kAvoid = v115Kinds('avoid');
+  // Tab badges count everything on that call (both kinds), so hiding Games doesn't zero the Picks badge.
+  const n = (tab)=>(v115CountVisible(tab,'games') + v115CountVisible(tab,'props'));
+  if (typeof setTabCount==='function'){
+    setTabCount('good', n('good'));
+    setTabCount('watch', n('watch'));
+    setTabCount('avoid', n('avoid'));
+  }
+  return {good:n('good'), watch:n('watch'), avoid:n('avoid'), kGood, kWatch, kAvoid};
+}
+
+(function(){
+  if (typeof render!=='function') return;
+  const orig = render;
+  render = function(){
+    v115NeutralizeSettings();
+    if (ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid')){
+      // Keep filter views / chips on the shared slate key; board is only used by leftover helpers.
+      if (ui.board==='parlay') ui.board = 'games';
+    }
+    if (ui && ui.tab==='parlay'){
+      if (typeof renderChips==='function') renderChips();
+      if (typeof updateParlayTabCounts==='function') updateParlayTabCounts();
+      if (typeof updatePullDots==='function') updatePullDots();
+      if (typeof updateFilterChrome==='function') updateFilterChrome();
+      if (typeof syncTabChrome==='function') syncTabChrome();
+      v115SyncKindsBar();
+      const v = document.getElementById('view');
+      if (v && typeof renderParlayBoard==='function'){
+        const errs = '';
+        v.innerHTML = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'') + renderParlayBoard('good', errs) + (typeof avHiddenHTML==='function' ? avHiddenHTML('parlay','good') : '');
+      } else if (typeof orig==='function') orig.apply(this, arguments);
+      return;
+    }
+    if (!(ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid'))){
+      const out = orig.apply(this, arguments);
+      v115SyncKindsBar();
+      return out;
+    }
+    // Combined slate: run orig first so chips, countdown and pull dots stay current, then replace #view.
+    const tab = ui.tab;
+    const k = v115Kinds(tab);
+    orig.apply(this, arguments);
+    const counts = v115UpdateCombinedCounts();
+    const parts = [];
+    if (k.games) parts.push(v115GamesBody(tab));
+    if (k.props) parts.push(v115PropsBody(tab));
+    const hidden = (k.games && typeof avHiddenHTML==='function' ? avHiddenHTML('games', tab) : '')
+      + (k.props && typeof avHiddenHTML==='function' ? avHiddenHTML('props', tab) : '');
+    const note = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'');
+    const v = document.getElementById('view');
+    if (v){
+      const main = parts.join('') || `<div class="empty-state">Turn Games or Props back on to see this list.</div>`;
+      const layout = (typeof slateLayout==='function') ? slateLayout(tab, main, counts) : main;
+      v.innerHTML = note + layout + hidden;
+    }
+    v115SyncKindsBar();
+  };
+})();
+
+/* Sport chips: count both kinds, show every league, drop master-off / auto-off hiding. */
+(function(){
+  if (typeof renderChips!=='function') return;
+  const orig = renderChips;
+  renderChips = function(){
+    const slate = ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+    const out = orig.apply(this, arguments);
+    if (!slate) return out;
+    const k = v115Kinds(ui.tab);
+    // Recount chips so a sport with only a prop pick still shows a number when both kinds are on.
+    const counts = {};
+    const add = (lg)=>{ if (lg) counts[lg]=(counts[lg]||0)+1; };
+    const want = ui.tab;
+    if (k.games){
+      for (const p of (plays||[])){
+        if (p.verdict!==want) continue;
+        if (ui.hideStarted && p.g && p.g.state!=='pre') continue;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state)) continue;
+        add(p.g && p.g.league);
+      }
+    }
+    if (k.props){
+      for (const p of (props||[])){
+        if (p.verdict!==want) continue;
+        if (ui.hideStarted && p.g && p.g.state!=='pre') continue;
+        if (typeof inHorizon==='function' && !inHorizon(typeof itemStartMs==='function'?itemStartMs(p):0, p.g&&p.g.state)) continue;
+        add(p.league || (p.g && p.g.league));
+      }
+    }
+    const box = document.getElementById('sportChips');
+    if (box){
+      const onSet = new Set(ui.sports||[]);
+      const allOn = (typeof LEAGUES!=='undefined') && LEAGUES.every(L=>onSet.has(L.id));
+      const total = Object.values(counts).reduce((a,n)=>a+n,0);
+      const chips = `<span class="chip ${allOn?'on':''}" data-sport="all" title="Show every sport">All<span class="n">${total}</span></span>` +
+        `<span class="chip reset-chip" data-sport="reset" title="Show every sport again">Reset</span>` +
+        LEAGUES.map(L=>{
+          const on = onSet.has(L.id);
+          return `<span class="chip ${on?'on':''} ${counts[L.id]?'':'empty'}" data-sport="${L.id}" title="${on?'Shown. Tap to hide.':'Hidden. Tap to show.'}">${typeof sportChipLabel==='function'?sportChipLabel(L):L.label}<span class="n">${counts[L.id]||0}</span></span>`;
+        }).join('');
+      box.innerHTML = chips;
+    }
+    const el = document.getElementById('chipNote');
+    if (el){
+      el.hidden = false;
+      el.textContent = 'These chips only hide plays from this tab. They never change what the model calls a Pick, Watch or Avoid.';
+    }
+    return out;
+  };
+})();
+
+/* Market chips: games markets and prop stats can both show when both kinds are on. */
+(function(){
+  if (typeof renderMarketChips!=='function') return;
+  const orig = renderMarketChips;
+  renderMarketChips = function(){
+    const slate = ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid');
+    if (!slate){ return orig.apply(this, arguments); }
+    const k = v115Kinds(ui.tab);
+    const box = document.getElementById('mktChips');
+    const mixBox = document.getElementById('mixChips');
+    if (!k.games && k.props){
+      ui.board = 'props';
+      const out = orig.apply(this, arguments);
+      return out;
+    }
+    if (k.games && !k.props){
+      ui.board = 'games';
+      return orig.apply(this, arguments);
+    }
+    // both on
+    ui.board = 'games';
+    orig.apply(this, arguments);
+    if (mixBox){
+      const present = new Set((props||[]).map(p=>p.kind));
+      const base = (typeof PROP_FILTER_KINDS!=='undefined'?PROP_FILTER_KINDS:['pts','reb','ast','threes','pra']);
+      const kinds = ['all'].concat(base.filter(x=>present.has(x) || ['pts','reb','ast','threes','pra'].includes(x)));
+      for (const x of present) if (!kinds.includes(x)) kinds.push(x);
+      const lab = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL) || {};
+      const cur = ui.propMkt || 'all';
+      mixBox.hidden = false;
+      mixBox.innerHTML = kinds.map(x=>`<span class="chip${cur===x?' on':''}" data-prop-mkt="${x}">${x==='all'?'All stats':(lab[x]||x)}</span>`).join('');
+      mixBox.querySelectorAll('[data-prop-mkt]').forEach(c=>c.onclick=()=>{
+        ui.propMkt = c.dataset.propMkt;
+        if (typeof saveFilters==='function') saveFilters();
+        if (typeof render==='function') render();
+      });
+    }
+  };
+})();
+(function(){
+  if (typeof filteredProps!=='function') return;
+  const orig = filteredProps;
+  filteredProps = function(list){
+    const out = orig.apply(this, arguments);
+    const want = ui && ui.propMkt;
+    if (!want || want==='all') return out;
+    return (out||[]).filter(p=>p.kind===want || p.mk===want);
+  };
+})();
+
+/* Pulled lives in More: put the pull-dot back on the More button. */
+(function(){
+  if (typeof updatePullDots!=='function') return;
+  const orig = updatePullDots;
+  updatePullDots = function(){
+    const out = orig.apply(this, arguments);
+    try{
+      const list = typeof visiblePulled==='function' ? (visiblePulled('good')||[]) : [];
+      const gN = list.length;
+      const loggedN = list.filter(r => typeof isLoggedKey==='function' && isLoggedKey(r.k)).length;
+      const moreBtn = document.getElementById('btnMore');
+      if (moreBtn){
+        moreBtn.classList.toggle('has-pull', gN>0 && loggedN===0);
+        moreBtn.classList.toggle('has-logged-pull', loggedN>0);
+        moreBtn.querySelectorAll('[data-more-pull]').forEach(el=>{ el.hidden = gN===0; });
+      }
+      document.querySelectorAll('#moreSheet [data-tab="pulled"]').forEach(btn=>{
+        btn.hidden = false;
+        btn.classList.toggle('has-pull', gN>0 && loggedN===0);
+        btn.classList.toggle('has-logged-pull', loggedN>0);
+      });
+    }catch(e){}
+    return out;
+  };
+})();
+
+/* Results: board now equals the model, so "Match my board" is redundant — remove it. */
+if (typeof uniMB==='function'){
+  uniMB = function(){ return false; };
+}
+(function(){
+  if (typeof uniInnerHTML!=='function') return;
+  const orig = uniInnerHTML;
+  uniInnerHTML = function(){
+    let h = orig.apply(this, arguments);
+    h = h.replace(/<label class="mr-f uni-mb">[\s\S]*?<\/label>/, '');
+    h = h.replace(/Match my board is on: only what your board showed, for the sports you have on, after your odds range, books and strict mode\. Each bet counts once, even when several books or exchanges carry it\. /g, '');
+    h = h.replace(/Each bet counts once, even when several books or exchanges carry it\. /g, 'Each bet counts once, even when several books or exchanges carry it. Picks and Locks are the model\'s own call, the same ones on the board. ');
+    return h;
+  };
+  if (typeof uniResultsHTML==='function') uniResultsHTML = function(){ return uniInnerHTML(); };
+})();
+
+/* After a settings sync, keep leftover keys from changing calls. */
+(function(){
+  if (typeof renderSettings==='function'){
+    const orig = renderSettings;
+    renderSettings = function(){ v115NeutralizeSettings(); return orig.apply(this, arguments); };
+  }
+})();
+
+window.v115Status = () => ({build:APP_BUILD, kinds: typeof S!=='undefined' && S.boardKinds, enabled:(S&&S.enabled||[]).length, exclude:S&&S.sExclude, mb: typeof uniMB==='function' && uniMB()});
+
+/* Auto-off no longer hides or changes a call; sport chips are the only show/hide. */
+if (typeof modelSkippedSports==='function'){
+  modelSkippedSports = function(){ return new Set(); };
+}
+
+(function(){
+  if (typeof updateFilterChrome!=='function') return;
+  const orig = updateFilterChrome;
+  updateFilterChrome = function(){
+    const out = orig.apply(this, arguments);
+    try{
+      const s = document.getElementById('search');
+      if (s && ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid')){
+        const k = v115Kinds(ui.tab);
+        s.placeholder = (k.games && k.props) ? 'Search team or player…' : k.props ? 'Search player or team…' : 'Search team…';
+      }
+      const fb = document.getElementById('filterBar');
+      if (fb && ui && ui.tab==='parlay') fb.hidden = false;
+    }catch(e){}
+    v115SyncKindsBar();
+    return out;
+  };
+})();
+
+(function(){
+  if (typeof fillFilterMeta!=='function') return;
+  const orig = fillFilterMeta;
+  fillFilterMeta = function(){
+    orig.apply(this, arguments);
+    try{
+      const sl = document.getElementById('filterStrictLine');
+      const tab = ui && ui.tab;
+      if (sl && (tab==='good'||tab==='watch'||tab==='avoid')){
+        const ng = (plays||[]).filter(p=>p.verdict==='good').length;
+        const np = ((typeof props!=='undefined' && props)||[]).filter(p=>p.verdict==='good').length;
+        sl.textContent = `The model is calling ${ng} game pick${ng===1?'':'s'} and ${np} prop pick${np===1?'':'s'}. Games and Props buttons only hide what you see.`;
+      }
+      const pl = document.getElementById('filterPriceLine');
+      if (pl && tab!=='parlay' && typeof compactPriceLine==='function') pl.textContent = compactPriceLine();
+    }catch(e){}
+  };
+})();
+
+
+/* Apply the combined board at the inner renderer so auto-refresh and the v77 idle
+   coalescer cannot paint the old Games-only / "No data yet" view over it. */
+function v115PaintSlate(){
+  if (!(ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid'))){
+    if (ui && ui.tab==='parlay'){
+      const v = document.getElementById('view');
+      if (v && typeof renderParlayBoard==='function' && !(v.querySelector && v.querySelector('.parlay-card, .parlay-board, .slate-layout'))){
+        v.innerHTML = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'') + renderParlayBoard('good', '') + (typeof avHiddenHTML==='function' ? avHiddenHTML('parlay','good') : '');
+      }
+    }
+    v115SyncKindsBar();
+    return;
+  }
+  if (ui.board==='parlay') ui.board = 'games';
+  const tab = ui.tab;
+  const k = v115Kinds(tab);
+  const counts = v115UpdateCombinedCounts();
+  const parts = [];
+  if (k.games) parts.push(v115GamesBody(tab));
+  if (k.props) parts.push(v115PropsBody(tab));
+  const hidden = (k.games && typeof avHiddenHTML==='function' ? avHiddenHTML('games', tab) : '')
+    + (k.props && typeof avHiddenHTML==='function' ? avHiddenHTML('props', tab) : '');
+  const note = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'');
+  const v = document.getElementById('view');
+  if (v){
+    const main = parts.join('') || `<div class="empty-state">Turn Games or Props back on to see this list.</div>`;
+    const layout = (typeof slateLayout==='function') ? slateLayout(tab, main, counts) : main;
+    v.innerHTML = note + layout + hidden;
+  }
+  v115SyncKindsBar();
+}
+(function(){
+  const hook = (fn)=>{
+    if (typeof fn!=='function') return fn;
+    return function(){
+      v115NeutralizeSettings();
+      if (ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && ui.board==='parlay') ui.board = 'games';
+      const out = fn.apply(this, arguments);
+      try{ v115PaintSlate(); }catch(e){ console.warn('v115 paint', e); }
+      return out;
+    };
+  };
+  if (typeof _baseRender==='function') _baseRender = hook(_baseRender);
+  if (typeof renderNow==='function'){
+    const rn = renderNow;
+    renderNow = function(){
+      const out = rn.apply(this, arguments);
+      try{ v115PaintSlate(); }catch(e){}
+      return out;
+    };
+  }
+})();
 </script>
 </body>
 </html>
