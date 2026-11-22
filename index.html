@@ -24658,6 +24658,280 @@ async function v128Backfill(){
 }
 setTimeout(function v128Kick(){ if (typeof UNI_ST!=='undefined' && UNI_ST.ready) v128Backfill(); else setTimeout(v128Kick, 15000); }, 25000);
 window.v128Status = () => ({build:APP_BUILD, kept:V128.kept, backfill:V128.bf});
+/* ================= v129: Locked = top-rated plays only =================
+   Rule picked from the graded pick log (Nov 19-21, one row per bet, flat 1u at the logged price):
+     Props: a Pick on assists or 3-pointers with an edge of 12%+ and a price between -140 and +150.
+     Games: a Pick the model gives 58%+ with a price above -250 and no longer than +150.
+   Then only the best 4 per board per game day (props ranked by edge, games by model chance), so
+   Locked lands around 3-8 plays a day. Everything else stays in Picks. Once a play has locked it
+   stays locked (only an urgent reason can pull it); locks recorded before v129 are kept as they were.
+   Tailed bets still move to Locked at their lock time (v123/v125), elite or not.
+   Results > Tracked universe: Locked, Picks, Watch, Avoid; markets with no model read count as Avoid. */
+APP_BUILD = 129;
+
+var V129 = {
+  cap: {games: 4, props: 4},
+  G: {p: 0.58, lo: -250, hi: 150},
+  P: {kinds: ['ast', 'threes'], edge: 0.12, lo: -140, hi: 150},
+  memo: new Map(), uniGated: 0, uniKept: 0
+};
+function v129Imp(am){ am = +am; if (!isFinite(am) || !am) return null; return am < 0 ? -am/(-am + 100) : 100/(am + 100); }
+
+/* one board item -> {p, price, edge, kind} */
+function v129Read(board, x){
+  if (!x) return null;
+  if (board === 'props'){
+    const price = x.price != null ? +x.price : (x.side === 'under' ? +x.underPrice : +x.overPrice);
+    const p = x.p != null ? +x.p : null; const im = x.implied != null ? +x.implied : v129Imp(price);
+    return {p, price, edge: (p != null && im != null) ? p - im : null, kind: x.kind || x.mk || ''};
+  }
+  const best = x.sd && x.sd.best; const price = best && best.price != null ? +best.price : (x.P && x.P.am != null ? +x.P.am : null);
+  const p = x.est != null ? +x.est : null;
+  return {p, price, edge: (p != null && price != null) ? p - v129Imp(price) : null, kind: x.mk || ''};
+}
+function v129QualVals(board, v){
+  if (!v || v.p == null || v.price == null || !isFinite(v.p) || !isFinite(v.price)) return false;
+  if (board === 'props'){ const R = V129.P; return R.kinds.includes(v.kind) && v.edge != null && v.edge >= R.edge && +v.price >= R.lo && +v.price <= R.hi; }
+  const R = V129.G; return v.p >= R.p && +v.price > R.lo && +v.price <= R.hi;
+}
+function v129Score(board, v){ return board === 'props' ? (v.edge || 0) + (v.p || 0)/100 : (v.p || 0) + (v.edge || 0)/100; }
+function v129Day(ms){ try{ return uniDay(+ms); }catch(e){ const d = new Date(+ms); return d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0'); } }
+/* keys of plays that made the top list for this board + game day (fixed v129 locks first, then the best open ones) */
+function v129EliteKeys(board, day){
+  const mk = board + '|' + day, now = Date.now(), m = V129.memo.get(mk);
+  if (m && now - m.at < 2500) return m.keys;
+  const recs = (typeof V41 === 'function' ? V41().locked : {}) || {};
+  const fixed = new Set();
+  for (const k in recs){ const r = recs[k]; if (r && r.e129 && !r.pulled && r.board === board && v129Day(r.start) === day) fixed.add(k); }
+  const src = board === 'props' ? ((typeof props !== 'undefined' && props) || []) : ((typeof plays !== 'undefined' && plays) || []);
+  const cand = [];
+  for (const x of src){
+    if (!x || x.verdict !== 'good' || x.tailedKeep) continue;
+    if (board === 'games' && !(x.g && x.g.state === 'pre')) continue;
+    if (board === 'props' && x.g && x.g.state && x.g.state !== 'pre') continue;
+    const s = itemStartMs(x); if (!s || s <= now || v129Day(s) !== day) continue;
+    const k = boardKeyOf(board, x); if (!k || fixed.has(k) || recs[k]) continue;
+    const v = v129Read(board, x); if (!v129QualVals(board, v)) continue;
+    cand.push({k, sc: v129Score(board, v)});
+  }
+  cand.sort((a, b) => b.sc - a.sc);
+  const room = Math.max(0, (V129.cap[board] || 4) - fixed.size);
+  const keys = new Set(fixed); for (const c of cand.slice(0, room)) keys.add(c.k);
+  V129.memo.set(mk, {at: now, keys});
+  return keys;
+}
+function v129IsElite(board, x){
+  if (board !== 'games' && board !== 'props') return true;
+  try{
+    const k = boardKeyOf(board, x); if (!k) return false;
+    const s = itemStartMs(x); if (!s) return false;
+    return v129EliteKeys(board, v129Day(s)).has(k);
+  }catch(e){ return false; }
+}
+window.v129IsElite = v129IsElite;
+
+/* board: only elite Picks lock (recordLocks, Locked section and phone alerts all go through lockStatus) */
+(function(){
+  if (typeof lockStatus !== 'function') return;
+  const base = lockStatus;
+  lockStatus = function(x, board){
+    const st = base.apply(this, arguments) || {locked:false, tag:''};
+    try{
+      const b = board || (x && x.isProp ? 'props' : 'games');
+      if (!st.locked || (b !== 'games' && b !== 'props') || !x || x.tailedKeep || x.lockedKeep || x.pulledNote) return st;
+      const rec = typeof lockedRec === 'function' ? lockedRec(b, x) : null;
+      if (rec && !rec.pulled) return st;                      // already locked: stays locked
+      if (v129IsElite(b, x)) return st;
+      return {locked:false, tag:'Stays a Pick', notElite:true};
+    }catch(e){ return st; }
+  };
+})();
+(function(){
+  if (typeof makeLockRec !== 'function') return;
+  const base = makeLockRec;
+  makeLockRec = function(board, x, extra){
+    const r = base.apply(this, arguments);
+    try{ if (r && !extra && (board === 'games' || board === 'props')){ r.e129 = 1; V129.memo.clear(); } }catch(e){}
+    return r;
+  };
+})();
+/* Locked header line */
+(function(){
+  if (typeof v119LockHint !== 'function') return;
+  const base = v119LockHint;
+  v119LockHint = function(){ return 'Top-rated plays only. ' + base.apply(this, arguments); };
+})();
+
+/* universe (Results): lk.L only for elite plays, same rule and the same 4-per-board-per-day cap */
+function v129UniKey(r){ return r.b === 'props' ? `${r.ev}|${r.pid}|${r.kind}|${r.side}|${r.pt}` : `${r.ev}|${r.mk}|${r.side}`; }
+function v129UniVals(r, useLk){
+  const L = useLk && r.lk ? r.lk : r; const p = L.p != null ? +L.p : null, price = L.price != null ? +L.price : null;
+  const im = v129Imp(price); return {p, price, edge: (p != null && im != null) ? p - im : null, kind: r.b === 'props' ? (r.kind || '') : (r.mk || '')};
+}
+function v129UniElite(r){
+  if (!r || (r.b !== 'games' && r.b !== 'props')) return true;
+  const v0 = v129UniVals(r, true); if (!v129QualVals(r.b, v0)) return false;
+  const key = v129UniKey(r), now = Date.now();
+  const fixed = new Set(); const best = new Map();
+  for (const o of UNI.values()){
+    if (!o || o.b !== r.b || o.fd !== r.fd || o === r) continue;
+    const k = v129UniKey(o);
+    if (o.lk && o.lk.L && o.lk.e){ fixed.add(k); continue; }
+    if (o.lk || !(+o.t > now) || o.v !== 'good') continue;
+    const v = v129UniVals(o, false); if (!v129QualVals(o.b, v)) continue;
+    const sc = v129Score(o.b, v); if (!best.has(k) || best.get(k) < sc) best.set(k, sc);
+  }
+  if (fixed.has(key)) return true;
+  const room = (V129.cap[r.b] || 4) - fixed.size; if (room <= 0) return false;
+  const mine = v129Score(r.b, v0);
+  let ahead = 0; for (const [k, sc] of best) if (k !== key && !fixed.has(k) && sc > mine) ahead++;
+  return ahead < room;
+}
+(function(){
+  if (typeof uniUpsert !== 'function') return;
+  const base = uniUpsert;
+  uniUpsert = function(b, src, id, baseRow, snap){
+    const before = (typeof UNI !== 'undefined') ? UNI.get(id) : null; const hadLk = !!(before && before.lk);
+    const r = base.apply(this, arguments);
+    try{
+      if (r && r.lk && !hadLk){
+        if (r.lk.L){ if (v129UniElite(r)){ r.lk.e = 1; V129.uniKept++; } else { delete r.lk.L; r.lk.ne = 1; V129.uniGated++; } }
+        else r.lk.ne = 1;
+        // a props market still waiting on its player's game log: hold the lock snapshot and retry next scan
+        if (r.b === 'props' && r.src === 'sb' && r.pid && r.lk.v === 'nocall' && typeof UNI_MODEL_KINDS !== 'undefined' && UNI_MODEL_KINDS.has(r.kind) && (r.mins == null || r.mins > 5)){ delete r.lk; V129.held = (V129.held||0) + 1; }
+      }
+    }catch(e){}
+    return r;
+  };
+})();
+/* the v128 one-time backfill must not lock plays that v129 kept out */
+(function(){
+  if (typeof v128Fixable !== 'function') return;
+  const base = v128Fixable;
+  v128Fixable = function(r){ if (r && r.lk && (r.lk.ne || r.lk.e)) return false; return base.apply(this, arguments); };
+})();
+
+/* Results > Tracked universe: order Locked, Picks, Watch, Avoid; no "No call" row (no read = Avoid) */
+(function(){
+  if (typeof uniCountsMerged !== 'function') return;
+  const base = uniCountsMerged;
+  uniCountsMerged = function(){
+    const B = base.apply(this, arguments);
+    try{ for (const b of ['games', 'props']){ const c = B[b]; if (!c) continue;
+      const n = (c.tv && c.tv.nocall) || 0; c.nc = n; if (c.tv){ c.tv.avoid = (c.tv.avoid||0) + n; delete c.tv.nocall; }
+      const q = c.bucket && c.bucket.nocall; if (q){ const a = c.bucket.avoid || (c.bucket.avoid = {w:0,l:0,pf:0,st:0,n:0}); a.w += q.w; a.l += q.l; a.pf += q.pf; a.st += q.st; a.n += q.n; delete c.bucket.nocall; } } }catch(e){}
+    return B;
+  };
+})();
+uniInnerHTML = function(){
+  const B = uniCountsMerged();
+  const f = n => (+n||0).toLocaleString();
+  const pct = x => x==null ? '—' : Math.round(x*100)+'%';
+  const roiS = x => x==null ? '—' : (x>=0?'+':'')+(x*100).toFixed(1)+'%';
+  const NAMES = {good:'Picks', locked:'Locked', watch:'Watch', avoid:'Avoid'};
+  const SRC = {sb:'sportsbook', pm:'Polymarket', kalshi:'Kalshi', px:'ProphetX', cc:'Crypto.com', nv:'Novig'};
+  const card = (b, title) => {
+    const c = B[b];
+    const tv = ['good','watch','avoid'].map(v=>`${NAMES[v]} ${f(c.tv[v]||0)}`).join(' · ');
+    const rows = ['locked','good','watch','avoid'].map(v=>{
+      const k = c.bucket[v] || {w:0,l:0,pf:0,st:0,n:0}; const r = k.st ? k.pf/k.st : null, hr = k.n ? k.w/k.n : null; const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
+      const u = k.pf/100, uS = (u>=0?'+':'−') + Math.abs(u).toFixed(1) + 'u';
+      if (v==='locked' && !k.n) return `<div class="uni-row uni-lock"><span class="k">${NAMES[v]}</span><span class="v uni-wide mut">None graded in this range</span></div>`;
+      return `<div class="uni-row${v==='locked'?' uni-lock':''}"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `<span class="nw">${f(k.w)}–${f(k.l)}</span> · <span class="nw">${pct(hr)} hit</span> · <span class="nw"><b class="${cls}">${uS}</b></span> · <span class="nw">${roiS(r)} ROI</span>` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
+    }).join('');
+    const src = Object.entries(c.src).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${SRC[k]||k} ${f(v)}`).join(' · ');
+    const extra = (c.un||c.vd||c.pu) ? ` Pushes ${f(c.pu)}, voids ${f(c.vd)} (did not play / postponed), ungradeable ${f(c.un)}.` : '';
+    return `<div class="v42-b uni-b"><h3>${title}</h3>
+      <div class="v42-kv"><span class="k">${UR_KV[UR.range]}</span><span class="v">${f(c.total)} markets · ${f(c.graded)} graded</span></div><div class="hint">${tv}</div>
+      <div class="hint uni-src">${esc(src||'Nothing yet.')} · ${f(c.open)} waiting on a final.${extra}</div>
+      <div class="uni-buckets">${rows}</div></div>`;
+  };
+  const sel = `<div class="mr-filters uni-filters"><label class="mr-f"><span>Range</span><select data-uni-range aria-label="Tracked universe range">${['today','7','30','year','all'].map(v=>`<option value="${v}" ${UR.range===v?'selected':''}>${UR_LABEL[v]}</option>`).join('')}</select></label></div>`;
+  const fromD = urFrom();
+  const cover = B.first && (UR.range==='all' || (UR.range==='year' && B.first > fromD) || ((UR.range==='7' || UR.range==='30') && B.first > fromD))
+    ? `${UR_LABEL[UR.range]} covers what's been tracked since ${urDate(B.first)}. ` : '';
+  const rawNote = (UR.range==='all' || urFrom() < '20261121') && (!B.first || B.first < '20261121') ? 'Since Nov 21, Picks, Watch and Avoid are the model\'s own call, before your odds range and books. ' : '';
+  const lockNote = 'Locked is the top-rated part of Picks (from Nov 22: assists and 3-pointer props with a big edge, and games the model gives 58%+, best 4 per board a day), graded at the lock price; earlier days keep the locks as they were. Picks counts every market the model ever called a Pick, graded at its first Pick price. Markets the model had no read on count as Avoid. ';
+  const when = B.lastTick ? `Last scan ${new Date(B.lastTick).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.';
+  const loading = mlogOn() && !USH.at ? ' Loading from your account…' : '';
+  return `<div class="uni-in">${sel}
+    <div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>
+    <div class="hint" style="margin-top:10px">${cover}${rawNote}${lockNote}Synced across ${B.devs} signed-in device${B.devs===1?'':'s'}. ${when}${loading}${USH.err ? ` Couldn't reach the account copy (${esc(String(USH.err))}).` : ''}</div></div>`;
+};
+uniResultsHTML = function(){ return uniInnerHTML(); };
+
+/* Filters: the sport "All" chip toggles (all on -> all off). An empty list means "every sport" elsewhere,
+   so "none picked" is its own saved flag, cleared as soon as any sport is picked again. */
+function v129SportsNone(set){
+  if (set!==undefined){ try{ set ? localStorage.setItem('bl_sports_none_v129','1') : localStorage.removeItem('bl_sports_none_v129'); }catch(e){} V129.none = !!set; }
+  if (V129.none===undefined){ try{ V129.none = localStorage.getItem('bl_sports_none_v129')==='1'; }catch(e){ V129.none = false; } }
+  if (V129.none && Array.isArray(ui.sports) && ui.sports.length){ V129.none = false; try{ localStorage.removeItem('bl_sports_none_v129'); }catch(e){} }
+  return V129.none;
+}
+(function(){
+  if (typeof sportOnFilter!=='function') return;
+  const base = sportOnFilter;
+  sportOnFilter = function(lg){
+    const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
+    if (restrict && v129SportsNone()) return false;
+    return base.apply(this, arguments);
+  };
+})();
+(function(){
+  const box = document.getElementById('sportChips'); if (!box) return;
+  box.addEventListener('click', e=>{
+    const c = e.target && e.target.closest && e.target.closest('[data-sport="all"]'); if (!c) return;
+    const restrict = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid' || ui.tab==='all';
+    if (!restrict || typeof LEAGUES === 'undefined') return;
+    const on = new Set(Array.isArray(ui.sports) ? ui.sports : LEAGUES.map(L=>L.id));
+    if (!LEAGUES.every(L=>on.has(L.id))) return;                // not all on: the normal handler turns them all on
+    e.stopImmediatePropagation(); e.preventDefault();
+    ui.sports = []; v129SportsNone(true);
+    if (typeof syncSportAlias === 'function') syncSportAlias();
+    if (typeof saveFilters === 'function') saveFilters();
+    render();
+  }, true);
+})();
+
+/* hidden (not on your books) section: same odds filter and order as the main list. These aren't on your books,
+   so the bucket comes from the price the card shows (the best price anywhere), not your book's price. */
+function v129HidBucket(board, x){
+  if (!x || board === 'parlay') return null;
+  const am = board === 'props' ? +x.price : +(x.sd && x.sd.best && x.sd.best.price);
+  if (!isFinite(am) || !am) return null;
+  const mode = (typeof pxMode === 'function') ? pxMode() : 'am';
+  if (mode === 'c'){ const c = Math.round(v129Imp(am)*100); return c >= 67 ? 'bigfav' : c >= 52 ? 'fav' : c >= 48 ? 'coin' : c >= 34 ? 'dog' : 'long'; }
+  return am <= -200 ? 'bigfav' : am <= -110 ? 'fav' : am < 110 ? 'coin' : am < 200 ? 'dog' : 'long';
+}
+(function(){
+  if (typeof avHiddenItems !== 'function') return;
+  const base = avHiddenItems;
+  avHiddenItems = function(board, tab){
+    let list = base.apply(this, arguments) || [];
+    try{ if (typeof v121OddsSel === 'function') { const sel = v121OddsSel(); list = list.filter(x=>{ const k = v129HidBucket(board, x) || (typeof v121Bucket==='function' ? v121Bucket(x) : null); return !k || sel.includes(k); }); } if (typeof v121Arrange === 'function') list = v121Arrange(list); }catch(e){}
+    return list;
+  };
+})();
+try{
+  const st = document.createElement('style');
+  st.textContent = `
+details.av-hid{border:0 !important;background:none !important;padding:0 !important;margin:18px 0 8px}
+details.av-hid>summary{border:1px solid rgba(244,63,94,.35);border-radius:14px;background:rgba(225,29,72,.06);padding:10px 12px;overflow-wrap:normal;word-break:normal}
+details.av-hid[open]>summary{margin-bottom:10px}
+details.av-hid>.av-note{padding:0 4px}
+details.av-hid>.grid{margin:0;padding:0}
+details.av-hid .card{min-width:0;max-width:100%;box-sizing:border-box}
+details.av-hid .av-tag .av-ttl{white-space:nowrap}
+`;
+  document.head.appendChild(st);
+}catch(e){}
+
+window.v129Status = function(){
+  const out = {build: APP_BUILD, cap: V129.cap, uniGated: V129.uniGated, uniKept: V129.uniKept};
+  try{ for (const b of ['games','props']){ const src = b==='props' ? (props||[]) : (plays||[]); const days = new Set(src.filter(x=>x && x.verdict==='good').map(x=>v129Day(itemStartMs(x))));
+    out[b] = [...days].sort().map(d=>({d, elite:[...v129EliteKeys(b, d)].length})); } }catch(e){ out.err = String(e); }
+  return out;
+};
 </script>
 </body>
 </html>
