@@ -23053,7 +23053,7 @@ function v115MigrateSlateViews(){
     if (typeof filterViews==='undefined' || !filterViews) return;
     for (const tab of ['good','watch','avoid']){
       const k = 'slate:'+tab;
-      if (filterViews[k] && filterViews[k]._v115) continue;
+      if (filterViews[k] && typeof filterViews[k]==='object'){ filterViews[k]._v115 = 1; continue; }   // v135: a saved slate view is never rebuilt (it was wiping saved choices like Hide tailed bets)
       const a = filterViews['games:'+tab] || filterViews['games:good'] || {};
       const b = filterViews['props:'+tab] || filterViews['props:good'] || {};
       const sa = Array.isArray(a.sports) ? a.sports : [];
@@ -26061,6 +26061,68 @@ try{ const o = JSON.parse(localStorage.getItem('bl_v132_secs')||'null'); if (o &
   const st = document.createElement('style'); st.textContent = `#filterBar [data-v132sec="locked"]{display:none !important}
 #filterBar .v132-chips{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))}
 .v131-potd{margin-bottom:10px}`; document.head.appendChild(st);
+})();
+/* ================= v135: every filter saves to the account =================
+   Root cause of "Hide tailed bets" resetting: saving a Picks/Watchlist/Avoid filter wrote the combined view without its
+   v115 marker, so the next app start rebuilt that view from the old Games view and threw the choice away (fixed in
+   57_v115.js; the marker is also kept on save here). Show/hide Picks of the Day and the Stats/Markets rows now live in
+   the synced settings (each its own key, newest edit wins), and Tailed bets show/hide applies on every tab.
+   Settings > Account: devices not seen for 3+ days drop off the list (and their device record is removed). */
+APP_BUILD = 135;
+function v135SaveS(){ try{ saveJSON(LS.settings, S); }catch(e){} }
+(function(){
+  // keep the marker + one account-wide Tailed bets choice
+  const base = saveFilters;
+  saveFilters = function(){
+    const out = base.apply(this, arguments);
+    try{
+      let dirty = false;
+      for (const k of Object.keys(filterViews||{})){ const v = filterViews[k]; if (!v || typeof v!=='object') continue;
+        if (k.startsWith('slate:') && !v._v115){ v._v115 = 1; dirty = true; }
+        if (v.hideLogged !== !!ui.hideLogged){ v.hideLogged = !!ui.hideLogged; dirty = true; } }
+      if (dirty) saveJSON(LS.filterViews, filterViews);
+    }catch(e){}
+    return out;
+  };
+})();
+/* Show Picks of the Day (v132) -> S.fShow */
+(function(){
+  try{ if (!S.fShow || typeof S.fShow!=='object'){ let o = null; try{ o = JSON.parse(localStorage.getItem('bl_v132_secs')||'null'); }catch(e){} S.fShow = {potd: !o || o.potd!==false}; v135SaveS(); } }catch(e){}
+  v132Secs = function(){ const o = (S && S.fShow) || {}; return {potd: o.potd!==false, locked: true}; };
+  v132SetSec = function(k, v){ if (k!=='potd') return; S.fShow = Object.assign({}, S.fShow||{}, {potd: !!v}); v135SaveS(); };
+})();
+/* Stats / Markets (v133) -> S.fSel */
+(function(){
+  const legacy = v133Load;
+  try{ if (!S.fSel || !Array.isArray(S.fSel.offStats) || !Array.isArray(S.fSel.offMkts)){ const o = legacy(); S.fSel = {offStats: (o.offStats||[]).slice(), offMkts: (o.offMkts||[]).slice()}; v135SaveS(); } }catch(e){}
+  v133Load = function(){ const o = S.fSel; return (o && Array.isArray(o.offStats) && Array.isArray(o.offMkts)) ? {offStats:o.offStats.slice(), offMkts:o.offMkts.slice()} : {offStats:[], offMkts:[]}; };
+  v133Save = function(o){ S.fSel = {offStats:(o.offStats||[]).slice(), offMkts:(o.offMkts||[]).slice()}; v135SaveS(); };
+})();
+/* another device changed filters: pick up Sort/Odds too and repaint the panel */
+(function(){
+  if (typeof sync2Refresh!=='function') return;
+  const base = sync2Refresh;
+  sync2Refresh = function(A){
+    try{ if (A && (A.filters || A.settings)){ if (typeof v121Load==='function') v121Load(); if (typeof v132PaintSecs==='function') v132PaintSecs(); if (typeof v133Paint==='function') v133Paint(); } }catch(e){}
+    return base.apply(this, arguments);
+  };
+})();
+/* devices: hide + remove any not seen for 3+ days (never this one) */
+(function(){
+  const base = devList;
+  const MAX = 3*86400000;
+  devList = async function(){
+    const L = await base.apply(this, arguments);
+    try{
+      const me = devLabel().id, now = Date.now();
+      const gone = (L||[]).filter(d=>d && d.id && d.id!==me && now - (+d.seen||0) > MAX);
+      if (gone.length){
+        DEVS.list = (L||[]).filter(d=>!gone.includes(d));
+        for (const d of gone){ try{ const r = devRef(d.id); if (r) r.delete().catch(()=>{}); }catch(e){} }
+      }
+      return DEVS.list;
+    }catch(e){ return L; }
+  };
 })();
 </script>
 </body>
