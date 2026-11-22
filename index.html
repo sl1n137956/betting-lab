@@ -4635,8 +4635,23 @@ async function alertClaim(keys){
   const col = alertClaimCol();
   if (!col || !keys.length) return keys;
   const res = await Promise.all(keys.map(k=>alertClaimOne(col, k)));
-  // null = couldn't reach Firestore: send anyway so an alert is never lost (a duplicate beats a miss)
-  return keys.filter((k,i)=>res[i]!==false);
+  const won = keys.filter((k,i)=>res[i]===true), unk = keys.filter((k,i)=>res[i]==null);
+  if (!unk.length) return won;
+  // v110: account unreachable (e.g. its daily limit is used up): fall back to the phone topic itself. Wait a random
+  // 2–25 s so devices don't fire together, then skip anything another device already posted to the topic.
+  await new Promise(r=>setTimeout(r, 2000 + Math.random()*23000));
+  const posted = await ntfyRecentIds();
+  return won.concat(unk.filter(k=>!posted.has(alertHash(k))));
+}
+function alertHash(k){ let h = 5381; k = String(k||''); for (let i=0;i<k.length;i++) h = ((h*33) ^ k.charCodeAt(i)) >>> 0; return h.toString(36); }
+function alertClickTag(keys){ return (keys||[]).map(alertHash).join('.').slice(0, 300); }
+async function ntfyRecentIds(){
+  const out = new Set(); const topic = normalizeNtfyTopic(S.ntfyTopic); if (!ntfyTopicOk(topic)) return out;
+  try{
+    const r = await fetch('https://ntfy.sh/' + encodeURIComponent(topic) + '/json?poll=1&since=12h', {cache:'no-store'}); if (!r.ok) return out;
+    for (const line of (await r.text()).split('\n')){ if (!line) continue; try{ const m = JSON.parse(line); const c = String(m.click||''); const q = /[?&]a=([a-z0-9.]+)/.exec(c); if (q) q[1].split('.').forEach(x=>out.add(x)); }catch(e){} }
+  }catch(e){}
+  return out;
 }
 function alertUnclaim(keys){
   const col = alertClaimCol(); if (!col) return;
@@ -4731,7 +4746,7 @@ function checkLockAlerts(board){
         const mine = fresh.filter(x => won.includes(claimKey(x)));
         if (!mine.length){ markSent(keysAll); return; }   // another device sent it (or it's stale)
         const A = send(mine);
-        ntfyPush(A.title, A.body, {priority:'high', tags:tagIcon, click: NTFY_CLICK+'?board='+b}).then(ok => {
+        ntfyPush(A.title, A.body, {priority:'high', tags:tagIcon, click: NTFY_CLICK+'?board='+b+'&a='+alertClickTag(mine.map(claimKey))}).then(ok => {
           if (ok || localOk) markSent(keysAll);
           else { alertUnclaim(mine.map(claimKey)); for (const lk of keysAll) _lockPushInFlight.delete(lk); }
         });
@@ -4778,7 +4793,7 @@ function notifyPulled(r){
       const ck = 'ntfy|pull|' + pk + '|' + (st ? new Date(st).toISOString().slice(0,10) : '');
       (stale ? Promise.resolve([]) : alertClaim([ck])).then(won => {
         if (!won.length){ markSent(); return; }   // another device already sent this one (or it's too old)
-        ntfyPush(title, body, {priority:'urgent', tags:'rotating_light,warning', click: NTFY_CLICK+'?tab=pulled'}).then(ok => {
+        ntfyPush(title, body, {priority:'urgent', tags:'rotating_light,warning', click: NTFY_CLICK+'?tab=pulled&a='+alertClickTag([ck])}).then(ok => {
           if (ok || localOk) markSent();
           else { alertUnclaim([ck]); if (pk) _pullPushInFlight.delete(pk); }
         });
@@ -15772,7 +15787,7 @@ function uniUpsert(b, src, id, base, snap){
   if (!r){
     if (!(base.t > now - 5*60000)) return null;               // never start tracking a game that already began
     if (base.t - now > UNI_HORIZON + 6*3600000) return null;
-    r = Object.assign({i:id, b, src, first:now, fd:uniDay(now), at:0, y:null}, base);
+    r = Object.assign({i:id, b, src, first:now, fd:uniDay(base.t), at:0, y:null}, base);   // v110: a market counts on its game day, not the day tracking started
     UNI.set(id, r); UNI_ST.created++;
   }
   if (r.y!=null || base.t <= now) return r;                      // frozen once the game starts
@@ -16423,6 +16438,8 @@ async function uniInit(){
     for (const s of sums||[]) if (s && s.i) UNI_SUM.set(s.i, s);
     UNI_ST.idb = true;
   }catch(e){ UNI_ST.idb = false; uniErr('init (IndexedDB unavailable, universe tracking is off this visit)', e); }
+  // v110: open rows move to their game day (they used to sit on the day tracking started)
+  try{ for (const r of UNI.values()){ if (r && r.t && !r.res){ const d = uniDay(+r.t); if (r.fd!==d){ r.fd = d; UNI_DIRTY.add(r.i); } } } }catch(e){}
   UNI_ST.ready = true;
 }
 
@@ -20093,7 +20110,7 @@ function mlogInjectOpen(){
     for (const [id, o] of m){
       if (o.res || !(o.t < now - 3*3600000) || o.t < now - 4*86400000 || UNI.has(id)) continue;
       UNI.set(id, {i:id, id, b:o.b, src:o.s, l:o.l, ev:o.ev, t:o.t, mk:o.mk, side:o.sd, pt:o.pt, kind:o.k, pid:o.pid, pn:o.pn, game:o.gm, book:o.bk, v:o.v, p:o.p, price:o.pr, shown:o.sh, u:o.u, mins:o.mn,
-        lk:{v:o.v, p:o.p, price:o.lpr!=null ? o.lpr : o.pr, u:o.u, at:o.at, L:o.lkd ? 1 : 0}, pk:o.v==='good' ? {price:o.pr, p:o.p, at:o.at} : undefined, fd:mlogDay(o.at||o.t), first:o.at||o.t, at:o.at||o.t, y:null, _cloud:1});
+        lk:{v:o.v, p:o.p, price:o.lpr!=null ? o.lpr : o.pr, u:o.u, at:o.at, L:o.lkd ? 1 : 0}, pk:o.v==='good' ? {price:o.pr, p:o.p, at:o.at} : undefined, fd:mlogDay(o.t||o.at), first:o.at||o.t, at:o.at||o.t, y:null, _cloud:1});
       n++;
     }
   }
@@ -22402,6 +22419,8 @@ window.rtStatus = function(){
 })();
 
 APP_BUILD = 111;
+/* v112: Results count each market on its game day; phone alerts stay single even when the account is unreachable. */
+APP_BUILD = 112;
 </script>
 </body>
 </html>
