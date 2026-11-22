@@ -25595,6 +25595,307 @@ window.v131Status = function(){
   const St = v131Store(); const days = {}; for (const d in St.days){ days[d] = {}; for (const b of ['games','props']){ const E = (St.days[d][b])||{}; days[d][b] = {on:Object.values(E).filter(e=>!e.drop).length, dropped:Object.values(E).filter(e=>e.drop).length}; } }
   return {build:APP_BUILD, params:V131.params, changes:V131.log.length, segChanges:V131.segLog.length, seg:V131.seg, mute:V131.mute, days, potdAlerts:V131.potdAlerts, rowsDays:[...V131.rows.keys()], bf:V131.bf};
 };
+/* ================= v132: lock-first Picks of the Day, shared across devices + alert choices + filters fixes =================
+   - A play becomes a Pick of the Day only AFTER it locks, and only if the lock passes the (self-tuning) top-rated rule.
+     First locks to qualify fill the daily slots (max N games + N props per game day).
+   - The list is stored on the account (users/{uid}/potd/{day}) and written in a transaction, so every device shows
+     the same list; the first device to write wins. Signed out, it falls back to this device.
+   - Alerts: Picks of the Day (on), Locked (off), Picks (off), Pulled tailed bets (on). Settings sync per account;
+     every phone alert is claimed once per account so devices never double-send.
+   - Filters open as a drawer wherever you are on the page; Show/hide Picks of the Day and Locked; same-size bubbles;
+     Games/Props tabs use the Filters blue; no dashed or dotted borders. */
+APP_BUILD = 132;
+var V132 = { shared: null, unsub: null, uid: '', subDay: '', pending: new Set(), seenKey: 'bl_v132_seenpicks', secKey: 'bl_v132_secs', alerts: {potd:0, picks:0} };
+
+/* ---------- alert settings (synced per account with the rest of S) ---------- */
+function v132Migrate(){
+  try{ if (S.v132al===1) return false;
+    S.alertPotd = true; S.alertNewPlays = false; S.alertPicks = false; if (S.alertPulledPlays==null) S.alertPulledPlays = true; S.v132al = 1;
+    saveJSON(LS.settings, S); return true; }catch(e){ return false; }
+}
+v132Migrate();
+(function(){
+  const base = canAlert;
+  canAlert = function(kind){
+    if (kind==='potd') return S.alertPotd!==false && (canNotify() || ntfyEnabled());
+    if (kind==='picks') return S.alertPicks===true && (canNotify() || ntfyEnabled());
+    return base.apply(this, arguments);
+  };
+})();
+
+/* ---------- shared Picks of the Day store ---------- */
+function v132Signed(){ return typeof AUTH!=='undefined' && AUTH.user && typeof firebase!=='undefined' && firebase.firestore; }
+function v132Col(){ return v132Signed() ? firebase.firestore().collection('users').doc(AUTH.user.uid).collection('potd') : null; }
+function v132LocalLoad(){ try{ const o = JSON.parse(localStorage.getItem('bl_potd_v132')||'null'); return (o && o.days) ? o : {days:{}}; }catch(e){ return {days:{}}; } }
+function v132Listen(){
+  try{
+    const col = v132Col(); const uid = col ? AUTH.user.uid : ''; const from = v131DayAdd(v131Day(Date.now()), -1);
+    if (uid===V132.uid && from===V132.subDay && (V132.unsub || !uid)) return;
+    if (V132.unsub){ try{ V132.unsub(); }catch(e){} V132.unsub = null; }
+    V132.uid = uid; V132.subDay = from;
+    if (!col){ V132.shared = null; V131.sel = null; return; }
+    V132.unsub = col.where('d', '>=', from).onSnapshot(qs=>{
+      const days = {}; qs.forEach(doc=>{ const x = doc.data()||{}; if (x.d) days[x.d] = {games: x.games||{}, props: x.props||{}}; });
+      V132.shared = {days}; V131.sel = V132.shared;
+      try{ localStorage.setItem('bl_potd_v132', JSON.stringify(V132.shared)); }catch(e){}
+      try{ if (ui.tab==='good' && typeof render==='function') render(); }catch(e){}
+    }, err=>{ console.warn('v132 potd listen', err && (err.code||err.message)); V132.unsub = null; });
+  }catch(e){ console.warn('v132 listen', e); }
+}
+v131Store = function(){ if (V132.shared) return V132.shared; if (!V131.sel || !V131.sel.days) V131.sel = v132LocalLoad(); return V131.sel; };
+v131StoreSave = function(){ try{ localStorage.setItem('bl_potd_v132', JSON.stringify(v131Store())); }catch(e){} };
+
+/* one write per play: first device wins; a full day is never over-filled */
+async function v132Claim(d, b, k, entry, cap){
+  const col = v132Col();
+  if (!col){
+    const St = v131Store(); const D = St.days[d] || (St.days[d] = {}); const E = D[b] || (D[b] = {});
+    if (E[k]) return false; if (Object.values(E).filter(e=>!e.drop).length >= cap) return false;
+    E[k] = entry; v131StoreSave(); return true;
+  }
+  const ref = col.doc(d);
+  return firebase.firestore().runTransaction(async t=>{
+    const s = await t.get(ref); const x = s.exists ? (s.data()||{}) : {}; const E = x[b] || {};
+    if (E[k]) return false; if (Object.values(E).filter(e=>!e.drop).length >= cap) return false;
+    t.set(ref, {d, [b]: {[k]: entry}, at: Date.now()}, {merge: true}); return true;
+  });
+}
+
+/* lock first, then the top-rated rule */
+function v132Candidates(){
+  const now = Date.now(), pr = V131.params || V131.prior, out = [];
+  for (const b of ['games','props']){
+    const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+    for (const x of src){
+      if (!x || x.tailedKeep || x.pulledNote || x.verdict!=='good') continue;
+      const st = itemStartMs(x); if (!st || st < now - 3*3600000) continue;
+      const rec = lockedRec(b, x); if (!rec || rec.pulled || rec.tailedOnly) continue;
+      const v = v129Read(b, x); if (!v131QualP(b, v, pr)) continue;
+      const k = boardKeyOf(b, x); if (!k) continue;
+      out.push({b, x, k, d: v131Day(st), st, lat: +rec.at || now, sc: v129Score(b, v)});
+    }
+  }
+  return out.sort((a, c)=>a.lat - c.lat || c.sc - a.sc);
+}
+v131Select = function(){
+  try{ v132Listen(); }catch(e){}
+  const St = v131Store(), pr = V131.params || V131.prior, added = [];
+  for (const o of v132Candidates()){
+    const E = (St.days[o.d] && St.days[o.d][o.b]) || {};
+    if (E[o.k] || V132.pending.has(o.k)) continue;
+    if (Object.values(E).filter(e=>!e.drop).length >= (pr.cap[o.b]||4)) continue;
+    const entry = {id: String(o.x.id||'').slice(0,120), label: String(o.x.label||'').slice(0,140), sc: Math.round(o.sc*1000)/1000, at: Date.now(), lat: o.lat, st: o.st, dev: String((typeof AUTH!=='undefined' && AUTH.deviceId)||'').slice(0,40)};
+    V132.pending.add(o.k);
+    v132Claim(o.d, o.b, o.k, entry, pr.cap[o.b]||4).then(won=>{
+      if (won){ v132AlertPotd(o); try{ if (ui.tab==='good') render(); }catch(e){} }
+    }).catch(e=>console.warn('v132 claim', e && (e.code||e.message))).finally(()=>setTimeout(()=>V132.pending.delete(o.k), 60000));
+    added.push(o);
+  }
+  return added;
+};
+function v132AlertPotd(o){
+  try{
+    if (!canAlert('potd')) return;
+    const fn = o.b==='props' ? propAlertLine : playAlertLine; const line = String(fn(o.x)).replace(/^⭐\s*/, '');
+    const title = '⭐ Pick of the Day (locked)'; const ck = 'potd|' + o.k + '|' + o.d;
+    alertClaim([ck]).then(won=>{
+      if (!won.length) return;
+      if (canNotify()) try{ postNotification(title, {body: line, tag: 'bl-potd-' + o.k}); }catch(e){}
+      if (ntfyEnabled()) ntfyPush(title, line, {priority:'high', tags:'star,lock', click: NTFY_CLICK + '?board=' + o.b}).then(()=>{ V132.alerts.potd++; });
+      else V132.alerts.potd++;
+    }).catch(()=>{});
+  }catch(e){}
+}
+v131AlertPotd = function(){};   // v131's pre-lock alert is gone; v132AlertPotd fires on the locked promotion
+
+/* ---------- Picks alerts (optional): a play newly turns Pick ---------- */
+function v132PickAlerts(){
+  try{
+    let seen = {}; try{ seen = JSON.parse(localStorage.getItem(V132.seenKey)||'{}')||{}; }catch(e){}
+    const on = canAlert('picks'), first = !seen._init, now = Date.now(), fresh = {games:[], props:[]};
+    for (const b of ['games','props']){
+      const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+      for (const x of src){
+        if (!x || x.verdict!=='good' || x.pulledNote || x.tailedKeep) continue;
+        const st = itemStartMs(x); if (!st || st <= now) continue;
+        const k = boardKeyOf(b, x); if (!k || seen[k]) continue;
+        seen[k] = st; if (!first && on && st < now + 24*3600000) fresh[b].push({x, k, d: v131Day(st)});
+      }
+    }
+    seen._init = 1; for (const k in seen) if (k!=='_init' && +seen[k] < now - 6*3600000) delete seen[k];
+    try{ localStorage.setItem(V132.seenKey, JSON.stringify(seen)); }catch(e){}
+    if (!on) return;
+    for (const b of ['games','props']){
+      const list = fresh[b]; if (!list.length) continue;
+      const ck = a => 'pick|' + a.k + '|' + a.d;
+      alertClaim(list.map(ck)).then(won=>{
+        const mine = list.filter(a=>won.includes(ck(a))); if (!mine.length) return;
+        const fn = b==='props' ? propAlertLine : playAlertLine;
+        const title = mine.length===1 ? `🎯 New ${b==='props'?'prop ':''}Pick` : `🎯 ${mine.length} new ${b==='props'?'prop ':''}Picks`;
+        const body = mine.slice(0, 8).map(a=>fn(a.x)).join('\n') + (mine.length > 8 ? `\n+${mine.length-8} more` : '');
+        if (canNotify()) try{ postNotification(title, {body, tag: 'bl-picks-' + b}); }catch(e){}
+        if (ntfyEnabled()) ntfyPush(title, body, {priority:'default', tags:'dart', click: NTFY_CLICK + '?board=' + b});
+        V132.alerts.picks += mine.length;
+      }).catch(()=>{});
+    }
+  }catch(e){ console.warn('v132 picks alert', e); }
+}
+(function(){
+  const base = checkLockAlerts;
+  checkLockAlerts = function(board){
+    v132Migrate();
+    const out = base.apply(this, arguments);
+    try{ v131Select(); if (!board || board==='props') v132PickAlerts(); }catch(e){ console.warn('v132 after locks', e); }
+    return out;
+  };
+})();
+
+/* ---------- Picks tab sections: show/hide Picks of the Day and Locked ---------- */
+function v132Secs(){ try{ const o = JSON.parse(localStorage.getItem(V132.secKey)||'null'); return {potd: !o || o.potd!==false, locked: !o || o.locked!==false}; }catch(e){ return {potd:true, locked:true}; } }
+function v132SetSec(k, v){ const o = v132Secs(); o[k] = !!v; try{ localStorage.setItem(V132.secKey, JSON.stringify(o)); }catch(e){} }
+(function(){
+  const base = v119LockedHTML;
+  v119LockedHTML = function(items){
+    const sec = v132Secs();
+    if (!sec.potd){ const extra = (V131.stash||[]).map(it=>({x: it.x, fn: it.fn})); V131.stash = []; items = extra.concat(items||[]); }
+    let html = base.call(this, items);
+    if (!sec.potd){ const i = html.indexOf('<div class="v119-locked">'); if (i > 0) html = html.slice(i); }
+    if (sec.locked) return html;
+    return html.replace(/<div class="v119-locked">[\s\S]*$/, '');
+  };
+})();
+// POTD section: lock-first wording
+v131PotdHTML = (function(orig){ return function(){
+  const pr = V131.params || V131.prior;
+  return orig.apply(this, arguments)
+    .replace(/Top-rated plays, max (\d+) games \+ (\d+) props a day\./, `Top-rated locks only, max ${pr.cap.games} games + ${pr.cap.props} props a day.`)
+    .replace('No Picks of the Day yet.', 'Picks of the Day appear once top plays lock.');
+}; })(v131PotdHTML);
+// history (Results + self-tuning): a Pick of the Day had to lock first
+v131PotdOfDay = (function(orig){ return function(rows, pr){ return orig.call(this, (rows||[]).filter(c=>c.lkd), pr); }; })(v131PotdOfDay);
+
+/* odds pills: one range per pill so every pill is the same size */
+if (typeof v121OddsLabels==='function'){ const o = v121OddsLabels; v121OddsLabels = function(){ const out = o.apply(this, arguments); try{ for (const k in out){ const r = String(out[k].range||''); if (r.includes(' / ')){ out[k].range = r.split(' / ')[0]; out[k].text = out[k].name + ' ' + out[k].range; } } }catch(e){} return out; }; }
+/* ---------- Filters: Sections row ---------- */
+function v132PaintSecs(){
+  try{
+    const fb = document.getElementById('filterBar'); if (!fb) return;
+    let row = document.getElementById('v132SecRow');
+    if (!row){
+      row = document.createElement('div'); row.className = 'filters horizon-filter v132-secs'; row.id = 'v132SecRow';
+      row.innerHTML = '<span class="mut horizon-lab">Show</span><div class="v132-chips" role="group" aria-label="Show or hide sections"><span class="chip" data-v132sec="potd" role="button" tabindex="0"><span aria-hidden="true">⭐</span> Picks of the Day</span><span class="chip" data-v132sec="locked" role="button" tabindex="0"><span aria-hidden="true">🔒</span> Locked</span></div>';
+      const after = document.getElementById('sortRow'); if (after && after.parentNode===fb) after.after(row); else fb.prepend(row);
+    }
+    row.hidden = ui.tab!=='good';
+    const s = v132Secs();
+    row.querySelectorAll('[data-v132sec]').forEach(ch=>{ const on = !!s[ch.getAttribute('data-v132sec')]; ch.classList.toggle('on', on); ch.setAttribute('aria-pressed', on?'true':'false'); });
+  }catch(e){}
+}
+(function(){
+  if (typeof updateFilterChrome==='function'){ const base = updateFilterChrome; updateFilterChrome = function(){ v132PaintSecs(); return base.apply(this, arguments); }; }
+  if (typeof activeFilterCount==='function'){ const base = activeFilterCount; activeFilterCount = function(){ let n = base.apply(this, arguments) || 0; if (ui.tab==='good'){ const s = v132Secs(); if (!s.potd) n++; if (!s.locked) n++; } return n; }; }
+  document.addEventListener('click', e=>{
+    const ch = e.target && e.target.closest && e.target.closest('[data-v132sec]'); if (!ch) return;
+    e.preventDefault();
+    const k = ch.getAttribute('data-v132sec'); v132SetSec(k, !v132Secs()[k]);
+    v132PaintSecs(); try{ updateFilterChrome(); render(); }catch(err){}
+  }, true);
+  v132PaintSecs();
+})();
+
+/* ---------- Filters drawer works at any scroll position (desktop too) ---------- */
+(function(){
+  if (typeof syncFilterDrawerPos!=='function') return;
+  const base = syncFilterDrawerPos;
+  syncFilterDrawerPos = function(){
+    base.apply(this, arguments);
+    try{
+      const fb = document.getElementById('filterBar'), h = document.querySelector('header'); if (!fb || !h) return;
+      const top = Math.max(0, h.getBoundingClientRect().bottom);
+      fb.style.top = top + 'px';
+      if (window.matchMedia('(min-width:768px)').matches){
+        const w = document.querySelector('main.wrap') || document.querySelector('main'); const r = w.getBoundingClientRect();
+        const cs = getComputedStyle(w); const pl = parseFloat(cs.paddingLeft)||0, pr = parseFloat(cs.paddingRight)||0;
+        fb.style.left = (r.left + pl) + 'px'; fb.style.width = Math.max(320, r.width - pl - pr) + 'px'; fb.style.right = 'auto';
+        fb.style.maxHeight = Math.max(240, innerHeight - top - 16) + 'px';
+      } else { fb.style.left = ''; fb.style.width = ''; fb.style.right = ''; fb.style.maxHeight = Math.max(240, innerHeight - top - 96) + 'px'; }
+    }catch(e){}
+  };
+  window.addEventListener('scroll', ()=>{ if (document.body.classList.contains('filters-open')) syncFilterDrawerPos(); }, {passive:true});
+})();
+
+/* ---------- Settings: Notifications ---------- */
+(function(){
+  const base = renderSettings;
+  renderSettings = function(){
+    const out = base.apply(this, arguments);
+    try{
+      const inp = document.querySelector('#view input[name="alertNewPlays"]'); if (!inp) return out;
+      const row = inp.closest('.s-row'); const lab = inp.closest('label'); const pul = row.querySelector('input[name="alertPulledPlays"]');
+      const h = row.querySelector('.s-h'); if (h) h.textContent = 'Notifications';
+      const box = document.createElement('div'); box.className = 'v132-alerts';
+      const item = (name, on, emo, title, sub) => `<label class="chk v132-al"><input type="checkbox" name="${name}" ${on?'checked':''}><span class="v132-al-t"><b><span aria-hidden="true">${emo}</span> ${title}</b><small>${sub}</small></span></label>`;
+      box.innerHTML = item('alertPotd', S.alertPotd!==false, '⭐', 'Picks of the Day', 'When a top play locks and becomes a Pick of the Day. Recommended.')
+        + item('alertNewPlays', S.alertNewPlays===true, '🔒', 'Locked', 'Every Pick that locks. Can be 20+ a night.')
+        + item('alertPicks', S.alertPicks===true, '🎯', 'Picks', 'Every new Pick that lands on the board. Can be a lot.')
+        + item('alertPulledPlays', S.alertPulledPlays!==false, '⚠️', 'Pulled', 'When a bet you tailed gets pulled from the board.');
+      lab.replaceWith(box); if (pul){ const pl = pul.closest('label'); if (pl && pl!==lab) pl.remove(); }
+      row.querySelectorAll('.s-note').forEach(n=>{ n.textContent = n.textContent.replace('New Picks and pulls from Picks can each send a pop-up', 'Each type you turn on sends a pop-up').replace('when a new play lands on Picks, or when one is pulled from it', 'for the types you turn on'); });
+      const note = document.createElement('div'); note.className = 's-note'; note.textContent = 'These choices are saved to your account and match on every device. Each alert is sent once, even with several devices open.';
+      box.after(note);
+    }catch(e){ console.warn('v132 settings', e); }
+    return out;
+  };
+  document.addEventListener('submit', e=>{
+    try{ if (!e.target || e.target.id!=='setForm') return; const f = new FormData(e.target);
+      if (e.target.querySelector('input[name="alertPotd"]')){ S.alertPotd = !!f.get('alertPotd'); S.alertPicks = !!f.get('alertPicks'); S.v132al = 1; } }catch(err){}
+  }, true);
+})();
+
+/* ---------- styles ---------- */
+(function(){
+  const css = `
+.chip.reset-chip,.card.early-card{border-style:solid}
+.empty-state,.pk-empty,.bet-empty{border-style:solid}
+.judge,.c-ctx,.c-ctx-dd{border-top-style:solid}
+.mu-table td .tip,.mu-table td .loading-rec,.sx-v .tip{border-bottom:0}
+.p10-line,.p10-dual .p10-zero{border-top-style:solid;opacity:.6}
+.pk-drop-hint{border-style:solid}
+#kindsBar .kinds-seg button.on{background:rgba(59,122,235,.14);border-color:rgba(59,130,246,.45);color:rgb(120,179,226);box-shadow:0 0 0 1px rgba(59,130,246,.2),0 1px 0 rgba(255,255,255,.05) inset}
+/* filters: one bubble size everywhere */
+#filterBar .filters:not(#zz){display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;align-items:stretch}
+#filterBar .filters.horizon-filter:not(#zz),#filterBar .filters.odds-filter:not(#zz){grid-template-columns:1fr;gap:6px}
+#filterBar .horizon-lab{font-size:12px;font-weight:700;letter-spacing:.02em;text-transform:none;margin:0 0 -2px 2px}
+#filterBar .seg,#filterBar .odds-chips,#filterBar .v132-chips{display:grid !important;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;border:0 !important;background:none !important;overflow:visible !important;border-radius:0 !important;padding:0;width:100%}
+#filterBar .chip,#filterBar .seg label,#filterBar .odds-chips .chip{box-sizing:border-box;display:flex !important;flex-direction:row;align-items:center;justify-content:center;gap:4px;height:44px !important;min-height:44px !important;width:100%;min-width:0 !important;margin:0 !important;padding:0 4px !important;border-radius:999px !important;font-size:12px !important;letter-spacing:-.005em;font-weight:600;line-height:1.1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#filterBar .seg label{border:1px solid var(--line);background:rgba(255,255,255,.03);color:var(--mut)}
+#filterBar .seg label.on{background:rgba(59,122,235,.14);border-color:rgba(59,130,246,.45);color:rgb(120,179,226);box-shadow:0 0 0 1px rgba(59,130,246,.2),0 1px 0 rgba(255,255,255,.05) inset}
+#filterBar .odds-chips .chip{flex-direction:column;gap:1px}
+#filterBar .odds-chips .chip .odds-rng{font-size:9.5px;opacity:.8;font-weight:500;line-height:1.1}
+#filterBar .chip .cnt,#filterBar .chip small{font-size:11px}
+#filterBar #loggedFilterWrap{display:contents}
+#filterBar .filters > .sep{display:none}
+#filterBar #loggedFilterWrap > .mut{grid-column:1/-1;font-weight:700}
+#filterBar .chk{grid-column:1/-1;justify-content:flex-start;height:44px;min-height:44px;box-sizing:border-box}
+#filterBar .v132-secs[hidden]{display:none !important}
+#filterBar .v132-chips .chip[data-v132sec="potd"]{white-space:normal;line-height:1.15}
+#filterBar .chip .sp-emo,#filterBar .chip .n{margin:0 !important}
+#filterBar .filters[hidden]{display:none !important}
+#filterBar .chip > span[aria-hidden],#filterBar .chip .emo{margin:0 !important}
+@media(min-width:768px){
+  body.filters-open #filterBar:not([hidden]){position:fixed;z-index:40;margin:0;box-shadow:0 22px 44px -16px rgba(0,0,0,.85),0 0 0 1px rgba(59,130,246,.14);overflow:auto}
+  #filterBar .filters:not(#zz),#filterBar .seg,#filterBar .odds-chips,#filterBar .v132-chips{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+}
+.v132-alerts{display:flex;flex-direction:column;gap:8px;margin:2px 0 4px}
+.v132-alerts .v132-al{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.02);min-height:44px;box-sizing:border-box;margin:0}
+.v132-alerts .v132-al input{margin-top:2px;flex:none}
+.v132-al-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.v132-al-t b{font-weight:650;font-size:13.5px}
+.v132-al-t small{color:var(--mut);font-size:12px;line-height:1.35}
+`;
+  const st = document.createElement('style'); st.id = 'v132css'; st.textContent = css; document.head.appendChild(st);
+})();
+window.v132 = {secs: v132Secs, candidates: v132Candidates, pickAlerts: v132PickAlerts, listen: v132Listen, V: V132};
 </script>
 </body>
 </html>
