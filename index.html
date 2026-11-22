@@ -26124,6 +26124,48 @@ function v135SaveS(){ try{ saveJSON(LS.settings, S); }catch(e){} }
     }catch(e){ return L; }
   };
 })();
+/* ================= v136: Filters always close =================
+   Cause: v117's "tap was inside the panel" guard is set on pointerdown and only cleared by a click. Scrolling the
+   panel on a phone is a pointerdown with no click, so the guard stayed on and every later close (Filters button,
+   tapping outside) was ignored. Explicit closes now bypass the guard and the guard clears when the finger lifts.
+   Added a Done button, a backdrop that closes on tap, and Escape on desktop. Open/closed is never saved or synced. */
+APP_BUILD = 136;
+function v136Close(){
+  try{ const f = window._v117SetFiltersOpenOrig || setFiltersOpen; f(false); }catch(e){}
+  try{ document.body.classList.remove('filters-open'); ui.filtersOpen = false; const b = document.getElementById('btnFilters'); if (b) b.setAttribute('aria-expanded','false'); }catch(e){}
+}
+function v136IsOpen(){ return document.body.classList.contains('filters-open'); }
+(function(){
+  // Filters button: plain toggle that can always close
+  const btn = document.getElementById('btnFilters');
+  if (btn) btn.onclick = e=>{ e.stopPropagation(); if (v136IsOpen()) v136Close(); else setFiltersOpen(true); };
+  // backdrop
+  const bd = document.createElement('div'); bd.id = 'v136Backdrop'; bd.setAttribute('aria-hidden','true'); document.body.appendChild(bd);
+  const shut = e=>{ e.preventDefault(); e.stopPropagation(); v136Close(); };
+  bd.addEventListener('click', shut); bd.addEventListener('touchend', shut, {passive:false});
+  // Done button pinned to the bottom of the panel
+  const fb = document.getElementById('filterBar');
+  if (fb && !document.getElementById('v136Done')){
+    const d = document.createElement('div'); d.className = 'v136-done-row';
+    d.innerHTML = '<button type="button" class="btn v136-done" id="v136Done">Done</button>'; fb.appendChild(d);
+    d.querySelector('button').addEventListener('click', e=>{ e.preventDefault(); e.stopPropagation(); v136Close(); });
+  }
+  document.addEventListener('keydown', e=>{ if (e.key==='Escape' && v136IsOpen()) v136Close(); });
+  // the in-panel guard (v117) should only cover the current tap: clear it when the finger/mouse lifts
+  const clear = ()=>setTimeout(()=>{ try{ const f = document.getElementById('filterBar'); if (f) f.dispatchEvent(new MouseEvent('click', {bubbles:true})); }catch(e){} }, 400);
+  ['pointerup','pointercancel','touchend','touchcancel'].forEach(t=>document.addEventListener(t, ev=>{ if (ev.target && ev.target.closest && ev.target.closest('#filterBar')) clear(); }, {passive:true}));
+  // backdrop sits under the header, same top as the panel
+  if (typeof syncFilterDrawerPos==='function'){ const base = syncFilterDrawerPos; syncFilterDrawerPos = function(){ const r = base.apply(this, arguments); try{ const h = document.querySelector('header'); bd.style.top = Math.max(0, h ? h.getBoundingClientRect().bottom : 0) + 'px'; }catch(e){} return r; }; }
+  // never persist the open state
+  try{ if (ui) ui.filtersOpen = false; }catch(e){}
+  const st = document.createElement('style'); st.textContent = `#v136Backdrop{display:none;position:fixed;left:0;right:0;bottom:0;top:0;z-index:19;background:rgba(3,8,16,.45);cursor:pointer;-webkit-tap-highlight-color:transparent}
+body.filters-open:not(.tab-all) #v136Backdrop{display:block}
+@media(min-width:768px){ #v136Backdrop{z-index:39} }
+#filterBar .v136-done-row{position:sticky;bottom:-18px;margin:4px -14px -18px;padding:10px 14px 14px;background:linear-gradient(180deg,rgba(16,32,51,0),#102033 35%);display:flex;justify-content:flex-end;z-index:2}
+#filterBar .v136-done{min-height:44px;min-width:120px;border-radius:999px;font-weight:700;background:rgba(59,122,235,.18);border:1px solid rgba(59,130,246,.45);color:#cfe0f7}
+@media(min-width:768px){ #filterBar .v136-done-row{bottom:-16px;margin:4px -16px -16px;padding:10px 16px 14px} }`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
