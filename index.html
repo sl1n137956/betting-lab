@@ -16368,6 +16368,7 @@ async function uniGrade(){
       if (list.some(r=>r.b==='games')) fin = await uniFinFor(lg, ev, t);
       if (list.some(r=>r.b==='props')) bx = await uniBoxFor(lg, ev);
     }catch(e){ uniErr('grade '+k, e); }
+    const gr = [];
     for (const r of list){
       let g = null;
       try{
@@ -16375,8 +16376,11 @@ async function uniGrade(){
         else if (bx) g = uniGradePropRow(r, bx);
       }catch(e){ g = null; }
       if (!g && r.t < now - UNI_EXPIRE_DAYS*86400000) g = {res:'ungradeable'};
-      if (g){ uniFinalize(r, g.res, g.act); n++; }
+      if (g) gr.push([r, g]);
     }
+    // v113: copies of the same bet from different sources count once (see uniMarkOne)
+    try{ if (typeof uniMarkOne==='function') uniMarkOne(gr.map(x=>x[0])); }catch(e){}
+    for (const [r, g] of gr){ uniFinalize(r, g.res, g.act); n++; }
     if (++i % 5 === 0) await new Promise(res=>setTimeout(res, 0));
   }
   for (const [k, c] of UNI_BOX) if (now - c.at > 30*60000) UNI_BOX.delete(k);
@@ -20087,11 +20091,14 @@ async function mlogLoad(force, fromDay){
     const need = new Set();
     const top = mlogDay(Date.now() + 8*86400000);
     const rawFrom = mlogDay(Date.now() - 32*86400000);   // older days come from their day summaries only (Year / All time stay small)
-    for (let t = mlogDT(want > rawFrom ? want : rawFrom); mlogDay(t) <= top; t += 86400000){ const d = mlogDay(t); const s = MLOG.sums.get(d); if (!s || !s.final || d >= listFrom) need.add(d); }
+    for (let t = mlogDT(want > rawFrom ? want : rawFrom); mlogDay(t) <= top; t += 86400000){ const d = mlogDay(t); const s = MLOG.sums.get(d); if (!s || !s.final || !s.dd || d >= listFrom) need.add(d); }
     const days = [...need].sort();
     if (days.length){
-      const lo = days[0];
-      const rs = await db.collection('modelLog').where('d', '>=', lo).get();
+      // v113: newest change cursor first, then only the days we need (not every day from the oldest one on)
+      try{ const cq = await db.collection('modelLogD').orderBy('u', 'desc').limit(1).get(); cq.forEach(d=>{ const u = d.data().u; if (u && (!MLOG.cur || u.toMillis() > MLOG.cur.toMillis())) MLOG.cur = u; }); MLOG.curOk = true; }catch(e){}
+      const rsAll = [];
+      for (let i=0; i<days.length; i+=10){ const rs = await db.collection('modelLog').where('d', 'in', days.slice(i, i+10)).get(); rs.forEach(doc=>rsAll.push(doc)); }
+      const rs = {forEach: f=>rsAll.forEach(f)};
       rs.forEach(doc=>{ const x = doc.data(); if (!x || !x.d || !x.r) return; if (!need.has(x.d) && !MLOG.raw.has(x.d)) return; let m = MLOG.raw.get(x.d); if (!m){ m = new Map(); MLOG.raw.set(x.d, m); } for (const id in x.r){ const o = x.r[id]; if (!o || !o.b) continue; const old = m.get(id); if (!old || mlogRank(o) >= mlogRank(old)) m.set(id, o); } });
     }
     MLOG.loadedFrom = (!MLOG.loadedFrom || want < MLOG.loadedFrom) ? want : MLOG.loadedFrom;
@@ -20136,8 +20143,9 @@ async function mlogPush(){
     if (typeof UNI!=='undefined') for (const r of UNI.values()) if (!r._cloud) mlogQueue(r);
     if (!MLOG.queue.size){ MLOG.lastPushAt = Date.now(); if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; } return 0; }
     // make sure we know what the cloud already holds for these days
-    let lo = null; for (const o of MLOG.queue.values()){ const d = mlogDay(o.t); if (!lo || d < lo) lo = d; }
-    if (lo && (!MLOG.loadedFrom || lo < MLOG.loadedFrom || Date.now() - MLOG.at > 10*60000)) await mlogLoad(true, lo < mlogDay(Date.now() - 32*86400000) ? mlogDay(Date.now() - 32*86400000) : lo);
+    // v113: a full download only the first time; after that, just the changes since the last look
+    if (!MLOG.at) await mlogLoad(true); else if (typeof mlogDeltaSync==='function') await mlogDeltaSync(false);
+    if (!MLOG.at) return 0;   // couldn't see what the account already holds: don't risk overwriting a graded copy, try again next round
     const byDoc = new Map(); let n = 0;
     for (const [id, o] of MLOG.queue){
       const cloud = mlogFind(id, o); const sent = MLOG.up.get(id);
@@ -20146,14 +20154,17 @@ async function mlogPush(){
       const k = mlogDocId(id, o); if (!byDoc.has(k)) byDoc.set(k, {d:mlogDay(o.t), b:o.b, r:{}});
       byDoc.get(k).r[id] = o; n++;
     }
-    const db = mlogFS(); const docs = [...byDoc.entries()];
-    for (let i=0; i<docs.length; i+=400){
-      const batch = db.batch();
-      for (const [k, body] of docs.slice(i, i+400)) batch.set(db.collection('modelLog').doc(k), body, {merge:true});
-      await batch.commit();
-    }
+    const db = mlogFS(); const all = [...byDoc.entries()];
+    // v113: each day shard on its own (one bad shard can't block the rest), then one small change note per push
+    // that other devices read instead of re-downloading whole shards
+    const res = await Promise.allSettled(all.map(([k, body])=>db.collection('modelLog').doc(k).set(Object.assign({}, body, {u:Date.now()}), {merge:true})));
+    const docs = all.filter((x, i)=>res[i].status==='fulfilled');
+    const bad = res.filter(x=>x.status==='rejected'); if (bad.length){ MLOG.err = String((bad[0].reason && (bad[0].reason.code||bad[0].reason.message)) || 'upload failed').slice(0, 160); console.warn('model log push', bad.length, 'shard(s) failed', MLOG.err); }
+    if (docs.length && typeof mlogDeltaWrite==='function'){ try{ await mlogDeltaWrite(docs); }catch(e){ console.warn('model log delta', e && (e.code||e.message)); } }
     for (const [, body] of docs){ let m = MLOG.raw.get(body.d); if (!m){ m = new Map(); MLOG.raw.set(body.d, m); } for (const id in body.r){ m.set(id, body.r[id]); MLOG.up.set(id, mlogRank(body.r[id])); } }
-    MLOG.queue.clear(); MLOG.uploaded += n; MLOG.lastPushAt = Date.now(); if (n) MLOG.ver++;
+    { const okIds = new Set(); for (const [, body] of docs) for (const id in body.r) okIds.add(id); for (const id of [...MLOG.queue.keys()]) if (okIds.has(id) || !all.some(([, b])=>id in b.r)) MLOG.queue.delete(id); n = okIds.size; }
+    if (!bad.length) MLOG.err = '';
+    MLOG.uploaded += n; MLOG.lastPushAt = Date.now(); if (n) MLOG.ver++;
     if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; }
     return n;
   }catch(e){ MLOG.err = (e && (e.code||e.message)) || 'upload failed'; console.warn('model log push', MLOG.err); return 0; }
@@ -20182,23 +20193,33 @@ function mlogAggAdd(agg, o){
     else if (st==='push') a[2]++; else if (st==='void') a[3]++;
   }
 }
+/* v113: one entry per bet. Sportsbook / Kalshi / Polymarket copies of the same game + market + side (props: same
+   player, stat, side and line) count once: the copy the model called a Pick first (its first Pick price), else the earliest. */
+function mlogBetKey(o){ return o.b==='props' ? `p|${o.ev}|${o.pid||o.pn||''}|${o.k||''}|${o.sd||''}|${o.pt!=null?o.pt:''}` : `g|${o.ev}|${o.mk||''}|${o.sd||''}`; }
+function mlogOnePerBet(rows){
+  const best = new Map();
+  const score = o => [o.v==='good' ? 0 : 1, +o.at||+o.t||0];
+  for (const o of rows){ if (!o || !o.b) continue; const k = mlogBetKey(o), c = best.get(k); if (!c){ best.set(k, o); continue; }
+    const a = score(o), b = score(c); if (a[0] < b[0] || (a[0]===b[0] && a[1] < b[1])) best.set(k, o); }
+  return [...best.values()];
+}
 function mlogDayAgg(day){
-  const s = MLOG.sums.get(day); if (s && s.final && s.agg) return s.agg;
+  const s = MLOG.sums.get(day); if (s && s.final && s.dd && s.agg) return s.agg;
   const m = MLOG.raw.get(day); if (!m){ return s && s.agg ? s.agg : null; }
-  const agg = {}; for (const o of m.values()) mlogAggAdd(agg, o); return agg;
+  const agg = {}; for (const o of mlogOnePerBet(m.values())) mlogAggAdd(agg, o); return agg;
 }
 /* a day is final once every row is graded (or it's 4+ days old): write its summary so later loads stay small */
 async function mlogWriteFinalSums(){
   if (!mlogOn()) return;
   const now = Date.now(), cut = mlogDay(now - 86400000); const db = mlogFS(); let w = 0;
   for (const [day, m] of MLOG.raw){
-    if (day > cut) continue; const s = MLOG.sums.get(day); if (s && s.final && s.n===m.size) continue;
+    if (day > cut) continue; const s = MLOG.sums.get(day); if (s && s.final && s.dd && s.n===m.size) continue;
     const open = [...m.values()].filter(o=>!o.res).length;
     const final = open===0 || day <= mlogDay(now - 4*86400000);
     if (!final) continue;
-    const agg = {}; for (const o of m.values()) mlogAggAdd(agg, o);
+    const agg = {}; for (const o of mlogOnePerBet(m.values())) mlogAggAdd(agg, o);
     for (const k in agg) agg[k][4] = Math.round(agg[k][4]*100)/100;
-    const body = {d:day, final:true, n:m.size, agg, at:now};
+    const body = {d:day, final:true, dd:1, n:m.size, nb:mlogOnePerBet(m.values()).length, agg, at:now};
     try{ await db.collection('modelSum').doc(day).set(body); MLOG.sums.set(day, body); w++; }catch(e){ break; }
     if (w >= 6) break;
   }
@@ -20248,7 +20269,7 @@ function modelResultsHTML(){
   // headline: by verdict
   const all = mrSum(days, (v, dim)=>dim==='all');
   const vt = v => all.get(`${v}|all|all`) || mrT();
-  let logged = 0, waiting = 0; for (const d of days){ const m = MLOG.raw.get(d); if (m) for (const o of m.values()){ if (MR.board!=='all' && o.b!==MR.board) continue; logged++; if (!o.res) waiting++; } else { const s = MLOG.sums.get(d); if (s && s.n) logged += s.n; } }
+  let logged = 0, waiting = 0; for (const d of days){ const m = MLOG.raw.get(d); if (m) for (const o of mlogOnePerBet(m.values())){ if (MR.board!=='all' && o.b!==MR.board) continue; logged++; if (!o.res) waiting++; } else { const s = MLOG.sums.get(d); if (s && s.n) logged += (s.nb!=null ? s.nb : s.n); } }
   const B = vt('good'), Wt = vt('watch'), A = vt('avoid');
   const kpi = (k, v, h, cls) => `<div class="kpi yb-kpi"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div>${h?`<div class="hint">${h}</div>`:''}</div>`;
   const roiS = T => T.st ? `${T.pf>=0?'+':'−'}${Math.abs(T.pf/T.st*100).toFixed(1)}%` : '—';
@@ -20277,7 +20298,7 @@ function modelResultsHTML(){
   const filters = `<div class="mr-filters">${sel('range', [[7,'Last 7 days'],[30,'Last 30 days']], MR.range, 'Range')}${sel('board', [['all','Games + Props'],['games','Games'],['props','Props']], MR.board, 'Board')}${sel('verdict', [['good','BET'],['watch','WATCH'],['avoid','AVOID']], MR.verdict, 'Breakdowns for')}</div>`;
   // list of graded picks (days loaded raw)
   const L = []; const sports = new Set();
-  for (const d of days){ const m = MLOG.raw.get(d); if (!m) continue; for (const [id, o] of m){ if (MR.board!=='all' && o.b!==MR.board) continue; sports.add(o.l); if (MR.sport!=='all' && o.l!==MR.sport) continue; if (MR.res==='open' ? !!o.res : MR.res==='graded' ? !o.res || o.res==='ungradeable' : false) continue; if (MR.res!=='open' && MR.res!=='graded' && MR.res!=='all' && o.v!==MR.res) continue; L.push([id, o]); } }
+  for (const d of days){ const m = MLOG.raw.get(d); if (!m) continue; const P1 = new Set(mlogOnePerBet(m.values())); for (const [id, o] of m){ if (!P1.has(o)) continue; if (MR.board!=='all' && o.b!==MR.board) continue; sports.add(o.l); if (MR.sport!=='all' && o.l!==MR.sport) continue; if (MR.res==='open' ? !!o.res : MR.res==='graded' ? !o.res || o.res==='ungradeable' : false) continue; if (MR.res!=='open' && MR.res!=='graded' && MR.res!=='all' && o.v!==MR.res) continue; L.push([id, o]); } }
   L.sort((a,b)=>b[1].t - a[1].t);
   const listFrom = MLOG.listFrom || mlogDay(Date.now() - 3*86400000);
   const rows = L.slice(0, MR.show).map(([id, o])=>{
@@ -20609,7 +20630,7 @@ modelResultsHTML = function(){
   const vt = v => all.get(`${v}|all|all`) || mrT();
   const byVerdict = ['good','watch','avoid'].map(v=>mrRow(MLOG_VN[v], vt(v), v)).join('');
   let logged = 0, waiting = 0;
-  for (const d of days){ const m = MLOG.raw.get(d); if (m){ for (const o of m.values()){ if (MR.board!=='all' && o.b!==MR.board) continue; logged++; if (!o.res) waiting++; } } else { const s = MLOG.sums.get(d); if (s && s.n) logged += s.n; } }
+  for (const d of days){ const m = MLOG.raw.get(d); if (m){ for (const o of mlogOnePerBet(m.values())){ if (MR.board!=='all' && o.b!==MR.board) continue; logged++; if (!o.res) waiting++; } } else { const s = MLOG.sums.get(d); if (s && s.n) logged += (s.nb!=null ? s.nb : s.n); } }
   const sel = (id, opts, cur, lab) => `<label class="mr-f"><span>${lab}</span><select data-mr="${id}">${opts.map(([v, l])=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`).join('')}</select></label>`;
   const filters = `<div class="mr-filters">${sel('range', [['today','Today'],[7,'Last 7 days'],[30,'Last 30 days'],['year','This year'],['all','All time']], MR.range, 'Range')}${sel('board', [['all','Games + Props'],['games','Games'],['props','Props']], MR.board, 'Board')}</div>`;
   const err = MLOG.err ? `<div class="hint mr-err">Couldn't reach the pick log (${esc(String(MLOG.err))}). Showing what's loaded.</div>` : '';
@@ -20646,15 +20667,22 @@ async function ushPush(force){
   const dev = mchkDev(); const L = ushLocal();
   if (!Object.keys(L.sums).length && !Object.keys(L.open).length) return false;
   const sig = JSON.stringify([Object.keys(L.sums).length, Object.values(L.sums).reduce((a,x)=>a+x[0]+x[1]+x[2],0), Object.values(L.open).reduce((a,x)=>a+x,0)]);
-  if (!force && sig===USH.pushSig && Date.now() - USH.pushAt < 60*60000) return false;
-  try{ await mlogFS().collection('uniShare').doc(dev.id).set({dev:dev.id, by:dev.lab, at:Date.now(), today:uniDay(Date.now()), sums:L.sums, open:L.open, lastTick:+UNI_ST.lastTick||0});
+  if (!force && ((sig===USH.pushSig && Date.now() - USH.pushAt < 6*3600000) || Date.now() - USH.pushAt < 60*60000)) return false;   // v113: at most hourly
+  try{ await mlogFS().collection('uniShare').doc(dev.id).set({dev:dev.id, by:dev.lab, at:Date.now(), today:uniDay(Date.now()), sums:L.sums, open:L.open, lastTick:+UNI_ST.lastTick||0, ob:1});
     USH.pushSig = sig; USH.pushAt = Date.now(); return true; }catch(e){ USH.err = (e && (e.code||e.message)) || 'upload failed'; return false; }
 }
 async function ushLoad(force){
   if (!mlogOn() || USH.busy) return false;
-  if (!force && USH.at && Date.now() - USH.at < 10*60000) return true;
+  // v113: refresh every 30 minutes only while Results is on screen; otherwise every 6 hours (this device's own counts are always live)
+  const looking = typeof ui!=='undefined' && ui.tab==='results' && document.visibilityState==='visible';
+  if (!force && USH.at && Date.now() - USH.at < (looking ? 30*60000 : 6*3600000)) return true;
   USH.busy = true;
-  try{ const qs = await mlogFS().collection('uniShare').get(); const out = []; qs.forEach(d=>{ const x = d.data(); if (x && x.sums) out.push(x); }); USH.docs = out; USH.at = Date.now(); USH.err = ''; return true; }
+  try{
+    // v113: only the device summaries that changed since the last look (10-minute overlap for clock drift)
+    let q = mlogFS().collection('uniShare'); if (USH.cur) q = q.where('at', '>', USH.cur - 10*60000);
+    const qs = await q.get(); const byDev = new Map((USH.docs||[]).map(x=>[x.dev, x]));
+    qs.forEach(d=>{ const x = d.data(); if (x && x.sums && x.dev){ byDev.set(x.dev, x); if (+x.at > (USH.cur||0)) USH.cur = +x.at; } });
+    USH.docs = [...byDev.values()]; USH.at = Date.now(); USH.err = ''; return true; }
   catch(e){ USH.err = (e && (e.code||e.message)) || 'load failed'; return false; }
   finally{ USH.busy = false; }
 }
@@ -20748,6 +20776,11 @@ function lshTracks(){
 function lshScore(t){ if (!t) return [0, 0]; const vs = t.versions || t.history || []; return [+t.lastTune||0, Array.isArray(vs) ? vs.length : 0]; }
 function lshNewer(a, b){ const A = lshScore(a), B = lshScore(b); return A[0]!==B[0] ? A[0] > B[0] : A[1] > B[1]; }
 function lshMergeLog(a, b){ const seen = new Set(), out = []; for (const x of [].concat((a&&a.log)||[], (b&&b.log)||[])){ if (!x || !x.txt) continue; const k = /learning (is on|switched on)/i.test(x.txt) ? x.txt : (+x.at||0)+'|'+x.txt; if (seen.has(k)) continue; seen.add(k); out.push(x); } out.sort((p,q)=>(+q.at||0)-(+p.at||0)); return out.slice(0, 40); }
+// v113: only publish when this device has log lines the account copy lacks (by line identity, not order; the old
+// order/timestamp check made two devices rewrite the whole learner doc at each other every 15 minutes)
+function lshLogKey(x){ return /learning (is on|switched on)/i.test(x.txt) ? x.txt : (+x.at||0)+'|'+x.txt; }
+function lshLogAdds(l, r){ const rk = new Set(((r&&r.log)||[]).filter(x=>x&&x.txt).map(lshLogKey)); return lshMergeLog(l, r).slice(0, 5).some(x=>!rk.has(lshLogKey(x))); }
+function lshSig(T){ if (!T) return ''; return ['games','props','parlay','verdict'].map(k=>{ const t = T[k]; if (!t) return '-'; const vs = t.versions || t.history || []; const lg = t.log || []; return [+t.lastTune||0, Array.isArray(vs)?vs.length:0, lg.length, lg[0] ? (+lg[0].at||0)+String(lg[0].txt||'').length : 0].join(':'); }).join('|'); }
 async function lshSync(){
   if (!mlogOn() || LSH.busy || typeof LEARN==='undefined' || !LEARN) return false;
   // while a Games retune is running (it stamps lastTry when it starts), only publish; adopt on the next pass
@@ -20755,6 +20788,11 @@ async function lshSync(){
   LSH.busy = true;
   try{
     const db = mlogFS(), ref = db.collection('learnShare').doc('state'); const dev = mchkDev();
+    // v113: read a tiny change marker first; skip the big download when nothing changed on either side
+    const metaRef = db.collection('learnShare').doc('meta');
+    const mSnap = await metaRef.get(); const meta = mSnap.exists ? (mSnap.data()||{}) : null;
+    const mySig = lshSig(lshTracks()); let seen = null; try{ seen = JSON.parse(localStorage.getItem('bl_lsh_seen')||'null'); }catch(e){}
+    if (meta && seen && +meta.at===+seen.at && mySig===seen.sig){ LSH.at = Date.now(); LSH.err = ''; LSH.skipped = (LSH.skipped||0) + 1; return true; }
     const snap = await ref.get(); const remote = snap.exists ? snap.data() : {};
     const local = lshTracks(); const write = {}; let adopt = 0;
     for (const k of ['games','props','parlay','verdict']){
@@ -20767,13 +20805,16 @@ async function lshSync(){
         if (k==='games'){ for (const x in r) LEARN[x] = r[x]; try{ const v = LEARN.versions.find(x=>x.id===LEARN.cur) || LEARN.versions[0]; if (v) learnApply(v, false); }catch(e){} }
         else LEARN[k] = r;
         adopt++;
-      } else if (l && (!r || lshNewer(l, r) || JSON.stringify(lshMergeLog(l, r).slice(0,5))!==JSON.stringify(((r&&r.log)||[]).slice(0,5)))){
+      } else if (l && (!r || lshNewer(l, r) || lshLogAdds(l, r))){
         const out = Object.assign({}, l, {log:lshMergeLog(l, r)}); const s = JSON.stringify(out);
         if (s.length < 700000) write[k] = s;
       }
     }
     if (adopt){ try{ if (typeof ensureBoardLearn==='function') ensureBoardLearn(); }catch(e){} learnSave(); LSH.adopted += adopt; }
-    if (Object.keys(write).length){ write.at = Date.now(); write.by = dev.lab; await ref.set(write, {merge:true}); }
+    let at = +remote.at || 0;
+    if (Object.keys(write).length){ write.at = Date.now(); write.by = dev.lab; await ref.set(write, {merge:true}); at = write.at; }
+    if (!meta || +meta.at!==at) await metaRef.set({at, by:dev.lab});
+    try{ localStorage.setItem('bl_lsh_seen', JSON.stringify({at, sig:lshSig(lshTracks())})); }catch(e){}
     LSH.at = Date.now(); LSH.err = '';
     return true;
   }catch(e){ LSH.err = (e && (e.code||e.message)) || 'learn sync failed'; console.warn('learn sync', LSH.err); return false; }
@@ -20910,7 +20951,7 @@ syncNow = async function(){
 };
 /* ---- device heartbeat ---- */
 setTimeout(function devKick(){ if (AUTH.user){ devBeat().then(()=>devList(true)).then(acctRefresh); } else setTimeout(devKick, 15000); }, 8000);
-setInterval(()=>{ if (AUTH.user) devBeat().then(()=>devList(true)).then(acctRefresh); }, 10*60000);
+setInterval(()=>{ if (AUTH.user) devBeat().then(()=>devList(true)).then(acctRefresh); }, 60*60000);   // v113: hourly (was every 10 min)
 (function(){ try{ const base = onAuthUser; onAuthUser = async function(u){ const r = await base.apply(this, arguments); if (u){ DEVS.list = []; DEVS.at = 0; setTimeout(()=>devBeat().then(()=>devList(true)).then(acctRefresh), 1500); } return r; }; }catch(e){} })();
 /* ---- auto-update: reload into a newer version when the tab is idle ---- */
 var UPD = {next:0, lastInput:Date.now(), pending:0};
@@ -22421,6 +22462,207 @@ window.rtStatus = function(){
 APP_BUILD = 111;
 /* v112: Results count each market on its game day; phone alerts stay single even when the account is unreachable. */
 APP_BUILD = 112;
+/* ================= v113: database diet, one entry per bet, "Match my board" =================
+   1) Pick log sync is incremental. Each upload also writes one small change note (modelLogD); other devices read
+      only the notes newer than their last look instead of re-downloading whole day shards every 10 minutes. A full
+      download happens once per page load. Old notes are cleaned up after 3 days.
+   2) Results count each bet once. Sportsbook / Kalshi / Polymarket copies of the same game + market + side (props:
+      same player, stat, side, line) are one entry, graded at the first Pick price of whichever source called it a
+      Pick first. Locked the same way. Learning data is untouched (it never read these summaries).
+   3) "Match my board" (Results): off = the model's own call across everything (as before); on = what the board
+      showed (the call after your odds range, books and strict mode) for the sports you have on. Saved per account. */
+APP_BUILD = 113;
+MLOG_BF_LS = 'bl_mlog_backfill_v113';   // every device re-offers its last 31 days once, so the gap since 2:44 AM is filled
+
+/* ---------- 1) pick log: change notes ---------- */
+var MLOG_D_MAX = 900;
+async function mlogDeltaWrite(docs){
+  const rows = []; for (const [, body] of docs) for (const id in body.r) rows.push([id, body.r[id]]);
+  if (!rows.length) return 0;
+  const db = mlogFS(), FV = firebase.firestore.FieldValue, dev = mchkDev();
+  for (let i=0; i<rows.length; i+=MLOG_D_MAX){
+    const r = {}; for (const [id, o] of rows.slice(i, i+MLOG_D_MAX)) r[id] = o;
+    await db.collection('modelLogD').add({u:FV.serverTimestamp(), at:Date.now(), dev:dev.id, n:Object.keys(r).length, r});
+  }
+  return rows.length;
+}
+function mlogMergeRows(r){
+  let n = 0;
+  for (const id in r){ const o = r[id]; if (!o || !o.b || !o.t) continue; const d = mlogDay(o.t); let m = MLOG.raw.get(d); if (!m){ m = new Map(); MLOG.raw.set(d, m); }
+    const old = m.get(id); if (!old || mlogRank(o) >= mlogRank(old)){ m.set(id, o); n++; } }
+  return n;
+}
+async function mlogDeltaSync(force){
+  if (!mlogOn()) return false;
+  if (!MLOG.at) return mlogLoadFull(true);
+  if (!force && MLOG.dAt && Date.now() - MLOG.dAt < 60000) return true;
+  if (MLOG.dBusy) return true; MLOG.dBusy = true;
+  try{
+    const db = mlogFS(); let got = 0;
+    for (let loop=0; loop<5; loop++){
+      let q = db.collection('modelLogD'); if (MLOG.cur) q = q.where('u', '>', MLOG.cur);
+      const s = await q.orderBy('u', 'asc').limit(100).get();
+      s.forEach(doc=>{ const x = doc.data(); if (!x) return; got += mlogMergeRows(x.r||{}); if (x.u && (!MLOG.cur || x.u.toMillis() > MLOG.cur.toMillis())) MLOG.cur = x.u; });
+      MLOG.dReads = (MLOG.dReads||0) + Math.max(1, s.size);
+      if (s.size < 100) break;
+    }
+    MLOG.dAt = Date.now(); MLOG.at = Date.now(); MLOG.err = '';
+    if (got){ MLOG.ver++; try{ mlogInjectOpen(); }catch(e){} }
+    mlogWriteFinalSums().catch(()=>{});
+    mlogDeltaClean();
+    return true;
+  }catch(e){ MLOG.err = (e && (e.code||e.message)) || 'load failed'; console.warn('model log changes', MLOG.err); return false; }
+  finally{ MLOG.dBusy = false; }
+}
+var _mlogCleanAt = 0;
+function mlogDeltaClean(){
+  if (Date.now() - _mlogCleanAt < 6*3600000) return; _mlogCleanAt = Date.now();
+  try{ const T = firebase.firestore.Timestamp; mlogFS().collection('modelLogD').where('u', '<', T.fromMillis(Date.now() - 3*86400000)).limit(200).get()
+    .then(s=>s.forEach(d=>d.ref.delete().catch(()=>{}))).catch(()=>{}); }catch(e){}
+}
+var mlogLoadFull = mlogLoad;
+mlogLoad = async function(force, fromDay){
+  const want = fromDay || MLOG.loadedFrom || mlogDay(Date.now() - 30*86400000);
+  // already holding everything from that day on: just pick up the changes (a user asking for older days still gets a full load)
+  if (MLOG.at && MLOG.curOk && MLOG.loadedFrom && MLOG.loadedFrom <= want && !(force && fromDay)) return mlogDeltaSync(force);
+  return mlogLoadFull(force, fromDay);
+};
+
+/* ---------- 2) one entry per bet in the Tracked universe ---------- */
+function uniBetKey(r){ return r.b==='props' ? `p|${r.ev}|${r.pid||r.pn||''}|${r.kind||''}|${r.side||''}|${r.pt!=null?r.pt:''}` : `g|${r.ev}|${r.mk||''}|${r.side||''}`; }
+function uniBoardV(r){ if (r.bpk) return 'good'; const v = (r.lk && r.lk.sv) || r.sv; return v==='good'||v==='watch'||v==='avoid' ? v : null; }
+var UNI_BETC = null;
+function uniBetC(k){ if (!UNI_BETC){ try{ UNI_BETC = JSON.parse(localStorage.getItem('bl_uni_betc')||'{}')||{}; }catch(e){ UNI_BETC = {}; } } return UNI_BETC[k] || (UNI_BETC[k] = {t:Date.now()}); }
+var _betcT = 0;
+function uniBetSave(){ clearTimeout(_betcT); _betcT = setTimeout(()=>{ try{ const cut = Date.now() - 12*86400000; for (const k in UNI_BETC) if ((+UNI_BETC[k].t||0) < cut) delete UNI_BETC[k]; localStorage.setItem('bl_uni_betc', JSON.stringify(UNI_BETC)); }catch(e){} }, 2000); }
+/* pick, within one grading pass, which copy of each bet counts: the first one called a Pick (else the earliest seen) */
+function uniPickOne(list, pickAt){
+  let best = null, bk = null;
+  for (const r of list){ const a = pickAt(r); const k = [a!=null ? 0 : 1, a!=null ? a : (+r.first||+r.at||0)]; if (!best || k[0] < bk[0] || (k[0]===bk[0] && k[1] < bk[1])){ best = r; bk = k; } }
+  return best;
+}
+function uniBoardAt(r){ return r.bpk ? +r.bpk.at : (r.sv==='good' && r.pk) ? +r.pk.at : null; }
+function uniBoardPx(r){ return r.bpk ? [r.bpk.price, r.bpk.p] : (r.sv==='good' && r.pk) ? [r.pk.price, r.pk.p] : [uniPrice(r), uniP(r)]; }
+function uniMarkOne(rows){
+  const by = new Map(); for (const r of rows||[]){ if (!r || (r.b!=='games' && r.b!=='props')) continue; const k = uniBetKey(r); if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
+  for (const list of by.values()){
+    const m = uniPickOne(list, r=>r.pk ? +r.pk.at : null);
+    const L = uniPickOne(list.filter(uniLocked), r=>r.pk ? +r.pk.at : +((r.lk&&r.lk.at)||0));
+    const bm = uniPickOne(list.filter(r=>uniBoardV(r)), uniBoardAt);
+    const bl = uniPickOne(list.filter(r=>uniLocked(r) && r.lk && r.lk.sv==='good'), r=>{ const a = uniBoardAt(r); return a!=null ? a : +((r.lk&&r.lk.at)||0); });
+    for (const r of list){ r._one = r===m ? 1 : 0; r._oneL = r===L ? 1 : 0; r._oneB = r===bm ? 1 : 0; r._oneBL = r===bl ? 1 : 0; }
+  }
+}
+function uniSumAddOne(r, C){
+  C = C || uniBetC(uniBetKey(r));
+  if (r._one!==0 && !C.m){ uniSumAddAs(r, uniB(r), uniBPrice(r), uniBP(r)); C.m = 1; }
+  if (uniLocked(r) && r._oneL!==0 && !C.l){ uniSumAddAs(r, 'locked', uniPrice(r), uniP(r)); C.l = 1; }
+  const bv = uniBoardV(r);
+  if (bv && r._oneB!==0 && !C.bm){ const px = uniBoardPx(r); uniSumAddAs(r, 'B_'+bv, px[0]!=null ? px[0] : uniPrice(r), px[1]!=null ? px[1] : uniP(r)); C.bm = 1; }
+  if (uniLocked(r) && r.lk && r.lk.sv==='good' && r._oneBL!==0 && !C.bl){ uniSumAddAs(r, 'B_locked', uniPrice(r), uniP(r)); C.bl = 1; }
+  C.t = Date.now();
+}
+uniSumAdd = function(r){ if (!r || r._cloud) return; uniSumAddOne(r); uniBetSave(); };
+/* the board's own Pick: remember the first time the board showed it as a Pick (and that price) */
+(function(){ const base = uniUpsert; uniUpsert = function(b, src, id, baseRow, snap){ const r = base.apply(this, arguments);
+  try{ if (r && r.y==null && r.sv==='good' && !r.bpk && r.t > Date.now()){ r.bpk = {price:r.price, p:r.p, at:Date.now()}; UNI_DIRTY.add(r.i); } }catch(e){} return r; }; })();
+/* open (waiting on a final) counts: one per bet too, in both views */
+(function(){ const base = ushLocal; ushLocal = function(){
+  const out = base.apply(this, arguments); const open = {};
+  const by = new Map(); for (const r of UNI.values()){ if (!r || (r.b!=='games' && r.b!=='props')) continue; const k = uniBetKey(r); if (!by.has(k)) by.set(k, []); by.get(k).push(r); }
+  for (const list of by.values()){
+    const m = uniPickOne(list, r=>r.pk ? +r.pk.at : null); const km = `${m.fd}|${m.b}|${m.src}|${m.l}|${uniB(m)}`; open[km] = (open[km]||0) + 1;
+    const bl = list.filter(r=>uniBoardV(r)); if (bl.length){ const b = uniPickOne(bl, uniBoardAt); const kb = `${b.fd}|${b.b}|${b.src}|${b.l}|B_${uniBoardV(b)}`; open[kb] = (open[kb]||0) + 1; }
+  }
+  out.open = open; return out; }; })();
+/* one-time rebuild of this device's last 30 days of summaries from its stored graded rows, one entry per bet */
+var ONEBET = {done:false, rebuilt:0, days:0, err:''};
+async function uniOneBetRebuild(){
+  const KEY = 'bl_uni_onebet_v113';
+  if (ONEBET.done || typeof UNI_ST==='undefined' || !UNI_ST.ready || UNI_ST.idb===false) return ONEBET;
+  try{ if (localStorage.getItem(KEY)){ ONEBET.done = true; return ONEBET; } if (!localStorage.getItem('bl_lockbf_v103')) return ONEBET; }catch(e){}
+  try{
+    const rows = await storeGetAll('uniDone');
+    const days = new Set(); for (const r of rows||[]) if (r && r.fd && /^\d{8}$/.test(String(r.fd))) days.add(String(r.fd));
+    const old = [...UNI_SUM.values()].filter(s=>s && days.has(String(s.fd)));
+    for (const s of old) UNI_SUM.delete(s.i);
+    const done = (rows||[]).filter(r=>r && r.fd && days.has(String(r.fd)) && (r.b==='games' || r.b==='props') && !r._cloud);
+    uniMarkOne(done);
+    UNI_BETC = {}; for (const r of done){ r.i = r.id || r.i; uniSumAddOne(r); }
+    const fresh = new Set([...UNI_SUM.values()].filter(s=>days.has(String(s.fd))).map(s=>s.i));
+    const gone = old.map(s=>s.i).filter(k=>!fresh.has(k));
+    if (gone.length) await storeWrite('uniSum', [], gone);
+    for (const k of fresh) UNI_SUM_DIRTY.add(k);
+    await uniFlush();
+    uniBetSave();
+    ONEBET.rebuilt = done.length; ONEBET.days = days.size; ONEBET.done = true;
+    localStorage.setItem(KEY, String(Date.now()));
+    try{ if (typeof ushPush==='function' && mlogOn()) ushPush(true).catch(()=>{}); }catch(e){}
+    try{ if (typeof ui!=='undefined' && ui.tab==='results') v95RefreshLearning(); }catch(e){}
+  }catch(e){ ONEBET.err = String(e && e.message || e); console.warn('one-per-bet rebuild', e); }
+  return ONEBET;
+}
+setTimeout(function obKick(){ if (typeof UNI_ST!=='undefined' && UNI_ST.ready && (function(){ try{ return !!localStorage.getItem('bl_lockbf_v103'); }catch(e){ return false; } })()) uniOneBetRebuild(); else setTimeout(obKick, 15000); }, 25000);
+
+/* ---------- 3) Match my board ---------- */
+function uniMB(){ return !!(typeof S!=='undefined' && S && S.resultsMatchBoard); }
+function uniMBAllowed(b, l){
+  const en = (typeof S!=='undefined' && Array.isArray(S.enabled)) ? S.enabled : null;
+  if (en && !en.includes(l)) return false;
+  try{ const fv = typeof filterViews!=='undefined' && filterViews && filterViews[(b==='props'?'props':'games')+':good']; if (fv && Array.isArray(fv.sports) && fv.sports.length && !fv.sports.includes(l)) return false; }catch(e){}
+  return true;
+}
+(function(){
+  const base = ushMerged;
+  ushMerged = function(){
+    // device copies from before v113 counted every source separately: keep only their month roll-ups
+    const keep = USH.docs;
+    USH.docs = (keep||[]).map(x=>{ if (x && x.ob) return x; const s = {}; for (const k in (x&&x.sums)||{}) if (k[0]==='m') s[k] = x.sums[k]; return Object.assign({}, x, {sums:s, open:{}}); });
+    let M; try{ M = base.apply(this, arguments); } finally { USH.docs = keep; }
+    const mb = uniMB();
+    const pick = (map) => { const out = new Map(); for (const [k, v] of map){ const p = k.split('|'); const isB = /^B_/.test(p[4]||'');
+      if (mb){ if (!isB || !uniMBAllowed(p[1], p[3])) continue; p[4] = p[4].slice(2); out.set(p.join('|'), v); } else if (!isB) out.set(k, v); } return out; };
+    M.sums = pick(M.sums); M.open = pick(M.open);
+    return M;
+  };
+})();
+(function(){
+  const base = uniInnerHTML;
+  uniInnerHTML = function(){
+    let h = base.apply(this, arguments);
+    const on = uniMB();
+    const tg = `<label class="mr-f uni-mb"><input type="checkbox" data-uni-mb ${on?'checked':''} aria-label="Match my board"><span>Match my board</span></label>`;
+    h = h.replace('</select></label>', '</select></label>' + tg);
+    const note = on
+      ? 'Match my board is on: only what your board showed, for the sports you have on, after your odds range, books and strict mode. Each bet counts once, even when several books or exchanges carry it. '
+      : 'Each bet counts once, even when several books or exchanges carry it. ';
+    h = h.replace('<div class="hint" style="margin-top:10px">', '<div class="hint" style="margin-top:10px">' + note);
+    if (on) h = h.replace(/Since Nov 21, Picks, Watch and Avoid are the model's own call, before your odds range and books\. /, '');
+    return h;
+  };
+  uniResultsHTML = function(){ return uniInnerHTML(); };
+})();
+document.addEventListener('change', e=>{
+  const c = e.target && e.target.closest && e.target.closest('[data-uni-mb]'); if (!c) return;
+  S.resultsMatchBoard = !!c.checked; try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(err){}
+  const y = window.scrollY; v95RefreshLearning(); if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  const n = document.querySelector('#view [data-uni-mb]'); if (n) n.focus({preventScroll:true});
+});
+(function(){ const st = document.createElement('style'); st.textContent = `.uni-mb{cursor:pointer;user-select:none}
+.uni-mb input{width:16px;height:16px;margin:0;accent-color:var(--acc,#3b82f6);cursor:pointer;flex:0 0 auto}`; document.head.appendChild(st); })();
+window.v113Status = () => ({cur: MLOG.cur ? MLOG.cur.toMillis() : 0, dReads: MLOG.dReads||0, onebet: ONEBET, lshSkipped: (typeof LSH!=='undefined' && LSH.skipped)||0, mb: uniMB()});
+
+/* ---------- write / poll diet ---------- */
+// settings saves from several quick changes go out as one write
+scheduleCloudPush = function(){
+  if (!AUTH.user || !AUTH.ready) return;
+  clearTimeout(AUTH.pushT);
+  AUTH.status = 'pending'; renderAuthStatusOnly();
+  AUTH.pushT = setTimeout(()=>{ AUTH.pushT = 0; cloudPush().catch(()=>{}); }, 4000);
+};
+// if the live settings stream drops, check every 3 minutes instead of every minute until it reconnects
+(function(){ const base = sync2ListenFailed; sync2ListenFailed = function(uid, err){ const si = window.setInterval; window.setInterval = function(f, ms){ return si.call(window, f, ms===60000 ? 180000 : ms); };
+  try{ return base.apply(this, arguments); } finally { window.setInterval = si; } }; })();
 </script>
 </body>
 </html>
