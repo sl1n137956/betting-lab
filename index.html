@@ -26287,6 +26287,194 @@ function v137DroppedIn(from){
 })();
 (function(){ const st = document.createElement('style'); st.textContent = `.v131-potd .v137-drop{margin:8px 2px 0;font-size:12px;line-height:1.4}`; document.head.appendChild(st); })();
 window.v137 = {cooled: v137Cooled, dropPass: v137DropPass, V: V137};
+/* ================= v138: Results for everyone signed in (Tracked universe only for non-admins) =================
+   - Signed-in non-admins can open Results. They see only the Tracked universe (Games and Props totals and how each
+     call type did) with one control: the period (Today, Yesterday, 7 days, 1 month, 1 year, All time).
+     Nothing else on Results is built for them, and no admin-only data is loaded.
+   - Their numbers come from one small summary doc (pub/uni) that admin devices publish from the shared pick log
+     (totals only, no rows). Firestore rules: signed-in users can read pub/*, only the admin can write it.
+   - The period is saved to the account (S.uniRange) and syncs like filters. Admin gets Yesterday and 1 year too. */
+APP_BUILD = 138;
+var V138 = { force: null, pub: null, pubAt: 0, unsub: null, uid: '', lastJSON: '', lastPub: 0, err: '' };
+const V138_RANGES = ['today','yday','7','30','year','all'];
+UR_LABEL = {today:'Today', yday:'Yesterday', '7':'7 days', '30':'1 month', year:'1 year', all:'All time'};
+UR_KV = {today:'Tracked today', yday:'Tracked yesterday', '7':'Tracked · last 7 days', '30':'Tracked · last month', year:'Tracked · last year', all:'Tracked · all time'};
+
+/* period saved on the account (synced via S), legacy device value as fallback */
+(function(){
+  let legacy = null; try{ legacy = localStorage.getItem('bl_uni_range'); }catch(e){}
+  Object.defineProperty(UR, 'range', {
+    configurable: true,
+    get(){ if (V138.force) return V138.force;
+      try{ if (V138_RANGES.includes(S.uniRange)) return S.uniRange; }catch(e){}
+      if (V138_RANGES.includes(legacy) && v138Admin()) return legacy;
+      return 'today'; },
+    set(v){ if (!V138_RANGES.includes(v)) return; try{ S.uniRange = v; saveJSON(LS.settings, S); }catch(e){} try{ localStorage.setItem('bl_uni_range', v); }catch(e){} }
+  });
+})();
+function v138Admin(){ try{ return typeof isAdminUser==='function' && isAdminUser(); }catch(e){ return false; } }
+function v138Signed(){ try{ return !!(typeof AUTH!=='undefined' && AUTH.user); }catch(e){ return false; } }
+function v138Yday(){ return uniDay(Date.now() - 86400000); }
+function v138To(){ return UR.range==='yday' ? v138Yday() : ''; }
+urFrom = function(){
+  const now = Date.now();
+  switch (UR.range){
+    case 'today': return uniDay(now);
+    case 'yday': return v138Yday();
+    case '7': return uniDay(now - 6*86400000);
+    case '30': return uniDay(now - 29*86400000);
+    case 'year': return uniDay(now - 364*86400000);
+    default: return '';
+  }
+};
+urIn = function(fd, from){
+  fd = String(fd||'');
+  if (fd[0]==='m'){
+    if (UR.range==='all') return true;
+    if (UR.range==='year') return fd.slice(1, 7) >= String(from||'').slice(0, 6);
+    return false;
+  }
+  if (fd < from) return false;
+  const to = v138To(); return !to || fd <= to;
+};
+
+/* Picks of the Day row + dropped count follow the same period (with an end day for Yesterday) */
+function v138PotdTally(from, to){
+  const today = v131Day(Date.now()), end = to || today; const B = {games:v131T(), props:v131T()};
+  for (let d = (from && from > V131.first) ? from : V131.first; d <= end; d = v131DayAdd(d, 1)){
+    const rows = v131RowsFor(d); if (!rows) continue; const pr = V131.byDay[d] || V131.params || V131.prior;
+    for (const c of v131PotdOfDay(rows, pr)) v131Add(B[c.b], c);
+  }
+  return B;
+}
+(function(){
+  const base = uniCountsMerged;
+  uniCountsMerged = function(){
+    const B = base.apply(this, arguments);
+    try{ const T = v138PotdTally(urFrom(), v138To());
+      for (const b of ['games','props']) if (B[b] && B[b].bucket) B[b].bucket.potd = {w:T[b].w, l:T[b].l, pf:T[b].pf, st:T[b].st, n:T[b].n}; }catch(e){}
+    return B;
+  };
+})();
+if (typeof v137DroppedIn==='function'){
+  v137DroppedIn = function(){
+    const today = v131Day(Date.now()), from = urFrom(), end = v138To() || today; let n = 0;
+    try{ for (let d = (from && from > V131.first) ? from : V131.first; d <= end; d = v131DayAdd(d, 1)){
+      const rows = v131RowsFor(d); if (!rows) continue; const pr = V131.byDay[d] || V131.params || V131.prior;
+      n += v137PotdAll(rows, pr).filter(v137RowCooled).length; } }catch(e){}
+    return n;
+  };
+}
+
+/* admin range picker: all six periods */
+(function(){
+  const base = uniInnerHTML;
+  uniInnerHTML = function(){
+    let h = base.apply(this, arguments);
+    try{ h = h.replace(/(<select data-uni-range[^>]*>)[\s\S]*?(<\/select>)/, (m, a, z)=>a + V138_RANGES.map(v=>`<option value="${v}" ${UR.range===v?'selected':''}>${UR_LABEL[v]}</option>`).join('') + z); }catch(e){}
+    return h;
+  };
+  uniResultsHTML = function(){ return uniInnerHTML(); };
+})();
+
+/* ---------- admin devices publish the totals for every period ---------- */
+function v138Slim(c){
+  const q = k => { const x = (c.bucket && c.bucket[k]) || {}; return {w:+x.w||0, l:+x.l||0, pf:Math.round((+x.pf||0)*100)/100, st:+x.st||0, n:+x.n||0}; };
+  return {total:+c.total||0, graded:+c.graded||0, open:+c.open||0, tv:{good:+(c.tv&&c.tv.good)||0, watch:+(c.tv&&c.tv.watch)||0, avoid:+(c.tv&&c.tv.avoid)||0},
+    bucket:{potd:q('potd'), locked:q('locked'), good:q('good'), watch:q('watch'), avoid:q('avoid')}};
+}
+function v138BuildPub(){
+  const out = {};
+  try{ for (const r of V138_RANGES){ V138.force = r; const B = uniCountsMerged(); out[r] = {games: v138Slim(B.games), props: v138Slim(B.props)}; } }
+  finally{ V138.force = null; }
+  return out;
+}
+function v138Publish(force){
+  try{
+    if (!v138Admin() || typeof firebase==='undefined' || !firebase.firestore) return;
+    if (typeof USH!=='undefined' && !USH.at) return;            // wait for the account copy to load
+    const now = Date.now(); if (!force && now - V138.lastPub < 10*60000) return;
+    const r = v138BuildPub(); const any = V138_RANGES.some(k=>r[k].games.total || r[k].props.total); if (!any) return;
+    const j = JSON.stringify(r); V138.lastPub = now; if (j===V138.lastJSON && !force) return; V138.lastJSON = j;
+    firebase.firestore().collection('pub').doc('uni').set({at: now, day: uniDay(now), r}).catch(e=>{ V138.err = String(e && (e.code||e.message)); });
+  }catch(e){ console.warn('v138 publish', e); }
+}
+setTimeout(()=>v138Publish(), 60000); setInterval(()=>v138Publish(), 5*60000);
+
+/* ---------- non-admin: read the published totals ---------- */
+function v138Listen(){
+  try{
+    const uid = (v138Signed() && !v138Admin()) ? AUTH.user.uid : '';
+    if (uid===V138.uid) return; V138.uid = uid;
+    if (V138.unsub){ try{ V138.unsub(); }catch(e){} V138.unsub = null; }
+    if (!uid || typeof firebase==='undefined' || !firebase.firestore) return;
+    V138.unsub = firebase.firestore().collection('pub').doc('uni').onSnapshot(s=>{
+      const x = s.exists ? (s.data()||{}) : null; V138.pub = x && x.r ? x.r : null; V138.pubAt = x ? +x.at||0 : 0; V138.pubDay = x ? x.day||'' : ''; V138.err = ''; V138.loaded = true;
+      try{ if (ui.tab==='results') renderResults(); }catch(e){}
+    }, e=>{ V138.err = String(e && (e.code||e.message)); V138.unsub = null; V138.uid = ''; try{ if (ui.tab==='results') renderResults(); }catch(err){} });
+  }catch(e){}
+}
+function v138UserHTML(){
+  v138Listen();
+  const f = n => (+n||0).toLocaleString();
+  const pct = x => x==null ? '—' : Math.round(x*100)+'%';
+  const roiS = x => x==null ? '—' : (x>=0?'+':'')+(x*100).toFixed(1)+'%';
+  const NAMES = {potd:'Picks of the Day', locked:'Locked', good:'Picks', watch:'Watch', avoid:'Avoid'};
+  // the summary is per calendar day; a doc published yesterday has "today" = yesterday
+  let R = null; if (V138.pub){ const r = UR.range, stale = V138.pubDay && V138.pubDay < uniDay(Date.now());
+    R = stale && r==='today' ? null : stale && r==='yday' && V138.pubDay===v138Yday() ? V138.pub.today : V138.pub[r]; }
+  const card = (b, title) => {
+    const c = R && R[b];
+    if (!c) return `<div class="v42-b uni-b"><h3>${title}</h3><div class="hint">${V138.pub ? 'Nothing tracked in this period yet.' : V138.err ? 'Couldn\'t load results right now.' : V138.loaded ? 'Results will show here shortly.' : 'Loading…'}</div></div>`;
+    const tv = ['good','watch','avoid'].map(v=>`${NAMES[v]} ${f(c.tv[v]||0)}`).join(' · ');
+    const rows = ['potd','locked','good','watch','avoid'].map(v=>{
+      const k = c.bucket[v] || {w:0,l:0,pf:0,st:0,n:0}; const r = k.st ? k.pf/k.st : null, hr = k.n ? k.w/k.n : null; const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
+      const u = k.pf/100, uS = (u>=0?'+':'−') + Math.abs(u).toFixed(1) + 'u';
+      const extra = v==='locked' ? ' uni-lock' : v==='potd' ? ' uni-lock uni-potd' : '';
+      if ((v==='locked' || v==='potd') && !k.n) return `<div class="uni-row${extra}"><span class="k">${NAMES[v]}</span><span class="v uni-wide mut">None graded in this period</span></div>`;
+      return `<div class="uni-row${extra}"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `<span class="nw">${f(k.w)}–${f(k.l)}</span> · <span class="nw">${pct(hr)} hit</span> · <span class="nw"><b class="${cls}">${uS}</b></span> · <span class="nw">${roiS(r)} ROI</span>` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
+    }).join('');
+    return `<div class="v42-b uni-b"><h3>${title}</h3>
+      <div class="v42-kv"><span class="k">${UR_KV[UR.range]}</span><span class="v">${f(c.total)} markets · ${f(c.graded)} graded</span></div><div class="hint">${tv} · ${f(c.open)} waiting on a final</div>
+      <div class="uni-buckets">${rows}</div></div>`;
+  };
+  const sel = `<div class="mr-filters uni-filters v138-period"><label class="mr-f"><span>Period</span><select data-uni-range aria-label="Results period">${V138_RANGES.map(v=>`<option value="${v}" ${UR.range===v?'selected':''}>${UR_LABEL[v]}</option>`).join('')}</select></label></div>`;
+  const upd = V138.pubAt ? `Updated ${new Date(V138.pubAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : '';
+  return `<div class="section-title"><h2><span class="h-emo" aria-hidden="true">🧪</span>Results</h2></div>
+    <div class="card v55-learn uni-card v138-uni"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🌐</span>Tracked universe</h2><span class="hint">Every market Verdict tracks, graded from finals and box scores, so you can see how each call does.</span></div>
+    <div class="uni-in">${sel}<div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>${upd ? `<div class="hint" style="margin-top:10px">${upd}</div>` : ''}</div></div>`;
+}
+
+/* ---------- who can open Results ---------- */
+canOpenResults = function(){ return v138Signed(); };
+applyAdminGate = function(){
+  const show = canOpenResults();
+  document.body.classList.toggle('is-admin', v138Admin());
+  document.querySelectorAll('#tabs [data-tab="results"], #moreSheet [data-tab="results"]').forEach(b=>{ b.hidden = !show; });
+  if (!show && ui.tab==='results'){ setTab((typeof isMobileViewport==='function' && isMobileViewport()) ? 'tracker' : 'picks'); try{ render(); }catch(e){} }
+  try{ v138Listen(); }catch(e){}
+};
+(function(){
+  const base = renderResults;
+  renderResults = function(){
+    if (!v138Admin()){ if (v138Signed()) $('#view').innerHTML = v138UserHTML(); return; }
+    return base.apply(this, arguments);
+  };
+  // any other path that rebuilds the universe block gets the plain view for non-admins
+  const ui0 = uniInnerHTML;
+  uniInnerHTML = function(){ if (!v138Admin()){ const h = v138UserHTML(); const i = h.indexOf('<div class="uni-in">'); return i >= 0 ? h.slice(i).replace(/<\/div>\s*$/, '') : ''; } return ui0.apply(this, arguments); };
+  uniResultsHTML = function(){ return uniInnerHTML(); };
+  // the period change handler re-renders through v95RefreshLearning; for non-admins re-render directly
+  document.addEventListener('change', e=>{
+    const s = e.target && e.target.closest && e.target.closest('[data-uni-range]'); if (!s || v138Admin()) return;
+    e.stopImmediatePropagation(); UR.range = s.value; try{ renderResults(); }catch(err){}
+    const n = document.querySelector('#view [data-uni-range]'); if (n) n.focus({preventScroll:true});
+  }, true);
+})();
+try{ applyAdminGate(); }catch(e){}
+(function(){ const st = document.createElement('style'); st.textContent = `.v138-uni .v138-period select{min-height:40px}
+.v138-uni .uni-b .hint{overflow-wrap:break-word}`; document.head.appendChild(st); })();
+window.v138 = {publish: v138Publish, build: v138BuildPub, V: V138};
 </script>
 </body>
 </html>
