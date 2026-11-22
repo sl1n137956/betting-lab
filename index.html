@@ -27389,6 +27389,51 @@ html.v142-lock{overflow:hidden !important;overscroll-behavior:none}
   if (typeof betOnText==='function'){ const _bo = betOnText; betOnText = function(){ const o = _bo.apply(this, arguments); if (o && o.rec && o.rec.research && typeof o.line==='string') o.line = o.line.replace(/^Bet on: (.+?) at /, 'Best price on $1: '); return o; }; }
   if (typeof nobBtnHTML==='function'){ const _nb = nobBtnHTML; nobBtnHTML = function(){ return V142.research ? '' : _nb.apply(this, arguments); }; }
 })();
+/* v143: zero wrapping on phones.
+   1) Picks segment: one line always. Wider first column, "POTD" only when "Picks of the Day" can't fit.
+   2) Tailed tracker "By sport / By market" tables: values never wrap; phones drop the $ Net column
+      (Units already shows it; dollars stay in Your record) and use tighter cells. */
+APP_BUILD = 143;
+(function(){
+  const css = `
+.v142-seg{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr)}
+.v142-sb{white-space:nowrap;min-width:0;overflow:hidden}
+.v142-sl{white-space:nowrap;min-width:0}
+.v143-short{display:none}
+.v142-seg.v143-narrow .v143-full{display:none}
+.v142-seg.v143-narrow .v143-short{display:inline}
+.trk-dd-grid table th,.trk-dd-grid table td{white-space:nowrap;font-variant-numeric:tabular-nums}
+.trk-dd-grid table tr>*:nth-child(4){display:none}
+.trk-dd-grid table{width:100%}
+.trk-kpi .v,.trk-mini b,.bet-meta>*{white-space:nowrap}
+@media (max-width:520px){
+  .trk-dd-grid .panel.overflow{padding-left:8px;padding-right:8px}
+  .trk-dd-grid table{width:100%;table-layout:auto;font-size:12.5px}
+  .trk-dd-grid table th,.trk-dd-grid table td{padding:7px 4px}
+  .trk-dd-grid table th:first-child,.trk-dd-grid table td:first-child{padding-left:2px;max-width:84px;overflow:hidden;text-overflow:ellipsis}
+}`;
+  const st = document.createElement('style'); st.id = 'v143css'; st.textContent = css; document.head.appendChild(st);
+  // label markup: full + short, chosen by measuring
+  function relabel(){
+    const seg = document.getElementById('v142Seg'); if (!seg) return;
+    const sl = seg.querySelector('[data-v142-seg="potd"] .v142-sl');
+    if (sl && !sl.querySelector('.v143-full')) sl.innerHTML = '<span class="v143-full">Picks of the Day</span><span class="v143-short" aria-hidden="true">POTD</span>';
+    fit();
+  }
+  function fit(){
+    const seg = document.getElementById('v142Seg'); if (!seg || seg.hidden || !seg.offsetWidth) return;
+    const b = seg.querySelector('[data-v142-seg="potd"]'); if (!b) return;
+    seg.classList.remove('v143-narrow');
+    const l = b.querySelector(".v142-sl");
+    if (b.scrollWidth > b.clientWidth + 1 || (l && l.scrollWidth > l.clientWidth + 1)) seg.classList.add('v143-narrow');
+  }
+  window.v143Fit = relabel;
+  const mo = new MutationObserver(()=>{ const seg = document.getElementById('v142Seg'); if (seg && !seg.dataset.v143){ seg.dataset.v143 = '1'; } relabel(); });
+  const start = () => { const kb = document.getElementById('kindsBar') || document.body; mo.observe(kb, {childList:true, subtree:true, attributes:true, attributeFilter:['hidden']}); relabel(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  addEventListener('resize', ()=>{ clearTimeout(fit._t); fit._t = setTimeout(fit, 80); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+})();
 </script>
 </body>
 </html>
