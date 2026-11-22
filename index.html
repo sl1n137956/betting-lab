@@ -23832,6 +23832,63 @@ function v118BetCall(b){
 window.v118Status = function(){
   return {build: APP_BUILD, call: v118Call};
 };
+/* v119: Picks tab has its own Locked section pinned on top, shown even when empty. A pick that locks
+   (existing lock rule) moves up there, out of the regular list, with an "Upgraded from Pick" flag.
+   Games / Props buttons still decide what shows; Watchlist and Avoid are unchanged. No extra reads. */
+APP_BUILD = 119;
+var V119 = {mode:null, got:[]};
+(function(){
+  const base = picksBoardHTML;
+  picksBoardHTML = function(title, lockedSub, emptyMsg, list, board, cardFnRaw){
+    if (!V119.mode || board==='parlay') return base.apply(this, arguments);
+    const sp = splitLockedEarly(list, board);
+    if (V119.mode==='collect'){ V119.got.push({board, locked:sp.locked, cardFnRaw}); return ''; }
+    const cardFn = v119CardFn(cardFnRaw);
+    const early = sp.early;
+    const hint = early.length ? 'Not locked yet. A pick moves up to Locked once it locks.' : '';
+    const empty = sp.locked.length ? 'No other picks right now.' : emptyMsg;
+    return `<div class="section-title"><h2>${title}</h2>${hint?`<span class="hint">${hint}</span>`:''}</div>`
+      + (early.length ? `<div class="grid">${early.map(cardFn).join('')}</div>` : `<div class="empty-state">${empty}</div>`);
+  };
+})();
+function v119CardFn(cardFnRaw){
+  return x => (x && x.pulledNote && typeof injectPulledCard==='function') ? injectPulledCard(cardFnRaw(x), x.pulledNote)
+    : (x && x.coolNote && typeof injectCoolNote==='function') ? injectCoolNote(cardFnRaw(x), x) : cardFnRaw(x);
+}
+function v119LockHint(){
+  try{ const g = boardLockMins('games'), p = boardLockMins('props');
+    if (g!=null && g===p && +g>0) return `Final picks, locked ${esc(fmtLockWindow(g))} before start once they've held steady.`; }catch(e){}
+  return 'Final picks, locked shortly before start once they\'ve held steady.';
+}
+function v119LockedHTML(items){
+  const tag = '<div class="lk-tag v119-up"><span aria-hidden="true">🔒</span> Upgraded from Pick</div>';
+  const cards = items.map(({x, fn})=>{ const h = fn(x); return x.pulledNote ? h : String(h).replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} locked-pick">${tag}`); }).join('');
+  return `<div class="v119-locked"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">🔒</span>Locked</h2><span class="hint">${v119LockHint()}</span></div>`
+    + (items.length ? `<div class="grid">${cards}</div>` : `<div class="empty-state v119-empty">Nothing locked yet — picks move here once they lock.</div>`) + `</div>`;
+}
+(function(){
+  const G = v115GamesBody, P = v115PropsBody;
+  const collect = (fn, tab) => { V119.mode = 'collect'; V119.got = []; try{ fn(tab); } catch(e){} finally { V119.mode = null; } return V119.got; };
+  const rest = (fn, tab) => { V119.mode = 'rest'; try{ return fn(tab); } finally { V119.mode = null; } };
+  function lockedTop(tab){
+    const k = v115Kinds(tab); const items = [];
+    for (const [on, fn] of [[k.games, G], [k.props, P]]) if (on) for (const g of collect(fn, tab)){ const cf = v119CardFn(g.cardFnRaw); for (const x of g.locked) items.push({x, fn:cf, t:(typeof itemStartMs==='function' ? itemStartMs(x) : 0)||0}); }
+    items.sort((a,b)=>a.t-b.t);
+    return v119LockedHTML(items);
+  }
+  v115GamesBody = function(tab){ if (tab!=='good') return G.apply(this, arguments); return lockedTop(tab) + rest(G, tab); };
+  v115PropsBody = function(tab){ if (tab!=='good') return P.apply(this, arguments); const k = v115Kinds(tab); return (k.games ? '' : lockedTop(tab)) + rest(P, tab); };
+})();
+(function(){ const st = document.createElement('style'); st.textContent = `.v119-locked{margin-bottom:6px}
+.v119-locked .v119-empty{padding:16px 14px;font-size:13.5px;line-height:1.4}
+.v119-up{white-space:nowrap}`; document.head.appendChild(st); })();
+window.v119Status = () => ({build:APP_BUILD, locked:document.querySelectorAll('#view .v119-locked .card, #view .v119-locked .locked-pick').length, empty:!!document.querySelector('#view .v119-empty')});
+/* Background refreshes rendered with the pre-v115 board (one board, "Early preview" layout) until the next tap.
+   Run the combined Picks / Watchlist / Avoid paint inside the background pass too. */
+(function(){ if (typeof uiBackgroundPatch!=='function') return; const base = uiBackgroundPatch;
+  uiBackgroundPatch = function(fn){ return base.call(this, function(){ const out = fn.apply(this, arguments);
+    try{ if (typeof ui!=='undefined' && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') && typeof v115PaintSlate==='function') v115PaintSlate(); }catch(e){}
+    return out; }); }; })();
 </script>
 </body>
 </html>
