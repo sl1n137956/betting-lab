@@ -24598,6 +24598,66 @@ APP_BUILD = 126;
 /* v127: whole app back to the blue look as of v122 (v120 softened palette, v121 muted navy toggles/nav, blue logo/icons).
    Logic from v123-v126 stays (Tailed panel upcoming+on-board, Upgraded flag only when really locked, tailed shows once). */
 APP_BUILD = 127;
+/* v128: Locked props were almost never counted in Results.
+   Cause: the props model returns "no call" whenever a player's game log isn't loaded yet (after every app reload, or a
+   failed fetch). The universe treated that "no read" as a real change of call, wiped the Pick's running clock (pkRun), and
+   the 30-minute "still a Pick" check at lock then failed. Nov 21: 27 props had a real lock snapshot after being a Pick;
+   only 1 was counted Locked (games: 47 of 60 rows).
+   Fix: a "no call" snapshot keeps the last real call (and its clock). Backfill once per device: locally kept props rows
+   that locked as a Pick (call at lock, or the board showed a Pick at lock), first called a Pick 30+ min before the lock,
+   now count as Locked and the corrected row goes to the shared pick log. */
+APP_BUILD = 128;
+(function(){
+  if (typeof uniUpsert!=='function') return;
+  const base = uniUpsert;
+  uniUpsert = function(b, src, id, baseRow, snap){
+    try{
+      if (snap && (!snap.v || snap.v==='nocall')){
+        const r = UNI.get(id);
+        if (r && r.y==null && (r.v==='good' || r.v==='watch' || r.v==='avoid')){
+          snap = Object.assign({}, snap, {v:r.v, p: snap.p!=null ? snap.p : r.p});
+          if (!snap.sv && r.sv) snap.sv = r.sv;
+          V128.kept++;
+        }
+      }
+    }catch(e){}
+    return base.call(this, b, src, id, baseRow, snap);
+  };
+})();
+var V128 = {kept:0, bf:{done:false, added:0, open:0, err:''}};
+function v128Fixable(r){
+  if (!r || r._cloud || r.b!=='props' || !r.lk || r.lk.L || !r.pk) return false;
+  const at = +r.lk.at || 0, t = +r.t || 0; if (!at || !t) return false;
+  if (t - at > 75*60000) return false;                       // a real lock snapshot happens inside the lock window
+  if (+r.pk.at > at - (typeof UNI_LOCK_STEADY!=='undefined' ? UNI_LOCK_STEADY : 30*60000)) return false;
+  const v = r.lk.v, sv = r.lk.sv || r.sv;
+  return v==='good' || sv==='good' || (v==='nocall' && r.cl && r.cl.v==='good');
+}
+async function v128Backfill(){
+  const KEY = 'bl_lockbf_v128';
+  if (V128.bf.done || typeof UNI_ST==='undefined' || !UNI_ST.ready || UNI_ST.idb===false) return V128.bf;
+  try{ if (localStorage.getItem(KEY)){ V128.bf.done = true; return V128.bf; } }catch(e){}
+  try{
+    const d = await idbOpen(); const fix = [];
+    await new Promise((res, rej)=>{ const q = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound('20261119'));
+      q.onsuccess = ()=>{ const c = q.result; if (!c) return res(); const r = c.value;
+        if (r && r.res && String(r.fd) >= '20261119' && v128Fixable(r)){ r.lk.L = 1; r.lk.bf = 2; uniSumAddAs(r, 'locked', uniPrice(r), uniP(r)); fix.push(r); }
+        c.continue(); };
+      q.onerror = ()=>rej(q.error); });
+    if (fix.length) await storeWrite('uniDone', fix, []);
+    for (const r of fix){ try{ mlogQueue(Object.assign({}, r, {i:r.id||r.i})); }catch(e){} }
+    V128.bf.added = fix.length;
+    for (const r of UNI.values()) if (v128Fixable(r)){ r.lk.L = 1; r.lk.bf = 2; UNI_DIRTY.add(r.i); V128.bf.open++; }
+    await uniFlush();
+    try{ localStorage.setItem(KEY, String(Date.now())); }catch(e){}
+    V128.bf.done = true;
+    try{ if (typeof mlogOn==='function' && mlogOn()) mlogPush().catch(()=>{}); }catch(e){}
+    try{ if (ui.tab==='results' && typeof v95RefreshLearning==='function') v95RefreshLearning(); }catch(e){}
+  }catch(e){ V128.bf.err = String(e && e.message || e); console.warn('v128 lock backfill', e); }
+  return V128.bf;
+}
+setTimeout(function v128Kick(){ if (typeof UNI_ST!=='undefined' && UNI_ST.ready) v128Backfill(); else setTimeout(v128Kick, 15000); }, 25000);
+window.v128Status = () => ({build:APP_BUILD, kept:V128.kept, backfill:V128.bf});
 </script>
 </body>
 </html>
