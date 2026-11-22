@@ -1613,9 +1613,7 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
     <div class="filters horizon-filter" id="horizonRow">
       <span class="mut horizon-lab">When</span>
       <div class="seg" id="horizonSeg" role="group" aria-label="Kickoff window">
-        <label><input type="radio" name="horizon" value="locked" hidden>Locked</label>
-        <label class="on"><input type="radio" name="horizon" value="24h" checked hidden>Next 24h</label>
-        <label><input type="radio" name="horizon" value="48h" hidden>Next 48h</label>
+        <label class="on"><input type="radio" name="horizon" value="24h" checked hidden>Next 24</label>
         <label><input type="radio" name="horizon" value="all" hidden>All</label>
       </div>
     </div>
@@ -1636,18 +1634,6 @@ input[name=ntfyTopic]{width:100%;min-width:min(100%,250px);font-size:12.5px}
       <span class="sep"></span>
       <label class="chk"><input type="checkbox" id="hideStarted" checked> Hide started/final</label>
     </div>
-    <details class="filter-details" id="filterDetails">
-      <summary id="filterDetailsSum">Pickiness &amp; prices (auto)</summary>
-      <div class="filter-extra">
-        <div class="filter-pickiness">
-          <span class="mut">Pickiness</span>
-          <div class="auto-pick" id="filterAutoPick"></div>
-          <div class="filter-auto-why" id="filterAutoWhy"></div>
-        </div>
-        <div class="filter-strict-line" id="filterStrictLine"></div>
-        <div class="filter-price-line" id="filterPriceLine"></div>
-      </div>
-    </details>
   </div>
   <div id="view"></div>
 </main>
@@ -23458,6 +23444,204 @@ function v115PaintSlate(){
     };
   }
 })();
+/* v116: simpler Filters. When is only Next 24 / All; locked picks always stay pinned
+   at the top and ignore When. Games and Props toggles are independent, including both off.
+   Pickiness & prices is removed from Filters (the model still sets pickiness on its own). */
+APP_BUILD = 116;
+
+const V116_EMPTY = 'Games and Props are both off — tap one to show plays.';
+
+/* ---------- When: only 24h or all; leftover locked/48h become Next 24 ---------- */
+function v116Horizon(h){
+  const v = (h==null && typeof ui!=='undefined') ? ui.horizon : h;
+  return v==='all' ? 'all' : '24h';
+}
+if (typeof normalizeHorizon==='function'){
+  normalizeHorizon = function(h){ return (h==='all') ? 'all' : '24h'; };
+}
+function v116MigrateHorizon(){
+  try{
+    if (typeof ui!=='undefined' && ui && ui.horizon!=='all' && ui.horizon!=='24h') ui.horizon = '24h';
+    if (typeof filterViews==='undefined' || !filterViews) return;
+    let dirty = false;
+    for (const k of Object.keys(filterViews)){
+      const v = filterViews[k]; if (!v) continue;
+      if (v.horizon==='all') continue;
+      if (v.horizon!=='24h'){ v.horizon = '24h'; dirty = true; }
+    }
+    if (dirty){ try{ if (typeof LS!=='undefined') localStorage.setItem(LS.filterViews, JSON.stringify(filterViews)); }catch(e){} }
+  }catch(e){}
+}
+v116MigrateHorizon();
+
+/* The old "When = Locked" split view is gone; locked picks still pin at the top. */
+if (typeof lockedSplitView==='function') lockedSplitView = function(){ return false; };
+
+function v116IsLockedItem(x, board){
+  if (!x) return false;
+  if (x.pulledNote || x.tailedKeep || x.lockedKeep) return true;
+  try{
+    if (typeof lockStatus==='function') return !!(lockStatus(x, board || (x.isProp?'props':'games'))||{}).locked;
+  }catch(e){}
+  try{
+    if (typeof isOfficialLock==='function' && typeof itemStartMs==='function'){
+      const b = board || (x.isProp?'props':'games');
+      return isOfficialLock(itemStartMs(x), typeof boardLockMins==='function'?boardLockMins(b):30);
+    }
+  }catch(e){}
+  return false;
+}
+
+/* inHorizon: remap removed options; a locked play always passes When. Callers that
+   only pass start/state can't name the play, so filtered wrappers below do that. */
+(function(){
+  if (typeof inHorizon!=='function') return;
+  const orig = inHorizon;
+  inHorizon = function(startMs, state, hOverride, boardOverride){
+    const h = v116Horizon(hOverride!=null ? hOverride : (typeof ui!=='undefined' ? ui.horizon : '24h'));
+    return orig.call(this, startMs, state, h, boardOverride);
+  };
+})();
+
+function v116ApplyHorizonToList(full, board){
+  const h = v116Horizon();
+  if (h==='all') return full;
+  return (full||[]).filter(x=>{
+    if (v116IsLockedItem(x, board)) return true;
+    const start = typeof itemStartMs==='function' ? itemStartMs(x) : 0;
+    const state = typeof itemState==='function' ? itemState(x) : (x && x.g && x.g.state);
+    if (typeof inHorizon==='function') return inHorizon(start, state, '24h', board);
+    return true;
+  });
+}
+(function(){
+  if (typeof filtered==='function'){
+    const orig = filtered;
+    filtered = function(list, isPlay){
+      const saved = (typeof ui!=='undefined') ? ui.horizon : '24h';
+      if (typeof ui!=='undefined') ui.horizon = 'all';
+      let out;
+      try{ out = orig.apply(this, arguments); }
+      finally{ if (typeof ui!=='undefined') ui.horizon = saved; }
+      if (!isPlay) return v116ApplyHorizonToList(out, 'games');
+      return v116ApplyHorizonToList(out, 'games');
+    };
+  }
+  if (typeof filteredProps==='function'){
+    const orig = filteredProps;
+    filteredProps = function(list){
+      const saved = (typeof ui!=='undefined') ? ui.horizon : '24h';
+      if (typeof ui!=='undefined') ui.horizon = 'all';
+      let out;
+      try{ out = orig.apply(this, arguments); }
+      finally{ if (typeof ui!=='undefined') ui.horizon = saved; }
+      return v116ApplyHorizonToList(out, 'props');
+    };
+  }
+})();
+
+/* ---------- Games / Props: independent, both-off allowed, per tab ---------- */
+v115Kinds = function(tab){
+  tab = tab || (ui && ui.tab) || 'good';
+  const k = (typeof S!=='undefined' && S.boardKinds && S.boardKinds[tab]) || null;
+  if (!k) return {games:true, props:true};
+  return {games:k.games!==false, props:k.props!==false};
+};
+v115SetKind = function(tab, kind, on){
+  tab = tab || (ui && ui.tab) || 'good';
+  if (!S.boardKinds || typeof S.boardKinds!=='object') S.boardKinds = {};
+  const cur = Object.assign({games:true, props:true}, S.boardKinds[tab]||{});
+  cur[kind] = !!on;
+  S.boardKinds[tab] = cur;
+  try{ if (typeof LS!=='undefined') localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){}
+  try{ if (typeof scheduleCloudPush==='function') scheduleCloudPush(); }catch(e){}
+  return true;
+};
+
+/* Hide Pickiness & prices if an older build left the block in the DOM. */
+function v116HidePickiness(){
+  try{
+    const fd = document.getElementById('filterDetails');
+    if (fd){ fd.hidden = true; fd.style.display = 'none'; }
+  }catch(e){}
+}
+(function(){
+  if (typeof updateFilterChrome!=='function') return;
+  const orig = updateFilterChrome;
+  updateFilterChrome = function(){
+    v116MigrateHorizon();
+    const out = orig.apply(this, arguments);
+    v116HidePickiness();
+    try{
+      const hseg = document.getElementById('horizonSeg');
+      if (hseg){
+        hseg.querySelectorAll('label').forEach(lab=>{
+          const inp = lab.querySelector('input');
+          const val = inp && inp.value;
+          if (val==='locked' || val==='48h'){ lab.hidden = true; lab.style.display = 'none'; }
+        });
+      }
+    }catch(e){}
+    return out;
+  };
+})();
+(function(){
+  if (typeof fillFilterMeta!=='function') return;
+  const orig = fillFilterMeta;
+  fillFilterMeta = function(){ v116HidePickiness(); try{ orig.apply(this, arguments); }catch(e){} };
+})();
+
+/* Combined board empty state when both kinds are off. Locked rows obey the same toggles. */
+const V116_EMPTY_HTML = '<div class="empty-state" id="v116Empty">'+V116_EMPTY+'</div>';
+(function(){
+  if (typeof v115PaintSlate!=='function') return;
+  const orig = v115PaintSlate;
+  v115PaintSlate = function(){
+    orig.apply(this, arguments);
+    try{
+      if (!(ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid'))) return;
+      const k = v115Kinds(ui.tab);
+      if (k.games || k.props) return;
+      const v = document.getElementById('view');
+      if (!v) return;
+      const counts = (typeof v115UpdateCombinedCounts==='function') ? v115UpdateCombinedCounts() : {good:0,watch:0,avoid:0};
+      const note = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'');
+      const main = V116_EMPTY_HTML;
+      v.innerHTML = note + ((typeof slateLayout==='function') ? slateLayout(ui.tab, main, counts) : main);
+      if (typeof v115SyncKindsBar==='function') v115SyncKindsBar();
+    }catch(e){ console.warn('v116 empty', e); }
+  };
+})();
+/* The v115 render wrap also writes its own empty line — swap the wording if it appears. */
+(function(){
+  const fix = ()=>{
+    const el = document.getElementById('view'); if (!el) return;
+    if (/Turn Games or Props back on to see this list/.test(el.innerHTML)){
+      el.innerHTML = el.innerHTML.replace(/Turn Games or Props back on to see this list\./g, V116_EMPTY);
+    }
+  };
+  if (typeof render==='function'){
+    const orig = render;
+    render = function(){
+      const out = orig.apply(this, arguments);
+      try{
+        const k = ui && (ui.tab==='good'||ui.tab==='watch'||ui.tab==='avoid') ? v115Kinds(ui.tab) : null;
+        if (k && !k.games && !k.props){
+          const v = document.getElementById('view');
+          if (v){
+            const counts = (typeof v115UpdateCombinedCounts==='function') ? v115UpdateCombinedCounts() : {good:0,watch:0,avoid:0};
+            const note = (typeof avNoDataNoteHTML==='function'?avNoDataNoteHTML():'');
+            v.innerHTML = note + ((typeof slateLayout==='function') ? slateLayout(ui.tab, V116_EMPTY_HTML, counts) : V116_EMPTY_HTML);
+            if (typeof v115SyncKindsBar==='function') v115SyncKindsBar();
+          }
+        } else fix();
+      }catch(e){}
+      return out;
+    };
+  }
+})();
+
+window.v116Status = () => ({build:APP_BUILD, horizon: typeof ui!=='undefined' && v116Horizon(), kinds: typeof v115Kinds==='function' && {good:v115Kinds('good'),watch:v115Kinds('watch'),avoid:v115Kinds('avoid')}, bothOffOk:true});
 </script>
 </body>
 </html>
