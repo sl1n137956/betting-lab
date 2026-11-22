@@ -26166,6 +26166,127 @@ body.filters-open:not(.tab-all) #v136Backdrop{display:block}
 @media(min-width:768px){ #filterBar .v136-done-row{bottom:-16px;margin:4px -16px -16px;padding:10px 16px 14px} }`;
   document.head.appendChild(st);
 })();
+/* ================= v137: a Pick of the Day that cools is dropped =================
+   - If a Pick of the Day's live call turns Watch or Avoid (or it gets pulled) before its game starts, it is marked
+     dropped on the shared account list (users/{uid}/potd/{day}), so every device drops it. The entry stays as a record,
+     so it can never come back, and the freed slot goes to the next qualifying lock (caps still apply). The replacement
+     gets the normal Pick of the Day alert; the dropped one sends nothing.
+   - A card never shows the Pick of the Day tag together with a WATCH or AVOID badge.
+   - Results / self-tuning: the model log now records the last call before the game (cv). A Pick of the Day whose call
+     cooled is not graded in the Picks of the Day row (it still counts under Locked); the next qualifying lock takes its place. */
+APP_BUILD = 137;
+var V137 = { writing: new Map(), drops: 0 };
+function v137Cooled(b, x){
+  if (!x) return false;
+  if (x.pulledNote) return true;
+  const v = String(x.verdict==null ? '' : x.verdict).toLowerCase();
+  if (v==='started' || v==='live' || v==='final') return false;
+  return v!=='good';
+}
+function v137Why(x){ return x.pulledNote ? 'was pulled' : x.verdict==='watch' ? 'cooled to Watch' : 'cooled to Avoid'; }
+
+/* the tag never sits on a Watch/Avoid card */
+(function(){
+  const base = v131IsPotd;
+  v131IsPotd = function(b, x){ return base.apply(this, arguments) && !v137Cooled(b, x); };
+  window.v131IsPotd = v131IsPotd;
+})();
+
+/* drop pass: before the game starts, a cooled Pick of the Day is marked dropped on the shared list */
+function v137DropPass(){
+  const St = v131Store(), now = Date.now(), writes = [];
+  for (const b of ['games','props']){
+    const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+    if (!src.length) continue;
+    const byKey = new Map(); for (const x of src) if (x && !x.tailedKeep){ const k = boardKeyOf(b, x); if (k) byKey.set(k, x); }
+    for (const d in (St.days||{})){
+      const E = (St.days[d] && St.days[d][b]) || {};
+      for (const k in E){
+        const e = E[k]; if (!e || e.drop) continue;
+        const x = byKey.get(k); if (!x) continue;
+        const st = itemStartMs(x); if (!st || st <= now) continue;
+        if (!v137Cooled(b, x)) continue;
+        const drop = {at: now, why: v137Why(x), v: String(x.verdict||'').slice(0,12)};
+        e.drop = drop; V137.drops++;
+        const wk = d + '|' + b + '|' + k; if (V137.writing.has(wk)) { writes.push(V137.writing.get(wk)); continue; }
+        const col = (typeof v132Col==='function') ? v132Col() : null;
+        let p;
+        if (col) p = col.doc(d).set({d, [b]: {[k]: {drop}}, at: now}, {merge: true}).catch(err=>console.warn('v137 drop', err && (err.code||err.message)));
+        else { v131StoreSave(); p = Promise.resolve(); }
+        V137.writing.set(wk, p); p.finally(()=>setTimeout(()=>V137.writing.delete(wk), 120000));
+        writes.push(p);
+      }
+    }
+  }
+  return writes;
+}
+(function(){
+  const base = v131Select;
+  v131Select = function(){
+    let w = [];
+    try{ if (typeof v132Listen==='function') v132Listen(); w = v137DropPass(); }catch(e){ console.warn('v137 pass', e); }
+    if (w.length){
+      // let the drop land first so the freed slot counts in the claim transaction, then fill it
+      Promise.all(w).then(()=>{ try{ V132.pending.clear(); base.call(this); }catch(e){} try{ if (ui.tab==='good') render(); }catch(e){} });
+      return [];
+    }
+    return base.apply(this, arguments);
+  };
+})();
+
+/* POTD section: say what was dropped today */
+v131PotdHTML = (function(orig){ return function(){
+  let html = orig.apply(this, arguments);
+  try{
+    const St = v131Store(), today = v131Day(Date.now()), tom = v131DayAdd(today, 1), out = [];
+    for (const d of [today, tom]) for (const b of ['games','props']){ const E = (St.days[d] && St.days[d][b]) || {}; for (const k in E){ const e = E[k]; if (e && e.drop) out.push(String(e.label||'').trim() + ' (' + (e.drop.why||'dropped') + ')'); } }
+    if (out.length){
+      const note = `<div class="hint v137-drop">Dropped after locking: ${out.slice(0,6).map(s=>esc(s)).join(' · ')}${out.length>6?` +${out.length-6} more`:''}. A Pick of the Day that cools before its game is dropped and its spot goes to the next top lock.</div>`;
+      html = html.replace(/<\/div>\s*$/, note + '</div>');
+    }
+  }catch(e){}
+  return html;
+}; })(v131PotdHTML);
+
+/* ---------- model log: keep the last call before the game ---------- */
+(function(){
+  if (typeof mlogCompact==='function'){
+    const base = mlogCompact;
+    mlogCompact = function(r){
+      const c = base.apply(this, arguments);
+      try{ if (c && c[1] && c[1].lkd && r && r.v && r.v!=='good') c[1].cv = String(r.v).slice(0,10); }catch(e){}
+      return c;
+    };
+  }
+  const bc = v131Compact;
+  v131Compact = function(o){ const c = bc.apply(this, arguments); if (o && o.cv) c.cv = o.cv; return c; };
+})();
+function v137RowCooled(c){ return !!(c && c.cv && c.cv!=='good'); }
+var v137PotdAll = v131PotdOfDay;   // lock-first rule without the drop
+v131PotdOfDay = function(rows, pr){ return v137PotdAll.call(this, (rows||[]).filter(c=>!v137RowCooled(c)), pr); };
+function v137DroppedIn(from){
+  const today = v131Day(Date.now()); let n = 0;
+  try{ for (let d = (from && from > V131.first) ? from : V131.first; d <= today; d = v131DayAdd(d, 1)){
+    const rows = v131RowsFor(d); if (!rows) continue; const pr = V131.byDay[d] || V131.params || V131.prior;
+    n += v137PotdAll(rows, pr).filter(v137RowCooled).length; } }catch(e){}
+  return n;
+}
+(function(){
+  const base = uniInnerHTML;
+  uniInnerHTML = function(){
+    let html = base.apply(this, arguments);
+    try{
+      const from = UR.range==='all' ? '' : UR.range==='year' ? new Date().getFullYear()+'0101' : urFrom();
+      const n = v137DroppedIn(from);
+      const txt = `A Pick of the Day whose call cools to Watch or Avoid before the game is dropped and not graded in that row (it still counts under Locked); the next top lock takes its spot${n ? ` — ${n} dropped in this range` : ''}. `;
+      html = html.replace('Locked is every Pick that was still a Pick when it locked', txt + 'Locked is every Pick that was still a Pick when it locked');
+    }catch(e){}
+    return html;
+  };
+  uniResultsHTML = function(){ return uniInnerHTML(); };
+})();
+(function(){ const st = document.createElement('style'); st.textContent = `.v131-potd .v137-drop{margin:8px 2px 0;font-size:12px;line-height:1.4}`; document.head.appendChild(st); })();
+window.v137 = {cooled: v137Cooled, dropPass: v137DropPass, V: V137};
 </script>
 </body>
 </html>
