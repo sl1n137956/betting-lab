@@ -25896,6 +25896,122 @@ function v132PaintSecs(){
   const st = document.createElement('style'); st.id = 'v132css'; st.textContent = css; document.head.appendChild(st);
 })();
 window.v132 = {secs: v132Secs, candidates: v132Candidates, pickAlerts: v132PickAlerts, listen: v132Listen, V: V132};
+/* ================= v133: Filters get labeled "Stats" and "Markets" rows =================
+   Every stat and market starts selected. Each row has an All button (tap: clear all / select all; lit when all are on).
+   Chips toggle one at a time; an unselected stat or market hides those plays (same as the Odds buckets). Stored as
+   the OFF sets, so new stats show up selected. Old single-choice filters migrate once (old "all" = everything on). */
+APP_BUILD = 133;
+var V133 = { key: 'bl_v133_sel', mkts: [['ml','Moneyline'],['spread','Spread'],['total','Total']] };
+function v133Load(){
+  let o = null; try{ o = JSON.parse(localStorage.getItem(V133.key)||'null'); }catch(e){}
+  if (!o || !Array.isArray(o.offStats) || !Array.isArray(o.offMkts)){
+    o = {offStats: [], offMkts: []};
+    try{   // migrate the old one-choice filters
+      const m = ui.mkt, pm = ui.propMkt;
+      if (m && m!=='all' && V133.mkts.some(x=>x[0]===m)) o.offMkts = V133.mkts.map(x=>x[0]).filter(k=>k!==m);
+      const st = (pm && pm!=='all') ? pm : (m && m!=='all' && !V133.mkts.some(x=>x[0]===m) && !/^\d$/.test(m)) ? m : '';
+      if (st) o.offStats = v133Kinds().filter(k=>k!==st);
+    }catch(e){}
+    try{ localStorage.setItem(V133.key, JSON.stringify(o)); }catch(e){}
+  }
+  return o;
+}
+function v133Save(o){ try{ localStorage.setItem(V133.key, JSON.stringify(o)); }catch(e){} }
+function v133Kinds(){
+  const present = new Set(((typeof props!=='undefined' && props)||[]).map(p=>p.kind).filter(Boolean));
+  const base = (typeof PROP_FILTER_KINDS!=='undefined' ? PROP_FILTER_KINDS : ['pts','reb','ast','threes','pra']);
+  const out = base.filter(k=>present.has(k) || ['pts','reb','ast','threes','pra'].includes(k));
+  for (const k of present) if (!out.includes(k)) out.push(k);
+  return out;
+}
+function v133Neutral(){ try{ if (ui.board!=='parlay'){ if (ui.mkt && ui.mkt!=='all' && !/^\d$/.test(ui.mkt)) ui.mkt = 'all'; ui.propMkt = 'all'; } }catch(e){} }
+v133Load(); v133Neutral();
+
+/* filtering */
+(function(){
+  const fp = filteredProps;
+  filteredProps = function(list){
+    v133Neutral(); const out = fp.apply(this, arguments);
+    const off = new Set(v133Load().offStats); if (!off.size) return out;
+    return (out||[]).filter(p=>!off.has(p.kind));
+  };
+  const fg = filtered;
+  filtered = function(list, isPlay){
+    v133Neutral(); const out = fg.apply(this, arguments);
+    if (!isPlay || ui.board==='parlay') return out;
+    const off = new Set(v133Load().offMkts); if (!off.size) return out;
+    return (out||[]).filter(x=>!off.has(x.mk));
+  };
+  if (typeof activeFilterCount==='function'){ const base = activeFilterCount; activeFilterCount = function(){ let n = base.apply(this, arguments)||0; const o = v133Load(); if (o.offStats.length) n++; if (o.offMkts.length) n++; return n; }; }
+})();
+
+/* rows */
+function v133RowHTML(id, label, items, off){
+  const all = items.every(([k])=>!off.has(k));
+  return `<span class="mut horizon-lab">${label}</span><div class="v133-chips" role="group" aria-label="${label}">`
+    + `<span class="chip${all?' on':''}" data-v133all="${id}" role="button" tabindex="0" aria-pressed="${all}">All</span>`
+    + items.map(([k,l])=>`<span class="chip${off.has(k)?'':' on'}" data-v133="${id}" data-k="${k}" role="button" tabindex="0" aria-pressed="${!off.has(k)}">${esc(l)}</span>`).join('') + `</div>`;
+}
+function v133Paint(){
+  try{
+    const fb = document.getElementById('filterBar'); if (!fb) return;
+    const slate = ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid';
+    const parlay = ui.board==='parlay';
+    const K = (typeof v115Kinds==='function') ? v115Kinds(ui.tab) : {games: ui.board!=='props', props: ui.board==='props'};
+    const o = v133Load();
+    const anchor = document.getElementById('oddsRow');
+    let rs = document.getElementById('v133Stats'), rm = document.getElementById('v133Mkts');
+    if (!rs){ rs = document.createElement('div'); rs.id = 'v133Stats'; rs.className = 'filters horizon-filter v133-row'; }
+    if (!rm){ rm = document.createElement('div'); rm.id = 'v133Mkts'; rm.className = 'filters horizon-filter v133-row'; }
+    if (anchor && anchor.parentNode===fb){ if (anchor.nextSibling!==rs) anchor.after(rs); if (rs.nextSibling!==rm) rs.after(rm); }
+    const lab = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL) || {};
+    const stats = v133Kinds().map(k=>[k, lab[k]||k]);
+    rs.innerHTML = v133RowHTML('stats', 'Stats', stats, new Set(o.offStats));
+    rm.innerHTML = v133RowHTML('mkts', 'Markets', V133.mkts, new Set(o.offMkts));
+    rs.hidden = !(slate && !parlay && K.props);
+    rm.hidden = !(slate && !parlay && K.games);
+    const mix = document.getElementById('mixChips'), mk = document.getElementById('mktChips');
+    if (mix && slate && !parlay){ mix.hidden = true; mix.classList.add('v133-off'); } else if (mix) mix.classList.remove('v133-off');
+    if (mk){ mk.classList.toggle('v133-off', slate && !parlay); }
+  }catch(e){ console.warn('v133 paint', e); }
+}
+(function(){
+  if (typeof renderMarketChips==='function'){ const b = renderMarketChips; renderMarketChips = function(){ const r = b.apply(this, arguments); v133Paint(); return r; }; }
+  if (typeof updateFilterChrome==='function'){ const b = updateFilterChrome; updateFilterChrome = function(){ const r = b.apply(this, arguments); v133Paint(); return r; }; }
+  document.addEventListener('click', e=>{
+    const t = e.target && e.target.closest && e.target.closest('[data-v133],[data-v133all]'); if (!t) return;
+    e.preventDefault();
+    const o = v133Load(); const id = t.getAttribute('data-v133') || t.getAttribute('data-v133all');
+    const keys = id==='stats' ? v133Kinds() : V133.mkts.map(x=>x[0]); const f = id==='stats' ? 'offStats' : 'offMkts';
+    if (t.hasAttribute('data-v133all')) o[f] = o[f].length ? [] : keys.slice();
+    else { const k = t.getAttribute('data-k'); const s = new Set(o[f]); if (s.has(k)) s.delete(k); else s.add(k); o[f] = [...s]; }
+    v133Save(o); v133Paint();
+    try{ if (typeof saveFilters==='function') saveFilters(); updateFilterChrome(); render(); }catch(err){}
+  });
+  v133Paint();
+  const st = document.createElement('style'); st.id = 'v133css';
+  st.textContent = `#filterBar .v133-off{display:none !important}
+#filterBar .v133-row[hidden]{display:none !important}
+#filterBar .v133-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;width:100%}
+@media(min-width:768px){#filterBar .v133-chips{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}`;
+  document.head.appendChild(st);
+})();
+window.v133 = {load: v133Load, paint: v133Paint, kinds: v133Kinds};
+
+/* Settings > Notifications: no Locked option (Locked alerts stay off); more room under "Turn on alerts" */
+(function(){
+  try{ if (S.alertNewPlays!==false){ S.alertNewPlays = false; saveJSON(LS.settings, S); } }catch(e){}
+  const base = renderSettings;
+  renderSettings = function(){
+    const out = base.apply(this, arguments);
+    try{ const i = document.querySelector('.v132-alerts input[name="alertNewPlays"]'); if (i){ const l = i.closest('label'); if (l) l.remove(); } }catch(e){}
+    return out;
+  };
+  document.addEventListener('submit', e=>{ try{ if (e.target && e.target.id==='setForm') setTimeout(()=>{ if (S.alertNewPlays!==false){ S.alertNewPlays = false; saveJSON(LS.settings, S); } }, 0); }catch(err){} }, true);
+  if (typeof checkLockAlerts==='function'){ const b = checkLockAlerts; checkLockAlerts = function(){ if (S.alertNewPlays!==false) S.alertNewPlays = false; return b.apply(this, arguments); }; }
+  const st = document.createElement('style'); st.textContent = `#btnPullAlerts + .v132-alerts,.s-row #btnPullAlerts{margin-bottom:6px}
+.v132-alerts{margin-top:14px !important}`; document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
