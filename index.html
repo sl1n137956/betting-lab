@@ -26525,6 +26525,376 @@ v138UserHTML = function(){
 .v139-upd{margin-top:10px}.v139-empty{padding:12px 2px}`; document.head.appendChild(st); })();
 // publish the slimmer summary right away on admin devices
 V138.lastJSON = ''; setTimeout(()=>{ try{ v138Publish(true); }catch(e){} }, 45000);
+/* ================= v140: Tracker = Tailed picks + Model picks; Results folded in; Filters scroll fix; declutter =================
+   - Tracker has a view dropdown (Tailed picks / Model picks) and one shared period (Today, Yesterday, 7 days,
+     Month, Year, All time). Both choices are saved to the account (S.trkView, S.uniRange).
+     Tailed = your own bets (unchanged; the top numbers follow the period). Model = the Tracked universe (raw model
+     calls only) with the same calendar style. Personal bets and model numbers never mix.
+   - Admin Model view = the full universe card + calendar + Model learning. Non-admin = profit for Picks of the Day,
+     Locked and Picks + a calendar of daily profit (from pub/uniDays, published by admin devices).
+   - The Results tab is gone; links to it open Tracker > Model picks. */
+APP_BUILD = 140;
+var V140 = { inModel: false, cal: {mode:'day', month:'', year:0, sel:'', metric:''}, sig: '', daysPub: null, daysAt: 0, daysUnsub: null, daysUid: '', lastDaysJSON: '', lastDaysPub: 0 };
+const V140_PER_LABEL = {today:'Today', yday:'Yesterday', '7':'7 days', '30':'Month', year:'Year', all:'All time'};
+
+function v140View(){ try{ return S.trkView==='model' ? 'model' : 'tailed'; }catch(e){ return 'tailed'; } }
+function v140SetView(v){ try{ S.trkView = v==='model' ? 'model' : 'tailed'; saveJSON(LS.settings, S); }catch(e){} }
+
+/* ---------- period range as ISO dates (personal bets use YYYY-MM-DD) ---------- */
+function v140Iso(d8){ return d8 ? d8.slice(0,4)+'-'+d8.slice(4,6)+'-'+d8.slice(6,8) : ''; }
+function v140Bounds(){ const f = urFrom(), t = (typeof v138To==='function' ? v138To() : '') ; return {from: v140Iso(f), to: v140Iso(t)}; }
+
+/* personal numbers follow the period (pending bets always count as pending) */
+(function(){
+  const base = trackerStats;
+  trackerStats = function(){
+    if (UR.range==='all') return base.apply(this, arguments);
+    const {from, to} = v140Bounds(); const all = bets;
+    try{ bets = all.filter(b=>{ if (!b || !b.result || b.result==='pending') return true; const d = String(b.date||'').slice(0,10); return (!from || d >= from) && (!to || d <= to); }); return base.apply(this, arguments); }
+    finally{ bets = all; }
+  };
+})();
+
+/* ---------- header: view + period ---------- */
+function v140HeadHTML(){
+  const v = v140View();
+  const per = V138_RANGES.map(r=>`<option value="${r}" ${UR.range===r?'selected':''}>${V140_PER_LABEL[r]}</option>`).join('');
+  return `<div class="v140-head"><h2 class="v140-title"><span class="h-emo" aria-hidden="true">📊</span>Tracker</h2>
+    <div class="v140-sels"><label class="v140-sel"><span class="sr-only">Show</span><select data-v140-view aria-label="Tailed or model picks"><option value="tailed" ${v==='tailed'?'selected':''}>Tailed picks</option><option value="model" ${v==='model'?'selected':''}>Model picks</option></select></label>
+    <label class="v140-sel"><span class="sr-only">Period</span><select data-v140-per aria-label="Period">${per}</select></label></div></div>`;
+}
+
+/* ---------- model daily index ---------- */
+function v140Blank(){ return {potd:{u:0,w:0,l:0}, locked:{u:0,w:0,l:0}, good:{u:0,w:0,l:0}, watch:{u:0,w:0,l:0}, avoid:{u:0,w:0,l:0}}; }
+function v140AdminIndex(){
+  const days = {}, months = {};
+  try{
+    const M = ushMerged();
+    for (const [k, a] of M.sums){
+      const [fd, b, , , v0] = k.split('|'); if (b!=='games' && b!=='props') continue;
+      const v = v0==='nocall' ? 'avoid' : v0; if (!['good','locked','watch','avoid'].includes(v)) continue;
+      const tgt = fd[0]==='m' ? (months[fd.slice(1)] || (months[fd.slice(1)] = v140Blank())) : (days[fd] || (days[fd] = v140Blank()));
+      const q = tgt[v]; q.u += (+a[7]||0)/100; q.w += +a[1]||0; q.l += +a[2]||0;
+    }
+    if (typeof V131!=='undefined' && V131.first){
+      const today = v131Day(Date.now());
+      for (let d = V131.first; d <= today; d = v131DayAdd(d, 1)){
+        const rows = v131RowsFor(d); if (!rows) continue; const pr = V131.byDay[d] || V131.params || V131.prior;
+        const T = {n:0,w:0,l:0,pf:0,st:0}; for (const c of v131PotdOfDay(rows, pr)) v131Add(T, c);
+        if (!T.n) continue; const e = days[d] || (days[d] = v140Blank()); e.potd = {u:T.pf/100, w:T.w, l:T.l};
+      }
+    }
+  }catch(e){ console.warn('v140 index', e); }
+  return {days, months};
+}
+function v140Index(){
+  if (v138Admin()) return v140AdminIndex();
+  const P = V140.daysPub; const days = {}, months = {};
+  if (P){ for (const d in (P.d||{})){ const x = P.d[d]; days[d] = {potd:{u:+x[0]||0}, locked:{u:+x[1]||0}, good:{u:+x[2]||0}}; }
+    for (const m in (P.m||{})){ const x = P.m[m]; months[m] = {potd:{u:+x[0]||0}, locked:{u:+x[1]||0}, good:{u:+x[2]||0}}; } }
+  return {days, months};
+}
+
+/* admin devices publish daily profit (Picks of the Day, Locked, Picks) for everyone signed in */
+function v140PublishDays(force){
+  try{
+    if (!v138Admin() || typeof firebase==='undefined' || !firebase.firestore) return;
+    if (typeof USH!=='undefined' && !USH.at) return;
+    const now = Date.now(); if (!force && now - V140.lastDaysPub < 10*60000) return; V140.lastDaysPub = now;
+    const I = v140AdminIndex(); const r2 = x => Math.round(x*100)/100; const pick = e => [r2(e.potd.u), r2(e.locked.u), r2(e.good.u)];
+    const cut = uniDay(now - 400*86400000); const d = {}, m = {};
+    for (const k in I.days) if (k >= cut){ const e = I.days[k]; if (e.potd.u || e.locked.u || e.good.u || e.good.w || e.good.l) d[k] = pick(e); }
+    for (const k in I.months){ const e = I.months[k]; m[k] = pick(e); }
+    const j = JSON.stringify({d, m}); if (j===V140.lastDaysJSON && !force) return; V140.lastDaysJSON = j;
+    if (!Object.keys(d).length && !Object.keys(m).length) return;
+    firebase.firestore().collection('pub').doc('uniDays').set({at: now, d, m}).catch(e=>console.warn('v140 days', e && (e.code||e.message)));
+  }catch(e){ console.warn('v140 publish', e); }
+}
+setTimeout(()=>v140PublishDays(true), 50000); setInterval(()=>v140PublishDays(), 5*60000);
+function v140ListenDays(){
+  try{
+    const uid = (v138Signed() && !v138Admin()) ? AUTH.user.uid : '';
+    if (uid===V140.daysUid) return; V140.daysUid = uid;
+    if (V140.daysUnsub){ try{ V140.daysUnsub(); }catch(e){} V140.daysUnsub = null; }
+    if (!uid) return;
+    V140.daysUnsub = firebase.firestore().collection('pub').doc('uniDays').onSnapshot(s=>{
+      const x = s.exists ? (s.data()||{}) : null; V140.daysPub = x ? {d:x.d||{}, m:x.m||{}} : null; V140.daysAt = x ? +x.at||0 : 0;
+      v140Repaint();
+    }, e=>{ V140.daysUnsub = null; V140.daysUid = ''; });
+  }catch(e){}
+}
+
+/* ---------- calendar (same look as the personal Tracker calendar) ---------- */
+function v140U(u){ if (Math.abs(u) < 0.005) return '0u'; const a = Math.abs(u); return `${u>0?'+':'−'}${a>=10 ? Math.round(a) : a.toFixed(1).replace(/\.0$/,'')}u`; }
+function v140UX(u){ return `${u>0.0049?'+':u<-0.0049?'−':''}${Math.abs(u).toFixed(2).replace(/\.?0+$/,'')||'0'}u`; }
+function v140Metrics(){ return v138Admin() ? ['good','potd','locked','watch','avoid'] : ['good','potd','locked']; }
+const V140_MNAME = {potd:'Picks of the Day', locked:'Locked', good:'Picks', watch:'Watch', avoid:'Avoid'};
+function v140CalHTML(){
+  const I = v140Index(); const C = V140.cal; const ms = v140Metrics(); if (!ms.includes(C.metric)) C.metric = 'good';
+  const now = new Date(), today = uniDay(Date.now()), ty = now.getFullYear(), tm = now.getMonth()+1;
+  if (!C.month) C.month = today.slice(0,6); if (!C.year) C.year = ty;
+  const has = e => e && e[C.metric] && (e[C.metric].u || e[C.metric].w || e[C.metric].l);
+  const val = e => e && e[C.metric] ? +e[C.metric].u||0 : 0;
+  const cls = (n, u) => !n ? 'none' : u > 0.005 ? 'pos' : u < -0.005 ? 'neg' : 'even';
+  const nav = (lab, kind) => `<div class="pcal-nav"><button type="button" class="pcal-arrow" data-v140-nav="-1" aria-label="Previous ${kind}">‹</button><b>${lab}</b><button type="button" class="pcal-arrow" data-v140-nav="1" aria-label="Next ${kind}">›</button></div>`;
+  const sum = (lab, u, n) => `<div class="pcal-sum"><span>${lab}</span><span>Total <b class="${cls(n, u)}">${v140UX(u)}</b></span></div>`;
+  const monthTotal = ym => { let u = 0, n = 0; for (const d in I.days) if (d.startsWith(ym) && has(I.days[d])){ u += val(I.days[d]); n++; } if (!n && I.months[ym] && has(I.months[ym])){ u = val(I.months[ym]); n = 1; } return {u, n}; };
+  let html = '';
+  if (C.mode==='month'){
+    const y = +C.year; let T = 0, TN = 0;
+    const cells = CAL_MON.map((m, i)=>{ const ym = `${y}${String(i+1).padStart(2,'0')}`; const {u, n} = monthTotal(ym); T += u; TN += n;
+      return `<button type="button" class="pcal-cell pcal-m ${cls(n, u)}${(y===ty && i+1===tm)?' today':''}" data-v140-month="${ym}"><span class="pc-n">${m}</span>${n?`<span class="pc-u">${v140U(u)}</span>`:''}</button>`; }).join('');
+    html = nav(String(y), 'year') + sum(String(y), T, TN) + `<div class="pcal-grid pcal-months">${cells}</div>`;
+  } else if (C.mode==='year'){
+    const ys = new Set([ty]); for (const d in I.days) ys.add(+d.slice(0,4)); for (const m in I.months) ys.add(+m.slice(0,4));
+    let T = 0, TN = 0; const cells = [...ys].sort((a,b)=>b-a).map(y=>{ let u = 0, n = 0; for (let i=1;i<=12;i++){ const r = monthTotal(`${y}${String(i).padStart(2,'0')}`); u += r.u; n += r.n; } T += u; TN += n;
+      return `<button type="button" class="pcal-cell pcal-y ${cls(n, u)}${y===ty?' today':''}" data-v140-year="${y}"><span class="pc-n">${y}</span>${n?`<span class="pc-u">${v140U(u)}</span>`:'<span class="pc-d">Nothing yet</span>'}</button>`; }).join('');
+    html = sum('All years', T, TN) + `<div class="pcal-grid pcal-years">${cells}</div>`;
+  } else {
+    const y = +C.month.slice(0,4), m = +C.month.slice(4,6);
+    const lead = new Date(y, m-1, 1).getDay(), nd = new Date(y, m, 0).getDate(); const cells = []; let T = 0, TN = 0;
+    for (let i=0;i<lead;i++) cells.push('<span class="pcal-cell pcal-pad" aria-hidden="true"></span>');
+    for (let d=1; d<=nd; d++){ const key = `${y}${String(m).padStart(2,'0')}${String(d).padStart(2,'0')}`; const e = I.days[key]; const n = has(e) ? 1 : 0; const u = val(e); if (n){ T += u; TN++; }
+      cells.push(`<span class="pcal-cell pcal-d ${cls(n, u)}${key===today?' today':''}" title="${key}"><span class="pc-n">${d}</span>${n?`<span class="pc-u">${v140U(u)}</span>`:''}</span>`); }
+    const head = ['S','M','T','W','T','F','S'].map(x=>`<span class="pcal-wd">${x}</span>`).join('');
+    html = nav(`${CAL_MON_L[m-1]} ${y}`, 'month') + sum(`${CAL_MON[m-1]} ${y}`, T, TN) + `<div class="pcal-grid pcal-days">${head}${cells.join('')}</div>`;
+  }
+  const metricSel = `<select data-v140-metric aria-label="Which picks">${ms.map(k=>`<option value="${k}" ${C.metric===k?'selected':''}>${V140_MNAME[k]}</option>`).join('')}</select>`;
+  const modeSel = `<select data-v140-mode aria-label="Calendar view">${[['day','Daily'],['month','Monthly'],['year','Yearly']].map(([k,l])=>`<option value="${k}" ${C.mode===k?'selected':''}>${l}</option>`).join('')}</select>`;
+  return `<div class="card v140-calcard profit-card"><div class="v140-cal-top"><h3>📅 Model profit</h3><div class="v140-cal-sels">${metricSel}${modeSel}</div></div>
+    <div class="pcal v140-pcal" data-period="${C.mode}">${html}</div><div class="hint v140-cal-note">Units won or lost each day, games and props together.</div></div>`;
+}
+
+/* ---------- model view ---------- */
+function v140ModelHTMLUser(){
+  if (!v138Signed()) return `<div class="card v140-signin"><div class="hint">Sign in to see how the model's picks are doing.</div></div>`;
+  v140ListenDays();
+  const h = v138UserHTML();                       // v139 profit-only card (period picker inside is replaced by the header one)
+  const i = h.indexOf('<div class="card');
+  return (i >= 0 ? h.slice(i) : h) + v140CalHTML();
+}
+function v140RenderModel(){
+  const head = v140HeadHTML();
+  if (v138Admin()){
+    V140.inModel = true;
+    try{ renderResults(); }catch(e){ console.warn('v140 admin model', e); }
+    finally{ V140.inModel = false; }
+    const view = $('#view'); if (!view) return;
+    const t = view.querySelector(':scope > .section-title'); if (t) t.remove();
+    view.insertAdjacentHTML('afterbegin', head);
+    const uni = view.querySelector('.uni-card'); if (uni) uni.insertAdjacentHTML('afterend', v140CalHTML()); else view.insertAdjacentHTML('beforeend', v140CalHTML());
+    // long notes under the universe card fold behind "About these numbers"
+    try{ const uin = view.querySelector('.uni-card .uni-in'); const notes = uin ? [...uin.querySelectorAll(':scope > .hint')] : [];
+      const intro = view.querySelector('.uni-card > .section-title > .hint'); if (intro) notes.unshift(intro);
+      if (notes.length && uin){ const d = document.createElement('details'); d.className = 'v140-info'; d.innerHTML = '<summary>About these numbers</summary>'; uin.appendChild(d); notes.forEach(n=>{ n.style.display = 'block'; d.appendChild(n); }); } }catch(e){}
+    // Model learning (admin) folded behind one tap
+    const L = view.querySelector('.v55-learn.v98-flat');
+    if (L){ const d = document.createElement('details'); d.className = 'card v140-learn'; d.open = !!V140.learnOpen;
+      d.innerHTML = '<summary><span aria-hidden="true">🧠</span> Model learning <span class="hint">admin</span></summary>';
+      L.replaceWith(d); d.appendChild(L); d.addEventListener('toggle', ()=>{ V140.learnOpen = d.open; }); }
+  } else {
+    $('#view').innerHTML = head + v140ModelHTMLUser();
+  }
+  document.body.classList.add('v140-model');
+  V140.sig = v140Sig();
+}
+function v140Sig(){ try{ return [UR.range, v140View(), typeof USH!=='undefined' ? USH.at : 0, typeof MLOG!=='undefined' ? MLOG.at : 0, V138.pubAt, V140.daysAt, v138Admin()].join('|'); }catch(e){ return ''; } }
+function v140Repaint(){ try{ if (ui.tab==='tracker' && v140View()==='model') v140RenderModel(); }catch(e){} }
+setInterval(()=>{ try{ if (ui.tab==='tracker' && v140View()==='model' && document.visibilityState==='visible' && v140Sig()!==V140.sig){ const y = scrollY; v140RenderModel(); scrollTo(0, y); } }catch(e){} }, 20000);
+
+(function(){
+  const base = renderTracker;
+  renderTracker = function(pf){
+    const tailing = pf && Object.keys(pf).some(k=>k!=='_keep' && pf[k]!=null && pf[k]!=='');
+    if (tailing && v140View()==='model') v140SetView('tailed');
+    if (v140View()==='model'){ v140RenderModel(); return; }
+    document.body.classList.remove('v140-model');
+    const out = base.apply(this, arguments);
+    try{ const view = $('#view'); const t = view.querySelector(':scope > .section-title'); if (t && /Bet Tracker/.test(t.textContent)) t.remove(); view.insertAdjacentHTML('afterbegin', v140HeadHTML()); }catch(e){}
+    return out;
+  };
+})();
+
+/* ---------- events ---------- */
+document.addEventListener('change', e=>{
+  const t = e.target; if (!t || !t.closest) return;
+  if (t.closest('[data-v140-view]')){ v140SetView(t.value); renderTracker(); return; }
+  if (t.closest('[data-v140-per]')){ UR.range = t.value; const y = scrollY; renderTracker(); scrollTo(0, y); return; }
+  if (t.closest('[data-v140-metric]')){ V140.cal.metric = t.value; v140Repaint(); return; }
+  if (t.closest('[data-v140-mode]')){ V140.cal.mode = t.value; v140Repaint(); return; }
+}, true);
+document.addEventListener('click', e=>{
+  const t = e.target && e.target.closest && e.target.closest('[data-v140-nav],[data-v140-month],[data-v140-year]'); if (!t) return;
+  const C = V140.cal;
+  if (t.dataset.v140Nav){ const s = +t.dataset.v140Nav;
+    if (C.mode==='month') C.year = (+C.year||new Date().getFullYear()) + s;
+    else { let y = +C.month.slice(0,4), m = +C.month.slice(4,6) + s; if (m<1){ m=12; y--; } if (m>12){ m=1; y++; } C.month = `${y}${String(m).padStart(2,'0')}`; } }
+  else if (t.dataset.v140Month){ C.month = t.dataset.v140Month; C.mode = 'day'; }
+  else if (t.dataset.v140Year){ C.year = +t.dataset.v140Year; C.mode = 'month'; }
+  const y = scrollY; v140Repaint(); scrollTo(0, y);
+});
+
+/* ---------- Results tab folded into Tracker ---------- */
+canOpenResults = function(){ return !!V140.inModel; };
+(function(){
+  const st = setTab;
+  setTab = function(t, opts){ if (t==='results'){ v140SetView('model'); t = 'tracker'; } return st.call(this, t, opts); };
+  try{ if (ui.tab==='results'){ v140SetView('model'); ui.tab = 'tracker'; } }catch(e){}
+})();
+try{ applyAdminGate(); }catch(e){}
+
+(function(){ const st = document.createElement('style'); st.textContent = `
+.v140-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:2px 0 12px}
+.v140-title{margin:0;font-size:20px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.v140-sels{display:flex;gap:8px;flex-wrap:wrap}
+.v140-sel select,.v140-cal-sels select{min-height:40px;border-radius:12px;padding:0 30px 0 12px;font-weight:650;font-size:14px;border:1px solid rgba(59,130,246,.45);background-color:rgba(59,122,235,.14);color:#cfe0f7;max-width:100%}
+.v140-cal-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.v140-cal-top h3{margin:0;font-size:16px;white-space:nowrap}
+.v140-cal-sels{display:flex;gap:6px;flex-wrap:wrap}
+.v140-cal-note{margin-top:8px}
+.v140-model .uni-in > .uni-filters,.v140-model .v138-period{display:none !important}
+.v140-model .v139-uni{max-width:none}
+.v140-model #view > .card + .card{margin-top:12px}
+.v140-learn{padding:0}.v140-learn > summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;min-height:48px;box-sizing:border-box}
+.v140-learn > summary::-webkit-details-marker{display:none}
+.v140-learn > summary::after{content:'›';margin-left:auto;font-size:20px;color:var(--mut);transition:transform .15s}
+.v140-learn[open] > summary::after{transform:rotate(90deg)}
+.v140-learn > .v55-learn{margin:0;border:0;box-shadow:none;background:none}
+.v140-learn > .v55-learn > .section-title{display:none}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (max-width:380px){ .v140-sel select,.v140-cal-sels select{font-size:13px;padding:0 26px 0 10px} .v140-title{font-size:18px} }`; document.head.appendChild(st); })();
+
+/* ================= Filters: scroll lock, contained panel scroll, simpler layout ================= */
+(function(){
+  let lockedY = null;
+  function lock(on){
+    const html = document.documentElement;
+    if (on && lockedY===null){ lockedY = scrollY; html.classList.add('v140-lock'); }
+    else if (!on && lockedY!==null){ html.classList.remove('v140-lock'); const y = lockedY; lockedY = null; if (Math.abs(scrollY - y) > 1) scrollTo(0, y); }
+  }
+  new MutationObserver(()=>{ lock(document.body.classList.contains('filters-open')); }).observe(document.body, {attributes:true, attributeFilter:['class']});
+  // iOS can still drag the page through the dimmed area: stop touch scrolling outside the panel while it's open
+  document.addEventListener('touchmove', e=>{
+    if (!document.body.classList.contains('filters-open')) return;
+    const fb = document.getElementById('filterBar'); if (fb && fb.contains(e.target)){
+      // at the very top/bottom of the panel, don't hand the drag to the page
+      if (fb.scrollHeight <= fb.clientHeight + 1) e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+  }, {passive:false});
+  // the page is locked while open, so the drawer never needs to chase page scroll (that caused the jumpy panel)
+})();
+
+var V140F = { moreOpen: false, allSports: false };
+function v140ArrangeFilters(){
+  try{
+    const fb = document.getElementById('filterBar'); if (!fb) return;
+    // "More filters": Odds, Stats and Markets fold behind one row
+    let det = document.getElementById('v140More');
+    if (!det){
+      det = document.createElement('details'); det.id = 'v140More'; det.className = 'v140-more';
+      det.innerHTML = '<summary><span class="v140-more-t">More filters</span><span class="v140-more-n"></span></summary><div class="v140-more-body"></div>';
+      det.addEventListener('toggle', ()=>{ V140F.moreOpen = det.open; });
+      const anchor = document.getElementById('v132SecRow') || document.getElementById('sortRow');
+      if (anchor && anchor.parentNode===fb) anchor.after(det); else fb.appendChild(det);
+    }
+    if (det.open!==V140F.moreOpen) det.open = V140F.moreOpen;
+    const body = det.querySelector('.v140-more-body');
+    for (const id of ['oddsRow','v133Stats','v133Mkts']){ const r = document.getElementById(id); if (r && r.parentNode!==body) body.appendChild(r); }
+    // how many of the folded groups are narrowed
+    let n = 0;
+    try{ const oc = document.querySelectorAll('#oddsRow .chip'); const off = [...oc].filter(c=>!c.classList.contains('on')).length; if (oc.length && off && off < oc.length) n++; else if (oc.length && off===oc.length) n++; }catch(e){}
+    for (const id of ['v133Stats','v133Mkts']){ const r = document.getElementById(id); if (!r || r.hidden) continue; const ch = [...r.querySelectorAll('.chip')]; if (ch.some(c=>!c.classList.contains('on'))) n++; }
+    { const nn = det.querySelector('.v140-more-n'), tx = n ? String(n) : ''; if (nn.textContent!==tx) nn.textContent = tx; }
+    // keep the Tailed bets block after More filters, Done last
+    const tail = [...fb.children].find(c=>c.classList && c.classList.contains('filters') && /Tailed bets/.test(c.textContent) && !c.id);
+    if (tail && det.nextElementSibling!==tail) det.after(tail);
+    const done = fb.querySelector('.v136-done-row'); if (done && fb.lastElementChild!==done) fb.appendChild(done);
+    // sports: hide empty ones behind "+N more"
+    const sc = document.getElementById('sportChips');
+    if (sc){
+      const chips = [...sc.querySelectorAll('.chip')].filter(c=>!c.classList.contains('reset-chip') && !/^\s*All\b/.test(c.textContent) && !c.classList.contains('v140-more-sp'));
+      let hid = 0;
+      for (const c of chips){ const m = c.textContent.match(/(\d+)\s*$/); const zero = m && +m[1]===0; c.classList.toggle('v140-zero', !!zero && !V140F.allSports); if (zero) hid++; }
+      let t = sc.querySelector('.v140-more-sp');
+      if (hid){ if (!t){ t = document.createElement('span'); t.className = 'chip v140-more-sp'; t.setAttribute('role','button'); t.tabIndex = 0; sc.appendChild(t); }
+        const tx = V140F.allSports ? 'Fewer' : `+${hid} more`; if (t.textContent!==tx) t.textContent = tx; if (t.parentNode.lastElementChild!==t) sc.appendChild(t); }
+      else if (t) t.remove();
+    }
+  }catch(e){ console.warn('v140 filters', e); }
+}
+(function(){
+  if (typeof updateFilterChrome==='function'){ const base = updateFilterChrome; updateFilterChrome = function(){ const r = base.apply(this, arguments); v140ArrangeFilters(); return r; }; }
+  if (typeof renderChips==='function'){ const base = renderChips; renderChips = function(){ const r = base.apply(this, arguments); v140ArrangeFilters(); return r; }; }
+  document.addEventListener('click', e=>{ const t = e.target && e.target.closest && e.target.closest('.v140-more-sp'); if (!t) return; e.preventDefault(); e.stopPropagation(); V140F.allSports = !V140F.allSports; v140ArrangeFilters(); }, true);
+  v140ArrangeFilters();
+  // the board re-renders chips through several paths: re-arrange after any change inside the panel
+  let q = 0; const fb = document.getElementById('filterBar');
+  if (fb) new MutationObserver(()=>{ if (q) return; q = requestAnimationFrame(()=>{ q = 0; v140ArrangeFilters(); }); }).observe(fb, {childList:true, subtree:true});
+})();
+
+/* ================= Declutter ================= */
+// Settings: long helper notes fold behind one "More info" per section
+(function(){
+  if (typeof renderSettings!=='function') return;
+  const base = renderSettings;
+  renderSettings = function(){
+    const out = base.apply(this, arguments);
+    try{
+      document.querySelectorAll('#view .s-row').forEach(row=>{
+        const notes = [...row.querySelectorAll('.s-note, :scope > .hint')].filter(n=>!n.closest('.v140-info') && !n.closest('.acct-card, .acct-box'));
+        const groups = new Map(); notes.forEach(n=>{ const p = n.parentElement; if (!groups.has(p)) groups.set(p, []); groups.get(p).push(n); });
+        groups.forEach(list=>{ const d = document.createElement('details'); d.className = 'v140-info'; d.innerHTML = '<summary>More info</summary>'; list[0].before(d); list.forEach(n=>d.appendChild(n)); });
+      });
+      const h = document.querySelector('#view > .section-title .hint'); if (h && /Saved on this device|Synced to your account/.test(h.textContent)) h.classList.add('v140-quiet');
+    }catch(e){ console.warn('v140 settings', e); }
+    return out;
+  };
+})();
+// Tracker: secondary stats (drawdown, streak, CLV) fold behind "More stats"
+(function(){
+  const base = renderTracker;
+  renderTracker = function(){
+    const out = base.apply(this, arguments);
+    try{ const sub = document.querySelector('#view .trk-sub'); if (sub && !sub.closest('.v140-stats')){
+      const d = document.createElement('details'); d.className = 'v140-stats'; d.innerHTML = '<summary>More stats</summary>'; sub.before(d); d.appendChild(sub); d.open = !!V140.statsOpen; d.addEventListener('toggle', ()=>{ V140.statsOpen = d.open; }); } }catch(e){}
+    return out;
+  };
+})();
+
+(function(){ const st = document.createElement('style'); st.textContent = `
+/* filters: page stays put, panel scrolls on its own */
+html.v140-lock{overflow:hidden !important;overscroll-behavior:none}
+body.filters-open #filterBar:not([hidden]){overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+#v136Backdrop{touch-action:none}
+#filterBar #chipNote{display:none !important}
+#filterBar .chip.v140-zero{display:none !important}
+#filterBar .chip.v140-more-sp{color:var(--mut);background:rgba(255,255,255,.03);border:1px solid var(--line)}
+#filterBar #horizonRow:not(#zz),#filterBar #sortRow:not(#zz),#filterBar #v132SecRow:not(#zz){grid-template-columns:56px minmax(0,1fr);align-items:center;column-gap:10px}
+#filterBar :is(#horizonRow,#sortRow,#v132SecRow) .horizon-lab{margin:0;align-self:center}
+#filterBar :is(#horizonRow,#sortRow,#v132SecRow) > :not(.horizon-lab){grid-column:2}
+#filterBar .v140-more{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.02);margin:2px 0}
+#filterBar .v140-more > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;font-weight:700;font-size:13px;color:#cfe0f7}
+#filterBar .v140-more > summary::-webkit-details-marker{display:none}
+#filterBar .v140-more-n:not(:empty){min-width:20px;height:20px;border-radius:999px;background:rgba(59,122,235,.3);color:#e2ecfb;font-size:11px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}
+#filterBar .v140-more-body{display:flex;flex-direction:column;gap:12px;padding:4px 10px 12px}
+/* declutter: board */
+.card .teams-block > .venue{display:none}
+.card .beton .ui-val{display:none}
+#view .section-title:has(> h2 > .h-emo) > .hint{display:none}
+.v134-hint,.v119-hint{display:none}
+/* tighter Courtroom / news rows on cards */
+#view .card > details.dd{margin-top:8px}
+#view .card > details.dd:not([open]){padding-top:0;padding-bottom:0}
+#view .card > details.dd > summary{min-height:44px;box-sizing:border-box}
+/* declutter: settings + tracker */
+.v140-info{margin-top:6px}
+.v140-info > summary,.v140-stats > summary{cursor:pointer;color:var(--mut);font-size:12.5px;font-weight:650;min-height:32px;display:inline-flex;align-items:center;list-style:none}
+.v140-info > summary::-webkit-details-marker,.v140-stats > summary::-webkit-details-marker{display:none}
+html body #tabs [data-tab="results"],html body #moreSheet [data-tab="results"]{display:none !important}
+.v140-stats{margin:4px 0 10px}
+.v140-quiet{display:none}`; document.head.appendChild(st); })();
 </script>
 </body>
 </html>
