@@ -99,7 +99,7 @@ main.wrap{padding-top:24px;padding-bottom:72px;padding-left:16px;padding-right:1
 .card{background:linear-gradient(180deg,#1a2b44 0%,#132033 100%);border:1px solid var(--line);border-radius:var(--r);padding:18px 16px 16px;position:relative;overflow:visible;min-width:0;max-width:100%;box-shadow:var(--shadow);content-visibility:auto;contain-intrinsic-size:auto 240px;transition:border-color .25s var(--ease),transform .25s var(--ease)}
 .card:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.07) inset,0 16px 36px -14px rgba(0,0,0,.85),0 0 0 1px rgba(59,130,246,.08)}
 .card:before{content:'';position:absolute;left:0;top:16px;bottom:16px;width:4px;border-radius:0 4px 4px 0;background:transparent}
-.card.v-good:before{background:var(--good)}.card.v-watch:before{background:var(--watch)}.card.v-avoid:before{background:var(--avoid)}
+.card.v-good:before{background:var(--good)}.card.v-watch:before{background:var(--watch)}.card.v-avoid:before{background:var(--avoid)}.card.v-none:before{background:var(--avoid)}
 .chead{display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--mut);font-size:12px;margin-bottom:10px;font-variant-numeric:tabular-nums;flex-wrap:wrap;min-width:0}
 .lg{background:rgba(255,255,255,.04);border:1px solid var(--line);padding:2px 8px;border-radius:6px;font-weight:600;font-size:10.5px;color:var(--txt2);letter-spacing:.08em}
 .teams{display:flex;flex-direction:column;gap:7px;margin:4px 0 12px}
@@ -1828,7 +1828,7 @@ function recommendedUnits(item, kind){
   );
   // v68: only a Bet gets a stake. Watch / Skip / Avoid are 0u with a matching label.
   if (!isGood){
-    const isAvoid = rawV==='avoid' || rawV==='pass';
+    const isAvoid = rawV==='avoid' || rawV==='pass' || rawV==='none' || rawV==='skip' || !rawV;
     const w = isWatch ? 'Watch' : isAvoid ? 'Avoid' : 'Skip';
     return {u:0, label:`0u (${w})`, short:`${w} (0u)`, dollars:0, cls:'u-skip', note: isWatch ? 'Watch: no stake until it becomes a Bet' : isAvoid ? 'Avoid: pass on this spot' : 'Skip: pass on this spot'};
   }
@@ -6956,12 +6956,16 @@ function fmtTime(d){
   return `${day} ${d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`;
 }
 function badge(v){
-  const m = {good:['b-good','Bet'], watch:['b-watch','Maybe later'], avoid:['b-avoid','Skip'], none:['b-none','Skip'], started:['b-live','Started']};
-  const [c,t] = m[v]||m.none; return `<span class="badge ${c}">${t}</span>`;
+  if (typeof v118Call==='function') v = v118Call(v);
+  else if (!v || v==='none') v = 'avoid';
+  const m = {good:['b-good','BET'], watch:['b-watch','WATCH'], avoid:['b-avoid','AVOID'], none:['b-avoid','AVOID'], started:['b-live','LIVE']};
+  const [c,t] = m[v]||m.avoid; return `<span class="badge ${c}">${t}</span>`;
 }
 function verdictPill(v){
-  const m = {good:['vp-good','BET'], watch:['vp-watch','WATCH'], avoid:['vp-avoid','AVOID'], none:['vp-none','SKIP'], started:['vp-live','LIVE']};
-  const [c,t] = m[v]||m.none;
+  if (typeof v118Call==='function') v = v118Call(v);
+  else if (!v || v==='none') v = 'avoid';
+  const m = {good:['vp-good','BET'], watch:['vp-watch','WATCH'], avoid:['vp-avoid','AVOID'], none:['vp-avoid','AVOID'], started:['vp-live','LIVE']};
+  const [c,t] = m[v]||m.avoid;
   return `<span class="verdict-pill ${c}">${t}</span>`;
 }
 const MKN = {ml:'Moneyline', spread:'Spread', total:'Total'};
@@ -6979,9 +6983,12 @@ function gameHead(g, verdict){
   const first = g.ind ? 'home' : 'away', second = g.ind ? 'away' : 'home';
   const venue = !g.ind ? `<div class="mut venue">${g.neutral?'Neutral site':'@ '+esc(g.home.name)}</div>` : '';
   const teams = `<div class="teams">${teamRow(g, first)}${teamRow(g, second)}</div>`;
-  const showPill = verdict && verdict!=='started' && verdict!=='none';
+  if (verdict==null || verdict===''){
+    verdict = (typeof v118BestGameCall==='function' ? v118BestGameCall(g) : null) || 'avoid';
+  }
+  const callV = (!verdict || verdict==='none') ? 'avoid' : verdict;
   return `<div class="chead"><span><span class="lg">${esc(L.label)}</span> ${g.title?`<span class="mut">${esc(g.title)}</span>`:''}</span>${st}</div>
-    ${showPill?`<div class="teams-block"><div class="teams-row">${teams}<div class="verdict-slot">${verdictPill(verdict)}</div></div>${venue}</div>`:`${teams}${venue}`}`;
+    <div class="teams-block"><div class="teams-row">${teams}<div class="verdict-slot">${verdictPill(callV)}</div></div>${venue}</div>`;
 }
 function moveCell(mk, sd){
   if (mk!=='ml' && Math.abs(sd.ptAdv)>=0.25) return `${sd.ptAdv>0?'▼':'▲'} ${Math.abs(sd.ptAdv).toFixed(1)}pt`;
@@ -11451,7 +11458,7 @@ function propHead(p){
   const L = g && LMAP[g.league];
   const st = !g ? '' : g.state==='in' ? `<span class="badge b-live">● Live ${esc(g.statusText||'')}</span>` : g.state==='post' ? `<span>${esc(g.statusText||'Final')}</span>` : `<span>${fmtTime(g.start)}</span>`;
   const match = g ? `${esc((g.away&&g.away.short)||'AWY')} @ ${esc((g.home&&g.home.short)||'HME')}` : '';
-  const showPill = p.verdict && p.verdict!=='started' && p.verdict!=='none';
+  const callV = (!p.verdict || p.verdict==='none') ? 'avoid' : p.verdict;
   return `<div class="chead"><span><span class="lg">${esc((L&&L.label)||(p.league||'').toUpperCase())}</span> <span class="mut">${match}</span></span>${st}</div>
     <div class="prop-head">
       ${playerPfpHTML(p)}
@@ -11459,7 +11466,7 @@ function propHead(p){
         <div class="prop-name">${esc(p.playerName||'Player')}</div>
         <div class="prop-meta">${p.team?teamLogoHTML(p.team):''}<span>${esc((p.team&&(p.team.short||p.team.name))||'')}${p.pos?` · ${esc(p.pos)}`:''}${p.opp?` vs ${esc(p.opp.short||p.opp.name)}`:''}${p.home===true?' · Home':p.home===false?' · Away':''}</span></div>
       </div>
-      ${showPill?`<div class="verdict-slot">${verdictPill(p.verdict)}</div>`:''}
+      <div class="verdict-slot">${verdictPill(callV)}</div>
     </div>`;
 }
 
@@ -12274,7 +12281,7 @@ function parlayCardInner(pl){
     ${lockBadge?`<div class="lock-badge-row">${lockBadge}</div>`:''}
     <div class="pick"><div><div class="mk">Combined payout</div><div class="what">${fmtDecX(pl.dec)} / ${fmtAm(pl.am)}</div></div>
       <div class="price">${fmtPct(pl.p,0)}<small>est. hit</small></div>
-      ${pl.verdict?`<div class="verdict-slot">${typeof verdictPill==='function'?verdictPill(pl.verdict):''}</div>`:''}
+      <div class="verdict-slot">${typeof verdictPill==='function'?verdictPill(pl.verdict||'avoid'):''}</div>
     </div>
     <div class="pl-legs">${pl.legs.map(parlayLegRow).join('')}</div>
     ${pl.tailedKeep?`<div class="hint kept-note">${esc(TAILED_KEEP_NOTE)}</div>`:''}
@@ -23723,6 +23730,107 @@ window.v117Status = function(){
     build: APP_BUILD,
     filtersOpen: typeof document!=='undefined' && document.body.classList.contains('filters-open')
   };
+};
+/* v118: every play card shows its model call (BET / WATCH / AVOID).
+   Cause: gameHead/propHead hid the badge when verdict was 'none' (model
+   skip / no edge), which Verdict checks reuse for the typed side. Size
+   0u (Skip) is the same path — now labelled Avoid to match the badge. */
+APP_BUILD = 118;
+
+function v118Call(v){
+  const s = String(v==null?'':v).toLowerCase().trim();
+  if (s==='started' || s==='live' || s==='in' || s==='final') return 'started';
+  if (s==='good' || s==='bet' || s==='pick' || s==='lock') return 'good';
+  if (s==='watch' || s==='watchlist' || s==='maybe later') return 'watch';
+  return 'avoid'; // none, avoid, pass, skip, missing, or any other skip-like call
+}
+
+function v118BestGameCall(g){
+  if (!g) return 'avoid';
+  const rank = v => { const k = v118Call(v); return k==='good'?0:k==='watch'?1:k==='started'?4:2; };
+  let best = null, br = 99;
+  const V = g.verdicts || {};
+  for (const mk of ['ml','spread','total']){
+    const v = V[mk] && V[mk].verdict;
+    if (!v) continue;
+    const r = rank(v);
+    if (r < br){ br = r; best = v; }
+  }
+  if (best!=null) return best;
+  try{
+    const list = (typeof plays!=='undefined' && plays) || [];
+    for (const p of list){
+      if (!p || !p.g || p.g!==g && !(p.g.id && g.id && p.g.id===g.id)) continue;
+      const r = rank(p.verdict);
+      if (r < br){ br = r; best = p.verdict; }
+    }
+  }catch(e){}
+  return best || 'avoid';
+}
+
+/* Old rule, used to report how many cards were missing a badge. */
+function v118OldWouldHide(v){
+  return !(v && v!=='started' && v!=='none');
+}
+
+if (typeof verdictBadge==='function'){
+  verdictBadge = function(v){
+    const k = v118Call(v);
+    const lab = k==='good'?'BET':k==='watch'?'WATCH':k==='started'?'LIVE':'AVOID';
+    const c = k==='good'?'b-good':k==='watch'?'b-watch':k==='started'?'b-live':'b-avoid';
+    return `<span class="badge ${c}">${lab}</span>`;
+  };
+}
+
+function v118BetCall(b){
+  if (!b) return null;
+  if (b.verdict) return b.verdict;
+  if (b.link && b.link.verdict) return b.link.verdict;
+  const legs = b.legs || (b.link && b.link.legs) || [];
+  const vs = legs.map(l=>l && (l.verdictAtTail || l.verdict)).filter(Boolean);
+  if (vs.length){
+    if (vs.some(v=>v118Call(v)==='avoid')) return 'avoid';
+    if (vs.every(v=>v118Call(v)==='good')) return 'good';
+    return 'watch';
+  }
+  const key = b.playKey || (b.link && (b.link.id || b.link.playKey));
+  if (!key) return null;
+  try{
+    const list = [].concat((typeof plays!=='undefined' && plays)||[], (typeof props!=='undefined' && props)||[], (typeof parlays!=='undefined' && parlays)||[]);
+    const hit = list.find(p=>p && (p.id===key || (typeof playResultKey==='function' && playResultKey(p)===key)));
+    if (hit && hit.verdict) return hit.verdict;
+  }catch(e){}
+  return null;
+}
+
+(function(){
+  if (typeof renderTracker!=='function') return;
+  const orig = renderTracker;
+  renderTracker = function(){
+    const out = orig.apply(this, arguments);
+    try{
+      document.querySelectorAll('.bet-card[data-bet]').forEach(el=>{
+        if (el.querySelector('.verdict-pill, .verdict-slot')) return;
+        const id = el.getAttribute('data-bet');
+        const b = ((typeof bets!=='undefined' && bets)||[]).find(x=>x && String(x.id)===String(id));
+        const v = v118BetCall(b);
+        if (v==null) return;
+        const top = el.querySelector('.bet-top');
+        if (!top) return;
+        const slot = document.createElement('div');
+        slot.className = 'verdict-slot';
+        slot.innerHTML = (typeof verdictPill==='function'?verdictPill(v):'');
+        const res = top.querySelector('.res-pill');
+        if (res) top.insertBefore(slot, res);
+        else top.appendChild(slot);
+      });
+    }catch(e){}
+    return out;
+  };
+})();
+
+window.v118Status = function(){
+  return {build: APP_BUILD, call: v118Call};
 };
 </script>
 </body>
