@@ -2519,7 +2519,7 @@ function picksBoardHTML(title, lockedSub, emptyMsg, list, board, cardFnRaw){
   const grid = arr => arr.length ? `<div class="grid">${arr.map(cardFn).join('')}</div>` : '';
   let html = '';
   if (lockedSplitView(board)){
-    const tagCard = (html, cls, tag) => String(html).replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} ${cls}">${tag}`);
+    const tagCard = (html, cls, tag) => String(html).replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>`<div class="${c} ${cls}"${rest}>${tag}`);
     const lockedCards = locked.map(x=>tagCard(cardFn(x), 'locked-pick', '<div class="lk-tag"><span aria-hidden="true">🔒</span> Locked</div>')).join('');
     const earlyCards = early.map(x=>tagCard(cardFn(x), 'early-bird', `<div class="eb-tag">Not locked yet · ${esc(x._ebTag || fmtLocksIn(itemStartMs(x), lock))}</div>`)).join('');
     const hasWin = lock!=null && +lock>0;
@@ -5362,7 +5362,7 @@ function withPulledTailed(list, board){
 }
 function injectPulledCard(html, n){
   const acts = `<div class="pull-actions pulled-btns"><button type="button" class="btn sm untrack" data-untrack="${esc(n.k)}" aria-label="Untrack: open this bet in Pending bets to delete it">Untrack</button><button type="button" class="btn sm" data-dismiss-pull="${esc(n.k)}" data-pulled-at="${n.at||0}">Dismiss</button></div>`;
-  return String(html).replace(/<span class="lock-badge"[^>]*>[\s\S]*?<\/span>/g, '').replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} tailed-pulled logged-pulled"><div class="pulled-tag"><span aria-hidden="true">⛔</span> ${esc(pullTagText(n))}</div>${acts}`);
+  return String(html).replace(/<span class="lock-badge"[^>]*>[\s\S]*?<\/span>/g, '').replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>`<div class="${c} tailed-pulled logged-pulled"${rest}><div class="pulled-tag"><span aria-hidden="true">⛔</span> ${esc(pullTagText(n))}</div>${acts}`);
 }
 /* ================= BACKTEST (past ESPN data, no future leakage) ================= */
 // Data used per past game (all knowable before tip-off):
@@ -15212,7 +15212,7 @@ function lockedKeepItems(board, shownList){
 }
 function injectCoolNote(html, x){
   if (!x || !x.coolNote) return html;
-  return String(html).replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} locked-cooled"><div class="cool-note">${esc(x.coolNote)}</div>`);
+  return String(html).replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>`<div class="${c} locked-cooled"${rest}><div class="cool-note">${esc(x.coolNote)}</div>`);
 }
 /* ---------- automatic profit tracking (locked picks, graded from finals and box scores) ---------- */
 async function gradeLockedRecords(){
@@ -23901,7 +23901,7 @@ function v119LockHint(){
 }
 function v119LockedHTML(items){
   const tag = '<div class="lk-tag v119-up"><span aria-hidden="true">🔒</span> Upgraded from Pick</div>';
-  const cards = items.map(({x, fn})=>{ const h = fn(x); return x.pulledNote ? h : String(h).replace(/^\s*<div class="([^"]*)">/, (m, c)=>`<div class="${c} locked-pick">${tag}`); }).join('');
+  const cards = items.map(({x, fn})=>{ const h = fn(x); return x.pulledNote ? h : String(h).replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>`<div class="${c} locked-pick"${rest}>${tag}`); }).join('');
   return `<div class="v119-locked"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">🔒</span>Locked</h2><span class="hint">${v119LockHint()}</span></div>`
     + (items.length ? `<div class="grid">${cards}</div>` : `<div class="empty-state v119-empty">Nothing locked yet — picks move here once they lock.</div>`) + `</div>`;
 }
@@ -23910,7 +23910,7 @@ function v119LockedHTML(items){
   const collect = (fn, tab) => { V119.mode = 'collect'; V119.got = []; try{ fn(tab); } catch(e){} finally { V119.mode = null; } return V119.got; };
   const rest = (fn, tab) => { V119.mode = 'rest'; try{ return fn(tab); } finally { V119.mode = null; } };
   function lockedTop(tab){
-    const k = v115Kinds(tab); const items = [];
+    const k = v115Kinds(tab); let items = [];
     for (const [on, fn] of [[k.games, G], [k.props, P]]) if (on) for (const g of collect(fn, tab)){ const cf = v119CardFn(g.cardFnRaw); for (const x of g.locked) items.push({x, fn:cf, t:(typeof itemStartMs==='function' ? itemStartMs(x) : 0)||0}); }
     if (typeof v121ArrangeItems==='function') items = v121ArrangeItems(items);
     else items.sort((a,b)=>a.t-b.t);
@@ -24031,7 +24031,7 @@ function v121Bucket(p){
   return 'long';
 }
 function v121OddsAllows(x){
-  if (v121IsTailed(x)) return true;
+  // v122: a deselected odds bucket hides every play in it, including tailed bets
   const b = v121Bucket(x);
   if (!b) return true;
   return v121OddsSel().includes(b);
@@ -24235,6 +24235,281 @@ window.v121Status = function(){
     sort: v121Sort(),
     odds: v121OddsSel(),
     buckets: V121_ODDS.slice()
+  };
+};
+/* v122: desktop Tailed panel in the right column (above Pulled), collapsible.
+   Mobile keeps tailed picks inline at the top, sorted as in v121.
+   Odds filter hides every matching play, including tailed, on the board lists.
+   The side panel still lists all of his tailed picks. */
+APP_BUILD = 122;
+const V122_OPEN_KEY = 'bl_v122_tailed_open';
+
+function v122TailedOpen(){
+  try{ const v = localStorage.getItem(V122_OPEN_KEY); if (v==='0') return false; }catch(e){}
+  return true; // default expanded
+}
+function v122SetTailedOpen(on){
+  try{ localStorage.setItem(V122_OPEN_KEY, on ? '1' : '0'); }catch(e){}
+}
+function v122IsPending(b){ return !!(b && (!b.result || b.result==='pending')); }
+function v122Today(){
+  try{ if (typeof isoDate==='function') return isoDate(new Date()); }catch(e){}
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function v122BetDay(b){
+  if (!b) return '';
+  if (b.date && /^\d{4}-\d{2}-\d{2}/.test(String(b.date))) return String(b.date).slice(0,10);
+  const t = +b.updatedAt || +b.created || 0;
+  if (!t) return '';
+  try{ if (typeof isoDate==='function') return isoDate(new Date(t)); }catch(e){}
+  const d = new Date(t);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function v122TailedBets(){
+  const all = (typeof bets!=='undefined' && Array.isArray(bets)) ? bets.slice() : [];
+  const today = v122Today();
+  const list = all.filter(b => b && (v122IsPending(b) || v122BetDay(b)===today));
+  list.sort((a,b)=>{
+    const pa = v122IsPending(a)?1:0, pb = v122IsPending(b)?1:0;
+    if (pb!==pa) return pb-pa;
+    if (v122IsPending(a)){
+      const sa = v122StartOf(a), sb = v122StartOf(b);
+      if (sa && sb && sa!==sb) return sa-sb;
+    }
+    return (+b.updatedAt||+b.created||0) - (+a.updatedAt||+a.created||0);
+  });
+  return list;
+}
+function v122PlayForBet(b){
+  if (!b) return null;
+  const key = (typeof betPlayKey==='function') ? betPlayKey(b) : (b.playKey||null);
+  const pools = [];
+  try{ if (typeof plays!=='undefined' && plays) pools.push.apply(pools, plays); }catch(e){}
+  try{ if (typeof props!=='undefined' && props) pools.push.apply(pools, props); }catch(e){}
+  try{ if (typeof parlays!=='undefined' && parlays) pools.push.apply(pools, parlays); }catch(e){}
+  return pools.find(p=>{
+    if (!p) return false;
+    if (key && p.id===key) return true;
+    try{ if (typeof betsForPlay==='function' && (betsForPlay(p)||[]).some(x=>x && x.id===b.id)) return true; }catch(e){}
+    if (key && p.g && p.g.eventId && p.mk && p.side && `${p.g.eventId}|${p.mk}|${p.side}`===key) return true;
+    return false;
+  }) || null;
+}
+function v122StartOf(b){
+  try{
+    const p = v122PlayForBet(b);
+    if (p && typeof itemStartMs==='function') return itemStartMs(p)||0;
+  }catch(e){}
+  if (b && b.start){ const n = +b.start; if (isFinite(n) && n>0) return n; }
+  return 0;
+}
+function v122KindOf(p, b){
+  try{ if (typeof isParlayBet==='function' && isParlayBet(b)) return 'parlay'; }catch(e){}
+  if (p && (p.isProp || p.playerName || p.kind==='prop' || (!p.sd && p.kind))) return 'props';
+  if (b && /^parlay/i.test(String(b.market||''))) return 'parlay';
+  if (b && b.link && b.link.mk && !['ml','spread','total','h2h','spreads','totals','moneyline'].includes(String(b.link.mk))) return 'props';
+  return 'games';
+}
+function v122BetName(b){
+  try{ if (typeof shortBetName==='function') return shortBetName(b); }catch(e){}
+  return (b && b.pick) || 'Tailed pick';
+}
+
+function v122TailedHTML(){
+  const list = v122TailedBets();
+  const n = list.length;
+  const open = v122TailedOpen();
+  const ncls = n ? 'n' : 'n mute';
+  const rows = n ? `<div class="side-list tailed-list">${list.map(b=>{
+    const play = v122PlayForBet(b);
+    const pending = v122IsPending(b);
+    const res = pending ? 'Pending' : ((typeof resultLabel==='function') ? resultLabel(b.result) : (b.result||''));
+    const odds = (typeof fmtBetOdds==='function') ? fmtBetOdds(b) : '';
+    const stake = (b.stake!=null && typeof fmtStake==='function') ? ('$'+fmtStake(b.stake)) : '';
+    const hop = [res, (stake && odds) ? (stake+' @ '+odds) : (odds||stake)].filter(Boolean).join(' · ');
+    let why = b.sport || '';
+    const start = play && typeof itemStartMs==='function' ? itemStartMs(play) : v122StartOf(b);
+    if (start && typeof fmtTime==='function'){
+      const when = fmtTime(new Date(start));
+      why = (why ? why+' · ' : '') + (pending ? 'Starts '+when : when);
+    }
+    const name = v122BetName(b);
+    return `<button type="button" class="side-row tailed-row" data-tailed-bet="${esc(b.id)}" aria-label="${esc('Open '+name)}">
+      <div class="what">${esc(name)}</div>
+      ${hop?`<div class="hop">${esc(hop)}</div>`:''}
+      ${why?`<div class="why">${esc(why)}</div>`:''}
+    </button>`;
+  }).join('')}</div>` : `<div class="side-empty">No tailed picks yet.</div>`;
+  return `<div class="side-card tailed-card${open?' is-open':''}" id="tailedSidebar">
+    <button type="button" class="tailed-sum" id="btnTailedSide" aria-expanded="${open?'true':'false'}">
+      <span class="tailed-title">Tailed (${n})</span><span class="chev" aria-hidden="true">${open?'▾':'▸'}</span>
+    </button>
+    <div class="tailed-body"${open?'':' hidden'}>${rows}</div>
+  </div>`;
+}
+
+function v122TagCard(html, p){
+  if (!html || !p) return html;
+  let bid = '';
+  try{ const b = (typeof primaryLoggedBet==='function') ? primaryLoggedBet(p) : null; if (b && b.id) bid = b.id; }catch(e){}
+  const extra = (p.id ? ` data-pid="${esc(p.id)}"` : '') + (bid ? ` data-bid="${esc(bid)}"` : '');
+  if (!extra) return html;
+  return String(html).replace(/^\s*<div class="([^"]*)"/, (m,c)=>`<div class="${c}"${extra}`);
+}
+
+function v122FocusEl(el){
+  if (!el) return false;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  el.scrollIntoView({block:'center', behavior: reduce ? 'auto' : 'smooth'});
+  el.classList.remove('v122-flash'); void el.offsetWidth; el.classList.add('v122-flash');
+  clearTimeout(el._v122flash);
+  el._v122flash = setTimeout(()=>el.classList.remove('v122-flash'), 1800);
+  return true;
+}
+function v122OpenInTracker(b){
+  try{ if (typeof setMoreOpen==='function') setMoreOpen(false); if (typeof setNavPop==='function') setNavPop(null); }catch(e){}
+  if (typeof setTab==='function') setTab('tracker');
+  try{ if (typeof trackerUI!=='undefined'){ trackerUI.allOpen = true; if (b.result && b.result!=='pending') trackerUI.showSettled = true; } }catch(e){}
+  if (typeof render==='function') render();
+  const go = (tries)=>{
+    const det = document.querySelector('#view .trk-allbets'); if (det && !det.open) det.open = true;
+    const id = String(b.id);
+    const sel = '#view [data-bet="'+(window.CSS && CSS.escape ? CSS.escape(id) : id)+'"]';
+    const el = document.querySelector(sel);
+    if (!el){ if (tries>0) return setTimeout(()=>go(tries-1), 120); if (typeof toast==='function') toast('Open Tracker to find this bet.'); return; }
+    v122FocusEl(el);
+  };
+  setTimeout(()=>go(10), 60);
+}
+function v122OpenTailed(id){
+  const b = ((typeof bets!=='undefined' && bets) || []).find(x=>x && String(x.id)===String(id));
+  if (!b){ if (typeof toast==='function') toast('Could not find that tailed pick.'); return; }
+  const play = v122PlayForBet(b);
+  const kind = v122KindOf(play, b);
+  if (!play || kind==='parlay'){ v122OpenInTracker(b); return; }
+  const tab = (play.verdict==='watch'||play.verdict==='avoid') ? play.verdict : 'good';
+  try{
+    if (typeof setTab==='function') setTab(tab);
+    if ((kind==='games'||kind==='props') && typeof v115Kinds==='function' && typeof v115SetKind==='function'){
+      const k = v115Kinds(tab);
+      if (!k[kind]) v115SetKind(tab, kind, true);
+    }
+  }catch(e){}
+  if (typeof render==='function') render();
+  const go = (tries)=>{
+    const selPid = play.id ? '#view .slate-main [data-pid="'+(window.CSS && CSS.escape ? CSS.escape(String(play.id)) : String(play.id))+'"]' : '';
+    const selBid = '#view .slate-main [data-bid="'+(window.CSS && CSS.escape ? CSS.escape(String(b.id)) : String(b.id))+'"]';
+    const el = (selPid && document.querySelector(selPid)) || document.querySelector(selBid);
+    if (el){ v122FocusEl(el); return; }
+    if (tries>0) return setTimeout(()=>go(tries-1), 120);
+    v122OpenInTracker(b);
+  };
+  setTimeout(()=>go(10), 60);
+}
+
+(function(){
+  if (typeof pulledSidebarHTML==='function'){
+    const base = pulledSidebarHTML;
+    pulledSidebarHTML = function(){
+      const html = base.apply(this, arguments);
+      try{ return String(html).replace('<div class="side-body">', '<div class="side-body">'+v122TailedHTML()); }
+      catch(e){ return html; }
+    };
+  }
+  const wrapCard = (name)=>{
+    const fn = (typeof window!=='undefined' ? window[name] : null) || (typeof self!=='undefined' ? self[name] : null);
+    // functions are global script bindings, not always on window
+  };
+  if (typeof playCard==='function'){ const base = playCard; playCard = function(p){ return v122TagCard(base.apply(this, arguments), p); }; }
+  if (typeof propCard==='function'){ const base = propCard; propCard = function(p){ return v122TagCard(base.apply(this, arguments), p); }; }
+  if (typeof parlayCard==='function'){ const base = parlayCard; parlayCard = function(p){ return v122TagCard(base.apply(this, arguments), p); }; }
+  if (typeof tailedPlayFallbackCard==='function'){ const base = tailedPlayFallbackCard; tailedPlayFallbackCard = function(p){ return v122TagCard(base.apply(this, arguments), p); }; }
+
+  document.addEventListener('click', e=>{
+    const btn = e.target && e.target.closest && e.target.closest('#btnTailedSide');
+    if (!btn) return;
+    e.preventDefault();
+    const box = document.getElementById('tailedSidebar');
+    if (!box) return;
+    const on = !box.classList.contains('is-open');
+    box.classList.toggle('is-open', on);
+    btn.setAttribute('aria-expanded', on?'true':'false');
+    const body = box.querySelector('.tailed-body');
+    if (body) body.hidden = !on;
+    const chev = btn.querySelector('.chev');
+    if (chev) chev.textContent = on ? '▾' : '▸';
+    v122SetTailedOpen(on);
+  });
+  document.addEventListener('click', e=>{
+    const btn = e.target && e.target.closest && e.target.closest('[data-tailed-bet]');
+    if (!btn) return;
+    e.preventDefault();
+    v122OpenTailed(btn.getAttribute('data-tailed-bet'));
+  });
+})();
+
+(function(){
+  const st = document.createElement('style');
+  st.textContent = `
+.side-card.tailed-card{border-color:rgba(92,135,204,.42);background:linear-gradient(180deg,#1a2e4a 0%,#132033 58%);box-shadow:0 1px 0 rgba(92,135,204,.14) inset,0 14px 28px -16px rgba(0,0,0,.7),var(--shadow);padding:18px 16px 16px}
+.side-card.tailed-card[open],.side-card.tailed-card{display:block}
+.side-card.tailed-card > summary{list-style:none !important}
+.tailed-sum{list-style:none !important;cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:nowrap;margin:0;font-size:13.5px;font-weight:650;color:var(--txt);-webkit-user-select:none;user-select:none}
+.tailed-sum::-webkit-details-marker,.tailed-card > summary::-webkit-details-marker,.tailed-sum::marker,.tailed-card > summary::marker{display:none !important;content:none !important}
+.tailed-sum .tailed-title{min-width:0;overflow-wrap:normal;word-break:normal;color:var(--logged-hi,#b4c6e4)}
+.tailed-sum .chev{margin-left:auto;color:var(--logged-hi,#b4c6e4);font-size:14px;font-weight:700;flex:none}
+.tailed-list{max-height:min(52vh,440px);overflow-y:auto;margin:10px -4px 0;padding:0 4px;display:flex;flex-direction:column;gap:8px}
+.side-row.tailed-row{display:block;width:100%;text-align:left;font:inherit;color:inherit;padding:12px 12px;border:1px solid rgba(92,135,204,.35);border-radius:16px;background:linear-gradient(180deg,rgba(92,135,204,.16),rgba(19,32,51,.55));cursor:pointer;-webkit-tap-highlight-color:transparent}
+.side-row.tailed-row:hover,.side-row.tailed-row:focus-visible{border-color:rgba(180,198,228,.7);outline:none}
+.side-row.tailed-row .what{font-weight:650;font-size:13.5px;color:var(--txt);line-height:1.3;overflow-wrap:break-word;word-break:normal;hyphens:manual}
+.side-row.tailed-row .hop{color:var(--logged-hi,#b4c6e4);font-size:11.5px;margin-top:3px;font-weight:650;overflow-wrap:break-word;word-break:normal}
+.side-row.tailed-row .why{color:var(--mut);font-size:11.5px;margin-top:2px;line-height:1.4;overflow-wrap:break-word;word-break:normal}
+.tailed-body{min-width:0}
+.tailed-card > .side-empty,.tailed-body > .side-empty{margin-top:8px}
+.tailed-sum{width:100%;background:transparent;border:0;padding:0;font:inherit;text-align:left}
+.card.v122-flash{animation:v122Flash 1.6s ease-in-out 1;outline:2px solid var(--logged-hi,#b4c6e4);outline-offset:2px}
+@keyframes v122Flash{0%,100%{box-shadow:none}45%{box-shadow:0 0 0 3px rgba(92,135,204,.5)}}
+@media (max-width:1099.98px){
+  .tailed-list{max-height:min(40vh,320px)}
+}
+/* v122: tailed cards should be obvious at a glance, without a neon glow. */
+.card.logged:not(.logged-pulled){
+  border:2px solid #4e7cc2;
+  background:linear-gradient(180deg,#1c3654 0%,#163049 50%,#12263c 100%);
+  box-shadow:0 0 0 1px rgba(78,124,194,.35),var(--shadow);
+}
+.card.logged:not(.logged-pulled):before{
+  background:#4e7cc2;
+  width:4px;
+  top:0;bottom:0;
+  border-radius:var(--r) 0 0 var(--r);
+  box-shadow:none;
+}
+.card.logged:not(.logged-pulled) .logged-badge{
+  background:#3a649e;
+  color:#f4f8fd;
+  border:1px solid #7ea0d2;
+  font-weight:800;
+  letter-spacing:.06em;
+  padding:5px 12px;
+  box-shadow:none;
+}
+@media (prefers-reduced-motion:reduce){
+  .card.v122-flash{animation:none}
+}
+`;
+  document.documentElement.appendChild(st);
+})();
+
+window.v122Status = function(){
+  const el = document.getElementById('tailedSidebar');
+  return {
+    build: APP_BUILD,
+    n: v122TailedBets().length,
+    open: !!(el && el.classList.contains('is-open')),
+    hasPanel: !!el,
+    sideHidden: (function(){ const s=document.querySelector('.slate-side'); if(!s) return null; return getComputedStyle(s).display==='none'; })()
   };
 };
 </script>
