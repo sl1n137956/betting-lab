@@ -22663,6 +22663,171 @@ scheduleCloudPush = function(){
 // if the live settings stream drops, check every 3 minutes instead of every minute until it reconnects
 (function(){ const base = sync2ListenFailed; sync2ListenFailed = function(uid, err){ const si = window.setInterval; window.setInterval = function(f, ms){ return si.call(window, f, ms===60000 ? 180000 : ms); };
   try{ return base.apply(this, arguments); } finally { window.setInterval = si; } }; })();
+/* v114: Games and Props boards show every play the model calls a Pick or Lock, the same set Results grades.
+   Odds range, strict mode, a worse-than-fair book price, and a second Pick in the same game no longer move a
+   model Pick to Watch. Those reasons show as a small tag instead. If your books don't offer the play, it stays
+   a Pick and uses the existing "hidden (not on your books)" section. Phone lock alerts are not sent just because
+   a play became visible; only a real new lock (existing rule, already de-duplicated) can alert. Sport chips still
+   filter the board — turn a sport on to see its Results picks there. */
+APP_BUILD = 114;
+
+function bdTagFromReason(s){
+  s = String(s||'');
+  if (/^Outside your /.test(s) || /^odds outside /.test(s)) return 'Outside your odds range';
+  const sm = /^Strict mode: missed "([^"]+)"/.exec(s); if (sm) return 'Missed a strict check: '+sm[1];
+  if (/^Strict mode: missed/.test(s)) return 'Missed a strict check';
+  if (/^Moved to Watchlist: another Picks play/.test(s)) return 'Another Pick is already in this game';
+  if (/you'd overpay/.test(s)) return s.replace(/^Not a Bet:\s*/,'');
+  if (/only fair value/.test(s) || /no edge/i.test(s)) return 'No edge at the best price';
+  if (/price is worse than fair/.test(s)) return 'Book price is worse than fair';
+  if (/does not recommend this sport/.test(s)) return 'This sport is off in Settings';
+  return null;
+}
+function bdIsDemoteReason(s){ return !!bdTagFromReason(s); }
+function bdUnique(arr){ const out=[], seen=new Set(); for (const x of arr||[]){ const k=String(x||''); if (!k || seen.has(k)) continue; seen.add(k); out.push(k); } return out; }
+function bdRowFor(p, board){
+  try{
+    if (typeof UNI==='undefined' || !UNI || typeof UNI.get!=='function') return null;
+    if (board==='props' || (p && p.isProp)) return UNI.get(p.id) || null;
+    const ev = p && p.g && p.g.eventId, mk = p && p.mk, side = p && p.side;
+    if (ev==null || !mk || !side) return null;
+    const pt = p.sd && p.sd.point; const id = 'g:'+ev+':'+mk+':'+side+':'+(pt==null?'':pt);
+    return UNI.get(id) || null;
+  }catch(e){ return null; }
+}
+function bdIsRawLock(p, board){
+  const r = bdRowFor(p, board);
+  return !!(r && r.lk && r.lk.L);
+}
+function bdHushLockAlert(p, board){
+  try{
+    if (typeof lockItemKey!=='function' || typeof newPlayNotified==='undefined') return;
+    const lk = lockItemKey(board, p); if (!lk || newPlayNotified[lk]) return;
+    const row = bdRowFor(p, board);
+    const prevBoard = row && row.sv;
+    let wasGood = prevBoard==='good';
+    if (!wasGood && board==='games' && typeof playTabs!=='undefined' && playTabs && typeof playResultKey==='function'){
+      const prev = playTabs[playResultKey(p)]; if (prev && prev.tab==='good') wasGood = true;
+    }
+    if (wasGood) return;
+    if (!prevBoard && board==='games'){
+      const prev = (typeof playTabs!=='undefined' && playTabs && typeof playResultKey==='function') ? playTabs[playResultKey(p)] : null;
+      if (!prev) return;                 // brand-new play: normal lock alerts still apply
+    }
+    if (!prevBoard && board==='props' && !row) return;
+    newPlayNotified[lk] = Date.now();
+    if (board==='games' && typeof playResultKey==='function') newPlayNotified[playResultKey(p)] = Date.now();
+  }catch(e){}
+}
+function bdKeepModelPick(p, extraTags){
+  if (!p || p.verdict==='started') return p;
+  const raw = (p._v0!=null) ? p._v0 : null;
+  if (raw!=='good' && !extraTags) return p;
+  if (raw!=='good') return p;
+  const tags = [];
+  if (p.verdict!=='good'){
+    for (const s of (p.reasons||[])){ const t = bdTagFromReason(s); if (t) tags.push(t); }
+    p.reasons = (p.reasons||[]).filter(s=>!bdIsDemoteReason(s));
+    p.verdict = 'good';
+    bdHushLockAlert(p, p.isProp ? 'props' : 'games');
+  }
+  if (extraTags) for (const t of extraTags) if (t) tags.push(t);
+  if (tags.length) p.boardTags = bdUnique([].concat(p.boardTags||[], tags));
+  return p;
+}
+function boardTagsHTML(p){
+  const tags = (p && p.boardTags) || [];
+  if (!tags.length) return '';
+  return '<div class="bd-tags">'+tags.map(t=>'<span class="bd-tag">'+esc(t)+'</span>').join('')+'</div>';
+}
+function bdInjectTags(html, p){
+  if (!html || !p || !(p.boardTags||[]).length) return html;
+  const tag = boardTagsHTML(p);
+  if (html.indexOf('class="bd-tags"')>=0) return html;
+  if (/<\/div>\s*<div class="cfoot"/.test(html)) return html.replace(/<\/div>\s*(<div class="cfoot")/, '</div>'+tag+'$1');
+  if (/<\/div>\s*<details class="dd/.test(html)) return html.replace(/(<\/div>\s*)(<details class="dd)/, '$1'+tag+'$2');
+  return html.replace(/(<\/div>\s*)$/, tag+'$1');
+}
+
+/* Games: run the usual filters, then put model Picks back as Picks with tags, then record / lock / parlays. */
+(function(){
+  if (typeof evaluateAll!=='function') return;
+  const orig = evaluateAll;
+  evaluateAll = function(pre){
+    const holdTrack = typeof trackPlayTabs==='function' ? trackPlayTabs : null;
+    const holdRec = typeof recordResults==='function' ? recordResults : null;
+    const holdParlay = typeof buildParlays==='function' ? buildParlays : null;
+    if (holdTrack) trackPlayTabs = function(){};
+    if (holdRec) recordResults = function(){};
+    if (holdParlay) buildParlays = function(){};
+    try{ orig.apply(this, arguments); }
+    finally{
+      if (holdTrack) trackPlayTabs = holdTrack;
+      if (holdRec) recordResults = holdRec;
+      if (holdParlay) buildParlays = holdParlay;
+    }
+    try{ for (const p of (plays||[])) bdKeepModelPick(p); }catch(e){ console.warn('keep model pick', e); }
+    try{ if (holdRec) recordResults(); }catch(e){ console.warn('results', e); }
+    try{ if (holdTrack) trackPlayTabs(); }catch(e){ console.warn('tabs', e); }
+    try{ if (holdParlay) buildParlays(); }catch(e){ console.warn('parlays', e); }
+  };
+})();
+
+/* Props: if the model's own call (odds range ignored, same as Results) is a Pick, keep it a Pick. */
+(function(){
+  if (typeof buildPropPlay!=='function') return;
+  const orig = buildPropPlay;
+  buildPropPlay = function(raw, side, feat, est){
+    const p = orig.apply(this, arguments);
+    if (typeof VERDICT_NO_RANGE!=='undefined' && VERDICT_NO_RANGE>0) return p;
+    if (!p || p.verdict==='good') return p;
+    let rawV = null;
+    try{
+      const price = side==='over' ? raw.overPrice : raw.underPrice;
+      if (typeof strictPropGates==='function' && est && est.pOver!=null){
+        const prev = typeof VERDICT_NO_RANGE!=='undefined' ? VERDICT_NO_RANGE : 0;
+        try{ if (typeof VERDICT_NO_RANGE!=='undefined') VERDICT_NO_RANGE = prev+1; rawV = strictPropGates(est.pOver, price, feat, side, raw).verdict; }
+        finally{ if (typeof VERDICT_NO_RANGE!=='undefined') VERDICT_NO_RANGE = prev; }
+      }
+    }catch(e){}
+    if (rawV!=='good') return p;
+    p._v0 = 'good';
+    const tags = [];
+    for (const f of (p.strictFails||[])){
+      const t = bdTagFromReason(f) || (/odds outside/.test(f) ? 'Outside your odds range' : null);
+      if (t) tags.push(t);
+      else if (f && !/^estimated win chance/.test(f) && !/^still loading/.test(f)) tags.push(String(f).charAt(0).toUpperCase()+String(f).slice(1));
+    }
+    p.verdict = 'good';
+    p.boardTags = bdUnique(tags);
+    p.isProp = true;
+    bdHushLockAlert(p, 'props');
+    return p;
+  };
+})();
+
+/* A Results Lock (model Pick held through the lock window) shows as locked on the board too. */
+(function(){
+  if (typeof lockStatus!=='function') return;
+  const orig = lockStatus;
+  lockStatus = function(x, board){
+    const st = orig.apply(this, arguments) || {locked:false, tag:''};
+    if (st.locked) return st;
+    try{ if (bdIsRawLock(x, board|| (x && x.isProp ? 'props' : 'games'))) return {locked:true, tag:''}; }catch(e){}
+    return st;
+  };
+})();
+
+(function(){
+  if (typeof playCard==='function'){ const o = playCard; playCard = function(p){ return bdInjectTags(o.apply(this, arguments), p); }; }
+  if (typeof propCard==='function'){ const o = propCard; propCard = function(p){ return bdInjectTags(o.apply(this, arguments), p); }; }
+})();
+
+try{
+  const st = document.createElement('style');
+  st.textContent = '.bd-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 2px 0}.bd-tag{display:inline-block;max-width:100%;padding:3px 8px;border-radius:999px;font-size:11px;line-height:1.35;font-weight:600;color:var(--txt2);background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.22);overflow-wrap:anywhere;word-break:break-word}';
+  document.head.appendChild(st);
+}catch(e){}
 </script>
 </body>
 </html>
