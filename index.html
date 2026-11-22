@@ -24736,6 +24736,7 @@ window.v129IsElite = v129IsElite;
   const base = lockStatus;
   lockStatus = function(x, board){
     const st = base.apply(this, arguments) || {locked:false, tag:''};
+    if (V129.off) return st;                                   // v131: Locked is back to the plain rule
     try{
       const b = board || (x && x.isProp ? 'props' : 'games');
       if (!st.locked || (b !== 'games' && b !== 'props') || !x || x.tailedKeep || x.lockedKeep || x.pulledNote) return st;
@@ -24759,7 +24760,7 @@ window.v129IsElite = v129IsElite;
 (function(){
   if (typeof v119LockHint !== 'function') return;
   const base = v119LockHint;
-  v119LockHint = function(){ return 'Top-rated plays only. ' + base.apply(this, arguments); };
+  v119LockHint = function(){ return (V129.off ? '' : 'Top-rated plays only. ') + base.apply(this, arguments); };
 })();
 
 /* universe (Results): lk.L only for elite plays, same rule and the same 4-per-board-per-day cap */
@@ -24793,6 +24794,7 @@ function v129UniElite(r){
   uniUpsert = function(b, src, id, baseRow, snap){
     const before = (typeof UNI !== 'undefined') ? UNI.get(id) : null; const hadLk = !!(before && before.lk);
     const r = base.apply(this, arguments);
+    if (V129.off) return r;
     try{
       if (r && r.lk && !hadLk){
         if (r.lk.L){ if (v129UniElite(r)){ r.lk.e = 1; V129.uniKept++; } else { delete r.lk.L; r.lk.ne = 1; V129.uniGated++; } }
@@ -24979,6 +24981,619 @@ window.v130Status = function(){
   const more = [...document.querySelectorAll('#moreSheet button[data-tab]')].map(b=>b.getAttribute('data-tab'));
   const tabs = [...document.querySelectorAll('#tabs button[data-tab]')].map(b=>b.getAttribute('data-tab'));
   return {build:APP_BUILD, more, tabs, moreHasParlay: more.includes('parlay')};
+};
+/* ================= v131: Picks of the Day + plain Locked + lock signals + self-tuning =================
+   - Picks of the Day (POTD): the v129 top-rated rule, picked as soon as a play qualifies, max N games + N props per
+     game day, kept stable once chosen. A chosen play that turns Watch/Avoid before it locks drops out and the slot
+     can refill. When one locks it stays in Picks of the Day with a lock icon (not duplicated in Locked).
+   - Locked is back to: any Pick that reaches the lock window having held steady (v119/v123/v125/v128 rules),
+     plus lock signals: price/line moving our way, model chance rising or holding, model parts agreeing, late
+     injury news. Signals against us (price/line moving away, model chance dropping, bad news) hold the lock back.
+     Signals that fired are saved on each lock (and in the shared pick log) so the learning loop can mute ones that
+     don't pay.
+   - Self-tuning, recomputed from the graded pick log the same way on every device: POTD cutoffs (edge, model chance,
+     stats, odds window, daily cap) move one small step at a time only with enough graded plays and a clear gain;
+     Pick/Watch/Avoid get per-segment moves (losing Pick segments go to Watch, winning Watch segments move up).
+     Every change is logged with its date and reason in Results > Model learning. */
+APP_BUILD = 131;
+V129.off = true;
+
+var V131 = {
+  prior: {G:{p:0.58, lo:-250, hi:150}, P:{kinds:['ast','threes'], edge:0.12, lo:-140, hi:150}, cap:{games:4, props:4}},
+  start: '20261122', first: '20261119',
+  params: null, byDay: {}, log: [], seg: {demote:{}, promote:{}}, segLog: [], sig: {}, mute: {},
+  rows: new Map(), stash: [], curFn: null, snap: null, snapDirty: 0, sigByBet: {}, fetching: false, fitAt: 0, potdAlerts: 0,
+  MIN_N: 30, PRIOR_STAKE: 3000, SEG_N: 40
+};
+V131.SIG = {
+  mf:{dir:1, name:'Price or line moved our way'}, ch:{dir:1, name:'Model chance held steady'}, cu:{dir:1, name:'Model chance went up'},
+  ag:{dir:1, name:'Model parts agree'}, nf:{dir:1, name:'Late injury news helps'},
+  ma:{dir:-1, name:'Price or line moved against us'}, cd:{dir:-1, name:'Model chance dropped'}, na:{dir:-1, name:'Late injury news hurts'}
+};
+function v131Clone(o){ return JSON.parse(JSON.stringify(o)); }
+function v131ApplyParams(pr){
+  V131.params = pr; V129.G = pr.G; V129.P = pr.P; V129.cap = pr.cap; try{ V129.memo.clear(); }catch(e){}
+}
+(function(){
+  try{ const c = JSON.parse(localStorage.getItem('bl_v131_fit')||'null');
+    if (c && c.params && c.params.G && c.params.P){ v131ApplyParams(c.params); V131.log = c.log||[]; V131.seg = c.seg||V131.seg; V131.segLog = c.segLog||[]; V131.sig = c.sig||{}; V131.mute = c.mute||{}; V131.byDay = c.byDay||{}; }
+    else v131ApplyParams(v131Clone(V131.prior)); }catch(e){ v131ApplyParams(v131Clone(V131.prior)); }
+})();
+function v131Day(ms){ return v129Day(ms); }
+function v131DayAdd(d, n){ const t = new Date(+d.slice(0,4), +d.slice(4,6)-1, +d.slice(6,8), 12); t.setDate(t.getDate()+n); return t.getFullYear()+String(t.getMonth()+1).padStart(2,'0')+String(t.getDate()).padStart(2,'0'); }
+function v131Pct(x){ return (x>=0?'+':'')+(x*100).toFixed(1)+'%'; }
+
+/* ---------- compact graded rows per day (from the shared pick log) ---------- */
+function v131Compact(o){
+  const c = {b:o.b, l:o.l||'', v:o.v, sd:o.sd||'', ev:o.ev||'', p:o.p, pr:o.pr, res:o.res||'', lkd:o.lkd?1:0};
+  if (o.b==='props'){ c.k = o.k||''; c.pid = o.pid||''; c.pt = o.pt; } else c.mk = o.mk||'';
+  if (o.lpr!=null) c.lpr = o.lpr; if (o.sg) c.sg = o.sg; if (o.lb) c.lb = 1; return c;
+}
+function v131Keep(c){
+  if (c.v!=='good' || c.p==null || c.pr==null) return false;
+  if (c.b==='props'){ const e = c.p - v129Imp(c.pr); return e >= 0.05 || !!c.sg || !!c.lkd; }
+  return true;
+}
+function v131RowsFromRaw(day){
+  const m = (typeof MLOG!=='undefined' && MLOG.raw) ? MLOG.raw.get(day) : null; if (!m || !m.size) return null;
+  return mlogOnePerBet(m.values()).map(v131Compact).filter(v131Keep);
+}
+function v131RowsFor(day){
+  const raw = v131RowsFromRaw(day);
+  if (raw){
+    const today = v131Day(Date.now());
+    if (day <= v131DayAdd(today, -2)){ try{ localStorage.setItem('bl_v131_rows_'+day, JSON.stringify(raw)); }catch(e){} }
+    V131.rows.set(day, raw); return raw;
+  }
+  if (V131.rows.has(day)) return V131.rows.get(day);
+  try{ const c = JSON.parse(localStorage.getItem('bl_v131_rows_'+day)||'null'); if (Array.isArray(c)){ V131.rows.set(day, c); return c; } }catch(e){}
+  return null;
+}
+async function v131FetchMissing(){
+  if (V131.fetching || typeof mlogOn!=='function' || !mlogOn()) return 0;
+  const today = v131Day(Date.now()); const miss = [];
+  for (let d = V131.first; d <= today; d = v131DayAdd(d, 1)) if (!v131RowsFor(d)) miss.push(d);
+  if (!miss.length) return 0;
+  V131.fetching = true; let n = 0;
+  try{
+    const db = mlogFS();
+    for (const d of miss.slice(0, 4)){
+      const qs = await db.collection('modelLog').where('d', '==', d).get(); const rows = [];
+      qs.forEach(doc=>{ const x = doc.data(); if (x && x.r) for (const id in x.r){ const o = x.r[id]; if (o && o.b) rows.push(o); } });
+      const c = mlogOnePerBet(rows).map(v131Compact).filter(v131Keep);
+      V131.rows.set(d, c); n++;
+      if (d <= v131DayAdd(today, -2)) try{ localStorage.setItem('bl_v131_rows_'+d, JSON.stringify(c)); }catch(e){}
+    }
+  }catch(e){ console.warn('v131 fetch', e); }
+  finally{ V131.fetching = false; }
+  // prune old caches
+  try{ const cut = v131DayAdd(today, -60); for (let i=localStorage.length-1;i>=0;i--){ const k = localStorage.key(i); if (k && k.startsWith('bl_v131_rows_') && k.slice(13) < cut) localStorage.removeItem(k); } }catch(e){}
+  return n;
+}
+
+/* ---------- grading helpers ---------- */
+function v131T(){ return {n:0, w:0, l:0, pf:0, st:0}; }
+function v131Add(T, c, price){
+  if (c.res==='win'){ T.w++; T.n++; T.st += 100; T.pf += profitOn(+(price!=null?price:c.pr), 100); }
+  else if (c.res==='loss'){ T.l++; T.n++; T.st += 100; T.pf -= 100; }
+  return T;
+}
+function v131Roi(T){ return T.st ? T.pf/T.st : null; }
+function v131Shr(T){ return T.pf/(T.st + V131.PRIOR_STAKE); }       // shrunk toward break-even
+function v131Vals(c){ const e = (c.p!=null && c.pr!=null) ? c.p - v129Imp(c.pr) : null; return {p:c.p, price:+c.pr, edge:e, kind: c.b==='props' ? c.k : c.mk}; }
+function v131QualP(b, v, pr){
+  if (!v || v.p==null || !isFinite(v.price)) return false;
+  if (b==='props'){ const R = pr.P; return R.kinds.includes(v.kind) && v.edge!=null && v.edge >= R.edge - 1e-9 && v.price >= R.lo && v.price <= R.hi; }
+  const R = pr.G; return v.p >= R.p - 1e-9 && v.price > R.lo && v.price <= R.hi;
+}
+/* POTD for one day of rows under given params: top cap per board by score */
+function v131PotdOfDay(rows, pr){
+  const out = [];
+  for (const b of ['games','props']){
+    const q = (rows||[]).filter(c=>c.b===b && c.v==='good' && v131QualP(b, v131Vals(c), pr));
+    q.sort((a,c)=>v129Score(b, v131Vals(c)) - v129Score(b, v131Vals(a)));
+    out.push(...q.slice(0, pr.cap[b]||4));
+  }
+  return out;
+}
+
+/* ---------- POTD auto-tune: one small step per day, only with enough graded plays and a clear gain ---------- */
+function v131Step(pr, win, D){
+  const next = v131Clone(pr), ch = [];
+  const rowsAll = []; for (const d of win) rowsAll.push(...(V131.rows.get(d)||[]));
+  const graded = rowsAll.filter(c=>c.res==='win'||c.res==='loss');
+  const tallyQ = (b, P) => { const T = v131T(); for (const c of graded) if (c.b===b && v131QualP(b, v131Vals(c), P)) v131Add(T, c); return T; };
+  const tryMove = (b, label, mk, cands) => {
+    const cur = tallyQ(b, next); let best = null;
+    for (const val of cands){ const P = v131Clone(next); mk(P, val); const T = tallyQ(b, P);
+      if (T.n >= V131.MIN_N && v131Shr(T) >= v131Shr(cur) + 0.03 && (!best || v131Shr(T) > v131Shr(best.T))) best = {val, T, P}; }
+    if (best){ ch.push({d:D, b, what:label(best.val), why:`${best.T.n} graded plays: ${best.T.w}–${best.T.l}, ${v131Pct(v131Roi(best.T))} vs ${cur.n ? `${cur.w}–${cur.l}, ${v131Pct(v131Roi(cur)||0)}` : 'none'} before`}); Object.assign(next, best.P); }
+  };
+  const r2 = x => Math.round(x*100)/100;
+  // props edge cutoff (8%..16%, 1-point steps)
+  { const e = next.P.edge; const c = [r2(e-0.01), r2(e+0.01)].filter(x=>x>=0.08 && x<=0.16);
+    tryMove('props', v=>`Props edge cutoff ${Math.round(e*100)}% → ${Math.round(v*100)}%`, (P,v)=>{ P.P.edge = v; }, c); }
+  // props stats: add a winning stat, drop a losing one (never empty)
+  { const kinds = typeof UNI_MODEL_KINDS!=='undefined' ? [...UNI_MODEL_KINDS] : ['pts','reb','ast','threes'];
+    for (const k of kinds){
+      const P = v131Clone(next); P.P.kinds = [k]; const T = tallyQ('props', P);
+      if (T.n < 25) continue; const s = v131Shr(T), has = next.P.kinds.includes(k);
+      if (!has && s >= 0.08){ next.P.kinds = next.P.kinds.concat(k); ch.push({d:D, b:'props', what:`Added stat: ${k}`, why:`${T.n} graded: ${T.w}–${T.l}, ${v131Pct(v131Roi(T))}`}); }
+      else if (has && s < 0 && next.P.kinds.length > 1){ next.P.kinds = next.P.kinds.filter(x=>x!==k); ch.push({d:D, b:'props', what:`Dropped stat: ${k}`, why:`${T.n} graded: ${T.w}–${T.l}, ${v131Pct(v131Roi(T))}`}); }
+    } }
+  // props odds window
+  tryMove('props', v=>`Props longest odds +${next.P.hi} → +${v}`, (P,v)=>{ P.P.hi = v; }, [120,150,200].filter(v=>v!==next.P.hi && Math.abs([120,150,200].indexOf(v)-[120,150,200].indexOf(next.P.hi))===1));
+  tryMove('props', v=>`Props shortest odds ${next.P.lo} → ${v}`, (P,v)=>{ P.P.lo = v; }, [-160,-140,-120].filter(v=>v!==next.P.lo && Math.abs([-160,-140,-120].indexOf(v)-[-160,-140,-120].indexOf(next.P.lo))===1));
+  // games model-chance cutoff (54%..66%)
+  { const p = next.G.p; const c = [r2(p-0.01), r2(p+0.01)].filter(x=>x>=0.54 && x<=0.66);
+    tryMove('games', v=>`Games model chance cutoff ${Math.round(p*100)}% → ${Math.round(v*100)}%`, (P,v)=>{ P.G.p = v; }, c); }
+  tryMove('games', v=>`Games longest odds +${next.G.hi} → +${v}`, (P,v)=>{ P.G.hi = v; }, [120,150,200].filter(v=>v!==next.G.hi && Math.abs([120,150,200].indexOf(v)-[120,150,200].indexOf(next.G.hi))===1));
+  tryMove('games', v=>`Games shortest odds ${next.G.lo} → ${v}`, (P,v)=>{ P.G.lo = v; }, [-300,-250,-200].filter(v=>v!==next.G.lo && Math.abs([-300,-250,-200].indexOf(v)-[-300,-250,-200].indexOf(next.G.lo))===1));
+  // daily cap (2..6), needs 7+ days with plays
+  for (const b of ['games','props']){
+    const days = win.filter(d=>(V131.rows.get(d)||[]).some(c=>c.b===b)); if (days.length < 7) continue;
+    const capT = cap => { const T = v131T(); const P = v131Clone(next); P.cap[b] = cap; for (const d of days) for (const c of v131PotdOfDay(V131.rows.get(d), P)) if (c.b===b) v131Add(T, c); return T; };
+    const cur = capT(next.cap[b]); let best = null;
+    for (const cap of [next.cap[b]-1, next.cap[b]+1].filter(x=>x>=2 && x<=6)){ const T = capT(cap); if (T.n >= V131.MIN_N && v131Shr(T) >= v131Shr(cur) + 0.03 && (!best || v131Shr(T) > v131Shr(best.T))) best = {cap, T}; }
+    if (best){ ch.push({d:D, b, what:`${b==='games'?'Games':'Props'} daily cap ${next.cap[b]} → ${best.cap}`, why:`${best.T.n} graded: ${best.T.w}–${best.T.l}, ${v131Pct(v131Roi(best.T))} vs ${v131Pct(v131Roi(cur)||0)}`}); next.cap[b] = best.cap; }
+  }
+  // never empty: if fewer than 1 play a day qualified on recent days, loosen one step
+  for (const b of ['games','props']){
+    const days = win.slice(-5).filter(d=>(V131.rows.get(d)||[]).some(c=>c.b===b)); if (days.length < 3) continue;
+    const n = days.reduce((a,d)=>a + (V131.rows.get(d)||[]).filter(c=>c.b===b && v131QualP(b, v131Vals(c), next)).length, 0);
+    if (n / days.length < 1){
+      if (b==='props' && next.P.edge > 0.08){ next.P.edge = r2(next.P.edge - 0.01); ch.push({d:D, b, what:`Props edge cutoff loosened to ${Math.round(next.P.edge*100)}%`, why:'Fewer than 1 play a day qualified'}); }
+      if (b==='games' && next.G.p > 0.54){ next.G.p = r2(next.G.p - 0.01); ch.push({d:D, b, what:`Games model chance cutoff loosened to ${Math.round(next.G.p*100)}%`, why:'Fewer than 1 play a day qualified'}); }
+    }
+  }
+  return {next, ch};
+}
+/* Pick / Watch / Avoid segment moves from the daily summaries (sport, market or stat) */
+function v131Segments(win){
+  const A = {};
+  for (const d of win){ let agg = null; try{ agg = mlogDayAgg(d); }catch(e){} if (!agg) continue;
+    for (const k in agg){ const [b, v, dim, val] = k.split('|'); if ((dim!=='sport' && dim!=='mkt') || (v!=='good' && v!=='watch')) continue;
+      const a = agg[k]; const key = `${b}|${dim}|${val}`; const o = A[key] || (A[key] = {good:v131T(), watch:v131T()});
+      const T = o[v]; T.w += a[0]; T.l += a[1]; T.n += a[0] + a[1]; T.pf += a[4]; T.st += a[5]; } }
+  const demote = {}, promote = {};
+  for (const key in A){ const o = A[key];
+    if (o.good.n >= V131.SEG_N && v131Shr(o.good) <= -0.05) demote[key] = `${o.good.w}–${o.good.l}, ${v131Pct(v131Roi(o.good))} on ${o.good.n} graded Picks`;
+    else if (o.watch.n >= V131.SEG_N && v131Shr(o.watch) >= 0.08 && (o.good.n < 10 || v131Shr(o.good) >= 0)) promote[key] = `${o.watch.w}–${o.watch.l}, ${v131Pct(v131Roi(o.watch))} on ${o.watch.n} graded Watch plays`; }
+  return {demote, promote, A};
+}
+/* lock-signal results: locks that carried a signal (for) / locks it held back (against) */
+function v131SigStats(rowsAll){
+  const S = {};
+  for (const c of rowsAll){ if (!c.sg || !(c.res==='win'||c.res==='loss')) continue;
+    for (const code of String(c.sg).split(',')){ const m = V131.SIG[code]; if (!m) continue;
+      if (m.dir > 0 && !c.lkd) continue; if (m.dir < 0 && !c.lb) continue;
+      v131Add(S[code] || (S[code] = v131T()), c, c.lkd && c.lpr!=null ? c.lpr : c.pr); } }
+  const mute = {};
+  for (const code in S){ const T = S[code], m = V131.SIG[code];
+    if (T.n >= V131.MIN_N && ((m.dir > 0 && v131Shr(T) < -0.05) || (m.dir < 0 && v131Shr(T) > 0.05))) mute[code] = 1; }
+  return {S, mute};
+}
+function v131Fit(){
+  const today = v131Day(Date.now());
+  let pr = v131Clone(V131.prior); const log = [], byDay = {};
+  for (let d = V131.first; d < V131.start; d = v131DayAdd(d, 1)) byDay[d] = v131Clone(pr);
+  for (let D = V131.start; D <= today; D = v131DayAdd(D, 1)){
+    const win = []; for (let d = v131DayAdd(D, -21); d <= v131DayAdd(D, -2); d = v131DayAdd(d, 1)) if (d >= V131.first && v131RowsFor(d)) win.push(d);
+    if (win.length){ const r = v131Step(pr, win, D); pr = r.next; log.push(...r.ch); }
+    byDay[D] = v131Clone(pr);
+  }
+  v131ApplyParams(pr); V131.log = log; V131.byDay = byDay;
+  // segments (window: last 21 days through two days ago)
+  const win = []; for (let d = v131DayAdd(today, -21); d <= v131DayAdd(today, -2); d = v131DayAdd(d, 1)) if (d >= V131.first) win.push(d);
+  const sg = v131Segments(win); const old = V131.seg || {demote:{}, promote:{}};
+  for (const k in sg.demote) if (!old.demote[k]) V131.segLog.push({d:today, what:`${v131SegName(k)}: Picks now go to Watch`, why:sg.demote[k]});
+  for (const k in sg.promote) if (!old.promote[k]) V131.segLog.push({d:today, what:`${v131SegName(k)}: strong Watch plays move up to Picks`, why:sg.promote[k]});
+  for (const k in old.demote) if (!sg.demote[k]) V131.segLog.push({d:today, what:`${v131SegName(k)}: back to normal Picks`, why:'No longer losing over the last 3 weeks'});
+  for (const k in old.promote) if (!sg.promote[k]) V131.segLog.push({d:today, what:`${v131SegName(k)}: Watch plays no longer move up`, why:'The winning run faded'});
+  V131.segLog = V131.segLog.slice(-40);
+  V131.seg = {demote:sg.demote, promote:sg.promote};
+  // lock signals
+  const all = []; for (let d = v131DayAdd(today, -30); d <= today; d = v131DayAdd(d, 1)) all.push(...(V131.rows.get(d)||[]));
+  const ss = v131SigStats(all); V131.sig = ss.S; V131.mute = ss.mute;
+  V131.fitAt = Date.now();
+  try{ localStorage.setItem('bl_v131_fit', JSON.stringify({params:V131.params, log:V131.log, seg:V131.seg, segLog:V131.segLog, sig:V131.sig, mute:V131.mute, byDay:V131.byDay, at:V131.fitAt})); }catch(e){}
+}
+function v131SegName(k){ const [b, dim, val] = k.split('|'); const sp = dim==='sport' ? ((typeof LMAP!=='undefined' && LMAP[val] && LMAP[val].label) || String(val).toUpperCase()) : val; return `${b==='props'?'Props':'Games'} · ${sp}`; }
+async function v131Tick(){
+  try{ await v131FetchMissing(); }catch(e){}
+  try{ v131Fit(); }catch(e){ console.warn('v131 fit', e); }
+  try{ if (typeof ui!=='undefined' && ui.tab==='results' && typeof renderResults==='function') renderResults(); }catch(e){}
+}
+setTimeout(function k(){ if (typeof mlogOn==='function' && mlogOn() && typeof MLOG!=='undefined' && MLOG.at) v131Tick(); else setTimeout(k, 20000); }, 30000);
+setInterval(()=>{ if (typeof mlogOn==='function' && mlogOn()) v131Tick(); }, 60*60000);
+
+/* ---------- Pick / Watch / Avoid segment moves on the board ---------- */
+function v131SegKeys(b, x){
+  const lg = x.league || (x.g && x.g.league) || '';
+  let mkt = ''; try{ mkt = mlogMkt(b==='props' ? {b, k:x.kind} : {b, mk:x.mk}); }catch(e){}
+  return [`${b}|sport|${lg}`, `${b}|mkt|${mkt}`];
+}
+function v131SegApply(b, x){
+  if (!x || (x.verdict!=='good' && x.verdict!=='watch')) return x;
+  const S = V131.seg || {}; const ks = v131SegKeys(b, x);
+  if (x.verdict==='good'){ const k = ks.find(k=>S.demote && S.demote[k]);
+    if (k){ x.verdict = 'watch'; x._segMove = 'down'; (x.reasons||(x.reasons=[])).unshift(`Moved to Watchlist: ${v131SegName(k)} Picks have been losing lately (${S.demote[k]})`); } }
+  else if (x.verdict==='watch'){ const k = ks.find(k=>S.promote && S.promote[k]);
+    if (k && x.base!=='avoid' && !(x.strictFails && x.strictFails.length > 2)){
+      let ok = true; try{ if (b==='games' && typeof playValue==='function'){ const pv = playValue(x); ok = !!(pv && pv.v > 0); } else if (b==='props'){ ok = (x.edge||0) > 0.02; } }catch(e){ ok = false; }
+      if (ok && b==='games' && (plays||[]).some(o=>o!==x && o.verdict==='good' && o.g && x.g && o.g.id===x.g.id)) ok = false;
+      if (ok){ x.verdict = 'good'; x._segMove = 'up'; (x.reasons||(x.reasons=[])).unshift(`Moved up to Picks: ${v131SegName(k)} Watch plays have been winning (${S.promote[k]})`); } } }
+  return x;
+}
+(function(){
+  if (typeof evaluateAll==='function'){ const base = evaluateAll; evaluateAll = function(){ const r = base.apply(this, arguments); try{ for (const p of (plays||[])) v131SegApply('games', p); }catch(e){} return r; }; }
+  if (typeof evaluatePropRaw==='function'){ const base = evaluatePropRaw; evaluatePropRaw = function(){ const p = base.apply(this, arguments); try{ v131SegApply('props', p); }catch(e){} return p; }; }
+})();
+
+/* ---------- lock signals ---------- */
+function v131Mkt(b, x){
+  if (b==='props'){ const pr = +x.price; return {price:pr, q:v129Imp(pr), pt:x.line!=null ? +x.line : null}; }
+  const best = x.sd && x.sd.best; const pr = best && best.price!=null ? +best.price : null;
+  const q = v129Imp(pr);
+  return {price:pr, q, pt:(x.sd && x.sd.point!=null) ? +x.sd.point : null};
+}
+function v131Inj(x){ try{ const f = ((x.j && x.j.factors)||[]).find(f=>f.key==='inj'); return f ? {pts:+f.pts||0, txt:f.txt||''} : null; }catch(e){ return null; } }
+function v131BetKey(b, x){
+  if (b==='props'){ const r = x.raw || {}; return `p|${r.eventId||(x.g&&x.g.eventId)||''}|${x.playerId||r.playerId||''}|${x.kind||''}|${x.side||''}|${x.line!=null?x.line:''}`; }
+  return `g|${x.g && x.g.eventId}|${x.mk}|${x.side}`;
+}
+function v131SnapLoad(){ if (V131.snap) return V131.snap; try{ V131.snap = JSON.parse(localStorage.getItem('bl_v131_snap')||'{}') || {}; }catch(e){ V131.snap = {}; } return V131.snap; }
+function v131SnapSave(force){ if (!force && Date.now() - V131.snapDirty < 60000) return; V131.snapDirty = Date.now();
+  const S = v131SnapLoad(), cut = Date.now() - 36*3600000; for (const k in S) if (!(S[k].st > cut)) delete S[k];
+  try{ localStorage.setItem('bl_v131_snap', JSON.stringify(S)); }catch(e){} }
+function v131Track(b){
+  const S = v131SnapLoad(), now = Date.now();
+  const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+  for (const x of src){
+    if (!x || x.verdict!=='good' || x.tailedKeep) continue; const st = itemStartMs(x); if (!st || st <= now) continue;
+    const k = boardKeyOf(b, x); if (!k) continue; const m = v131Mkt(b, x); const p = b==='props' ? x.p : x.est; if (p==null || m.price==null) continue;
+    let s = S[k];
+    if (!s){ const inj = b==='games' ? v131Inj(x) : null; s = S[k] = {st, at:now, p0:+p, pr0:m.price, q0:m.q, pt0:m.pt, i0:inj ? inj.pts : 0, h:[]}; }
+    const last = s.h[s.h.length-1];
+    if (!last || now - last[0] >= 4*60000) s.h.push([now, Math.round(+p*1000)/1000]); if (s.h.length > 6) s.h.shift();
+    const sig = v131Signals(b, x); V131.sigByBet[v131BetKey(b, x)] = {codes:sig.all.map(c=>c.code), block:sig.block ? sig.block.code : '', at:now};
+  }
+  v131SnapSave(false);
+}
+function v131Fmt(am){ return (typeof fmtPx==='function') ? fmtPx(am) : (am>0?'+':'')+am; }
+function v131Signals(b, x){
+  const out = {for:[], against:[], all:[], block:null};
+  try{
+    const S = v131SnapLoad(); const k = boardKeyOf(b, x); const s = k && S[k]; if (!s) return out;
+    const m = v131Mkt(b, x), p = +(b==='props' ? x.p : x.est);
+    const side = x.side || '';
+    const push = (code, txt) => { const c = {code, txt}; out.all.push(c); if (V131.mute[code]) return; (V131.SIG[code].dir > 0 ? out.for : out.against).push(c); };
+    // line (spreads, totals, prop lines)
+    let lineMove = 0; const mk = b==='props' ? 'prop' : x.mk;
+    if (s.pt0!=null && m.pt!=null && m.pt !== s.pt0 && mk!=='ml'){
+      const d = m.pt - s.pt0; // spread side: more negative = market likes us; over: higher = market likes us; under: lower
+      const good = (side==='over') ? d > 0 : (side==='under') ? d < 0 : d < 0;
+      if (Math.abs(d) >= 0.5) lineMove = good ? 1 : -1;
+      if (lineMove > 0) push('mf', `Line moved our way since the pick: ${s.pt0} → ${m.pt}`);
+      if (lineMove < 0) push('ma', `Line moved against us since the pick: ${s.pt0} → ${m.pt}`);
+    }
+    if (!lineMove && s.q0!=null && m.q!=null){
+      const dq = m.q - s.q0;
+      if (dq >= 0.02) push('mf', `Price moved our way since the pick: ${v131Fmt(s.pr0)} → ${v131Fmt(m.price)}`);
+      else if (dq <= -0.03) push('ma', `Price moved against us since the pick: ${v131Fmt(s.pr0)} → ${v131Fmt(m.price)}`);
+    }
+    const dp = p - s.p0;
+    if (dp >= 0.01) push('cu', `Model chance went up since the pick: ${Math.round(s.p0*100)}% → ${Math.round(p*100)}%`);
+    else if (dp <= -0.03) push('cd', `Model chance dropped since the pick: ${Math.round(s.p0*100)}% → ${Math.round(p*100)}%`);
+    else if (s.h.length >= 3 && s.h[s.h.length-1][0] - s.h[s.h.length-3][0] >= 8*60000 && s.h.slice(-3).every(h=>h[1] >= s.p0 - 0.005)){
+      const lo = Math.min(...s.h.slice(-3).map(h=>h[1])); push('ch', `Model chance held at ${Math.round(lo*100)}% or better on the last 3 refreshes`);
+    }
+    if (b==='games'){
+      const F = (x.j && x.j.factors) || []; const pos = F.filter(f=>f.pts >= 0.5 && !['price','edge','move'].includes(f.key)), neg = F.filter(f=>f.pts <= -0.5 && !['price','edge','move'].includes(f.key));
+      const labs = [...new Set(pos.map(f=>String(f.label||f.key).toLowerCase()))];
+      if (labs.length >= 3 && !neg.length) push('ag', `${labs.length} parts of the model agree: ${labs.slice(0,4).join(', ')}`);
+      const inj = v131Inj(x);
+      if (inj && inj.pts - s.i0 >= 0.5) push('nf', `Late injury news helps: ${inj.txt}`);
+      else if (inj && inj.pts - s.i0 <= -0.5) push('na', `Late injury news hurts: ${inj.txt}`);
+    } else {
+      const f = x.feat || {}; const line = +x.line; const over = side==='over';
+      const okH = h => h!=null && (over ? h >= 0.6 : h <= 0.4);
+      const okA = a => a!=null && isFinite(a) && (over ? a > line : a < line);
+      if (f.l5n >= 5 && f.l10n >= 8 && okH(f.l5hit) && okH(f.l10hit) && okA(f.seasonAvg)) push('ag', `Last 5, last 10 and season average all point ${over?'over':'under'} the line`);
+    }
+    out.block = out.against[0] || null;
+  }catch(e){}
+  return out;
+}
+window.v131Signals = v131Signals;
+
+/* board lock: base rule, then a signal against us holds it back; fired signals are saved on the lock */
+(function(){
+  const base = lockStatus;
+  lockStatus = function(x, board){
+    const st = base.apply(this, arguments) || {locked:false, tag:''};
+    try{
+      const b = board || (x && x.isProp ? 'props' : 'games');
+      if (!st.locked || (b!=='games' && b!=='props') || !x || x.tailedKeep || x.lockedKeep || x.pulledNote) return st;
+      const rec = lockedRec(b, x); if (rec && !rec.pulled) return st;
+      const s = v131Signals(b, x);
+      if (s.block) return {locked:false, tag:'Lock held: ' + s.block.txt.replace(/ since the pick/, ''), held:s.block.code};
+    }catch(e){}
+    return st;
+  };
+  const mk = makeLockRec;
+  makeLockRec = function(board, x, extra){
+    const r = mk.apply(this, arguments);
+    try{ if (r && (board==='games' || board==='props')){ const s = v131Signals(board, x); r.sg = s.for.map(c=>c.code); r.sgTxt = s.for.map(c=>c.txt); r.potd = v131IsPotd(board, x) ? 1 : 0; } }catch(e){}
+    return r;
+  };
+})();
+/* universe lock (Results + shared log): same signals, held back the same way */
+function v131UniKey(r){ return r.b==='props' ? `p|${r.ev}|${r.pid||''}|${r.kind||''}|${r.side||''}|${r.pt!=null?r.pt:''}` : `g|${r.ev}|${r.mk}|${r.side}`; }
+(function(){
+  const base = uniUpsert;
+  uniUpsert = function(b, src, id, baseRow, snap){
+    const before = (typeof UNI!=='undefined') ? UNI.get(id) : null; const hadLk = !!(before && before.lk);
+    const r = base.apply(this, arguments);
+    try{
+      if (r && r.lk && !hadLk && (r.b==='games' || r.b==='props')){
+        if (r.b==='props' && r.src==='sb' && r.pid && r.lk.v==='nocall' && typeof UNI_MODEL_KINDS!=='undefined' && UNI_MODEL_KINDS.has(r.kind) && (r.mins==null || r.mins > 5)){ delete r.lk; return r; }   // hold until stats load
+        const s = V131.sigByBet[v131UniKey(r)]; let codes = s && Date.now() - s.at < 3*3600000 ? s.codes.slice() : [], block = s ? s.block : '';
+        if (!s && r.pk && r.pk.price!=null && r.price!=null){
+          const dq = v129Imp(r.price) - v129Imp(r.pk.price); if (dq >= 0.02) codes.push('mf'); else if (dq <= -0.03){ codes.push('ma'); if (!V131.mute.ma) block = 'ma'; }
+          if (r.p!=null && r.pk.p!=null){ const dp = r.p - r.pk.p; if (dp >= 0.01) codes.push('cu'); else if (dp <= -0.03){ codes.push('cd'); if (!block && !V131.mute.cd) block = 'cd'; } }
+        }
+        if (codes.length) r.lk.sg = codes.join(',');
+        if (r.lk.L && block){ delete r.lk.L; r.lk.blk = 1; }
+      }
+    }catch(e){}
+    return r;
+  };
+  if (typeof mlogCompact==='function'){ const mc = mlogCompact; mlogCompact = function(r){ const out = mc.apply(this, arguments); try{ if (out && r && r.lk){ if (r.lk.sg) out[1].sg = String(r.lk.sg).slice(0,40); if (r.lk.blk) out[1].lb = 1; } }catch(e){} return out; }; }
+})();
+/* v129-era rows that the top-rated gate kept out of Locked: lock them by the plain rule again (once per device) */
+async function v131LockBackfill(){
+  const KEY = 'bl_lockbf_v131'; try{ if (localStorage.getItem(KEY)) return 0; }catch(e){}
+  if (typeof UNI_ST==='undefined' || !UNI_ST.ready || UNI_ST.idb===false) return -1;
+  const ok = r => r && !r._cloud && r.lk && r.lk.ne && !r.lk.L && r.pk && r.lk.v==='good' && +r.pk.at <= +r.lk.at - 30*60000 && (+r.t - +r.lk.at) <= 75*60000;
+  let n = 0;
+  try{
+    const d = await idbOpen(); const fix = [];
+    await new Promise((res, rej)=>{ const q = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound('20261121'));
+      q.onsuccess = ()=>{ const c = q.result; if (!c) return res(); const r = c.value; if (ok(r)){ r.lk.L = 1; r.lk.bf = 3; if (r.res) uniSumAddAs(r, 'locked', uniPrice(r), uniP(r)); fix.push(r); } c.continue(); };
+      q.onerror = ()=>rej(q.error); });
+    if (fix.length) await storeWrite('uniDone', fix, []);
+    for (const r of fix){ try{ mlogQueue(Object.assign({}, r, {i:r.id||r.i})); }catch(e){} }
+    for (const r of UNI.values()) if (ok(r)){ r.lk.L = 1; r.lk.bf = 3; UNI_DIRTY.add(r.i); fix.push(r); }
+    n = fix.length; await uniFlush();
+    try{ localStorage.setItem(KEY, String(Date.now())); }catch(e){}
+    try{ if (typeof mlogOn==='function' && mlogOn()) mlogPush().catch(()=>{}); }catch(e){}
+  }catch(e){ console.warn('v131 lock backfill', e); }
+  V131.bf = n; return n;
+}
+setTimeout(function k(){ if (typeof UNI_ST!=='undefined' && UNI_ST.ready) v131LockBackfill(); else setTimeout(k, 15000); }, 28000);
+
+/* ---------- Picks of the Day selection (stable per game day) ---------- */
+function v131Store(){ if (V131.sel) return V131.sel; try{ V131.sel = JSON.parse(localStorage.getItem('bl_potd_v131')||'null'); }catch(e){} if (!V131.sel || !V131.sel.days) V131.sel = {days:{}}; return V131.sel; }
+function v131StoreSave(){ try{ localStorage.setItem('bl_potd_v131', JSON.stringify(v131Store())); }catch(e){} }
+function v131IsPotd(b, x){
+  if (!x || (b!=='games' && b!=='props')) return false;
+  try{ const k = boardKeyOf(b, x); if (!k) return false; const st = itemStartMs(x); if (!st) return false;
+    const D = v131Store().days[v131Day(st)]; const e = D && D[b] && D[b][k]; return !!(e && !e.drop); }catch(e){ return false; }
+}
+window.v131IsPotd = v131IsPotd;
+function v131Select(){
+  const St = v131Store(), now = Date.now(), added = []; let dirty = false;
+  const pr = V131.params || V131.prior;
+  for (const b of ['games','props']){
+    const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+    if (!src.length) continue;
+    const byKey = new Map(); for (const x of src) if (x && !x.tailedKeep){ const k = boardKeyOf(b, x); if (k) byKey.set(k, x); }
+    for (const d in St.days){ const E = St.days[d][b] || {}; for (const k in E){ const e = E[k]; if (e.drop) continue; const x = byKey.get(k); if (!x) continue;
+      const started = itemStartMs(x) <= now; const rec = lockedRec(b, x);
+      if (!started && !(rec && !rec.pulled) && (x.verdict!=='good' || x.pulledNote)){ e.drop = {at:now, why: x.pulledNote ? 'was pulled' : x.verdict==='watch' ? 'turned Watch' : x.verdict==='avoid' ? 'turned Avoid' : 'is no longer a Pick'}; dirty = true; } } }
+    const byDay = {};
+    for (const x of src){
+      if (!x || x.tailedKeep || x.verdict!=='good' || x.pulledNote) continue; const st = itemStartMs(x); if (!st || st <= now) continue;
+      if (b==='games' && !(x.g && x.g.state==='pre')) continue;
+      const v = v129Read(b, x); if (!v131QualP(b, v, pr)) continue;
+      const d = v131Day(st); (byDay[d] || (byDay[d] = [])).push({x, sc:v129Score(b, v), st});
+    }
+    for (const d in byDay){
+      const D = St.days[d] || (St.days[d] = {}); const E = D[b] || (D[b] = {});
+      const active = Object.values(E).filter(e=>!e.drop).length; let room = (pr.cap[b]||4) - active; if (room <= 0) continue;
+      const c = byDay[d].filter(o=>!E[boardKeyOf(b, o.x)]).sort((a, c)=>c.sc - a.sc);
+      for (const o of c.slice(0, room)){ const k = boardKeyOf(b, o.x); E[k] = {id:o.x.id, label:o.x.label||'', sc:Math.round(o.sc*1000)/1000, at:now, st:o.st}; added.push({b, x:o.x, k}); dirty = true; }
+    }
+  }
+  const cut = v131DayAdd(v131Day(now), -3); for (const d in St.days) if (d < cut){ delete St.days[d]; dirty = true; }
+  if (dirty) v131StoreSave();
+  if (added.length) v131AlertPotd(added);
+  return added;
+}
+function v131AlertPotd(added){
+  try{
+    if (typeof canAlert!=='function' || !canAlert('new') || typeof ntfyEnabled!=='function' || !ntfyEnabled()) return;
+    const now = Date.now();
+    for (const b of ['games','props']){
+      const list = added.filter(a=>a.b===b && itemStartMs(a.x) < now + 24*3600000); if (!list.length) continue;
+      const claim = a => 'potd|' + a.k;
+      alertClaim(list.map(claim)).then(won=>{
+        const mine = list.filter(a=>won.includes(claim(a))); if (!mine.length) return;
+        const fn = b==='props' ? propAlertLine : playAlertLine;
+        const title = mine.length===1 ? `⭐ Pick of the Day` : `⭐ ${mine.length} Picks of the Day`;
+        ntfyPush(title, mine.map(a=>fn(a.x)).join('\n'), {priority:'high', tags:'star', click: NTFY_CLICK + '?board=' + b}).then(()=>{ V131.potdAlerts += mine.length; });
+      }).catch(()=>{});
+    }
+  }catch(e){}
+}
+/* lock alerts: a Pick of the Day that locks is starred in the normal lock alert (one alert, not two) */
+(function(){
+  if (typeof playAlertLine==='function'){ const o = playAlertLine; playAlertLine = function(p){ const s = o.apply(this, arguments); return v131IsPotd('games', p) && !/^⭐/.test(s) ? '⭐ ' + s : s; }; }
+  if (typeof propAlertLine==='function'){ const o = propAlertLine; propAlertLine = function(p){ const s = o.apply(this, arguments); return v131IsPotd('props', p) && !/^⭐/.test(s) ? '⭐ ' + s : s; }; }
+  const base = checkLockAlerts;
+  checkLockAlerts = function(board){
+    try{ for (const b of (board ? [board] : ['games','props'])) if (b==='games' || b==='props') v131Track(b); v131Select(); }catch(e){ console.warn('v131 select', e); }
+    return base.apply(this, arguments);
+  };
+})();
+
+/* ---------- Picks tab: Picks of the Day section above Locked ---------- */
+(function(){
+  const pb = picksBoardHTML;
+  picksBoardHTML = function(title, lockedSub, emptyMsg, list, board, cardFnRaw){ V131.curFn = cardFnRaw; return pb.apply(this, arguments); };
+  const sp = splitLockedEarly;
+  splitLockedEarly = function(list, board){
+    const r = sp.apply(this, arguments);
+    if (board!=='games' && board!=='props') return r;
+    try{
+      const pick = []; const f = x => { if (x && !x.tailedKeep && v131IsPotd(board, x)){ pick.push(x); return false; } return true; };
+      r.locked = r.locked.filter(f); r.early = r.early.filter(f);
+      for (const x of pick) V131.stash.push({x, board, fn: typeof v119CardFn==='function' ? v119CardFn(V131.curFn || (board==='props' ? propCard : playCard)) : (board==='props' ? propCard : playCard)});
+    }catch(e){}
+    return r;
+  };
+  const G = v115GamesBody, P = v115PropsBody;
+  v115GamesBody = function(tab){ if (tab==='good'){ V131.stash = []; try{ v131Select(); }catch(e){} } return G.apply(this, arguments); };
+  v115PropsBody = function(tab){ if (tab==='good' && !v115Kinds(tab).games){ V131.stash = []; try{ v131Select(); }catch(e){} } return P.apply(this, arguments); };
+})();
+function v131LockedNow(b, x){ try{ if (x.lockedKeep) return true; const rec = lockedRec(b, x); if (rec && !rec.pulled) return true; return !!(lockStatus(x, b)||{}).locked && v123ReallyLocked(x); }catch(e){ return false; } }
+function v131WhyHTML(b, x){
+  try{ const rec = lockedRec(b, x); const t = rec && rec.sgTxt; if (!t || !t.length) return '';
+    return `<div class="v131-why"><b>Lock signals:</b> ${t.map(s=>esc(s)).join(' · ')}</div>`; }catch(e){ return ''; }
+}
+function v131PotdHTML(){
+  const seen = new Set(); let items = [];
+  for (const it of V131.stash){ const k = it.board + '|' + (boardKeyOf(it.board, it.x) || it.x.id); if (seen.has(k)) continue; seen.add(k); items.push({x:it.x, fn:it.fn, b:it.board, t:itemStartMs(it.x)||0}); }
+  if (typeof v121ArrangeItems==='function') items = v121ArrangeItems(items); else items.sort((a,c)=>a.t-c.t);
+  const pr = V131.params || V131.prior;
+  const cards = items.map(({x, fn, b})=>{ const h = fn(x); const lk = !x.pulledNote && v131LockedNow(b, x);
+    const tag = `<div class="lk-tag v131-star"><span aria-hidden="true">⭐</span> Pick of the Day${lk ? ' · <span aria-hidden="true">🔒</span> Locked' : ''}</div>${lk ? v131WhyHTML(b, x) : ''}`;
+    return x.pulledNote ? h : String(h).replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>`<div class="${c} potd-pick${lk?' locked-pick':''}"${rest}>${tag}`); }).join('');
+  return `<div class="v131-potd"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">⭐</span>Picks of the Day</h2><span class="hint">Top-rated plays, max ${pr.cap.games} games + ${pr.cap.props} props a day.</span></div>`
+    + (items.length ? `<div class="grid">${cards}</div>` : `<div class="empty-state v131-empty">No Picks of the Day yet.</div>`) + `</div>`;
+}
+v119LockedHTML = function(items){
+  const tag = '<div class="lk-tag v119-up"><span aria-hidden="true">🔒</span> Upgraded from Pick</div>';
+  const cards = items.map(({x, fn})=>{ const h = fn(x); if (x.pulledNote || !v123ReallyLocked(x)) return h; const b = x.isProp ? 'props' : 'games';
+    return String(h).replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>`<div class="${c} locked-pick"${rest}>${tag}${v131WhyHTML(b, x)}`); }).join('');
+  const potd = v131PotdHTML(); V131.stash = [];
+  return potd + `<div class="v119-locked"><div class="section-title"><h2><span class="h-emo" aria-hidden="true">🔒</span>Locked</h2><span class="hint">${v119LockHint()}</span></div>`
+    + (items.length ? `<div class="grid">${cards}</div>` : `<div class="empty-state v119-empty">Nothing locked yet — picks move here once they lock.</div>`) + `</div>`;
+};
+
+/* ---------- Results: Picks of the Day row on top; Locked back to the plain rule ---------- */
+function v131PotdTally(from){
+  const today = v131Day(Date.now()); const B = {games:v131T(), props:v131T(), days:0};
+  for (let d = (from && from > V131.first) ? from : V131.first; d <= today; d = v131DayAdd(d, 1)){
+    const rows = v131RowsFor(d); if (!rows) continue; B.days++;
+    const pr = V131.byDay[d] || V131.params || V131.prior;
+    for (const c of v131PotdOfDay(rows, pr)) v131Add(B[c.b], c);
+  }
+  return B;
+}
+(function(){
+  const base = uniCountsMerged;
+  uniCountsMerged = function(){
+    const B = base.apply(this, arguments);
+    try{ const from = urFrom(); const T = v131PotdTally(UR.range==='all' ? '' : UR.range==='year' ? new Date().getFullYear()+'0101' : from);
+      for (const b of ['games','props']) if (B[b]) B[b].bucket.potd = {w:T[b].w, l:T[b].l, pf:T[b].pf, st:T[b].st, n:T[b].n}; }catch(e){}
+    return B;
+  };
+})();
+uniInnerHTML = function(){
+  const B = uniCountsMerged();
+  const f = n => (+n||0).toLocaleString();
+  const pct = x => x==null ? '—' : Math.round(x*100)+'%';
+  const roiS = x => x==null ? '—' : (x>=0?'+':'')+(x*100).toFixed(1)+'%';
+  const NAMES = {potd:'Picks of the Day', good:'Picks', locked:'Locked', watch:'Watch', avoid:'Avoid'};
+  const SRC = {sb:'sportsbook', pm:'Polymarket', kalshi:'Kalshi', px:'ProphetX', cc:'Crypto.com', nv:'Novig'};
+  const card = (b, title) => {
+    const c = B[b];
+    const tv = ['good','watch','avoid'].map(v=>`${NAMES[v]} ${f(c.tv[v]||0)}`).join(' · ');
+    const rows = ['potd','locked','good','watch','avoid'].map(v=>{
+      const k = c.bucket[v] || {w:0,l:0,pf:0,st:0,n:0}; const r = k.st ? k.pf/k.st : null, hr = k.n ? k.w/k.n : null; const cls = r==null ? '' : r>=0 ? 'pos' : 'neg';
+      const u = k.pf/100, uS = (u>=0?'+':'−') + Math.abs(u).toFixed(1) + 'u';
+      const extraCls = v==='locked' ? ' uni-lock' : v==='potd' ? ' uni-lock uni-potd' : '';
+      if ((v==='locked' || v==='potd') && !k.n) return `<div class="uni-row${extraCls}"><span class="k">${NAMES[v]}</span><span class="v uni-wide mut">None graded in this range</span></div>`;
+      return `<div class="uni-row${extraCls}"><span class="k">${NAMES[v]}</span><span class="v">${k.n ? `<span class="nw">${f(k.w)}–${f(k.l)}</span> · <span class="nw">${pct(hr)} hit</span> · <span class="nw"><b class="${cls}">${uS}</b></span> · <span class="nw">${roiS(r)} ROI</span>` : '<span class="mut">not graded yet</span>'}</span><span class="n mut">${f(k.n)} graded</span></div>`;
+    }).join('');
+    const src = Object.entries(c.src).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${SRC[k]||k} ${f(v)}`).join(' · ');
+    const extra = (c.un||c.vd||c.pu) ? ` Pushes ${f(c.pu)}, voids ${f(c.vd)} (did not play / postponed), ungradeable ${f(c.un)}.` : '';
+    return `<div class="v42-b uni-b"><h3>${title}</h3>
+      <div class="v42-kv"><span class="k">${UR_KV[UR.range]}</span><span class="v">${f(c.total)} markets · ${f(c.graded)} graded</span></div><div class="hint">${tv}</div>
+      <div class="hint uni-src">${esc(src||'Nothing yet.')} · ${f(c.open)} waiting on a final.${extra}</div>
+      <div class="uni-buckets">${rows}</div></div>`;
+  };
+  const sel = `<div class="mr-filters uni-filters"><label class="mr-f"><span>Range</span><select data-uni-range aria-label="Tracked universe range">${['today','7','30','year','all'].map(v=>`<option value="${v}" ${UR.range===v?'selected':''}>${UR_LABEL[v]}</option>`).join('')}</select></label></div>`;
+  const fromD = urFrom();
+  const cover = B.first && (UR.range==='all' || (UR.range==='year' && B.first > fromD) || ((UR.range==='7' || UR.range==='30') && B.first > fromD))
+    ? `${UR_LABEL[UR.range]} covers what's been tracked since ${urDate(B.first)}. ` : '';
+  const rawNote = (UR.range==='all' || urFrom() < '20261121') && (!B.first || B.first < '20261121') ? 'Since Nov 21, Picks, Watch and Avoid are the model\'s own call, before your odds range and books. ' : '';
+  const lockNote = 'Picks of the Day are the top-rated Picks each day (the rule in Model learning, best few per board), one per bet, graded at the first Pick price and worked out from the shared pick log, so earlier days are filled in too. Locked is every Pick that was still a Pick when it locked, graded at the lock price. Picks counts every market the model ever called a Pick, graded at its first Pick price. Markets the model had no read on count as Avoid. ';
+  const when = B.lastTick ? `Last scan ${new Date(B.lastTick).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.` : 'The first scan runs about 20 seconds after the page loads.';
+  const loading = mlogOn() && !USH.at ? ' Loading from your account…' : '';
+  return `<div class="uni-in">${sel}
+    <div class="v42-grid">${card('games','Games')}${card('props','Props')}</div>
+    <div class="hint" style="margin-top:10px">${cover}${rawNote}${lockNote}Synced across ${B.devs} signed-in device${B.devs===1?'':'s'}. ${when}${loading}${USH.err ? ` Couldn't reach the account copy (${esc(String(USH.err))}).` : ''}</div></div>`;
+};
+uniResultsHTML = function(){ return uniInnerHTML(); };
+
+/* ---------- Model learning: current rule, automatic changes, lock signals ---------- */
+function v131LearnHTML(){
+  const pr = V131.params || V131.prior; const P = pr.P, G = pr.G;
+  const kn = k => (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[k]) || k;
+  const dl = d => { try{ return urDate(d); }catch(e){ return d; } };
+  const rule = `<div class="v131-kv"><span class="k">Picks of the Day · Games</span><span class="v">Model chance ${Math.round(G.p*100)}%+, odds ${v131Fmt(G.lo+1)} to ${v131Fmt(G.hi)}, best ${pr.cap.games} a day</span></div>
+    <div class="v131-kv"><span class="k">Picks of the Day · Props</span><span class="v">${P.kinds.map(kn).join(', ')}; edge ${Math.round(P.edge*100)}%+, odds ${v131Fmt(P.lo)} to ${v131Fmt(P.hi)}, best ${pr.cap.props} a day</span></div>
+    <div class="v131-kv"><span class="k">Locked</span><span class="v">A Pick that holds steady into the lock window, unless a signal against it fires</span></div>`;
+  const ch = V131.log.concat(V131.segLog.map(x=>Object.assign({b:''}, x))).sort((a,b)=>a.d<b.d?1:-1).slice(0, 12);
+  const chHTML = ch.length ? `<ul class="v131-list">${ch.map(c=>`<li><b>${esc(dl(c.d))}:</b> ${esc(c.what)} <span class="mut">(${esc(c.why)})</span></li>`).join('')}</ul>`
+    : `<div class="hint">No automatic changes yet. A cutoff moves one small step only after ${V131.MIN_N}+ graded plays show a clear gain; a Pick/Watch group needs ${V131.SEG_N}+ graded plays before it moves.</div>`;
+  const segOn = Object.keys(V131.seg.demote||{}).map(k=>`${v131SegName(k)} Picks → Watch`).concat(Object.keys(V131.seg.promote||{}).map(k=>`${v131SegName(k)} Watch → Picks`));
+  const sigRows = Object.keys(V131.SIG).map(code=>{ const T = V131.sig[code] || v131T(); const m = V131.SIG[code];
+    const r = v131Roi(T);
+    const st = V131.mute[code] ? ' · <span class="neg">muted</span>' : (T.n && T.n < V131.MIN_N) ? ` · <span class="mut">${T.n} of ${V131.MIN_N} needed to judge</span>` : '';
+    return `<div class="v131-kv"><span class="k">${m.dir>0?'✅':'⛔'} ${esc(m.name)}</span><span class="v">${T.n ? `${T.w}–${T.l} · <b class="${r>=0?'pos':'neg'}">${v131Pct(r||0)}</b>` : '<span class="mut">no graded plays yet</span>'}${st}</span></div>`; }).join('');
+  return `<div class="v131-learn">
+    <h4>Current rules</h4>${rule}
+    <h4>Pick / Watch / Avoid adjustments</h4><div class="hint">${segOn.length ? esc(segOn.join(' · ')) : 'None right now. Every sport, market and prop stat is using the model\'s normal call.'}</div>
+    <h4>Recent automatic changes</h4>${chHTML}
+    <h4>Lock signals</h4><div class="hint">✅ signals are shown on a lock as its reasons; ⛔ signals hold a lock back. A ✅ signal whose locks lose (or a ⛔ signal whose held-back plays win) over ${V131.MIN_N}+ graded plays gets muted.</div>${sigRows}
+    <div class="hint" style="margin-top:8px">Retuned from the shared pick log through two days ago${V131.fitAt ? `, last run ${new Date(V131.fitAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}` : ''}.</div></div>`;
+}
+(function(){
+  const base = renderResults;
+  renderResults = function(){
+    const r = base.apply(this, arguments);
+    try{ const card = document.querySelector('#view .v55-learn.v98-flat'); if (card && !card.querySelector('[data-sec="v131"]')) card.insertAdjacentHTML('beforeend', v98Sec('v131', '⭐ Picks of the Day and locks', v131LearnHTML())); }catch(e){}
+    return r;
+  };
+})();
+
+try{
+  const st = document.createElement('style');
+  st.textContent = `
+.v131-potd{margin-bottom:6px}
+.v131-potd .v131-empty{padding:16px 14px;font-size:13.5px;line-height:1.4}
+.lk-tag.v131-star{color:#dbe7ff;background:rgba(92,135,204,.16);border:1px solid rgba(120,160,225,.45);white-space:nowrap}
+.card.potd-pick{box-shadow:inset 3px 0 0 #7fa6e6}
+.v131-why{font-size:12.5px;line-height:1.4;color:var(--txt2,#cbd5e1);margin:0 0 10px;padding:6px 10px;border-radius:10px;background:rgba(92,135,204,.08);border:1px solid rgba(120,160,225,.25);overflow-wrap:break-word;word-break:normal}
+.uni-row.uni-potd .k{white-space:normal;line-height:1.25;overflow-wrap:normal;word-break:normal}
+.v131-learn h4{margin:12px 0 6px;font-size:13.5px}
+.v131-learn h4:first-child{margin-top:2px}
+.v131-kv{display:flex;flex-wrap:wrap;gap:2px 10px;justify-content:space-between;font-size:13px;line-height:1.4;padding:4px 0;border-bottom:1px solid var(--line)}
+.v131-kv .k{color:var(--mut);flex:0 1 auto}
+.v131-kv .v{flex:1 1 180px;text-align:right;overflow-wrap:break-word;word-break:normal}
+.v131-list{margin:0;padding-left:18px;font-size:13px;line-height:1.45}
+.v131-list li{margin:2px 0;overflow-wrap:break-word;word-break:normal}
+`;
+  document.head.appendChild(st);
+}catch(e){}
+
+window.v131Status = function(){
+  const St = v131Store(); const days = {}; for (const d in St.days){ days[d] = {}; for (const b of ['games','props']){ const E = (St.days[d][b])||{}; days[d][b] = {on:Object.values(E).filter(e=>!e.drop).length, dropped:Object.values(E).filter(e=>e.drop).length}; } }
+  return {build:APP_BUILD, params:V131.params, changes:V131.log.length, segChanges:V131.segLog.length, seg:V131.seg, mute:V131.mute, days, potdAlerts:V131.potdAlerts, rowsDays:[...V131.rows.keys()], bf:V131.bf};
 };
 </script>
 </body>
