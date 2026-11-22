@@ -864,13 +864,13 @@ nav.tabs .tab-parent.on,nav.tabs .tab-parent.pop-on{color:var(--acc-hi);border-b
 #kindsBar{display:none;margin:0 0 12px}
 #kindsBar.show:not([hidden]){display:block}
 #kindsBar[hidden]{display:none !important}
-#kindsBar .kinds-seg{display:inline-flex;flex-wrap:wrap;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
-#kindsBar .kinds-seg button{background:none;border:0;color:var(--mut);cursor:pointer;font-weight:550;white-space:nowrap;padding:7px 14px;border-radius:999px;font-size:13px}
-#kindsBar .kinds-seg button.on{background:var(--acc-dim);color:var(--acc-hi);box-shadow:0 0 0 1px rgba(125,211,252,.16)}
+#kindsBar .kinds-seg{display:inline-flex;flex-wrap:wrap;align-items:stretch;gap:10px;padding:0;border:0;background:none;border-radius:0;box-shadow:none}
+#kindsBar .kinds-seg button{flex:0 0 auto;min-width:108px;min-height:40px;margin:0;padding:8px 16px;border-radius:999px;border:1px solid rgba(148,163,184,.32);background:rgba(255,255,255,.03);color:var(--mut);cursor:pointer;font-weight:650;white-space:nowrap;font-size:13px;box-shadow:none}
+#kindsBar .kinds-seg button.on{border-color:transparent;background:linear-gradient(180deg,#4f8cff,#1d4ed8);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.12) inset,0 8px 18px -6px rgba(37,99,235,.7)}
 #kindsBar .kinds-seg button:disabled{opacity:1;cursor:default}
 @media(max-width:899.98px){
-  #kindsBar .kinds-seg{display:flex;width:100%}
-  #kindsBar .kinds-seg button{flex:1 1 0;min-height:40px;padding:8px 10px}
+  #kindsBar .kinds-seg{display:flex;width:100%;gap:10px}
+  #kindsBar .kinds-seg button{flex:1 1 0;min-height:44px;padding:8px 12px}
   .bottom-nav .lab-short{display:none}
 }
 @media(max-width:369.98px){
@@ -23642,6 +23642,88 @@ const V116_EMPTY_HTML = '<div class="empty-state" id="v116Empty">'+V116_EMPTY+'<
 })();
 
 window.v116Status = () => ({build:APP_BUILD, horizon: typeof ui!=='undefined' && v116Horizon(), kinds: typeof v115Kinds==='function' && {good:v115Kinds('good'),watch:v115Kinds('watch'),avoid:v115Kinds('avoid')}, bothOffOk:true});
+/* v117: Games and Props are two standalone pills (no shared track).
+   Filters stay open when you tap a sport or any other control inside the panel;
+   close only via the Filters button or a tap outside. */
+APP_BUILD = 117;
+
+/* Remember whether this click started inside the Filters panel, even if render()
+   rebuilds the chips and detaches the original target before the document
+   "click outside" handler runs. */
+(function(){
+  let insidePanel = false;
+  function eventInsideFilterBar(e){
+    try{
+      const path = (typeof e.composedPath==='function') ? e.composedPath() : [];
+      for (let i=0;i<path.length;i++){
+        const n = path[i];
+        if (n && n.id==='filterBar') return true;
+      }
+    }catch(err){}
+    try{
+      const t = e.target;
+      if (t && t.closest && t.closest('#filterBar')) return true;
+    }catch(err){}
+    return false;
+  }
+  function mark(e){ if (eventInsideFilterBar(e)) insidePanel = true; }
+  document.addEventListener('pointerdown', mark, true);
+  document.addEventListener('mousedown', mark, true);
+  document.addEventListener('click', mark, true);
+  document.addEventListener('click', function(){ setTimeout(function(){ insidePanel = false; }, 0); });
+
+  if (typeof setFiltersOpen==='function'){
+    const orig = setFiltersOpen;
+    setFiltersOpen = function(open){
+      if (!open && insidePanel) return;
+      return orig.apply(this, arguments);
+    };
+    window._v117SetFiltersOpenOrig = orig;
+  }
+  window.v117ClickWasInsideFilters = function(){ return insidePanel; };
+})();
+
+/* After a re-render, keep the panel open and keep its scroll position. */
+function v117PreserveFilters(fn){
+  if (typeof fn!=='function') return fn;
+  return function(){
+    const was = document.body.classList.contains('filters-open');
+    const fb = document.getElementById('filterBar');
+    const y = fb ? fb.scrollTop : 0;
+    const wy = window.scrollY || 0;
+    const out = fn.apply(this, arguments);
+    if (was){
+      try{
+        document.body.classList.add('filters-open');
+        if (typeof ui!=='undefined' && ui) ui.filtersOpen = true;
+        const btn = document.getElementById('btnFilters');
+        if (btn) btn.setAttribute('aria-expanded','true');
+        const fb2 = document.getElementById('filterBar');
+        if (fb2){
+          fb2.hidden = false;
+          fb2.scrollTop = y;
+        }
+        if (typeof syncFilterDrawerPos==='function') syncFilterDrawerPos();
+        if (Math.abs((window.scrollY||0) - wy) > 2) window.scrollTo(0, wy);
+      }catch(e){}
+    }
+    return out;
+  };
+}
+(function(){
+  if (typeof render==='function') render = v117PreserveFilters(render);
+  if (typeof renderNow==='function') renderNow = v117PreserveFilters(renderNow);
+  if (typeof _baseRender==='function') _baseRender = v117PreserveFilters(_baseRender);
+  if (typeof renderChips==='function') renderChips = v117PreserveFilters(renderChips);
+  if (typeof updateFilterChrome==='function') updateFilterChrome = v117PreserveFilters(updateFilterChrome);
+})();
+
+window.v117Status = function(){
+  return {
+    build: APP_BUILD,
+    filtersOpen: typeof document!=='undefined' && document.body.classList.contains('filters-open')
+  };
+};
 </script>
 </body>
 </html>
