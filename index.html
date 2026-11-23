@@ -30832,6 +30832,349 @@ function v165SegSum(){
   // after every board paint (patches morph the hidden copy into the live view), re-read what is on screen
   setInterval(()=>{ try{ if (typeof ui!=='undefined' && ui.tab==='good'){ const s = v165SegSum(); if (s!=null && s!==V165.navN){ V165.navN = s; setTabCount('good', s); } } }catch(e){} }, 1000);
 })();
+/* ================= v166: pick popup + strength filter =================
+   Tapping a pick opens a large popup (most of the screen) instead of stretching the card
+   into a tall rectangle. Inside, each section is its own dropdown; on a wide screen those
+   sit in 2–3 columns. A Filters row lets you show only 3+, 4+, or 5/5 strength picks.
+   Play of the Day and Picks counts (and the nav badge) follow what's actually shown. */
+APP_BUILD = 166;
+
+const V166_STR_OPTS = [[0,'All'],[3,'3+'],[4,'4+'],[5,'5/5']];
+const V166 = window.V166 = {id:null, kind:'', pushed:false, gone:false, openKeys:[], scrollY:0};
+
+/* ---------- CSS: compact cards, popup, strength row ---------- */
+(function(){
+  const st = document.createElement('style');
+  st.id = 'v166css';
+  st.textContent = `
+#view .grid > .card[data-v166-id] > details.dd{display:none !important}
+#view .grid > .card[data-v166-id]{cursor:pointer}
+#v166Modal{position:fixed;inset:0;z-index:10050 !important;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(3,8,18,.82);opacity:0;pointer-events:none;transition:opacity .2s ease}
+#v166Modal.open{opacity:1;pointer-events:auto}
+#v166Modal[hidden]{display:none !important}
+.v166-back{position:absolute;inset:0;z-index:0}
+.v166-sheet{z-index:1;position:relative;width:90vw;height:88vh;max-width:1280px;display:flex;flex-direction:column;background:#102036;border:1px solid rgba(125,211,252,.28);border-radius:22px;box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 30px 80px -20px rgba(0,0,0,.95);overflow:hidden;color:var(--txt);min-width:0}
+.v166-x{position:absolute;top:10px;right:10px;z-index:3;width:40px;height:40px;border-radius:50%;border:1px solid rgba(125,211,252,.35);background:#1c2e48;color:#e8eef8;font-size:22px;line-height:1;cursor:pointer}
+.v166-x:hover{color:#fff;background:#243858}
+.v166-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:18px 20px 24px;padding-right:56px}
+.v166-note{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.35);color:#fecaca;font-size:13.5px;font-weight:650}
+.v166-head{min-width:0;width:100%}
+.v166-head > .card{width:100% !important;max-width:none !important;background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;margin:0 !important;cursor:default;transform:none !important;content-visibility:visible !important;contain:none !important;contain-intrinsic-size:none !important}
+.v166-head > .card:hover{transform:none !important;border:0 !important;box-shadow:none !important}
+.v166-head > .card:before{display:none !important}
+.v166-grid{display:flex;flex-direction:column;gap:8px;margin-top:14px;min-width:0;width:100%}
+.v166-grid > details.dd{margin:0;border:1px solid rgba(125,211,252,.22);border-radius:14px;background:rgba(255,255,255,.05);padding:0;min-width:0;content-visibility:visible !important;contain:none !important}
+.v166-grid > details.dd > summary{min-height:44px;padding:10px 14px;color:#e8eef8;font-weight:700;font-size:13.5px}
+.v166-grid > details.dd > *:not(summary){padding:0 14px 12px;min-width:0;max-width:100%}
+#v166Modal .card .beton{border-style:solid}
+html.v166-lock,html.v166-lock body{overflow:hidden !important;overscroll-behavior:none}
+#filterBar #v166StrRow{display:grid !important;grid-template-columns:62px minmax(0,1fr) !important;align-items:center;column-gap:8px;gap:0 8px !important;margin:0;padding:0;min-height:44px}
+#filterBar #v166StrRow .horizon-lab{margin:0}
+#filterBar #v166StrChips{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;width:100%;border:0;background:none;padding:0}
+#filterBar #v166StrChips .chip{box-sizing:border-box;display:flex !important;align-items:center;justify-content:center;height:44px;min-height:44px;width:100%;min-width:0;margin:0;padding:0 2px;border-radius:999px;font-size:12px;font-weight:600;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (min-width:900px){
+  .v166-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;align-items:start}
+  .v166-grid > details.court-dd[open],
+  .v166-grid > details.ln-sec[open],
+  .v166-grid > details.tm-dd[open]{grid-column:1/-1}
+}
+@media (min-width:1200px){
+  .v166-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:767.98px){
+  #v166Modal{align-items:stretch;justify-content:stretch;padding:0}
+  .v166-sheet{width:100%;height:100%;max-width:none;border-radius:0;height:100dvh}
+  .v166-body{padding:16px 14px 28px;padding-right:52px;padding-bottom:calc(28px + env(safe-area-inset-bottom,0px))}
+  .v166-x{top:calc(8px + env(safe-area-inset-top,0px));right:8px}
+  .v166-body{padding-top:calc(16px + env(safe-area-inset-top,0px))}
+}
+`;
+  document.head.appendChild(st);
+})();
+
+/* ---------- Strength filter (saved on the account, like the other Filters choices) ---------- */
+function v166SaveS(){ try{ if (typeof saveJSON==='function' && typeof LS!=='undefined') saveJSON(LS.settings, S); }catch(e){} }
+function v166Min(){ const v = (typeof S!=='undefined' && S) ? +S.fStr : 0; return (v===3||v===4||v===5) ? v : 0; }
+function v166SetMin(n){
+  n = (n===3||n===4||n===5) ? n : 0;
+  try{ S.fStr = n; v166SaveS(); }catch(e){}
+  try{ if (typeof saveFilters==='function') saveFilters(); }catch(e){}
+  v166PaintStr();
+  try{ if (typeof render==='function') render(); }catch(e){}
+  try{ if (typeof updateFilterChrome==='function') updateFilterChrome(); }catch(e){}
+}
+function v166StarsOf(el){
+  try{ const p = el && el.querySelector && el.querySelector('[data-bstr]'); if (p && p.dataset.bstr!=null) return +p.dataset.bstr||0; }catch(e){}
+  return 0;
+}
+function v166StrRow(){
+  const fb = document.getElementById('filterBar'); if (!fb) return null;
+  let row = document.getElementById('v166StrRow');
+  if (!row){
+    row = document.createElement('div');
+    row.id = 'v166StrRow';
+    row.className = 'filters horizon-filter';
+    row.innerHTML = '<span class="mut horizon-lab">Strength</span><div class="v166-str" id="v166StrChips" role="group" aria-label="Minimum pick strength"></div>';
+    const chips = row.querySelector('#v166StrChips');
+    chips.innerHTML = V166_STR_OPTS.map(([v,l])=>`<span class="chip" data-v166-str="${v}" role="button" tabindex="0" aria-pressed="false">${l}</span>`).join('');
+  }
+  const tail = [...fb.children].find(c=>c.classList && c.classList.contains('filters') && /Tailed bets/.test(c.textContent||'') && !c.id);
+  const more = document.getElementById('v140More');
+  const anchor = tail || more;
+  if (anchor && row.parentNode!==fb) fb.insertBefore(row, anchor);
+  else if (anchor && row.nextElementSibling!==anchor) anchor.before(row);
+  else if (!row.parentNode) fb.appendChild(row);
+  return row;
+}
+function v166PaintStr(){
+  try{
+    const row = v166StrRow(); if (!row) return;
+    const on = String(v166Min());
+    row.querySelectorAll('[data-v166-str]').forEach(ch=>{
+      const is = ch.getAttribute('data-v166-str')===on;
+      ch.classList.toggle('on', is);
+      ch.setAttribute('aria-pressed', is?'true':'false');
+    });
+  }catch(e){}
+}
+document.addEventListener('click', e=>{
+  const ch = e.target && e.target.closest && e.target.closest('#v166StrChips [data-v166-str]');
+  if (!ch) return;
+  e.preventDefault(); e.stopPropagation();
+  v166SetMin(+ch.getAttribute('data-v166-str'));
+}, true);
+document.addEventListener('keydown', e=>{
+  const ch = e.target && e.target.closest && e.target.closest('#v166StrChips [data-v166-str]');
+  if (!ch || (e.key!=='Enter' && e.key!==' ')) return;
+  e.preventDefault(); v166SetMin(+ch.getAttribute('data-v166-str'));
+});
+(function(){
+  if (typeof saveFilters==='function'){ const base = saveFilters; saveFilters = function(){ const r = base.apply(this, arguments); try{
+    const m = v166Min();
+    const f = (typeof loadJSON==='function' && typeof LS!=='undefined') ? (loadJSON(LS.filters, {})||{}) : null;
+    if (f && f.str!==m){ f.str = m; if (typeof saveJSON==='function') saveJSON(LS.filters, f); }
+    if (typeof filterViews!=='undefined' && filterViews){ let dirty=false; for (const k of Object.keys(filterViews)){ const v=filterViews[k]; if (v && typeof v==='object' && v.str!==m){ v.str=m; dirty=true; } } if (dirty && typeof saveJSON==='function') saveJSON(LS.filterViews, filterViews); }
+  }catch(e){} return r; }; }
+  if (typeof activeFilterCount==='function'){ const base = activeFilterCount; activeFilterCount = function(){ let n = base.apply(this, arguments)||0; if (v166Min()) n++; return n; }; }
+  if (typeof updateFilterChrome==='function'){ const base = updateFilterChrome; updateFilterChrome = function(){ const r = base.apply(this, arguments); v166PaintStr(); return r; }; }
+  if (typeof v140ArrangeFilters==='function'){ const base = v140ArrangeFilters; v140ArrangeFilters = function(){ const r = base.apply(this, arguments); v166PaintStr(); return r; }; }
+  if (typeof sync2Refresh==='function'){ const base = sync2Refresh; sync2Refresh = function(A){ try{ if (A && A.settings) v166PaintStr(); }catch(e){} return base.apply(this, arguments); }; }
+})();
+v166PaintStr();
+setTimeout(v166PaintStr, 0);
+
+/* Apply strength to Play of the Day and Picks only; recount badges */
+function v166FilterPanes(){
+  try{
+    if (typeof ui==='undefined' || ui.tab!=='good') return;
+    const panes = document.querySelector('#view .v142-panes'); if (!panes) return;
+    const min = v166Min();
+    const n = {potd:0, locked:0, picks:0};
+    const EMPTY = {potd:'No Play of the Day at this strength. Try All or a lower minimum.', picks:'No picks at this strength. Try All or a lower minimum.'};
+    for (const pane of panes.querySelectorAll('.v142-pane')){
+      const k = pane.dataset.pane; if (!k) continue;
+      const cards = [...pane.querySelectorAll('.grid > .card')];
+      let shown = 0;
+      for (const c of cards){
+        const hide = (k==='potd' || k==='picks') && min && v166StarsOf(c) < min;
+        c.hidden = !!hide;
+        if (!hide) shown++;
+      }
+      n[k] = (k==='locked') ? cards.length : shown;
+      let empty = pane.querySelector(':scope > .empty-state, :scope > .v166-empty');
+      const hasVisible = shown>0 || (k==='locked' && cards.length>0);
+      const grids = pane.querySelectorAll(':scope > .grid, :scope > .v142-sub');
+      grids.forEach(g=>{
+        if (g.classList.contains('v142-sub')){
+          const next = g.nextElementSibling;
+          const any = next && next.classList.contains('grid') && [...next.querySelectorAll('.card')].some(c=>!c.hidden);
+          g.hidden = !any;
+        } else {
+          const any = [...g.querySelectorAll('.card')].some(c=>!c.hidden);
+          g.hidden = !any;
+        }
+      });
+      if (!hasVisible){
+        if (!empty){ empty = document.createElement('div'); empty.className = 'empty-state v166-empty'; pane.appendChild(empty); }
+        empty.textContent = EMPTY[k] || 'No picks at this strength.';
+        empty.hidden = false;
+      } else if (empty) empty.hidden = true;
+    }
+    document.querySelectorAll('[data-v142-n]').forEach(el=>{
+      const k = el.dataset.v142N; const t = String(n[k]||0); if (el.textContent!==t) el.textContent = t;
+    });
+    try{ if (typeof V165!=='undefined'){ const s = Object.values(n).reduce((a,b)=>a+(+b||0),0); V165.navN = s; if (typeof setTabCount==='function') setTabCount('good', s); } }catch(e){}
+  }catch(e){ console.warn('v166 filter', e); }
+}
+(function(){
+  if (typeof v142ProcessSlate==='function'){ const base = v142ProcessSlate; v142ProcessSlate = function(){ const r = base.apply(this, arguments); v166FilterPanes(); return r; }; }
+})();
+
+/* ---------- Tag pick cards so a tap can open the popup ---------- */
+function v166Tag(html, p){
+  if (!p || !p.id || !html) return html;
+  const kind = p.isProp ? 'prop' : (p.isParlay ? 'parlay' : 'game');
+  return String(html).replace(/^\s*<div class="([^"]*)"([^>]*)>/, (m, c, rest)=>{
+    if (/\bdata-v166-id=/.test(m)) return m;
+    return `<div class="${c} v166-card"${rest} data-v166-id="${esc(p.id)}" data-v166-kind="${kind}">`;
+  });
+}
+(function(){
+  const wrap = name => { if (typeof window[name]!=='function') return; const base = window[name]; window[name] = function(p){ return v166Tag(base.apply(this, arguments), p); }; };
+  ['playCard','propCard','parlayCard'].forEach(wrap);
+})();
+
+/* ---------- Popup ---------- */
+function v166Host(){
+  let el = document.getElementById('v166Modal');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'v166Modal';
+  el.hidden = true;
+  el.innerHTML = `<div class="v166-back" data-v166-close tabindex="-1"></div>
+    <div class="v166-sheet" role="dialog" aria-modal="true" aria-label="Pick details">
+      <button type="button" class="v166-x" data-v166-close aria-label="Close">×</button>
+      <div class="v166-body"></div>
+    </div>`;
+  document.body.appendChild(el);
+  el.addEventListener('click', e=>{ if (e.target===el || (e.target && e.target.closest && e.target.closest('[data-v166-close]'))) v166Close(); });
+  el.addEventListener('toggle', e=>{
+    const d = e.target; if (!d || d.tagName!=='DETAILS') return;
+    if (d.open && typeof fillLazyDetails==='function') fillLazyDetails(d);
+  }, true);
+  return el;
+}
+function v166Find(id){
+  if (!id) return null;
+  try{ if (typeof plays!=='undefined' && plays){ const x = plays.find(p=>p && p.id===id); if (x) return x; } }catch(e){}
+  try{ if (typeof props!=='undefined' && props){ const x = props.find(p=>p && p.id===id); if (x) return x; } }catch(e){}
+  try{ if (typeof parlays!=='undefined' && parlays){ const x = parlays.find(p=>p && p.id===id); if (x) return x; } }catch(e){}
+  return null;
+}
+function v166CardHTML(p){
+  if (!p) return '';
+  try{
+    if (p.isParlay && typeof parlayCard==='function') return parlayCard(p);
+    if (p.isProp && typeof propCard==='function') return propCard(p);
+    if (typeof playCard==='function') return playCard(p);
+  }catch(e){ console.warn('v166 card', e); }
+  return '';
+}
+function v166RememberOpen(root){
+  const keys = [];
+  try{ (root||document).querySelectorAll('details[data-dd]').forEach(d=>{ if (d.open && d.dataset.dd) keys.push(d.dataset.dd); }); }catch(e){}
+  V166.openKeys = keys;
+  return keys;
+}
+function v166FillBody(p, opts){
+  const body = document.querySelector('#v166Modal .v166-body'); if (!body) return;
+  const keep = (opts && opts.keep) || V166.openKeys || [];
+  const html = v166CardHTML(p);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  const card = tmp.querySelector('.card') || tmp.firstElementChild;
+  if (!card){ body.innerHTML = '<div class="v166-note">Could not load this pick.</div>'; return; }
+  const details = [...card.querySelectorAll(':scope > details.dd')];
+  details.forEach(d=>d.remove());
+  const grid = document.createElement('div');
+  grid.className = 'v166-grid';
+  details.forEach((d,i)=>{
+    const k = d.dataset && d.dataset.dd;
+    const want = keep.length ? keep.includes(k) : i===0;
+    if (want) d.open = true; else d.removeAttribute('open');
+    grid.appendChild(d);
+  });
+  let note = '';
+  if (opts && opts.pulled) note = '<div class="v166-note">This pick was pulled.</div>';
+  body.innerHTML = note + '<div class="v166-head"></div>';
+  body.querySelector('.v166-head').appendChild(card);
+  if (details.length) body.appendChild(grid);
+  grid.querySelectorAll('details[open]').forEach(d=>{ if (typeof fillLazyDetails==='function') fillLazyDetails(d); });
+  v166RememberOpen(body);
+}
+function v166Lock(on){
+  const html = document.documentElement;
+  if (on){
+    if (!html.classList.contains('v166-lock')) V166.scrollY = window.scrollY||0;
+    html.classList.add('v166-lock');
+    document.body.style.top = '-' + V166.scrollY + 'px';
+    document.body.style.position = 'fixed';
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+  } else {
+    html.classList.remove('v166-lock');
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    window.scrollTo(0, V166.scrollY||0);
+  }
+}
+function v166Open(id, kind){
+  const p = v166Find(id); if (!p) return;
+  const host = v166Host();
+  V166.id = id; V166.kind = kind||''; V166.gone = false; V166.openKeys = [];
+  v166FillBody(p);
+  host.hidden = false;
+  requestAnimationFrame(()=>host.classList.add('open'));
+  v166Lock(true);
+  try{ const x = host.querySelector('.v166-x'); if (x) x.focus(); }catch(e){}
+  try{
+    if (!V166.pushed){ history.pushState({v166:id}, ''); V166.pushed = true; }
+  }catch(e){}
+}
+function v166Close(fromPop){
+  const host = document.getElementById('v166Modal');
+  if (!host || host.hidden && !host.classList.contains('open')){ V166.id = null; return; }
+  host.classList.remove('open');
+  host.hidden = true;
+  v166Lock(false);
+  V166.id = null; V166.gone = false; V166.openKeys = [];
+  if (!fromPop && V166.pushed){ V166.pushed = false; try{ history.back(); }catch(e){} }
+  else V166.pushed = false;
+}
+function v166Refresh(){
+  if (!V166.id) return;
+  const body = document.querySelector('#v166Modal .v166-body');
+  if (body) v166RememberOpen(body);
+  const p = v166Find(V166.id);
+  if (p){ V166.gone = false; v166FillBody(p, {keep: V166.openKeys}); }
+  else if (!V166.gone){ V166.gone = true; v166FillBodyFromLast(); }
+}
+function v166FillBodyFromLast(){
+  const body = document.querySelector('#v166Modal .v166-body'); if (!body) return;
+  if (!body.querySelector('.v166-note')){
+    const n = document.createElement('div');
+    n.className = 'v166-note';
+    n.textContent = 'This pick was pulled.';
+    body.insertBefore(n, body.firstChild);
+  }
+}
+
+document.addEventListener('click', e=>{
+  if (e.defaultPrevented) return;
+  const act = e.target && e.target.closest && e.target.closest('button,a,input,select,textarea,label,[data-log],[data-plog],[data-log-prop],[data-nob],[data-logleg],[data-open-book],.btn,.cfoot-acts');
+  if (act && !(act.classList && act.classList.contains('card'))) return;
+  const card = e.target && e.target.closest && e.target.closest('#view .card[data-v166-id]');
+  if (!card) return;
+  if (card.closest('#v166Modal')) return;
+  e.preventDefault();
+  v166Open(card.getAttribute('data-v166-id'), card.getAttribute('data-v166-kind'));
+}, true);
+
+document.addEventListener('keydown', e=>{
+  if (e.key==='Escape' && V166.id){ e.preventDefault(); v166Close(); }
+});
+window.addEventListener('popstate', ()=>{ if (V166.id) v166Close(true); });
+
+(function(){
+  const after = name => { if (typeof window[name]!=='function') return; const base = window[name]; window[name] = function(){ const r = base.apply(this, arguments); try{ if (V166.id){ v166Refresh(); v166Lock(true); } }catch(e){} return r; }; };
+  ['render','softRender'].forEach(after);
+})();
+
+window.v166Status = () => ({build: APP_BUILD, open: V166.id, min: v166Min(), gone: V166.gone});
 </script>
 </body>
 </html>
