@@ -29532,6 +29532,15 @@ APP_BUILD = 158;
 (function(){ const st = document.createElement('style'); st.id = 'v158css';
   st.textContent = '.v142-modes{grid-template-columns:repeat(3,minmax(0,1fr))!important}';
   document.head.appendChild(st); })();
+/* v159: breathing room under the Results calendar so it no longer sits flush on the summary tiles. */
+APP_BUILD = 159;
+(function(){ const st = document.createElement('style'); st.id = 'v159css';
+  st.textContent = [
+    '#view .v142-calcard{margin-bottom:16px}',
+    '#view .trk-kpis{margin-top:0;margin-bottom:16px}',
+    '#view .v140-stats{margin-top:0}'
+  ].join('');
+  document.head.appendChild(st); })();
 </script>
 </body>
 </html>
