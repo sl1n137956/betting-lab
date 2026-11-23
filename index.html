@@ -27849,6 +27849,300 @@ function v146NavPicks(){
   const kill = () => { const b = document.querySelector('#v145Head .v145-sw'); if (b) b.remove(); };
   const kb = document.getElementById('kindsBar'); if (kb) new MutationObserver(kill).observe(kb, {childList:true, subtree:true}); kill();
 })();
+/* ================= v147: no "Today at a glance"; Pulled in the phone bottom bar; simple pick cards =================
+   1) "Today at a glance" is gone (sidebar card hidden everywhere).
+   2) Phones: bottom bar is Verdict · Picks · Pulled · Tracker · More. Pulled left the More sheet. One item lit at a time.
+   3) Every pick card (Picks tiers, Pulled, Verdict) starts simple: tags, the teams (no records), the bet line with its
+      price, and the action row (Tail, Open book, Not on my book, size, bet strength). Tap the card to open it: courtroom,
+      injuries, lineups and news all shown open, no inner dropdowns. Tap the top part again to close it. */
+APP_BUILD = 147;
+try{ delete MORE_TABS.pulled; }catch(e){}
+var V147 = {open:new Set()};
+(function(){
+  const css = `
+.side-card.glance{display:none !important}
+@media (max-width:767.98px){ #moreSheet [data-tab="pulled"]{display:none !important} }
+.bottom-nav button[data-tab="pulled"] .tab-ic svg{width:22px;height:22px}
+.card.v147{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.card.v147:not(.v147-open) > :not(.card-status):not(.lock-badge-row):not(.lk-tag):not(.logged-badge):not(.you-bet-lab):not(.live-tag):not(.chead):not(.teams-block):not(.prop-head):not(.pick):not(.cfoot):not(.v147-hint):not(.v147-live-row){display:none !important}
+.card.v147:not(.v147-open) .teams-block .rec,.card.v147:not(.v147-open) .teams-block .venue,.card.v147:not(.v147-open) .chead .mut{display:none !important}
+.card.v147:not(.v147-open) .pick{margin-bottom:10px}
+.card.v147 .pick .what{overflow-wrap:normal;word-break:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.v147 .pick > div:first-child{min-width:0;flex:1 1 auto}
+.card.v147 .pick .price{flex:none}
+@media (max-width:380px){ .card.v147 .pick{gap:8px;padding-left:12px;padding-right:12px} .card.v147 .pick .what{font-size:15px;letter-spacing:-.01em} .card.v147 .pick .price{font-size:16.5px;letter-spacing:-.01em} }
+.card.v147.v147-open details.dd > summary,.card.v147.v147-open details > summary{pointer-events:none;cursor:default;list-style:none}
+.card.v147.v147-open details > summary::-webkit-details-marker{display:none}
+.card.v147.v147-open details > summary::marker{content:''}
+.card.v147.v147-open details.dd > summary::after,.card.v147.v147-open details.dd > summary::before{display:none !important}
+.card.v147.v147-open details.dd{border:0;background:transparent}
+.card.v147.v147-open details.dd > summary{padding-left:2px;padding-right:2px;font-weight:750;color:#dbeafe;min-height:0}
+.card.v147 .v147-hint{display:flex;justify-content:center;margin:2px 0 -4px;color:var(--mut);opacity:.7}
+.card.v147 .v147-hint svg{width:16px;height:16px;transition:transform .25s ease}
+.card.v147.v147-open .v147-hint svg{transform:rotate(180deg)}
+.card.v147.v147-anim{overflow:hidden}
+@keyframes v147In{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.card.v147.v147-opening > :not(.v147-live-row):not(.card-status):not(.lock-badge-row):not(.lk-tag):not(.logged-badge):not(.you-bet-lab):not(.live-tag):not(.chead):not(.teams-block):not(.prop-head):not(.pick):not(.cfoot){animation:v147In .26s ease-out both}
+@media (prefers-reduced-motion:reduce){ .card.v147.v147-opening > *{animation:none !important} .card.v147 .v147-hint svg{transition:none} }`;
+  const st = document.createElement('style'); st.id = 'v147css'; st.textContent = css; document.head.appendChild(st);
+})();
+
+/* ---------- 2) Pulled in the bottom bar (phones) ---------- */
+(function(){
+  const nav = document.getElementById('bottomNav'); if (!nav || nav.querySelector('[data-tab="pulled"]')) return;
+  const tr = nav.querySelector('[data-tab="tracker"]'); if (!tr) return;
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.tab = 'pulled'; b.setAttribute('aria-label', 'Pulled');
+  b.innerHTML = `<span class="tab-ic"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><path d="M6 18L18 6"/></svg><span class="cnt pull-cnt" data-cnt="pulled" hidden>0</span></span><span class="tab-lab">Pulled</span>`;
+  nav.insertBefore(b, tr);
+  try{ if (typeof updatePullDots==='function') updatePullDots(); }catch(e){}
+  try{ if (typeof syncTabChrome==='function') syncTabChrome(); }catch(e){}
+})();
+
+/* ---------- 3) simple cards ---------- */
+var V147_HEAD = ['card-status','lock-badge-row','lk-tag','logged-badge','you-bet-lab','live-tag','chead','teams-block','prop-head','pick','cfoot'];
+function v147IsHead(el){ return !!(el && el.classList && V147_HEAD.some(c=>el.classList.contains(c))); }
+function v147Key(c){ return c.dataset.pid || ''; }
+function v147OpenDetails(c){
+  c.querySelectorAll('details').forEach(d=>{ if (!d.open) d.open = true; });
+}
+function v147Apply(){
+  const v = document.getElementById('view'); if (!v || (typeof ui!=='undefined' && ui.tab==='tracker')) return;
+  v.querySelectorAll('.card[data-pid]').forEach(c=>{
+    if (c.closest('.tracker, #betForm')) return;
+    if (!c.classList.contains('v147')) c.classList.add('v147');
+    const open = V147.open.has(v147Key(c));
+    if (c.classList.contains('v147-open') !== open) c.classList.toggle('v147-open', open);
+    if (open) v147OpenDetails(c);
+    try{ v147LiveTag(c); }catch(e){}
+    try{ v147Fit(c); }catch(e){}
+    if (!c.querySelector(':scope > .v147-hint')){ const foot = c.querySelector(':scope > .cfoot'); if (foot){ const h = document.createElement('div'); h.className = 'v147-hint'; h.setAttribute('aria-hidden', 'true'); h.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'; foot.after(h); } }
+    if (!c.hasAttribute('aria-expanded') || c.getAttribute('aria-expanded') !== String(open)) c.setAttribute('aria-expanded', String(open));
+  });
+}
+function v147Toggle(c){
+  const k = v147Key(c); if (!k) return;
+  const opening = !V147.open.has(k);
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const h0 = c.getBoundingClientRect().height;
+  if (opening) V147.open.add(k); else V147.open.delete(k);
+  c.classList.toggle('v147-open', opening); c.setAttribute('aria-expanded', String(opening));
+  if (opening){ v147OpenDetails(c); c.classList.remove('v147-opening'); void c.offsetWidth; c.classList.add('v147-opening'); setTimeout(()=>c.classList.remove('v147-opening'), 320); }
+  const h1 = c.getBoundingClientRect().height;
+  if (!reduce && c.animate && Math.abs(h1 - h0) > 2){
+    c.classList.add('v147-anim');
+    const a = c.animate([{height:h0+'px'}, {height:h1+'px'}], {duration:opening ? 280 : 220, easing:'cubic-bezier(.2,.8,.2,1)'});
+    a.onfinish = a.oncancel = ()=>c.classList.remove('v147-anim');
+  }
+  if (!opening){
+    // keep the card in view after it shrinks (no jump past it)
+    const top = c.getBoundingClientRect().top, hdr = (document.querySelector('header') || {}).offsetHeight || 0;
+    const lim = Math.max(8, Math.min(hdr, 160));
+    if (top < lim) window.scrollBy({top: top - lim - 8, behavior: reduce ? 'auto' : 'smooth'});
+  }
+}
+document.addEventListener('click', e=>{
+  const t = e.target; if (!t || !t.closest) return;
+  const c = t.closest('#view .card.v147'); if (!c) return;
+  if (t.closest('button, a, input, select, textarea, label, [role="button"], .open-book-wrap, .cfoot-acts, template')) return;
+  try{ const s = window.getSelection && getSelection(); if (s && String(s).trim().length > 1) return; }catch(e){}
+  // inside an open card, only the simple (top) part closes it; reading the courtroom doesn't
+  let ch = t; while (ch && ch.parentElement !== c) ch = ch.parentElement;
+  if (c.classList.contains('v147-open') && ch && !v147IsHead(ch) && !ch.classList.contains('v147-hint')) return;
+  v147Toggle(c);
+});
+document.addEventListener('keydown', e=>{
+  if ((e.key==='Enter' || e.key===' ') && e.target && e.target.classList && e.target.classList.contains('v147')){ e.preventDefault(); v147Toggle(e.target); }
+});
+(function(){
+  const v = document.getElementById('view'); if (!v) return;
+  let q = 0; const run = () => { q = 0; try{ v147Apply(); }catch(e){} };
+  new MutationObserver(()=>{ if (!q) q = requestAnimationFrame(run); }).observe(v, {childList:true, subtree:true});
+  run();
+})();
+
+/* ---------- 4) Tracker calendar popup: stats on top, then wins and losses as compact rows (BL-57) ---------- */
+function v147Px(am){ try{ if (am==null || !isFinite(+am)) return ''; return typeof fmtPx==='function' ? fmtPx(+am) : ((+am>0?'+':'')+Math.round(+am)); }catch(e){ return ''; } }
+function v147Unit(res, price){ if (res==='win') return (price!=null && isFinite(+price)) ? profitOn(+price, 1) : 1; if (res==='loss') return -1; return 0; }
+function v147RowLine(o){
+  if (o.b==='props'){ const k = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[o.k]) || o.k || '';
+    const sd = o.sd==='over' ? 'Over' : o.sd==='under' ? 'Under' : (o.sd||''); return `${o.pn||'Player'} ${sd}${o.pt!=null ? ' '+o.pt : ''} ${k}`.replace(/\s+/g,' ').trim(); }
+  const gm = String(o.gm||''); const [aw, hm] = gm.split(' @ ');
+  const team = o.sd==='home' ? (hm||'Home') : o.sd==='away' ? (aw||'Away') : '';
+  if (o.mk==='total' || o.sd==='over' || o.sd==='under') return `${o.sd==='under' ? 'Under' : 'Over'}${o.pt!=null ? ' '+o.pt : ''}`;
+  if (o.mk==='spread') return `${team} ${o.pt!=null ? (o.pt>0?'+':'')+o.pt : ''}`.trim();
+  return `${team} ML`;
+}
+function v147ModelRows(metric, from, to){
+  const out = [];
+  try{
+    const potdKeys = {};
+    const potdOf = d => { if (potdKeys[d]) return potdKeys[d]; const s = new Set();
+      try{ const rows = v131RowsFor(d); if (rows){ const pr = V131.byDay[d] || V131.params || V131.prior; for (const c of v131PotdOfDay(rows, pr)) s.add(mlogBetKey(c)); } }catch(e){}
+      return (potdKeys[d] = s); };
+    const days = new Set();
+    for (const d of MLOG.raw.keys()) if (d >= from && d <= to) days.add(d);
+    if (metric==='potd' && typeof V131!=='undefined') for (const d of V131.rows.keys()) if (d >= from && d <= to) days.add(d);
+    for (const d of [...days].sort()){
+      let list = [];
+      if (metric==='potd'){ const rows = (typeof v131RowsFor==='function' && v131RowsFor(d)) || []; const pr = V131.byDay[d] || V131.params || V131.prior; list = v131PotdOfDay(rows, pr).map(c=>({o:c, price:c.pr, tier:'potd'})); }
+      else { const m = MLOG.raw.get(d); if (!m) continue; const rows = [...m.values()];
+        const pick = metric==='locked' ? mlogOnePerBet(rows.filter(o=>o && o.lkd)) : mlogOnePerBet(rows.filter(o=>o && o.v==='good'));
+        const P = potdOf(d);
+        list = pick.map(o=>({o, price: metric==='locked' ? (o.lpr!=null ? o.lpr : o.pr) : o.pr, tier: P.has(mlogBetKey(o)) ? 'potd' : o.lkd ? 'locked' : 'picks'})); }
+      for (const x of list){ const o = x.o; if (!o || !o.res || o.res==='ungradeable') continue;
+        out.push({d, tier:x.tier, line:v147RowLine(o), teams: o.b==='props' ? (o.gm || (o.l ? String(o.l).toUpperCase() : 'Prop')) : (String(o.gm||'').replace(' @ ', ' @ ') || String(o.l||'').toUpperCase()), price:x.price, res:o.res, u:v147Unit(o.res, x.price), t:+o.t||0}); }
+    }
+  }catch(e){ console.warn('v147 model rows', e); }
+  return out;
+}
+function v147TailedRows(I, from, to){
+  const out = []; const unit = +S.unit || 25;
+  for (const d in (I.list||{})){ if (d < from || d > to) continue;
+    for (const b of I.list[d]){
+      const pick = String(b.pick||''); const m = /^(.*?)\s*\(([^()]*\bvs\b[^()]*)\)/.exec(pick);
+      let line = m ? m[1] : (typeof shortBetName==='function' ? shortBetName(b) : pick); let teams = m ? m[2].replace(/\s+vs\s+/, ' vs ') : (b.sport || '');
+      if (b.market && /^(Moneyline)$/.test(b.market) && !/\bML\b/.test(line)) line += ' ML';
+      let tier = 'picks';
+      try{ const src = typeof betSrc==='function' ? betSrc(b) : 'game'; const board = src==='prop' ? 'props' : 'games'; const D = v131Store().days[d]; const k = b.playKey || (b.link && b.link.pid) || '';
+        if (k && D && D[board] && D[board][k] && !D[board][k].drop) tier = 'potd'; else if ((typeof betLockState==='function' ? betLockState(b) : b.tailLock)==='locked') tier = 'locked'; }catch(e){}
+      out.push({d, tier, line, teams, price:+b.odds, res:b.result, u: betProfit(b)/unit, money: betProfit(b), t: +b.created || 0});
+    }
+  }
+  return out;
+}
+var V147_TIC = {potd:'⭐', locked:'🔒', picks:'🎯'};
+function v147RowHTML(r, showDate){
+  const uc = r.u > 0.004 ? 'pos' : r.u < -0.004 ? 'neg' : '';
+  const sub = `${esc(r.teams||'')}${showDate ? `${r.teams ? ' · ' : ''}${esc(v142Short(r.d))}` : ''}`;
+  return `<div class="v147-r"><span class="v147-ti" title="${r.tier==='potd'?'Pick of the Day':r.tier==='locked'?'Locked':'Pick'}">${V147_TIC[r.tier]||'🎯'}</span>
+    <div class="v147-rm"><div class="v147-rl">${esc(r.line||'')}</div><div class="v147-rs">${sub}</div></div>
+    <div class="v147-rr"><span class="v147-rp">${esc(v147Px(r.price))}</span><b class="v147-ru ${uc}">${r.res==='push' ? 'Push' : r.res==='void' ? 'Void' : v142UTxt(r.u)}</b></div></div>`;
+}
+v142OpenPop = function(spec){
+  const [kind, key] = String(spec).split(':'); const I = v142Index(); const [from, to] = v142Range(kind, key);
+  const e = v142Sum(I, from, to); const t = v142Tot(e); const n = t.w + t.l + t.p;
+  const tailed = I.kind==='tailed'; const unit = +S.unit || 25;
+  const hit = (t.w + t.l) ? Math.round(t.w/(t.w+t.l)*100) + '%' : '—';
+  const cls = v142Cls(e);
+  const sub = tailed ? 'Your tailed bets' : `Model · ${V142_MET.find(x=>x[0]===v142Metric())[1]}`;
+  const money = v => `${v > 0.004 ? '+' : v < -0.004 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: Math.abs(v) % 1 ? 2 : 0, maximumFractionDigits:2})}`;
+  const stat = (k, v, c) => `<div class="v147-st"><div class="v147-sk">${k}</div><div class="v147-sv${c ? ' '+c : ''}">${v}</div></div>`;
+  let rows = [];
+  if (tailed) rows = v147TailedRows(I, from, to);
+  else if (v138Admin()) rows = v147ModelRows(v142Metric(), from, to);
+  rows.sort((a,b)=>(b.d.localeCompare(a.d)) || (b.t - a.t));
+  const showDate = kind!=='day';
+  const W = rows.filter(r=>r.res==='win'), L = rows.filter(r=>r.res==='loss'), O = rows.filter(r=>r.res==='push' || r.res==='void');
+  const CAP = 120;
+  const sec = (title, list, c) => !list.length ? '' : `<div class="v147-sh ${c}"><span class="v147-dot"></span>${title}<span class="v147-sn">${list.length}</span></div><div class="v147-list">${list.slice(0, CAP).map(r=>v147RowHTML(r, showDate)).join('')}${list.length > CAP ? `<div class="v147-more">+${list.length - CAP} more</div>` : ''}</div>`;
+  const listHTML = rows.length ? sec('Wins', W, 'w') + sec('Losses', L, 'l') + sec('Push / void', O, 'o') : '';
+  const body = n ? `<div class="v147-sum ${cls}">${stat('Record', v142Rec(t))}${stat('Win %', hit)}${stat(tailed ? 'Profit' : 'Units', tailed ? `${v142UTxt(t.u)}<small>${money(t.u*unit)}</small>` : v142UTxt(t.u), cls)}</div>${listHTML}`
+    : `<div class="v142-none">No graded ${tailed ? 'bets' : 'picks'} in this period.</div>`;
+  v142ShowPop(`<div class="v142-sh-head"><div class="v142-sh-tt"><div class="v142-kick">${esc(sub)}</div><h3 id="v142PopT">${esc(v142Title(kind, key))}</h3></div><button type="button" class="v142-x" data-v142-close aria-label="Close">×</button></div>${body}`);
+  try{ document.querySelector('#v142Pop .v142-sheet').classList.add('v147-sheet'); }catch(err){}
+};
+(function(){
+  const css = `
+.v147-sheet{padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+.v147-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 16px}
+.v147-st{border-radius:16px;padding:12px 10px;background:rgba(59,122,235,.10);border:1px solid rgba(96,165,250,.22);text-align:center;min-width:0}
+.v147-sk{font-size:11px;font-weight:750;letter-spacing:.07em;text-transform:uppercase;color:#8fb0dc;white-space:nowrap}
+.v147-sv{margin-top:4px;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;color:#e6eef8;line-height:1.15}
+.v147-sv small{display:block;font-size:12px;font-weight:650;color:#9fb3cf;margin-top:2px}
+.v147-sv.pos{color:var(--good)} .v147-sv.neg{color:var(--avoid)}
+.v147-sum.pos .v147-st:last-child{background:linear-gradient(180deg,rgba(52,211,153,.14),rgba(52,211,153,.04));border-color:rgba(52,211,153,.38)}
+.v147-sum.neg .v147-st:last-child{background:linear-gradient(180deg,rgba(240,113,103,.14),rgba(240,113,103,.04));border-color:rgba(240,113,103,.38)}
+.v147-sh{display:flex;align-items:center;gap:8px;margin:14px 2px 8px;font-size:13px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#cfe0f7}
+.v147-dot{width:8px;height:8px;border-radius:50%;background:#60a5fa;flex:none}
+.v147-sh.w .v147-dot{background:var(--good)} .v147-sh.l .v147-dot{background:var(--avoid)} .v147-sh.o .v147-dot{background:#94a3b8}
+.v147-sn{margin-left:auto;min-width:24px;height:22px;padding:0 8px;border-radius:11px;display:inline-grid;place-items:center;font-size:12px;background:rgba(59,130,246,.16);color:#bfdbfe;font-variant-numeric:tabular-nums}
+.v147-list{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;border:1px solid rgba(96,165,250,.18);background:rgba(10,22,44,.55)}
+.v147-r{display:flex;align-items:center;gap:10px;padding:10px 12px;min-width:0}
+.v147-r + .v147-r{border-top:1px solid rgba(96,165,250,.12)}
+.v147-ti{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:14px;background:linear-gradient(160deg,rgba(148,163,184,.16),rgba(30,58,138,.26));border:1px solid rgba(191,219,254,.26)}
+.v147-rm{flex:1 1 auto;min-width:0}
+.v147-rl{font-size:14px;font-weight:700;color:#e6eef8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v147-rs{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.v147-rr{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right}
+.v147-rp{font-size:11.5px;color:#9fb3cf;white-space:nowrap;font-variant-numeric:tabular-nums}
+.v147-ru{font-size:14px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums;color:#cbd5e1}
+.v147-ru.pos{color:var(--good)} .v147-ru.neg{color:var(--avoid)}
+.v147-more{padding:10px 12px;text-align:center;font-size:12.5px;color:var(--mut);border-top:1px solid rgba(96,165,250,.12)}
+@media (max-width:380px){ .v147-sv{font-size:18px} .v147-r{padding:9px 10px;gap:8px} .v147-rl{font-size:13.5px} }`;
+  const st = document.createElement('style'); st.id = 'v147pop'; st.textContent = css; document.head.appendChild(st);
+})();
+
+/* ---------- 5) Picks of the Day / Locked / Picks always show every bet, tailed included (BL-58) ----------
+   Started games stay in their list with a LIVE tag and leave once the game is final and the bet is settled.
+   The next-24h window still applies to games that haven't started. The Tailed bets show/hide toggle is gone. */
+(function(){
+  const base = v142Force;
+  v142Force = function(){ const r = base.apply(this, arguments); try{ ui.hideLogged = false; if (ui.tab==='good') ui.hideStarted = false; }catch(e){} return r; };
+  const gone = (x, isPlay) => { try{
+    if (!ui || ui.tab!=='good') return false;
+    const g = x && x.g; if (!g || g.state!=='post') return false;
+    const tailed = typeof isTailedPending==='function' && isTailedPending(x);   // tailed: stays until it grades
+    return !tailed; }catch(e){ return false; } };
+  if (typeof filtered==='function'){ const f0 = filtered; filtered = function(list, isPlay){ const out = f0.apply(this, arguments); return isPlay ? out.filter(x=>!gone(x, true)) : out; }; }
+  if (typeof filteredProps==='function'){ const p0 = filteredProps; filteredProps = function(){ return p0.apply(this, arguments).filter(x=>!gone(x)); }; }
+  // drop the Tailed bets show/hide row from Filters
+  const hideTailRow = () => { const fb = document.getElementById('filterBar'); if (!fb) return;
+    [...fb.querySelectorAll('.filters')].forEach(c=>{ if (!c.id && /Tailed bets/.test(c.textContent) && !c.classList.contains('v147-gone')) c.classList.add('v147-gone'); }); };
+  const st = document.createElement('style'); st.textContent = `#filterBar .v147-gone{display:none !important}
+.card.v147 > .live-tag{display:none !important}
+.v147-live{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;font-size:11.5px;font-weight:800;letter-spacing:.08em;white-space:nowrap;color:#fff;background:linear-gradient(90deg,#dc2626,#ef4444);box-shadow:0 0 0 1px rgba(254,202,202,.35) inset,0 2px 10px rgba(220,38,38,.35)}
+.v147-live i{width:7px;height:7px;border-radius:50%;background:#fff;animation:v147Pulse 1.4s ease-in-out infinite}
+.v147-live-row{display:flex;gap:8px;align-items:center;margin:0 0 8px}
+@keyframes v147Pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){ .v147-live i{animation:none} }`; document.head.appendChild(st);
+  const fb = document.getElementById('filterBar'); if (fb) new MutationObserver(hideTailRow).observe(fb, {childList:true, subtree:true}); hideTailRow();
+})();
+// LIVE pill on top of a started card (games: the card's game clock says live; props: same, via its game status)
+function v147LiveTag(c){
+  let live = !!c.querySelector('.gst .b-live');
+  if (!live){ try{ const id = c.dataset.pid; const it = (typeof props!=='undefined' && (props||[]).find(p=>p && p.id===id)) || (typeof plays!=='undefined' && (plays||[]).find(p=>p && p.id===id)); const g = it && it.g; live = !!(g && g.state==='in'); }catch(e){} }
+  let row = c.querySelector(':scope > .v147-live-row');
+  if (live && !row){ row = document.createElement('div'); row.className = 'v147-live-row'; row.innerHTML = '<span class="v147-live"><i aria-hidden="true"></i>LIVE</span>'; c.insertBefore(row, c.firstChild); }
+  else if (!live && row) row.remove();
+}
+// started-but-not-final locked picks stay on the board (verdict shown as the pick it locked as)
+(function(){
+  if (typeof lockedKeepItems!=='function') return;
+  const base = lockedKeepItems;
+  lockedKeepItems = function(board, shownList){
+    const out = base.apply(this, arguments) || [];
+    try{
+      if (board!=='games' && board!=='props') return out;
+      const st = V41(); const now = Date.now();
+      const shown = new Set([...(shownList||[]), ...out].map(x=>boardKeyOf(board, x)));
+      for (const k of Object.keys(st.locked)){
+        const rec = st.locked[k];
+        if (!rec || rec.board!==board || rec.pulled || rec.res || rec.shadow || shown.has(k) || isFinalPulled(k)) continue;
+        let item = null;
+        if (board==='games') item = ((typeof plays!=='undefined' && plays) || []).find(p=>p && p.g && p.g.eventId && playResultKey(p)===k);
+        else item = ((typeof props!=='undefined' && props) || []).find(p=>p && propKeyOf(p)===k) || null;
+        if (!item || !item.g || item.g.state==='post' || item.g.state==='pre') continue;
+        const c = Object.assign({}, item, {lockedKeep:true, tailedKeep:false, verdict:'good', v147Live:true});
+        out.push(c); shown.add(k);
+      }
+    }catch(e){ console.warn('v147 live keep', e); }
+    return out;
+  };
+})();
+// started games showing on Picks is the rule now, not a filter the user changed
+(function(){ if (typeof activeFilterCount!=='function') return; const base = activeFilterCount;
+  activeFilterCount = function(){ const hs = ui.hideStarted; try{ ui.hideStarted = true; return base.apply(this, arguments); } finally { ui.hideStarted = hs; } }; })();
+
+// the bet line never wraps or loses its number: shrink it a little when a long name doesn't fit
+function v147Fit(c){
+  const w = c.querySelector('.pick .what'); if (!w || !w.offsetParent) return;
+  if (w.dataset.v147fit === w.textContent + '|' + w.clientWidth) return;
+  w.style.fontSize = ''; let fs = parseFloat(getComputedStyle(w).fontSize) || 16;
+  while (w.scrollWidth > w.clientWidth + 1 && fs > 12.5){ fs -= 0.5; w.style.fontSize = fs + 'px'; }
+  w.dataset.v147fit = w.textContent + '|' + w.clientWidth;
+}
+addEventListener('resize', ()=>{ try{ document.querySelectorAll('#view .card.v147').forEach(v147Fit); }catch(e){} });
+document.addEventListener('click', ()=>{ requestAnimationFrame(()=>{ try{ v147Apply(); }catch(e){} }); });
 </script>
 </body>
 </html>
