@@ -29803,6 +29803,65 @@ function v160RuleHTML(k){
 (function(){ if (typeof v150PickHTML!=='function') return; const base = v150PickHTML;
   v150PickHTML = function(k){ const h = base.apply(this, arguments); try{ return v160RuleHTML(k) + h; }catch(e){ return h; } }; })();
 window.v160Status = () => ({cut: V160.cut, pass: V160.pass, fair: V160.fair.size});
+/* ================= v161: tighter combo-under pocket; Games unchanged after a bet-time test =================
+   Props: the NBA PRA/PR/PA under pocket now also needs the DraftKings line to be unchanged since it opened
+          (ESPN odds.total.open == current line). 5 weeks of real DK lines: pocket +1.0% ROI (3,492 bets) ->
+          pocket with unchanged line +3.3% (1,516 bets), positive in both halves (w43-45 +3.5%, w46-47 +3.0%).
+          Line unknown (no open in the feed) -> not a pocket Pick. Cross-book route unchanged.
+   Games: promoting every side that beats the bet-time no-vig consensus by 2.5+ was tested on the Nov 19-22 log
+          (fair from the log's own no-vig, no closing line): it only made money through a handful of +400 and longer
+          prices; capped at +400 it lost (-6.8%), capped at +250 -10.7%. Not shipped; the v160 gate stays. */
+APP_BUILD = 161;
+V160.VER = 161;
+V160.open = new Map();   // `${ev}|${pid}|${kind}|${line}` -> opening line
+function v161Num(x){ if (x==null) return null; const n = parseFloat(String(x).replace('+','')); return isFinite(n) ? n : null; }
+function v161Unch(open, line){ return open!=null && line!=null && Math.abs(+open - +line) < 1e-9; }
+/* opening line from the ESPN DraftKings records (board and log) */
+(function(){
+  if (typeof pairEspnProps==='function'){ const base = pairEspnProps;
+    pairEspnProps = function(recs, g){ const out = base.apply(this, arguments);
+      try{ const op = new Map();
+        for (const rec of recs||[]){ const aid = athleteIdFromRef(rec.athlete && rec.athlete.$ref); const kind = PROP_TYPE_MAP[(rec.type && rec.type.name) || ''];
+          const line = rec.odds && rec.odds.total ? v161Num(rec.odds.total.value) : null; const o = rec.odds && rec.odds.total ? v161Num(rec.odds.total.open) : null;
+          if (aid && kind && line!=null && o!=null) op.set(aid+'|'+kind+'|'+line, o); }
+        for (const r of out||[]){ const o = op.get(r.playerId+'|'+r.kind+'|'+r.line); if (o!=null){ r.openLine = o; V160.open.set(v160Key(r.eventId, r.playerId, r.kind, r.line), o); } }
+      }catch(e){}
+      return out; };
+  }
+  if (typeof uniPairDk==='function'){ const base = uniPairDk;
+    uniPairDk = function(recs, gm){ const out = base.apply(this, arguments);
+      try{ for (const rec of recs||[]){ const aid = athleteIdFromRef(rec.athlete && rec.athlete.$ref); if (!aid) continue;
+          const T = uniDkType(gm.l, (rec.type && rec.type.name) || ''); if (!T || T.yes || T.mile || T.period) continue;
+          const tv = rec.odds && rec.odds.total ? rec.odds.total.value : null; if (tv==null || /\+$/.test(String(tv))) continue;
+          const line = v161Num(tv), o = v161Num(rec.odds.total.open); if (line==null || o==null) continue;
+          V160.open.set(v160Key(gm.ev, aid, T.kind, line), o); }
+        if (V160.open.size > 8000){ const keep = [...V160.open].slice(-4000); V160.open = new Map(keep); }
+      }catch(e){}
+      return out; };
+  }
+})();
+/* context carries "line unchanged since open" */
+(function(){
+  const bR = v160CtxFromRaw; v160CtxFromRaw = function(raw){ const c = bR.apply(this, arguments); if (!c) return c;
+    const o = raw.openLine!=null ? raw.openLine : V160.open.get(v160Key(raw.eventId || (raw.g && raw.g.eventId) || '', raw.playerId, raw.kind, raw.line));
+    c.unch = v161Unch(o, raw.line); return c; };
+  const bU = v160CtxFromUni; v160CtxFromUni = function(gm, pid, kind, line){ const c = bU.apply(this, arguments);
+    c.unch = v161Unch(V160.open.get(v160Key(gm && gm.ev, pid, kind, line)), line); return c; };
+  const bP = v160PropRule; v160PropRule = function(x){ const R = bP.apply(this, arguments);
+    const unch = x.unch!=null ? x.unch : !!(V160.ctx && V160.ctx.unch);
+    if (R.ok && R.path==='pocket' && !unch) return Object.assign({}, R, {ok:false, path:'', why:'Combo under: the line has moved since it opened'});
+    return R; };
+  const bC = v160PropCall; v160PropCall = function(pOver, price, feat, side, raw){
+    const c = (raw && (raw.overPrice!=null || raw.underPrice!=null || raw.bookPrices)) ? v160CtxFromRaw(raw) : V160.ctx;
+    const prev = V160.ctx; V160.ctx = c || prev; try{ return bC.apply(this, arguments); } finally{ V160.ctx = prev; } };
+})();
+/* Model learning copy */
+(function(){ const base = v160RuleHTML; v160RuleHTML = function(k){ let h = base.apply(this, arguments);
+  h = h.replace('Pick rule (v160)', `Pick rule (v${V160.VER})`);
+  if (k==='props') h = h.replace('with value at its price.', 'with value at its price and a line that has not moved since it opened.');
+  if (k==='games') h = h.replace('Negative-value games are never Picks.', 'Negative-value games are never Picks, so on quiet days there may be none.');
+  return h; }; })();
+window.v161Status = () => Object.assign(v160Status(), {open: V160.open.size});
 </script>
 </body>
 </html>
