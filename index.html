@@ -29414,6 +29414,119 @@ function v156FloorHTML(k){
 }
 (function(){ const base = v155HTML; v155HTML = function(k){ const h = base.apply(this, arguments); if (k!=='games' && k!=='props') return h; try{ return h + v156FloorHTML(k); }catch(e){ return h; } }; })();
 (function(){ const st = document.createElement('style'); st.textContent = '.v156-row{padding:6px 0;font-size:13px;line-height:1.35}.v156-row .mut{font-size:12px}'; document.head.appendChild(st); })();
+/* v157: Polymarket placeholder prices.
+   Cause: when a Polymarket market had no buyer (no bestBid) the second side fell back to outcomePrices, which
+   Polymarket leaves at ~0.50 on untraded markets, so e.g. "Under 15.5 assists" was logged at about -105.
+   Empty books (bid 1¢ / ask 99¢) were logged at about -10400 on both sides.
+   1) Live: a Polymarket side is priced only from a real order-book quote (bestAsk for side 1, 1 - bestBid for
+      side 2), never from outcomePrices, and the whole market is skipped when the bid-ask gap is over 12¢ or it has
+      under $25 of liquidity. Sportsbooks and tight Polymarket markets are untouched.
+   2) History: Polymarket prop rows whose two sides don't form a real market (implied total under 97% or over
+      115%), or a lone ~50¢ side with no other side logged, are dropped from Results and every learner on this
+      device. Day totals rebuild once; the publisher rewrites the day summaries. */
+APP_BUILD = 157;
+
+const V157_SPREAD = 0.12, V157_LIQ = 25;
+const V157 = {removed:0, sw:new Map(), days:{}};
+
+/* ---------- live ---------- */
+function v157BookOk(bid, ask, spread, liq){
+  bid = bid==null || bid==='' ? null : +bid; ask = ask==null || ask==='' ? null : +ask;
+  const sp = spread!=null && spread!=='' && isFinite(+spread) ? +spread : (bid!=null && ask!=null ? ask - bid : null);
+  if (sp!=null && sp > V157_SPREAD + 1e-9) return false;
+  if (liq!=null && liq!=='' && isFinite(+liq) && +liq < V157_LIQ) return false;
+  return (bid!=null && bid>0 && bid<1) || (ask!=null && ask>0 && ask<1);
+}
+/* a gamma market with no fallback prices: missing sides become unpriced */
+function v157Gamma(m){
+  if (!m) return m;
+  if (!v157BookOk(m.bestBid, m.bestAsk, m.spread, m.liquidityNum!=null ? m.liquidityNum : m.liquidityClob)) return null;
+  return Object.assign({}, m, {outcomePrices:'["x","x"]'});
+}
+(function(){
+  if (typeof uniPmMarket==='function'){ const base = uniPmMarket;
+    uniPmMarket = function(gm, m){ const m2 = v157Gamma(m); if (!m2){ try{ uniNT('Polymarket (empty or wide order book)'); }catch(e){} return 0; } return base.call(this, gm, m2); };
+  }
+  if (typeof avIngestGammaEvent==='function'){ const base = avIngestGammaEvent;
+    avIngestGammaEvent = function(X, g, ev){ const ev2 = ev ? Object.assign({}, ev, {markets:(ev.markets||[]).map(v157Gamma).filter(Boolean)}) : ev; return base.call(this, X, g, ev2); };
+  }
+  if (typeof mergePolymarket==='function'){ const base = mergePolymarket;
+    mergePolymarket = function(){
+      const keep = (typeof pmCache!=='undefined' && pmCache) ? pmCache.m : null;
+      try{ if (keep){ const f = {}; for (const lg in keep) f[lg] = (keep[lg]||[]).filter(m=>v157BookOk(m.bid, m.ask, m.sp, m.liq)).map(m=>Object.assign({}, m, {pr:[NaN, NaN]})); pmCache.m = f; } }catch(e){}
+      try{ return base.apply(this, arguments); } finally { if (keep) pmCache.m = keep; }
+    };
+  }
+})();
+
+/* ---------- history ---------- */
+function v157Imp(a){ a = +a; if (!isFinite(a) || !a) return null; return a > 0 ? 100/(a+100) : -a/(-a+100); }
+function v157Twin(id){ const m = /^(.*):(over|under)$/.exec(String(id||'')); return m ? m[1] + ':' + (m[2]==='over' ? 'under' : 'over') : null; }
+function v157Phantom(id, o, m){
+  if (!o || o.b!=='props' || o.s!=='pm' || o.pr==null) return false;
+  const i = v157Imp(o.pr); if (i==null) return false;
+  const tid = v157Twin(id); const t = tid && m ? m.get(tid) : null; const ti = t ? v157Imp(t.pr) : null;
+  if (ti!=null){ const s = i + ti; return s < 0.97 || s > 1.15; }
+  return i >= 0.5 && i <= 0.52;
+}
+function v157Sweep(){
+  try{
+    if (typeof MLOG==='undefined' || !MLOG.raw) return 0; let n = 0;
+    for (const [d, m] of MLOG.raw){
+      if (!m || V157.sw.get(d)===m.size) continue;
+      const bad = []; for (const [id, o] of m) if (v157Phantom(id, o, m)) bad.push(id);
+      for (const id of bad) m.delete(id);
+      if (bad.length){ n += bad.length; V157.days[d] = (V157.days[d]||0) + bad.length; }
+      V157.sw.set(d, m.size);
+    }
+    V157.removed += n; return n;
+  }catch(e){ return 0; }
+}
+/* run the sweep before anything reads the log */
+(function(){
+  const pre = ['v145RefreshStats','v131RowsFromRaw','v155Rows','v156Buckets','mlogDayAgg','v142AdminIndex','v147ModelRows'];
+  for (const fn of pre){ if (typeof window[fn]!=='function') continue; const base = window[fn]; window[fn] = function(){ v157Sweep(); return base.apply(this, arguments); }; }
+  for (const fn of ['mlogLoad','mlogDeltaSync']){ if (typeof window[fn]!=='function') continue; const base = window[fn];
+    window[fn] = async function(){ const r = await base.apply(this, arguments); v157Sweep(); return r; }; }
+})();
+setInterval(v157Sweep, 20000);
+
+/* day stats cached before v157 rebuild once */
+(function(){
+  if (typeof v145DayStat==='function'){ const bs = v145DayStat; v145DayStat = function(){ const x = bs.apply(this, arguments); if (x) x.v157 = 1; return x; }; }
+  try{ if (typeof V145!=='undefined' && V145.stat) for (const d in V145.stat){ const s = V145.stat[d]; if (s && !s.v157) delete V145.stat[d]; } }catch(e){}
+  try{ if (!localStorage.getItem('bl_v157_once')){
+      for (let i = localStorage.length - 1; i >= 0; i--){ const k = localStorage.key(i); if (k && k.indexOf('bl_v131_rows_')===0) localStorage.removeItem(k); }
+      if (typeof V131!=='undefined' && V131.rows && V131.rows.clear) V131.rows.clear();
+      localStorage.setItem('bl_v157_once', '1'); } }catch(e){}
+})();
+
+/* day summaries written before v157 still hold the placeholder rows: treat them as not final so the day's rows
+   load and get cleaned, and let the publisher rewrite them with the v157 mark */
+(function(){
+  if (typeof MLOG==='undefined' || !MLOG.sums) return;
+  const fix = x => (x && x.final && !x.v157) ? Object.assign({}, x, {final:false, dd:0}) : x;
+  const set0 = MLOG.sums.set.bind(MLOG.sums);
+  MLOG.sums.set = function(k, x){ return set0(k, fix(x)); };
+  for (const [k, x] of [...MLOG.sums]) set0(k, fix(x));
+})();
+mlogWriteFinalSums = async function(){
+  if (typeof mlogOn==='function' && !mlogOn()) return;
+  if (typeof v154Pub==='function' && !v154Pub()) return;
+  v157Sweep();
+  const now = Date.now(), cut = mlogDay(now - 86400000); const db = mlogFS(); let w = 0;
+  for (const [day, m] of MLOG.raw){
+    if (day > cut) continue; const s = MLOG.sums.get(day); if (s && s.v157 && s.final && s.dd && s.n===m.size) continue;
+    const open = [...m.values()].filter(o=>!o.res).length;
+    const final = open===0 || day <= mlogDay(now - 4*86400000);
+    if (!final) continue;
+    const one = mlogOnePerBet(m.values()); const agg = {}; for (const o of one) mlogAggAdd(agg, o);
+    for (const k in agg) agg[k][4] = Math.round(agg[k][4]*100)/100;
+    const body = {d:day, final:true, dd:1, v157:1, n:m.size, nb:one.length, agg, at:now};
+    try{ await db.collection('modelSum').doc(day).set(body); MLOG.sums.set(day, body); w++; }catch(e){ break; }
+    if (w >= 6) break;
+  }
+};
 </script>
 </body>
 </html>
