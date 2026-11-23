@@ -30506,6 +30506,195 @@ window.v163Results = () => ({src: v163Src(), moved: V163R.moved, pmSv: V163R.pmS
   if (typeof avDayKey==='function'){ const base = avDayKey; let v = '', at = 0; avDayKey = function(){ const now = Date.now(); if (now - at > 30000 || !v){ v = base(); at = now; } return v; }; }
   if (typeof v145Mobile==='function'){ const base = v145Mobile; let v = null, at = 0, w = -1; v145Mobile = function(){ const now = Date.now(); if (v===null || w!==innerWidth || now - at > 1000){ v = base(); at = now; w = innerWidth; } return v; }; }
 })();
+/* ================= v164: picks stop appearing and disappearing =================
+   Root cause caught live on v163 (Playwright trace): after a reload (or once the 30-minute game-log cache ran out)
+   the prop board was rebuilt before game logs arrived, so every prop Pick read as Avoid for a moment. trackEarlyDrops
+   took that as "dropped to Avoid before lock" and pulled all of them for the rest of the day; they came back one by
+   one while game logs loaded, then the end of the pass wiped them all ("Pulled earlier…"). The pull also synced to
+   the account, so every device lost them.
+   v164:
+   1) A prop only counts as dropped when its own game log is loaded and it failed on 2 complete passes 45 s+ apart.
+   2) Game logs are reused for the same PT day (up to 6 h) so a reload/refresh never re-judges Picks without them.
+   3) Picks hold on a hair of a price move (games and props) until 2 complete passes 45 s+ apart agree, unless the
+      price clearly moved past the rule or the game started; real Avoids still drop right away for games.
+   4) While game logs load, the board is not repainted card by card; the finished pass paints once (max 30 s hold).
+   5) A Polymarket league that comes back empty or fails keeps its last good markets for 5 minutes.
+   6) One-time repair: today's prop pulls made by the bug are cleared (tombstoned, so the account copy can't bring them back). */
+APP_BUILD = 164;
+const V164 = window.V164 = {pk: new Map(), gk: new Map(), miss: new Map(), stats: {heldProps:0, heldGames:0, dropBlockedUnloaded:0, dropBlockedConfirm:0, pulled:0, renderHeld:0, pmKept:0, logsReused:0, unpulled:0}, holdT0: 0, pending: false};
+const V164_CONFIRM_MS = 45000, V164_GAP_MS = 20000, V164_MEM_MS = 15*60000;
+// a prop's side is picked by the model, so before its game log loads the same line can carry the other side's id
+function v164PB(p){ return `${(p.g&&p.g.eventId)||p.eventId||''}|${p.playerId||p.playerName||''}|${p.kind||''}|${p.line}`; }
+function v164Enriched(p){ return !!(p && ((p.raw && p.raw.rows) || String(p.playerId||'').startsWith('oa:'))); }
+function v164Imp(a){ a = +a; if (!isFinite(a) || !a) return null; return a > 0 ? 100/(a+100) : -a/(-a+100); }
+function v164Pre(x){ const g = x && x.g; if (!g || g.state!=='pre') return false; const s = (typeof itemStartMs==='function' ? itemStartMs(x) : 0) || (g.start ? +g.start : 0); return !s || s > Date.now(); }
+// miss bookkeeping: a miss is confirmed after 2 complete passes at least 20 s apart, 45 s+ after the first miss
+function v164Miss(k, now){ let m = V164.miss.get(k); if (!m){ m = {t0: now, last: now, n: 1}; V164.miss.set(k, m); return m; }
+  if (now - m.last >= V164_GAP_MS){ m.n++; m.last = now; } return m; }
+function v164Confirmed(m, now){ return m && m.n >= 2 && now - m.t0 >= V164_CONFIRM_MS; }
+
+/* ---------- 6) tombstones for bug pulls ---------- */
+const V164_TOMB_LS = 'bl_v164_unpull';
+V164.tomb = (()=>{ try{ return JSON.parse(localStorage.getItem(V164_TOMB_LS)||'{}') || {}; }catch(e){ return {}; } })();
+(function(){
+  if (typeof isFinalPulled==='function'){ const base = isFinalPulled;
+    isFinalPulled = function(k){ if (!k) return false;
+      try{ const st = V41(); const c = canonKey(k); const rec = st.pulled[k] || st.pulled[c]; const t = V164.tomb[k] || V164.tomb[c];
+        if (rec && t && (+rec.at||0) <= t) return false; }catch(e){}
+      return base.apply(this, arguments); };
+  }
+  try{
+    if (!localStorage.getItem('bl_v164_mig') && typeof V41==='function'){
+      const st = V41(); const now = Date.now(); let n = 0;
+      for (const [k, x] of Object.entries(st.pulled||{})){
+        if (!x || x.board!=='props' || !x.early || !/dropped to Avoid before lock/.test(x.reason||'') || !(+x.start > now - 6*3600e3)) continue;
+        V164.tomb[k] = Math.max(+x.at||0, now); delete st.pulled[k]; n++;
+      }
+      localStorage.setItem(V164_TOMB_LS, JSON.stringify(V164.tomb)); localStorage.setItem('bl_v164_mig', String(now));
+      if (n){ try{ localStorage.setItem(v41LS().pulled, JSON.stringify(st.pulled)); }catch(e){} }
+      V164.stats.unpulled = n;
+    }
+    // prune old tombstones (2 days)
+    const now = Date.now(); let ch = 0; for (const k of Object.keys(V164.tomb)) if (V164.tomb[k] < now - 2*86400e3){ delete V164.tomb[k]; ch = 1; }
+    if (ch) localStorage.setItem(V164_TOMB_LS, JSON.stringify(V164.tomb));
+  }catch(e){ console.warn('v164 unpull', e); }
+})();
+
+/* ---------- 2) game logs reused for the same PT day ---------- */
+(function(){
+  if (typeof evaluatePropRaw!=='function') return; const base = evaluatePropRaw;
+  const ptDay = t => { try{ return typeof uniDay==='function' ? uniDay(t) : new Date(t).toDateString(); }catch(e){ return ''; } };
+  evaluatePropRaw = function(raw){
+    try{ if (raw && !raw.rows && raw.playerId && !String(raw.playerId).startsWith('oa:') && typeof propLogCache!=='undefined'){
+      const c = propLogCache[(raw.league||(raw.g&&raw.g.league))+':'+raw.playerId]; const now = Date.now();
+      if (c && c.rows && c.rows.length && now - c.t >= 30*60000 && now - c.t < 6*3600e3 && ptDay(c.t)===ptDay(now)){ raw.rows = c.rows; V164.stats.logsReused++; } } }catch(e){}
+    return base.apply(this, arguments);
+  };
+})();
+
+/* ---------- 3a) props: hold + guarded drops (runs at the end of every complete prop pass) ---------- */
+function v164PropHold(){
+  const now = Date.now(); const P = (typeof props!=='undefined' && props) || [];
+  for (let i = 0; i < P.length; i++){
+    const p = P[i]; if (!p || !p.id) continue;
+    const bk = v164PB(p);
+    if (p.verdict==='good'){ if (p._v164held) continue; if (v164Enriched(p)){ V164.pk.set(bk, {o: p, t: now}); V164.miss.delete('p:'+bk); } continue; }
+    const rec = V164.pk.get(bk); if (!rec || now - rec.t > V164_MEM_MS) continue;
+    if (p.pulledFinal || p.verdict==='started' || !v164Pre(p)) continue;
+    // log not loaded yet: show the last full call; the new raw line rides along so the log pass still re-judges it
+    if (!v164Enriched(p)){ P[i] = Object.assign({}, rec.o, {g: p.g || rec.o.g, raw: p.raw || rec.o.raw, _v164held: now}); V164.stats.heldProps++; continue; }
+    const i0 = v164Imp(rec.o.price), i1 = v164Imp(p.price);
+    const clear = (i0!=null && i1!=null && i1 - i0 > 0.03) || (p.line!=null && rec.o.line!=null && p.line!==rec.o.line);
+    if (clear) continue;
+    const m = v164Miss('p:'+bk, now);
+    if (v164Confirmed(m, now)) continue;
+    // do not hold a side when the other side of the same player + stat is now the Pick
+    const twin = P.some(x=>x && x!==p && x.verdict==='good' && !x._v164held && x.playerId===p.playerId && x.kind===p.kind && x.g===p.g && x.side!==rec.o.side);
+    if (twin) continue;
+    P[i] = Object.assign({}, rec.o, {g: p.g || rec.o.g, _v164held: now}); V164.stats.heldProps++;
+  }
+  // a game or player that is missing from this pull (feed hiccup, 429, timeout) keeps its last Pick for 5 minutes;
+  // a moved line is a real change and is not carried
+  const have = new Set(), havePK = new Set();
+  for (const x of P) if (x){ have.add(v164PB(x)); havePK.add(`${(x.g&&x.g.eventId)||x.eventId||''}|${x.playerId||x.playerName||''}|${x.kind||''}`); }
+  for (const [bk, rec] of V164.pk){
+    const o = rec.o; if (have.has(bk) || now - rec.t > V164_MEM_MS) continue;
+    const pk = `${(o.g&&o.g.eventId)||o.eventId||''}|${o.playerId||o.playerName||''}|${o.kind||''}`;
+    if (havePK.has(pk) || !v164Pre(o) || (typeof isFinalPulled==='function' && isFinalPulled(propKeyOf(o)))) { V164.miss.delete('f:'+bk); continue; }
+    const m = V164.miss.get('f:'+bk) || (V164.miss.set('f:'+bk, {t0: now, last: now, n: 1}), V164.miss.get('f:'+bk));
+    if (now - m.t0 > 5*60000) continue;
+    const g = ((typeof games!=='undefined' && games) || []).find(x=>x && o.g && String(x.eventId)===String(o.g.eventId));
+    P.push(Object.assign({}, o, {g: g || o.g, _v164held: now, _v164carried: true})); V164.stats.carried = (V164.stats.carried||0) + 1;
+  }
+  for (const [k, r] of V164.pk) if (now - r.t > V164_MEM_MS) V164.pk.delete(k);
+}
+(function(){
+  if (typeof trackEarlyDrops!=='function') return; const base = trackEarlyDrops;
+  trackEarlyDrops = function(board){
+    if (board!=='props') return base.apply(this, arguments);
+    try{ v164PropHold(); }catch(e){ console.warn('v164 hold', e); }
+    const st = V41(); const now = Date.now(); const prev = st.prevGood.props || (st.prevGood.props = {});
+    const P = (typeof props!=='undefined' && props) || []; const curGood = {};
+    for (const p of P) if (p && p.verdict==='good') curGood[propKeyOf(p)] = itemStartMs(p) || now;
+    for (const k of Object.keys(prev)){
+      if (curGood[k] || st.locked[k] || isFinalPulled(k)) continue;
+      const parts = k.split('|');
+      const same = P.filter(x=>x && String((x.g&&x.g.eventId)||x.eventId||'')===parts[1] && String(x.playerId||x.playerName||'')===parts[2] && String(x.kind)===parts[3]);
+      const hits = same.filter(x=>String(x.side).toLowerCase()===parts[4] ? x.verdict==='avoid' : x.verdict!=='avoid');
+      if (!hits.length){ V164.miss.delete('d:'+k); continue; }
+      if (!hits.every(v164Enriched)){ V164.stats.dropBlockedUnloaded++; continue; }        // judged without its game log: not a real drop
+      const m = v164Miss('d:'+k, now);
+      if (!v164Confirmed(m, now)){ V164.stats.dropBlockedConfirm++; continue; }
+      if (v41FinalPull(k, {board:'props', start:prev[k], reason:'dropped to Avoid before lock', early:true})) V164.stats.pulled++;
+      V164.miss.delete('d:'+k);
+    }
+    for (const k of Object.keys(curGood)){ prev[k] = curGood[k]; V164.miss.delete('d:'+k); }
+    for (const k of Object.keys(prev)) if (!curGood[k] && (prev[k] < now - 12*3600e3)) delete prev[k];
+    v41Save('prevGood');
+  };
+})();
+
+/* ---------- 3b) games: hold on a hair of a move ---------- */
+(function(){
+  if (typeof evaluateAll!=='function') return; const base = evaluateAll;
+  evaluateAll = function(){
+    const r = base.apply(this, arguments);
+    try{
+      const now = Date.now(); const L = (typeof plays!=='undefined' && plays) || [];
+      const gameHasGood = new Set(L.filter(p=>p && p.verdict==='good' && p.g).map(p=>p.g.eventId));
+      for (let i = 0; i < L.length; i++){
+        const p = L[i]; if (!p || !p.g || !p.mk) continue; const k = playResultKey(p);
+        if (p.verdict==='good'){ if (p._v164held) continue; V164.gk.set(k, {o: p, t: now}); V164.miss.delete('g:'+k); continue; }
+        const rec = V164.gk.get(k); if (!rec || now - rec.t > V164_MEM_MS) continue;
+        if (p.verdict!=='watch' || p.pulledFinal || !v164Pre(p) || gameHasGood.has(p.g.eventId)) continue;   // Avoid, pulled, started: drop now
+        const e = p.my && p.my.best ? +p.my.best.edge : null;
+        if (e!=null && e < -0.015) continue;                                                  // clearly worse than fair
+        const m = v164Miss('g:'+k, now); if (v164Confirmed(m, now)) continue;
+        const o = rec.o; o.g = p.g; o._v164held = now; L[i] = o; gameHasGood.add(p.g.eventId); V164.stats.heldGames++;
+      }
+      for (const [k, x] of V164.gk) if (now - x.t > V164_MEM_MS) V164.gk.delete(k);
+    }catch(e){ console.warn('v164 games hold', e); }
+    return r;
+  };
+})();
+
+/* ---------- 4) one paint per prop pass while game logs load ---------- */
+function v164Holding(){
+  try{ if (typeof propEnrich==='undefined' || !propEnrich || !propEnrich.running){ V164.holdT0 = 0; return false; }
+    if (!V164.holdT0) V164.holdT0 = Date.now();
+    // a board that already shows Picks waits for the whole pass (max 30 s); an empty first load waits at most 8 s
+    const v = document.getElementById('view'); const shown = !!(v && v.querySelector('[data-pid]'));
+    return Date.now() - V164.holdT0 < (shown ? 30000 : 8000); }catch(e){ return false; }
+}
+(function(){
+  const userEv = () => { try{ return typeof v163UserEv==='function' && v163UserEv(); }catch(e){ return false; } };
+  const board = () => { try{ return typeof v163BoardTab==='function' && v163BoardTab(); }catch(e){ return false; } };
+  const hasCards = () => { const v = document.getElementById('view'); return !!(v && v.firstChild); };
+  if (typeof softRender==='function'){ const base = softRender;
+    softRender = function(){ if (board() && !userEv() && hasCards() && !(typeof V163!=='undefined' && V163.inPatch) && v164Holding()){ V164.pending = true; V164.stats.renderHeld++; return; }
+      return base.apply(this, arguments); };
+  }
+  if (typeof render==='function'){ const base = render;
+    render = function(){ if (board() && !userEv() && hasCards() && !(typeof V163!=='undefined' && V163.inPatch) && v164Holding()){ V164.pending = true; V164.stats.renderHeld++; return; }
+      return base.apply(this, arguments); };
+  }
+  setInterval(()=>{ if (V164.pending && !v164Holding()){ V164.pending = false; try{ softRender(); }catch(e){} } }, 1000);
+})();
+
+/* ---------- 5) Polymarket: keep a league's last good markets when a poll comes back empty or fails ---------- */
+(function(){
+  if (typeof fetchPolymarket!=='function') return; const base = fetchPolymarket;
+  fetchPolymarket = async function(){
+    const old = (typeof pmCache!=='undefined' && pmCache) ? pmCache : null;
+    const r = await base.apply(this, arguments);
+    try{ if (old && pmCache && pmCache!==old && old.m){ const now = Date.now();
+      for (const lg of Object.keys(old.m)){ const prevL = old.m[lg] || [], cur = pmCache.m[lg];
+        if (prevL.length && (!cur || !cur.length) && now - (old.kt && old.kt[lg] || old.t) < 5*60000){
+          pmCache.m[lg] = prevL; (pmCache.kt || (pmCache.kt = {}))[lg] = (old.kt && old.kt[lg]) || old.t; V164.stats.pmKept++; } } } }catch(e){ console.warn('v164 pm keep', e); }
+    return r;
+  };
+})();
+window.v164Status = () => ({build: APP_BUILD, stats: Object.assign({}, V164.stats), held: {props: V164.pk.size, games: V164.gk.size, miss: V164.miss.size}});
 </script>
 </body>
 </html>
