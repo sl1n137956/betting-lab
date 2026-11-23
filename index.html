@@ -30993,7 +30993,7 @@ function v166FilterPanes(){
       let shown = 0;
       for (const c of cards){
         const hide = (k==='potd' || k==='picks') && min && v166StarsOf(c) < min;
-        c.hidden = !!hide;
+        if (c.hidden !== !!hide) c.hidden = !!hide;
         if (!hide) shown++;
       }
       n[k] = (k==='locked') ? cards.length : shown;
@@ -31012,9 +31012,10 @@ function v166FilterPanes(){
       });
       if (!hasVisible){
         if (!empty){ empty = document.createElement('div'); empty.className = 'empty-state v166-empty'; pane.appendChild(empty); }
-        empty.textContent = EMPTY[k] || 'No picks at this strength.';
-        empty.hidden = false;
-      } else if (empty) empty.hidden = true;
+        const msg = EMPTY[k] || 'No picks at this strength.';
+        if (empty.textContent!==msg) empty.textContent = msg;
+        if (empty.hidden) empty.hidden = false;
+      } else if (empty && !empty.hidden) empty.hidden = true;
     }
     document.querySelectorAll('[data-v142-n]').forEach(el=>{
       const k = el.dataset.v142N; const t = String(n[k]||0); if (el.textContent!==t) el.textContent = t;
@@ -31023,7 +31024,21 @@ function v166FilterPanes(){
   }catch(e){ console.warn('v166 filter', e); }
 }
 (function(){
-  if (typeof v142ProcessSlate==='function'){ const base = v142ProcessSlate; v142ProcessSlate = function(){ const r = base.apply(this, arguments); v166FilterPanes(); return r; }; }
+  if (typeof v142ProcessSlate!=='function') return;
+  const base = v142ProcessSlate;
+  let busy = false;
+  v142ProcessSlate = function(){
+    if (busy) return;
+    busy = true;
+    try{
+      const r = base.apply(this, arguments);
+      v166FilterPanes();
+      return r;
+    } finally {
+      // swallow observer callbacks queued by this pass so opening Picks can't freeze the page
+      requestAnimationFrame(()=>{ busy = false; });
+    }
+  };
 })();
 
 /* ---------- Tag pick cards so a tap can open the popup ---------- */
