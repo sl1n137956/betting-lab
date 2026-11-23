@@ -28143,6 +28143,324 @@ function v147Fit(c){
 }
 addEventListener('resize', ()=>{ try{ document.querySelectorAll('#view .card.v147').forEach(v147Fit); }catch(e){} });
 document.addEventListener('click', ()=>{ requestAnimationFrame(()=>{ try{ v147Apply(); }catch(e){} }); });
+/* ================= v148 (BL-59) =================
+   1) Hiding is per list: "Not on my book" on a card hides it only in the list it was tapped in (Picks of the Day,
+      Locked or Picks). A Pick of the Day hidden there still shows in Locked (if locked) or Picks, and the reverse.
+      Stored in the same synced hide list as before, keyed "t:<tier>|<board|id>". Hides made before v148 have no list,
+      so they keep hiding the pick in all three lists (they expire at the end of the day like before).
+   2) Tracker names every bet (team or player + line, with the matchup) and shows profit in units and dollars
+      (dollars = units x the unit size in Settings).
+   3+4) Once a game starts, its picks are frozen as they were before the start: same list (tier), same bet line,
+      pregame price, verdict and bet strength, with the LIVE pill. No dropping, cooling, pulling or moving between
+      lists after the start. They leave once the game is final and settled. */
+APP_BUILD = 148;
+var V148 = {frz:null, frzDirty:false, tiers:['potd','locked','picks']};
+var V148_FRZ_LS = 'bl_v148_frz', V148_TN_LS = 'bl_v148_tn';
+
+/* ---------- shared helpers ---------- */
+function v148Money(v){ const a = Math.round(Math.abs(v)*100)/100; return `${v > 0.004 ? '+' : v < -0.004 ? '−' : ''}$${a.toLocaleString('en-US', {minimumFractionDigits: a % 1 ? 2 : 0, maximumFractionDigits:2})}`; }
+function v148UD(u){ const unit = +S.unit || 25; return `${v142UTxt(u)} · ${v148Money(u*unit)}`; }
+function v148Item(pid){
+  if (!pid) return null;
+  try{ return ((typeof plays!=='undefined' && plays) || []).find(p=>p && p.id===pid) || ((typeof props!=='undefined' && props) || []).find(p=>p && p.id===pid) || null; }catch(e){ return null; }
+}
+function v148Started(c){
+  const it = v148Item(c.dataset.pid);
+  if (it && it.g && it.g.state) return it.g.state!=='pre';
+  return !!c.querySelector('.gst .b-live, .gst .g-final');
+}
+function v148LockRec(c){
+  try{ const it = v148Item(c.dataset.pid); if (!it) return null; const b = it.isProp || c.classList.contains('prop-card') ? 'props' : 'games';
+    const k = boardKeyOf(b, it); return (k && V41().locked[k]) || null; }catch(e){ return null; }
+}
+
+/* ---------- 1) per-list hiding ---------- */
+function v148HideKey(tier, c){ const n = c.querySelector('[data-nob]'); const v = n ? n.getAttribute('data-nob') : ((c.classList.contains('prop-card') ? 'props|' : 'games|') + (c.dataset.pid||'')); return `t:${tier}|${v}`; }
+function v148Hidden(tier, c){ try{ const day = avFlags().h[avDayKey()]; return !!(day && day[v148HideKey(tier, c)]); }catch(e){ return false; } }
+window.addEventListener('click', e=>{
+  const t = e.target && e.target.closest && e.target.closest('[data-nob]'); if (!t) return;
+  const pane = t.closest('.v142-pane'); if (!pane || !ui || ui.tab!=='good') return;   // other tabs keep the old behaviour
+  const c = t.closest('.card'); if (!c) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const tier = pane.dataset.pane;
+  const d = avFlags(); const day = avDayKey();
+  d.h = {[day]: Object.assign({}, d.h[day]||{}, {[v148HideKey(tier, c)]: Date.now()})};
+  avSaveFlags(d); AV.ver++;
+  try{ if (typeof sync2Push==='function') sync2Push(); }catch(err){}
+  const nm = {potd:'Picks of the Day', locked:'Locked', picks:'Picks'}[tier] || 'this list';
+  try{ toast(`Hidden from ${nm} for today.`); }catch(err){}
+  if (typeof softRender==='function') softRender(); else render();
+}, true);
+document.addEventListener('click', e=>{
+  const b = e.target && e.target.closest && e.target.closest('[data-v148-unhide]'); if (!b) return;
+  const tier = b.getAttribute('data-v148-unhide'); const d = avFlags(); const day = d.h[avDayKey()];
+  if (day) for (const k of Object.keys(day)) if (k.startsWith(`t:${tier}|`)) delete day[k];
+  avSaveFlags(d); AV.ver++; if (typeof softRender==='function') softRender(); else render();
+});
+
+/* ---------- 3/4) frozen at start: snapshot each card's list and look before its game starts ---------- */
+function v148Frz(){ if (V148.frz) return V148.frz; try{ V148.frz = JSON.parse(localStorage.getItem(V148_FRZ_LS)||'{}') || {}; }catch(e){ V148.frz = {}; }
+  const cut = Date.now() - 36*3600000; for (const k in V148.frz) if (!V148.frz[k] || V148.frz[k].t < cut) delete V148.frz[k]; return V148.frz; }
+function v148FrzSave(){ if (V148.frzT) return; V148.frzT = setTimeout(()=>{ V148.frzT = 0; try{ localStorage.setItem(V148_FRZ_LS, JSON.stringify(v148Frz())); }catch(e){} }, 3000); }
+function v148Snap(c, tier){
+  const pid = c.dataset.pid; if (!pid) return;
+  const pick = c.querySelector(':scope > .pick'), meta = c.querySelector('.cfoot-meta'), vs = c.querySelector('.verdict-slot');
+  const tags = [...c.querySelectorAll(':scope > .lk-tag')].map(x=>x.outerHTML).join('');
+  const s = {t:Date.now(), tier, pick: pick ? pick.innerHTML : '', meta: meta ? meta.innerHTML : '', vs: vs ? vs.innerHTML : '', tags, lp: c.classList.contains('locked-pick') ? 1 : 0};
+  const F = v148Frz(), o = F[pid];
+  if (o && o.tier===s.tier && o.pick===s.pick && o.meta===s.meta && o.vs===s.vs && o.tags===s.tags){ if (Date.now() - o.t > 600000){ o.t = s.t; v148FrzSave(); } return; }
+  F[pid] = s; v148FrzSave();
+}
+function v148Freeze(c){
+  const pid = c.dataset.pid; const s = pid && v148Frz()[pid];
+  c.classList.add('v148-started');
+  if (s){
+    const pick = c.querySelector(':scope > .pick'); if (pick && s.pick && pick.innerHTML!==s.pick) pick.innerHTML = s.pick;
+    const meta = c.querySelector('.cfoot-meta'); if (meta && s.meta && meta.innerHTML!==s.meta) meta.innerHTML = s.meta;
+    const vs = c.querySelector('.verdict-slot'); if (vs && s.vs && vs.innerHTML!==s.vs) vs.innerHTML = s.vs;
+    c.querySelectorAll(':scope > .lk-tag, :scope > .cool-note, :scope > .moved-up, :scope > .moved-down').forEach(x=>x.remove());
+    if (s.tags){ const tmp = document.createElement('div'); tmp.innerHTML = s.tags; const anchor = c.querySelector(':scope > .chead') || c.firstChild; [...tmp.children].forEach(x=>c.insertBefore(x, anchor)); }
+    return s.tier;
+  }
+  // opened mid-game on this device: use the lock record for the line and pregame price
+  const rec = v148LockRec(c);
+  if (rec){
+    const w = c.querySelector(':scope > .pick .what'); if (w && rec.label) w.textContent = rec.label;
+    const pr = c.querySelector(':scope > .pick .price'); if (pr && rec.price!=null && typeof fmtPx==='function') pr.innerHTML = `${fmtPx(rec.price)}<small>Pregame</small>`;
+  }
+  const vp = c.querySelector('.verdict-slot .verdict-pill'); if (vp && !/vp-good/.test(vp.className)){ vp.className = 'verdict-pill vp-good'; vp.textContent = 'BET'; }
+  c.querySelectorAll(':scope > .cool-note').forEach(x=>x.remove());
+  return null;
+}
+function v148StartTier(c, paneTier){
+  try{ const it = v148Item(c.dataset.pid); const b = c.classList.contains('prop-card') ? 'props' : 'games';
+    if (it && typeof v131IsPotd==='function' && v131IsPotd(b, Object.assign({}, it, {verdict:'good'}))) return 'potd'; }catch(e){}
+  if (c.classList.contains('potd-pick')) return 'potd';
+  if (v148LockRec(c) || c.classList.contains('locked-pick')) return 'locked';
+  return paneTier || 'picks';
+}
+
+/* ---------- the Picks lists, rebuilt with frozen started picks and per-list hiding ---------- */
+(function(){
+  const base = v142ProcessSlate;
+  const EMPTY = {potd:'No Picks of the Day yet. They show up once the best plays lock.', locked:'Nothing locked yet. Picks lock shortly before they start.', picks:'No other picks in the next 24 hours. Zero picks is fine.'};
+  v142ProcessSlate = function(){
+    const r = base.apply(this, arguments);
+    try{
+      if (!ui || ui.tab!=='good') return r;
+      const panes = document.querySelector('#view .slate-main > .v142-panes'); if (!panes || panes.dataset.v148) return r;
+      panes.dataset.v148 = '1';
+      const T = V148.tiers; const out = {potd:{games:[], props:[]}, locked:{games:[], props:[]}, picks:{games:[], props:[]}}; const hid = {potd:0, locked:0, picks:0};
+      for (const tier of T){
+        const pane = panes.querySelector(`.v142-pane[data-pane="${tier}"]`); if (!pane) continue;
+        for (const c of [...pane.querySelectorAll('.card')]){
+          const kind = c.classList.contains('prop-card') ? 'props' : 'games';
+          let chain;
+          if (v148Started(c)){ const ft = v148Freeze(c) || v148StartTier(c, tier); chain = [ft];
+            if (ft==='potd' && !c.querySelector(':scope > .v131-star')){ const tg = document.createElement('div'); tg.className = 'lk-tag v131-star'; tg.innerHTML = '<span aria-hidden="true">⭐</span> Pick of the Day · <span aria-hidden="true">🔒</span> Locked'; c.insertBefore(tg, c.querySelector(':scope > .chead') || c.firstChild); } }
+          else {
+            v148Snap(c, tier);
+            chain = tier==='potd' ? ['potd'].concat(c.classList.contains('locked-pick') ? ['locked'] : [], ['picks']) : tier==='locked' ? ['locked','picks'] : ['picks'];
+          }
+          let placed = false;
+          for (const t of chain){ if (v148Hidden(t, c)){ hid[t]++; continue; } out[t][kind].push(c); placed = true; break; }
+          if (!placed) c.remove();
+        }
+      }
+      const n = {};
+      for (const tier of T){
+        const pane = panes.querySelector(`.v142-pane[data-pane="${tier}"]`); if (!pane) continue;
+        pane.innerHTML = ''; n[tier] = out[tier].games.length + out[tier].props.length;
+        if (!n[tier]) pane.innerHTML = `<div class="empty-state v142-empty">${hid[tier] ? 'Everything here is hidden for today.' : EMPTY[tier]}</div>`;
+        const both = out[tier].games.length && out[tier].props.length;
+        for (const kd of ['games','props']){ const L = out[tier][kd]; if (!L.length) continue;
+          if (both){ const h = document.createElement('div'); h.className = 'v142-sub'; h.textContent = kd==='games' ? 'Games' : 'Props'; pane.appendChild(h); }
+          const g = document.createElement('div'); g.className = 'grid'; L.forEach(c=>g.appendChild(c)); pane.appendChild(g); }
+        if (hid[tier]) pane.insertAdjacentHTML('beforeend', `<div class="v148-hid"><span>${hid[tier]} hidden in this list today</span><button type="button" class="btn sm" data-v148-unhide="${tier}">Show</button></div>`);
+      }
+      document.querySelectorAll('[data-v142-n]').forEach(el=>{ const t = String(n[el.dataset.v142N]||0); if (el.textContent!==t) el.textContent = t; });
+    }catch(e){ console.warn('v148 slate', e); }
+    return r;
+  };
+})();
+
+/* no pulls, drops or cooling once a game has started (pulls decided before the start still stand) */
+(function(){
+  if (typeof v41FinalPull==='function'){ const base = v41FinalPull; v41FinalPull = function(k, info){ const st = info && +info.start; if (st && st <= Date.now()) return false; return base.apply(this, arguments); }; }
+  const wrapNotes = fn => function(){ let before = null; try{ before = new Set((pullNotes||[]).map(n=>n && n.k)); }catch(e){}
+    const r = fn.apply(this, arguments);
+    try{ if (before){ const now = Date.now(); const keep = pullNotes.filter(n=>!n || before.has(n.k) || !(+n.start && +n.start <= now && +n.at >= +n.start)); if (keep.length!==pullNotes.length){ pullNotes = keep; saveJSON(LS.pullNotes, pullNotes); } } }catch(e){}
+    return r; };
+  if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls = wrapNotes(checkTailedBoardPulls);
+  if (typeof checkLoggedKeyOutPulls==='function') checkLoggedKeyOutPulls = wrapNotes(checkLoggedKeyOutPulls);
+})();
+
+/* ---------- 2) Tracker: names + units and dollars ---------- */
+function v148Names(){ if (V148.tn) return V148.tn; try{ V148.tn = JSON.parse(localStorage.getItem(V148_TN_LS)||'{}') || {}; }catch(e){ V148.tn = {}; } return V148.tn; }
+function v148LearnNames(){
+  try{ const N = v148Names(); let ch = false;
+    for (const g of ((typeof games!=='undefined' && games) || [])){ for (const s of ['home','away']){ const t = g && g[s]; if (!t || !t.short || !t.name) continue; const k = `${g.league}|${t.short}`; if (N[k]!==t.name){ N[k] = t.name; ch = true; } } }
+    if (ch){ const ks = Object.keys(N); if (ks.length > 4000) for (const k of ks.slice(0, ks.length - 4000)) delete N[k]; try{ localStorage.setItem(V148_TN_LS, JSON.stringify(N)); }catch(e){} }
+  }catch(e){}
+}
+setTimeout(v148LearnNames, 8000); setInterval(v148LearnNames, 30*60000);
+function v148Game(ev){ try{ return ((typeof games!=='undefined' && games) || []).find(g=>g && String(g.eventId)===String(ev)) || null; }catch(e){ return null; } }
+function v148Full(lg, ab){ const N = v148Names(); return N[`${lg}|${ab}`] || ab; }
+// new log rows carry the full team names
+(function(){
+  if (typeof mlogCompact!=='function') return; const base = mlogCompact;
+  mlogCompact = function(r){ const out = base.apply(this, arguments);
+    try{ if (out && out[1] && !out[1].ga){ const g = v148Game(out[1].ev); if (g && g.away && g.home){ out[1].ga = String(g.away.name||'').slice(0,40); out[1].gh = String(g.home.name||'').slice(0,40); } } }catch(e){}
+    return out; };
+})();
+function v148Match(o){
+  if (o.ga && o.gh) return `${o.ga} @ ${o.gh}`;
+  const g = v148Game(o.ev); if (g && g.away && g.home) return `${g.away.name} @ ${g.home.name}`;
+  const gm = String(o.gm||''); if (gm.includes(' @ ')){ const [a, h] = gm.split(' @ '); return `${v148Full(o.l, a)} @ ${v148Full(o.l, h)}`; }
+  return o.b==='props' ? (String(o.l||'').toUpperCase() || 'Prop') : gm;
+}
+var V148_STAT = {pts:'pts', reb:'reb', ast:'ast', threes:'3PM', pra:'PRA', pr:'P+R', pa:'P+A', ar:'R+A', stl:'stl', blk:'blk', tov:'TO', sog:'SOG', saves:'saves', goals:'goals', hpts:'pts'};
+v147RowLine = function(o){
+  if (o.b==='props'){ const k = V148_STAT[o.k] || (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[o.k]) || o.k || '';
+    const sd = o.sd==='over' ? 'Over' : o.sd==='under' ? 'Under' : (o.sd||''); return `${o.pn||'Player'} ${sd}${o.pt!=null ? ' '+o.pt : ''} ${k}`.replace(/\s+/g,' ').trim(); }
+  try{ const rec = V41().locked[`${o.ev}|${o.mk}|${o.sd}`]; if (rec && rec.label) return rec.label; }catch(e){}
+  const m = v148Match(o); const [aw, hm] = m.includes(' @ ') ? m.split(' @ ') : ['', ''];
+  const team = o.sd==='home' ? (hm||'Home') : o.sd==='away' ? (aw||'Away') : '';
+  if (o.mk==='total' || o.sd==='over' || o.sd==='under') return `${o.sd==='under' ? 'Under' : 'Over'}${o.pt!=null ? ' '+o.pt : ''}`;
+  if (o.mk==='spread') return `${team} ${o.pt!=null ? (o.pt>0?'+':'')+o.pt : ''}`.trim();
+  return `${team} ML`;
+};
+(function(){
+  const base = v147ModelRows;
+  v147ModelRows = function(metric, from, to){ v148LearnNames(); const rows = base.apply(this, arguments);
+    // attach the full matchup
+    try{ const byLine = new Map(); for (const d of MLOG.raw.keys()) if (d >= from && d <= to) for (const o of MLOG.raw.get(d).values()) byLine.set(d+'|'+v147RowLine(o), o);
+      if (typeof V131!=='undefined') for (const d of V131.rows.keys()) if (d >= from && d <= to) for (const o of (V131.rows.get(d)||[])) byLine.set(d+'|'+v147RowLine(o), o);
+      for (const r of rows){ const o = byLine.get(r.d+'|'+r.line); if (o) r.teams = v148Match(o); } }catch(e){}
+    return rows; };
+})();
+v147RowHTML = function(r, showDate){
+  const uc = r.u > 0.004 ? 'pos' : r.u < -0.004 ? 'neg' : '';
+  const sub = `${esc(r.teams||'')}${showDate ? `${r.teams ? ' · ' : ''}${esc(v142Short(r.d))}` : ''}`;
+  const res = r.res==='push' ? 'Push · $0' : r.res==='void' ? 'Void · $0' : v148UD(r.u);
+  return `<div class="v147-r v148-r"><span class="v147-ti" title="${r.tier==='potd'?'Pick of the Day':r.tier==='locked'?'Locked':'Pick'}">${V147_TIC[r.tier]||'🎯'}</span>
+    <div class="v148-rg"><div class="v148-l1"><span class="v147-rl">${esc(r.line||'')}</span><span class="v147-rp">${esc(v147Px(r.price))}</span></div>
+    <div class="v148-l2"><span class="v147-rs">${sub}</span><b class="v147-ru ${uc}">${res}</b></div></div></div>`;
+};
+// popup summary: units and dollars in the last box (model too)
+(function(){
+  const base = v142OpenPop;
+  v142OpenPop = function(spec){
+    const r = base.apply(this, arguments);
+    try{ const sh = document.querySelector('#v142Pop .v147-sheet'); const box = sh && sh.querySelector('.v147-sum .v147-st:last-child .v147-sv');
+      if (box && !box.querySelector('small')){ const I = v142Index(); const [kind, key] = String(spec).split(':'); const [from, to] = v142Range(kind, key); const t = v142Tot(v142Sum(I, from, to));
+        box.insertAdjacentHTML('beforeend', `<small>${v148Money(t.u * (+S.unit||25))}</small>`); }
+      if (sh){ const k = sh.querySelector('.v147-sum .v147-st:last-child .v147-sk'); if (k) k.textContent = 'Profit'; }
+    }catch(e){}
+    return r;
+  };
+})();
+// calendar period totals and the bet cards: units + dollars, full bet names with the matchup
+function v148TrackerPatch(){
+  if (!ui || ui.tab!=='tracker') return;
+  const v = document.getElementById('view'); if (!v) return;
+  const unit = +S.unit || 25;
+  v.querySelectorAll('article.bet-card[data-bet]').forEach(a=>{
+    if (a.dataset.v148) return; a.dataset.v148 = '1';
+    const b = (bets||[]).find(x=>x && x.id===a.dataset.bet); if (!b) return;
+    const isPar = typeof isParlayBet==='function' && isParlayBet(b); if (isPar) return;
+    const pick = String(b.pick||''); const m = /^(.*?)\s*\(([^()]*\bvs\b[^()]*)\)\s*$/.exec(pick);
+    const nm = a.querySelector('.bet-name'); if (nm && m && m[1]) nm.textContent = m[1].trim(); if (nm) requestAnimationFrame(()=>v148Fit(nm, 13));
+    if (m && m[2] && !a.querySelector('.v148-match')){ const top = a.querySelector('.bet-top'); if (top) top.insertAdjacentHTML('afterend', `<div class="v148-match">${esc(m[2].replace(/\s+vs\s+/, ' vs '))}</div>`); }
+    if (b.result && b.result!=='pending'){ const pr = betProfit(b); const pills = [...a.querySelectorAll('.bet-meta .meta-pill')]; const last = pills[pills.length-1];
+      if (last && /\$|—/.test(last.textContent)) last.textContent = `${v142UTxt(pr/unit)} · ${pr ? v148Money(pr) : '$0'}`; }
+  });
+}
+// shrink a one-line label a little before it would cut off
+function v148Fit(el, min){ if (!el) return; el.style.fontSize = ''; let fs = parseFloat(getComputedStyle(el).fontSize) || 14; let n = 0;
+  while (el.scrollWidth > el.clientWidth + 1 && fs > min && n++ < 12){ fs -= 0.5; el.style.fontSize = fs + 'px'; } }
+(function(){ const base = v142ShowPop; v142ShowPop = function(){ const r = base.apply(this, arguments); requestAnimationFrame(()=>{ try{ document.querySelectorAll('#v142Pop .v147-rl').forEach(el=>v148Fit(el, 12)); }catch(e){} }); return r; }; })();
+// calendar period total: exact dollars for the period on screen
+(function(){
+  const base = v142CalHTML;
+  v142CalHTML = function(I){
+    const html = base.apply(this, arguments);
+    try{ const C = V142.cal, mode = v142Mode(); const today = uniDay(Date.now());
+      const [from, to] = mode==='month' ? v142Range('year', String(C.year || today.slice(0,4))) : mode==='year' ? ['00000000','99999999'] : v142Range('month', C.month || today.slice(0,6));
+      const t = v142Tot(v142Sum(I, from, to));
+      return html.replace(/(<div class="pcal-sum v142-sum"><span>[^<]*<\/span><span><b class="([^"]*)">[^<]*<\/b>)/, (m, a, c)=>`${a}<span class="v148-usd ${c}"> · ${v148Money(t.u * (+S.unit||25))}</span>`);
+    }catch(e){ return html; }
+  };
+})();
+(function(){
+  const v = document.getElementById('view'); if (!v) return; let q = 0;
+  new MutationObserver(()=>{ if (!q) q = requestAnimationFrame(()=>{ q = 0; try{ v148TrackerPatch(); }catch(e){} }); }).observe(v, {childList:true, subtree:true});
+})();
+(function(){
+  const css = `
+.v148-hid{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 2px 0;padding:10px 12px;border-radius:14px;background:rgba(59,122,235,.08);border:1px solid rgba(96,165,250,.2);color:var(--mut);font-size:13px;white-space:nowrap}
+.v148-hid .btn{min-height:36px;padding:4px 14px}
+.card.v148-started > .beton,.card.v148-started > .cool-note,.card.v148-started > .moved-up,.card.v148-started > .moved-down{display:none !important}
+.v148-r{align-items:center}
+.v148-rg{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
+.v148-l1,.v148-l2{display:flex;align-items:baseline;gap:10px;min-width:0}
+.v148-l1 .v147-rl{flex:1 1 auto;min-width:0}
+.v148-l2 .v147-rs{flex:1 1 auto;min-width:0;margin:0}
+.v148-l1 .v147-rp,.v148-l2 .v147-ru{flex:none;white-space:nowrap}
+.v148-l2 .v147-ru{font-size:13px}
+.v148-usd{font-weight:700;white-space:nowrap}
+.v148-match{font-size:12px;color:var(--mut);margin:2px 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bet-card .bet-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media (max-width:380px){ .v148-l2 .v147-ru{font-size:12.5px} .v148-l1,.v148-l2{gap:8px} }`;
+  const st = document.createElement('style'); st.id = 'v148css'; st.textContent = css; document.head.appendChild(st);
+})();
+
+/* ---------- 4) the model skips started games: their picks stay exactly as they were at the start ----------
+   Games: the last pregame evaluation of each game is kept; once it starts, that game is not re-evaluated, the kept picks
+   are reused (only the scoreboard updates). Props: started games' props are carried over from the last pregame load. */
+V148.fz = new Map();
+(function(){
+  if (typeof evalGame==='function'){ const base = evalGame;
+    evalGame = function(g){
+      try{ if (g && g.state && g.state!=='pre'){ const f = V148.fz.get(String(g.eventId)); if (f && f.list.length) return f.list.map(s=>Object.assign({}, s, {g, reasons:(s.reasons||[]).slice(), _v148:s})); } }catch(e){}
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof evaluateAll==='function'){ const base = evaluateAll;
+    evaluateAll = function(){
+      const r = base.apply(this, arguments);
+      try{
+        const now = Date.now(), fresh = new Map();
+        for (const p of (plays||[])){
+          if (!p || !p.g) continue;
+          if (p._v148){ const keep = p.g; Object.assign(p, p._v148, {reasons:(p._v148.reasons||[]).slice()}); p.g = keep; continue; }
+          if (p.g.state==='pre'){ const ev = String(p.g.eventId); let f = fresh.get(ev); if (!f){ f = {t:now, list:[]}; fresh.set(ev, f); } const s = Object.assign({}, p); delete s.g; delete s._v148; s.reasons = (p.reasons||[]).slice(); f.list.push(s); }
+        }
+        for (const [ev, f] of fresh) V148.fz.set(ev, f);
+        for (const [ev, f] of V148.fz) if (now - f.t > 36*3600000) V148.fz.delete(ev);
+      }catch(e){ console.warn('v148 freeze', e); }
+      return r;
+    };
+  }
+  if (typeof loadLiveProps==='function'){ const base = loadLiveProps;
+    loadLiveProps = async function(){
+      const old = (props||[]).slice();
+      const r = await base.apply(this, arguments);
+      try{
+        if (props!==old && Array.isArray(props)){
+          const have = new Set(props.map(p=>p && p.id)); const add = [];
+          for (const p of old){ if (!p || have.has(p.id) || !p.g) continue;
+            const g = ((typeof games!=='undefined' && games) || []).find(x=>x && String(x.eventId)===String(p.g.eventId));
+            if (!g || g.state==='pre') continue;
+            if (g.state==='post' && Date.now() - (+p.g.start || 0) > 30*3600000) continue;
+            p.g = g; add.push(p); }
+          if (add.length){ props = props.concat(add); if (typeof softRender==='function') softRender(); }
+        }
+      }catch(e){ console.warn('v148 props keep', e); }
+      return r;
+    };
+  }
+})();
 </script>
 </body>
 </html>
