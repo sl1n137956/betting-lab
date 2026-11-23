@@ -29218,8 +29218,8 @@ verdictCloudPull = async function(){
    Started games keep their frozen call. The band only filters; explanation text never talks price. */
 APP_BUILD = 155;
 
-const V155_HARD = -400;                         // win >= 0.25u per 1u risked
-const V155_LO = [-400, -350, -300, -250, -200, -175, -150, -130];
+var V155_HARD = -400;                         // win >= 0.25u per 1u risked
+var V155_LO = [-400, -350, -300, -250, -200, -175, -150, -130];
 const V155_HI = [150, 200, 250, 300, 400, 600, null];   // null = no cap on underdogs
 const V155_MIN_TOTAL = 80, V155_MIN_KEEP = 50, V155_GAIN = 0.01, V155_WIN = 60;
 const V155_LS = 'bl_v155_band';
@@ -29380,6 +29380,40 @@ function v155HTML(k){
 }
 (function(){ if (typeof v150PickHTML!=='function') return; const base = v150PickHTML;
   v150PickHTML = function(k){ const h = base.apply(this, arguments); try{ return h + v155HTML(k); }catch(e){ return h; } }; })();
+/* v156: hard floor moves from -400 to -250 (win >= 0.4u per 1u; ~71.4¢ on a prediction market).
+   Picks and Play of the Day, games and props. Learned band choices start at -250 and can never be looser.
+   Started games keep their frozen call. */
+APP_BUILD = 156;
+V155_HARD = -250;
+V155_LO = [-250, -225, -200, -175, -150, -130];
+try{ V155.band = v155Clean(V155.band); v155Save(); }catch(e){}
+
+/* Admin: floor check on the real pick log this device already has (no extra reads).
+   Graded board Picks, one per bet, split by the price they locked at. */
+function v156Buckets(b){
+  const B = {keep:{n:0,w:0,l:0,u:0,wu:0}, cut:{n:0,w:0,l:0,u:0,wu:0}, past:{n:0,w:0,l:0,u:0,wu:0}}; let first = '';
+  if (typeof MLOG==='undefined' || !MLOG.raw) return {B, first};
+  for (const [d, m] of MLOG.raw){
+    const rows = typeof mlogOnePerBet==='function' ? mlogOnePerBet(m.values()) : [...m.values()];
+    for (const o of rows){ if (!o || o.b!==b) continue;
+      if (!(typeof v153BoardPick==='function' ? v153BoardPick(o) : o.v==='good')) continue;
+      const u = v155Units(o); if (u==null) continue; const pr = +(o.lpr!=null ? o.lpr : o.pr);
+      const k = pr >= -250 ? 'keep' : pr >= -400 ? 'cut' : 'past'; const T = B[k];
+      T.n++; T.u += u; if (u > 0){ T.w++; T.wu += u; } else T.l++;
+      if (!first || d < first) first = d; }
+  }
+  return {B, first};
+}
+function v156FloorHTML(k){
+  const {B, first} = v156Buckets(k);
+  const lab = {keep:'Kept (-250 through any underdog)', cut:'Cut by -250 (-251 to -400)', past:'Already cut (past -400)'};
+  const line = T => T.n ? `${T.w}-${T.l}, ${T.u>=0?'+':''}${T.u.toFixed(2)}u, ROI ${T.u>=0?'+':''}${Math.round(T.u/T.n*100)}%, avg win +${(T.w ? T.wu/T.w : 0).toFixed(2)}u` : 'No graded Picks';
+  const since = first ? ` since ${+first.slice(4,6)}/${+first.slice(6,8)}` : '';
+  return `<div class="v150-kv v150-top"><span>Floor check (graded Picks${since})</span></div>
+    ${['keep','cut','past'].map(x=>`<div class="v156-row"><div>${lab[x]}</div><div class="mut">${line(B[x])}</div></div>`).join('')}`;
+}
+(function(){ const base = v155HTML; v155HTML = function(k){ const h = base.apply(this, arguments); if (k!=='games' && k!=='props') return h; try{ return h + v156FloorHTML(k); }catch(e){ return h; } }; })();
+(function(){ const st = document.createElement('style'); st.textContent = '.v156-row{padding:6px 0;font-size:13px;line-height:1.35}.v156-row .mut{font-size:12px}'; document.head.appendChild(st); })();
 </script>
 </body>
 </html>
