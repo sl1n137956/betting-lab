@@ -30131,7 +30131,7 @@ var V163_R0 = typeof render==='function' ? render : null;
     if (V163.inPatch) return base.apply(this, arguments);
     const v = document.getElementById('view');
     // timer / feed renders on the board: coalesced background patch (keeps cards, scroll and open state)
-    if (!v163UserEv() && v163BoardTab() && v && v.firstChild && !document.hidden && typeof uiBackgroundPatch==='function'){
+    if (!v163UserEv() && v163BoardTab() && v && v.querySelector('.slate-main, .v142-panes, .card[data-pid], .card[data-v166-id]') && !document.hidden && typeof uiBackgroundPatch==='function'){
       V163.stats.directToPatch++;
       try{ if (typeof UI_PATCH!=='undefined') UI_PATCH.pending = false; }catch(e){}
       uiBackgroundPatch(()=>base());
@@ -30669,7 +30669,7 @@ function v164Holding(){
 (function(){
   const userEv = () => { try{ return typeof v163UserEv==='function' && v163UserEv(); }catch(e){ return false; } };
   const board = () => { try{ return typeof v163BoardTab==='function' && v163BoardTab(); }catch(e){ return false; } };
-  const hasCards = () => { const v = document.getElementById('view'); return !!(v && v.firstChild); };
+  const hasCards = () => { const v = document.getElementById('view'); return !!(v && v.querySelector('.slate-main, .v142-panes, .card[data-pid], .card[data-v166-id]')); };
   if (typeof softRender==='function'){ const base = softRender;
     softRender = function(){ if (board() && !userEv() && hasCards() && !(typeof V163!=='undefined' && V163.inPatch) && v164Holding()){ V164.pending = true; V164.stats.renderHeld++; return; }
       return base.apply(this, arguments); };
@@ -30744,31 +30744,41 @@ function v165TidySettings(){
 })();
 
 /* ---------- 1) shared Picks list ---------- */
+function v165Stem(id){ return String(id||'').replace(/:(over|under):-?[0-9]+(?:\.[0-9]+)?$/i,''); }
+function v165Has(set, stems, id){
+  if (!id || !set) return false;
+  if (set.has(id)) return true;
+  const st = v165Stem(id);
+  return !!(st && st!==String(id) && stems && stems.has(st));
+}
 function v165IsPub(){ try{ return typeof v154Pub==='function' && v154Pub(); }catch(e){ return false; } }
 function v165Active(){ const s = V165.sh; return !!(s && !v165IsPub() && Date.now() - s.at < V165_STALE); }
 function v165Apply(){
   if (!v165Active()) return; const s = V165.sh; let on = 0, off = 0;
   try{
     const seenG = new Set(), seenP = new Set();
+    const gStem = s.gStem || new Set([...s.g].map(v165Stem));
+    const pStem = s.pStem || new Set([...s.p].map(v165Stem));
+    const seenGStem = new Set(), seenPStem = new Set();
     for (const p of ((typeof plays!=='undefined' && plays) || [])){
       if (!p || !p.g || !p.mk || p.verdict==='started') continue;
-      const k = playResultKey(p); const inS = s.g.has(k); if (inS) seenG.add(k);
+      const k = playResultKey(p); const inS = v165Has(s.g, gStem, k); if (inS){ seenG.add(k); seenGStem.add(v165Stem(k)); }
       if (p.verdict==='good' && !inS){ p.verdict = 'watch'; p._v165 = 'off'; off++; }
       else if (p.verdict!=='good' && inS){ p.verdict = 'good'; p._v165 = 'on'; on++; }
     }
     for (const p of ((typeof props!=='undefined' && props) || [])){
-      if (!p || !p.id) continue; const inS = s.p.has(p.id); if (inS) seenP.add(p.id);
+      if (!p || !p.id) continue; const inS = v165Has(s.p, pStem, p.id); if (inS){ seenP.add(p.id); seenPStem.add(v165Stem(p.id)); }
       if (p.verdict==='good' && !inS){ p.verdict = 'watch'; p._v165 = 'off'; if (p.C) p.C.J = 'MAYBE LATER'; off++; }
       else if (p.verdict!=='good' && inS){ p.verdict = 'good'; p._v165 = 'on'; if (p.C) p.C.J = 'BET'; on++; }
     }
-    V165.missing = {g: s.g.size - seenG.size, p: s.p.size - seenP.size};
+    V165.missing = {g: [...s.g].filter(id=>!seenGStem.has(v165Stem(id))).length, p: [...s.p].filter(id=>!seenPStem.has(v165Stem(id))).length};
     V165.applied++; V165.stats.on += on; V165.stats.off += off;
   }catch(e){ console.warn('v165 apply', e); }
 }
 function v165SetShared(x){
   if (!x || !x.at || !Array.isArray(x.g) || !Array.isArray(x.p)) return false;
   if (V165.sh && V165.sh.at >= x.at) return false;
-  V165.sh = {at: +x.at, g: new Set(x.g), p: new Set(x.p), n: x.g.length + x.p.length};
+  V165.sh = {at: +x.at, g: new Set(x.g), p: new Set(x.p), n: x.g.length + x.p.length, gStem: new Set(x.g.map(v165Stem)), pStem: new Set(x.p.map(v165Stem))};
   try{ localStorage.setItem('bl_v165_board', JSON.stringify({at: x.at, g: x.g, p: x.p})); }catch(e){}
   return true;
 }
@@ -30921,12 +30931,17 @@ function v166StrRow(){
   const tail = [...fb.children].find(c=>c.classList && c.classList.contains('filters') && /Tailed bets/.test(c.textContent||'') && !c.id);
   const more = document.getElementById('v140More');
   const anchor = tail || more;
-  if (anchor && row.parentNode!==fb) fb.insertBefore(row, anchor);
-  else if (anchor && row.nextElementSibling!==anchor) anchor.before(row);
-  else if (!row.parentNode) fb.appendChild(row);
+  // once the row is in the bar, leave it there so we don't fight the filter arranger and freeze the page
+  if (!row.parentNode){
+    if (anchor) fb.insertBefore(row, anchor);
+    else fb.appendChild(row);
+  }
   return row;
 }
+let v166Painting = false;
 function v166PaintStr(){
+  if (v166Painting) return;
+  v166Painting = true;
   try{
     const row = v166StrRow(); if (!row) return;
     const on = String(v166Min());
@@ -30936,6 +30951,7 @@ function v166PaintStr(){
       ch.setAttribute('aria-pressed', is?'true':'false');
     });
   }catch(e){}
+  finally{ v166Painting = false; }
 }
 document.addEventListener('click', e=>{
   const ch = e.target && e.target.closest && e.target.closest('#v166StrChips [data-v166-str]');
@@ -31256,6 +31272,10 @@ function v167TidyFoot(root){
 })();
 
 window.v167Status = () => ({build: APP_BUILD});
+/* v169: opening Picks no longer stays stuck on the Get a Verdict form (a paint-hold
+   treated that page as the board). A shared pick still shows if only its DraftKings
+   line moved. The strength row no longer fights the filter bar. */
+APP_BUILD = 169;
 </script>
 </body>
 </html>
