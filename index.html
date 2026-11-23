@@ -29862,6 +29862,85 @@ function v161Unch(open, line){ return open!=null && line!=null && Math.abs(+open
   if (k==='games') h = h.replace('Negative-value games are never Picks.', 'Negative-value games are never Picks, so on quiet days there may be none.');
   return h; }; })();
 window.v161Status = () => Object.assign(v160Status(), {open: V160.open.size});
+/* ================= v162: combo-under pocket skips back-to-back games; cleaner self-learning log =================
+   Research (Nov 23, strictly chronological, bets at the DraftKings pregame price, -250 floor, 1u):
+   Props: inside the v161 pocket (NBA PRA/PR/PA under, L5 min >= 34 or DK -130..-120, line unchanged since open),
+          games where EITHER team played the night before lost in every one of the 5 weeks (367 bets, -6.9%;
+          -6.9% Oct 20-Nov 7 and -6.9% Nov 8-22). Without them the pocket is +6.6% (1,149 bets, +75.5u) vs +3.3%
+          (1,516, +50.1u), up in both halves (+5.7% / +7.7%) and positive all 5 weeks. B2B is read from the game's
+          rest days (ESPN last-5 dates, < 1.6 days), else the player's own last game. Unknown = not blocked.
+   Games: no rule passed both seasons (last season's DraftKings closing lines as training, this season as holdout);
+          the v160 gate stays.
+   Log: modelLog rows now also carry fr (fair chance for the side), op / un (prop opening line, unchanged flag),
+        lv / lp (call and chance at the pregame lock) and b2 (a team in the game on a back-to-back). */
+APP_BUILD = 162;
+V160.VER = 162;
+var V162 = {gf: new Map(), cur: null, cut: 0};
+function v162GKey(ev, mk, side){ return `${ev}|${mk}|${side}`; }
+function v162Other(side){ return side==='home' ? 'away' : side==='away' ? 'home' : side==='over' ? 'under' : side==='under' ? 'over' : null; }
+function v162Game(ev){ try{ if (!ev) return null; ev = String(ev); for (const g of (typeof games!=='undefined' ? games : [])||[]) if (g && String(g.eventId)===ev) return g; }catch(e){} return null; }
+/* true = a team in this game played the day before; false = both rested; null = not known */
+function v162GameB2B(g){
+  try{ const s = g && g.fx && g.fx.sides; if (!s) return null; const h = s.home && s.home.restDays, a = s.away && s.away.restDays;
+    if (h==null && a==null) return null; return (h!=null && h < 1.6) || (a!=null && a < 1.6); }catch(e){ return null; }
+}
+function v162B2B(raw, feat){
+  let g = raw && raw.g && raw.g.fx ? raw.g : null;
+  if (!g){ const ev = (raw && (raw.eventId || (raw.g && raw.g.eventId))) || (V160.ctx && V160.ctx.ev); g = v162Game(ev); }
+  const b = v162GameB2B(g); if (b!=null) return b;
+  if (feat && feat.rest!=null && isFinite(+feat.rest)) return +feat.rest <= 1;
+  return null;
+}
+/* pure rule add-on (also used by the verification script) */
+function v162PocketOk(R, b2b){ return !(R && R.ok && R.path==='pocket' && b2b===true); }
+(function(){
+  const bR = v160CtxFromRaw; v160CtxFromRaw = function(raw){ const c = bR.apply(this, arguments); if (c && raw) c.ev = String(raw.eventId || (raw.g && raw.g.eventId) || ''); return c; };
+  const bU = v160CtxFromUni; v160CtxFromUni = function(gm){ const c = bU.apply(this, arguments); if (c && gm) c.ev = String(gm.ev || ''); return c; };
+  const bP = v160PropRule; v160PropRule = function(x){ const R = bP.apply(this, arguments);
+    const b2b = x.b2b!=null ? x.b2b : V162.cur;
+    if (!v162PocketOk(R, b2b)){ V162.cut++; return Object.assign({}, R, {ok:false, path:'', why:'Combo under: a team in this game played yesterday (back-to-back)'}); }
+    return R; };
+  const bC = v160PropCall; v160PropCall = function(pOver, price, feat, side, raw){
+    const prev = V162.cur; V162.cur = v162B2B(raw, feat); try{ return bC.apply(this, arguments); } finally{ V162.cur = prev; } };
+  if (typeof preferredPropSide==='function'){ const bS = preferredPropSide;
+    preferredPropSide = function(raw, feat){ const prev = V162.cur; V162.cur = v162B2B(raw, feat); try{ return bS.apply(this, arguments); } finally{ V162.cur = prev; } }; }
+})();
+/* ---------- log: fair chance, opening line, lock call, back-to-back ---------- */
+function v162GPut(p){
+  try{ if (!p || !p.sd || p.sd.nv==null || !p.g || !p.g.eventId || !p.mk || !p.side) return;
+    const f = +p.sd.nv; if (!(f > 0 && f < 1)) return; const ev = String(p.g.eventId), now = Date.now();
+    V162.gf.set(v162GKey(ev, p.mk, p.side), {f, t:now});
+    const o = v162Other(p.side);
+    if (o && !(p.mk==='ml' && p.g.drawPossible)){ const k = v162GKey(ev, p.mk, o); const c = V162.gf.get(k); if (!c || c.inf) V162.gf.set(k, {f: 1 - f, t: now, inf: 1}); }
+    if (V162.gf.size > 6000){ const cut = now - 12*3600000; for (const [k, x] of V162.gf) if (x.t < cut) V162.gf.delete(k); }
+  }catch(e){}
+}
+(function(){
+  if (typeof evaluateAll==='function'){ const base = evaluateAll;
+    evaluateAll = function(){ const r = base.apply(this, arguments); try{ for (const p of (plays||[])) v162GPut(p); }catch(e){} return r; };
+  }
+  if (typeof mlogCompact==='function'){ const base = mlogCompact;
+    mlogCompact = function(r){ const out = base.apply(this, arguments);
+      try{ if (!out || !out[1] || !r) return out; const o = out[1];
+        if (r.lk){ const lv = r.lk.sv || r.lk.v; if (lv) o.lv = lv; if (r.lk.p!=null && isFinite(+r.lk.p)) o.lp = Math.round(+r.lk.p*10000)/10000; }
+        const b = v162GameB2B(v162Game(r.ev)); if (b!=null) o.b2 = b ? 1 : 0;
+        if (r.b==='games'){
+          const c = V162.gf.get(v162GKey(String(r.ev||''), r.mk||'', r.side||'')); if (c && o.fr==null) o.fr = Math.round(c.f*10000)/10000;
+        } else if (r.b==='props'){
+          const k = v160Key(String(r.ev||''), r.pid, r.kind, r.pt);
+          const c = V160.fair.get(k); if (c && o.fr==null){ const f = r.side==='under' ? 1 - c.f : c.f; o.fr = Math.round(f*10000)/10000; }
+          const op = V160.open.get(k); if (op!=null && isFinite(+op)){ o.op = +op; o.un = v161Unch(op, r.pt) ? 1 : 0; }
+        }
+      }catch(e){}
+      return out; };
+  }
+})();
+/* Model learning copy (self-updating version label) */
+(function(){ const base = v160RuleHTML; v160RuleHTML = function(k){ let h = base.apply(this, arguments);
+  h = h.replace(/Pick rule \(v\d+\)/, `Pick rule (v${V160.VER})`);
+  if (k==='props') h = h.replace('and a line that has not moved since it opened.', 'and a line that has not moved since it opened, in a game where neither team played the night before.');
+  return h; }; })();
+window.v162Status = () => Object.assign(v161Status(), {gfair: V162.gf.size, b2bCut: V162.cut});
 </script>
 </body>
 </html>
