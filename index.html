@@ -30695,6 +30695,143 @@ function v164Holding(){
   };
 })();
 window.v164Status = () => ({build: APP_BUILD, stats: Object.assign({}, V164.stats), held: {props: V164.pk.size, games: V164.gk.size, miss: V164.miss.size}});
+/* ================= v165: one shared Picks list, DraftKings lines, simpler board =================
+   1) Everyone sees the same Picks. The publisher device (the one that already writes the pick log and Play of the Day)
+      publishes its Picks list (games by event|market|side, props by id) to the Worker key `board`. Every other device,
+      admin or not, follows that list: a local Pick that is not on it is not shown as a Pick, and a shared Pick is shown
+      even if this device would have judged it differently. Only your own tailed / hidden items differ. If the
+      published list is older than 40 minutes (publisher offline), devices fall back to their own call.
+   2) Books are fixed to DraftKings (cards show DraftKings lines); the books picker is hidden.
+   3) Refresh is fixed at 30 s (the existing 429 backoff still slows to 3 min if ESPN rate-limits); the setting is hidden.
+   4) "How picky", "Lock time" and "Which board?" are hidden from Settings; the Games / Props pills are gone and both
+      boards always show.
+   5) Expanding a card no longer stretches the card next to it (grid rows align to the top). */
+APP_BUILD = 165;
+const V165_REFRESH = 30, V165_STALE = 40*60000, V165_HEART = 30*60000;
+const V165_PUB_MS = (()=>{ try{ return +localStorage.getItem('bl_v165_pubms') || 180000; }catch(e){ return 180000; } })();
+const V165 = window.V165 = {sh: null, pulls: 0, pullErr: '', pubAt: 0, pubSig: '', pubN: 0, applied: 0, missing: {g:0, p:0}, propsOk: false, stats: {on:0, off:0}};
+
+/* ---------- 2) 3) 4) fixed settings ---------- */
+function v165Force(){
+  try{
+    if (typeof S==='undefined' || !S) return; let ch = 0;
+    if (S.myBooks!=='draftkings'){ S.myBooks = 'draftkings'; ch = 1; }
+    if (+S.refreshSec!==V165_REFRESH){ S.refreshSec = V165_REFRESH; ch = 1; }
+    if (!S.boardKinds || typeof S.boardKinds!=='object'){ S.boardKinds = {}; ch = 1; }
+    for (const t of ['good','watch','avoid']){ const k = S.boardKinds[t]; if (k && (k.games===false || k.props===false)){ S.boardKinds[t] = {games:true, props:true}; ch = 1; } }
+    if (ch){ try{ localStorage.setItem(LS.settings, JSON.stringify(S)); }catch(e){} }
+  }catch(e){}
+}
+v165Force();
+setInterval(v165Force, 5000);
+(function(){
+  if (typeof refreshIntervalMs==='function'){ const base = refreshIntervalMs;
+    refreshIntervalMs = function(){ const w = V165_REFRESH*1000; try{ return (typeof feedBackoffActive==='function' && feedBackoffActive()) ? Math.max(w, 3*60000) : w; }catch(e){ return base.apply(this, arguments); } }; }
+})();
+const V165_HIDE_ROWS = /^(Which board\?|How picky\?|Lock time|My books|Refresh every)/;
+function v165TidySettings(){
+  try{
+    const v = document.getElementById('view'); if (!v || typeof ui==='undefined' || ui.tab!=='settings') return;
+    v.querySelectorAll('.s-row').forEach(r=>{ const h = r.querySelector('.s-h'); if (h && V165_HIDE_ROWS.test(h.textContent.trim())) r.style.display = 'none'; });
+  }catch(e){}
+}
+(function(){
+  const st = document.createElement('style');
+  st.textContent = `#kindsSeg,.kinds-seg{display:none!important}
+#view .grid{align-items:start}
+#view .grid > .card{align-self:start}`;
+  document.head.appendChild(st);
+})();
+
+/* ---------- 1) shared Picks list ---------- */
+function v165IsPub(){ try{ return typeof v154Pub==='function' && v154Pub(); }catch(e){ return false; } }
+function v165Active(){ const s = V165.sh; return !!(s && !v165IsPub() && Date.now() - s.at < V165_STALE); }
+function v165Apply(){
+  if (!v165Active()) return; const s = V165.sh; let on = 0, off = 0;
+  try{
+    const seenG = new Set(), seenP = new Set();
+    for (const p of ((typeof plays!=='undefined' && plays) || [])){
+      if (!p || !p.g || !p.mk || p.verdict==='started') continue;
+      const k = playResultKey(p); const inS = s.g.has(k); if (inS) seenG.add(k);
+      if (p.verdict==='good' && !inS){ p.verdict = 'watch'; p._v165 = 'off'; off++; }
+      else if (p.verdict!=='good' && inS){ p.verdict = 'good'; p._v165 = 'on'; on++; }
+    }
+    for (const p of ((typeof props!=='undefined' && props) || [])){
+      if (!p || !p.id) continue; const inS = s.p.has(p.id); if (inS) seenP.add(p.id);
+      if (p.verdict==='good' && !inS){ p.verdict = 'watch'; p._v165 = 'off'; if (p.C) p.C.J = 'MAYBE LATER'; off++; }
+      else if (p.verdict!=='good' && inS){ p.verdict = 'good'; p._v165 = 'on'; if (p.C) p.C.J = 'BET'; on++; }
+    }
+    V165.missing = {g: s.g.size - seenG.size, p: s.p.size - seenP.size};
+    V165.applied++; V165.stats.on += on; V165.stats.off += off;
+  }catch(e){ console.warn('v165 apply', e); }
+}
+function v165SetShared(x){
+  if (!x || !x.at || !Array.isArray(x.g) || !Array.isArray(x.p)) return false;
+  if (V165.sh && V165.sh.at >= x.at) return false;
+  V165.sh = {at: +x.at, g: new Set(x.g), p: new Set(x.p), n: x.g.length + x.p.length};
+  try{ localStorage.setItem('bl_v165_board', JSON.stringify({at: x.at, g: x.g, p: x.p})); }catch(e){}
+  return true;
+}
+try{ const c = JSON.parse(localStorage.getItem('bl_v165_board')||'null'); if (c) v165SetShared(c); }catch(e){}
+async function v165Pull(){
+  if (v165IsPub() || (typeof document!=='undefined' && document.visibilityState==='hidden' && V165.sh)) return;
+  try{ const x = await v154Get('board'); V165.pulls++; V165.pullErr = '';
+    if (v165SetShared(x)){ v165Apply(); try{ if (typeof softRender==='function') softRender(); }catch(e){} } }
+  catch(e){ V165.pullErr = String(e && e.message || e).slice(0, 60); }
+}
+setTimeout(v165Pull, 1200); setInterval(v165Pull, 30000);
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') v165Pull(); });
+
+// apply after every local judgement pass and before every paint
+(function(){
+  const after = name => { const f = window[name]; if (typeof f!=='function') return; const w = function(){ const r = f.apply(this, arguments); if (r && typeof r.then==='function') return r.then(x=>{ v165Apply(); return x; }); v165Apply(); return r; }; try{ window[name] = w; }catch(e){} };
+  ['evaluateAll','applyPulledFinal','v42ApplyAutoOff'].forEach(after);
+  const before = name => { const f = window[name]; if (typeof f!=='function') return; window[name] = function(){ v165Apply(); const r = f.apply(this, arguments); if (name==='render') v165TidySettings(); return r; }; };
+  ['render','softRender','v115UpdateCombinedCounts'].forEach(before);
+  if (typeof loadLiveProps==='function'){ const base = loadLiveProps; loadLiveProps = async function(){ const r = await base.apply(this, arguments); try{ if (!propStatus.loading) V165.propsOk = true; }catch(e){} return r; }; }
+})();
+// settings painted by a tap (not through render) also get tidied
+document.addEventListener('click', ()=>setTimeout(v165TidySettings, 0), true);
+
+// publisher: the source of truth
+function v165Collect(){
+  const g = [], p = [];
+  for (const x of ((typeof plays!=='undefined' && plays) || [])) if (x && x.g && x.mk && x.verdict==='good') g.push(playResultKey(x));
+  for (const x of ((typeof props!=='undefined' && props) || [])) if (x && x.id && x.verdict==='good') p.push(x.id);
+  return {g: [...new Set(g)].sort(), p: [...new Set(p)].sort()};
+}
+function v165PubTick(){
+  try{
+    if (!v165IsPub() || !lastUpdated) return;
+    const pe = (typeof propEnrich!=='undefined' && propEnrich && propEnrich.running);
+    const slateProps = (games||[]).some(g=>g && typeof PROP_SPORTS!=='undefined' && PROP_SPORTS[g.league] && g.state==='pre' && !g.pickOnly);
+    if (pe || (slateProps && !V165.propsOk)) return;        // never publish a half-loaded list
+    const c = v165Collect(); const sig = JSON.stringify(c); const now = Date.now();
+    const due = (sig!==V165.pubSig && now - V165.pubAt >= V165_PUB_MS) || now - V165.pubAt >= V165_HEART;
+    if (!due) return;
+    v154Put('board', {at: now, v: 165, g: c.g, p: c.p}).then(ok=>{ if (ok){ V165.pubSig = sig; V165.pubAt = now; V165.pubN++; } });
+  }catch(e){ console.warn('v165 publish', e); }
+}
+setInterval(v165PubTick, 15000);
+window.v165Status = () => ({build: APP_BUILD, publisher: v165IsPub(), shared: V165.sh ? {ageMin: Math.round((Date.now()-V165.sh.at)/6000)/10, games: V165.sh.g.size, props: V165.sh.p.size} : null, active: v165Active(), missing: V165.missing, pulls: V165.pulls, pubN: V165.pubN, stats: V165.stats});
+
+/* ---------- 7) the nav Picks badge = cards actually shown (Play of the Day + Picks + Locked panes) ---------- */
+V165.navN = null;
+function v165SegSum(){
+  const els = document.querySelectorAll('#kindsBar [data-v142-n], #view [data-v142-n]'); if (!els.length) return null;
+  const seen = {}; els.forEach(el=>{ const k = el.dataset.v142N; if (!(k in seen)) seen[k] = +el.textContent || 0; });
+  return Object.values(seen).reduce((a, b)=>a + b, 0);
+}
+(function(){
+  if (typeof setTabCount==='function'){ const base = setTabCount;
+    setTabCount = function(tab, n){ if (tab==='good' && V165.navN!=null) n = V165.navN; return base.call(this, tab, n); }; }
+  if (typeof v142ProcessSlate==='function'){ const base = v142ProcessSlate;
+    v142ProcessSlate = function(){ const r = base.apply(this, arguments);
+      try{ const v = document.getElementById('view'); if (v && v.style.display!=='none' && typeof ui!=='undefined' && ui.tab==='good'){ const s = v165SegSum(); if (s!=null){ V165.navN = s; setTabCount('good', s); } } }catch(e){}
+      return r; }; }
+  // after every board paint (patches morph the hidden copy into the live view), re-read what is on screen
+  setInterval(()=>{ try{ if (typeof ui!=='undefined' && ui.tab==='good'){ const s = v165SegSum(); if (s!=null && s!==V165.navN){ V165.navN = s; setTabCount('good', s); } } }catch(e){} }, 1000);
+})();
 </script>
 </body>
 </html>
