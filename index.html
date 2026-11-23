@@ -15798,7 +15798,17 @@ let UNI_OUT = [];
 const UNI_ST = {ready:false, busy:false, idb:null, ticks:0, lastTickMs:0, last:{}, evAt:{}, notTracked:{}, errs:[], created:0, writes:0, pm:{events:0, markets:0, mapped:0, unmapped:0}, dk:{events:0, recs:0}, sb:{leagues:0, games:0}};
 let UNI_LEARN = {props:[], at:0};
 const UNI_BOX = new Map(), UNI_FIN = new Map();
-const uniDay = ts => ymd(new Date(ts));
+/* v163: every day key is a Pacific-time calendar date, whatever the device's own time zone (a UTC machine used to file
+   4 PM+ PT games under the next day). PT day boundaries always fall on a whole UTC hour, so results are cached per hour. */
+const UNI_PT_FMT = (function(){ try{ return new Intl.DateTimeFormat('en-US', {timeZone:'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit'}); }catch(e){ return null; } })();
+const UNI_PT_CACHE = new Map();
+const uniDay = ts => {
+  ts = +ts; if (!UNI_PT_FMT || !isFinite(ts)) return ymd(new Date(ts));
+  const h = Math.floor(ts / 3600000); const c = UNI_PT_CACHE.get(h); if (c) return c;
+  let out; try{ const p = {}; for (const x of UNI_PT_FMT.formatToParts(new Date(ts))) p[x.type] = x.value; out = p.year + p.month + p.day; }catch(e){ out = ymd(new Date(ts)); }
+  if (!/^\d{8}$/.test(out)) out = ymd(new Date(ts));
+  if (UNI_PT_CACHE.size > 5000) UNI_PT_CACHE.clear(); UNI_PT_CACHE.set(h, out); return out;
+};
 const uniV = r => (r.lk ? r.lk.v : r.v) || 'nocall';
 const uniPrice = r => r.lk && r.lk.price!=null ? r.lk.price : r.price;
 const uniP = r => r.lk && r.lk.p!=null ? r.lk.p : r.p;
@@ -29941,6 +29951,561 @@ function v162GPut(p){
   if (k==='props') h = h.replace('and a line that has not moved since it opened.', 'and a line that has not moved since it opened, in a game where neither team played the night before.');
   return h; }; })();
 window.v162Status = () => Object.assign(v161Status(), {gfair: V162.gf.size, b2bCut: V162.cut});
+/* ================= v163: smooth board — no flashing, no jumping, less main-thread work =================
+   Profiled (Playwright, 390 + 1280, live feeds, 25 s load + forced refresh), causes found:
+   1) Props refresh rebuilt every prop without its game log (rows came back one player at a time), so every
+      Props Pick dropped off the board on each refresh and dribbled back over ~2-5 s (12 Picks -> 0 -> 2 -> ...).
+      Now a prop keeps the game log already in memory (same 30-min cache the loader uses) and is scored at once.
+   2) Background patches morphed the *raw* render against the live Picks page after v142/v148 had moved the
+      cards into the Play of the Day / Picks panes (and v70/v147/v149/v150 had decorated them), so every patch
+      tore the panes apart and the observers rebuilt them: cards detached, images re-decoded, open cards
+      re-opened, ~100 card nodes churned per patch. Now the same post-processing runs on the hidden copy first,
+      and unchanged cards (same signature) are not touched at all. Cards are matched by data-pid.
+   3) Direct render() calls from timers (refresh, regrade, live ticks) wrote the whole board with innerHTML on
+      the Picks tab (82 KB wipe). Non-tap renders on the board now go through one coalesced patch.
+   4) The board painted twice per background patch (render + v119's v115PaintSlate, identical HTML).
+   5) Ties in the board sort (same start time) fell back to feed arrival order, so cards in one game swapped
+      places between refreshes. Sorted by a fixed key first (sort is stable).
+   6) Hot loops: avOverridden() parsed localStorage JSON on every availability check (thousands per paint),
+      selectedBooks() re-split the books string each call. Both memoized (invalidated on change).
+   7) Small cache keys written to localStorage dozens of times a minute are written once per idle moment. */
+APP_BUILD = 163;
+try{ if (typeof V160!=='undefined') V160.VER = 163; }catch(e){}
+var V163 = {avVer: 0, gap: 450, last: 0, userAt: -1e9, q: null, qKind: '', t: 0, inPatch: false, skipPaint: false, sig: new WeakMap(),
+  stats: {sched: 0, runs: 0, coalesced: 0, skippedCards: 0, patchedCards: 0, directToPatch: 0, rowsFromCache: 0, lsDeferred: 0}};
+function v163BoardTab(){ try{ return typeof ui!=='undefined' && ui && (ui.tab==='good' || ui.tab==='watch' || ui.tab==='avoid'); }catch(e){ return false; } }
+function v163UserEv(){ try{ return typeof uiUserEv==='function' ? uiUserEv() : false; }catch(e){ return false; } }
+
+/* ---------- 6) memoized hot helpers ---------- */
+(function(){
+  if (typeof selectedBooks==='function'){ const base = selectedBooks; let k = null, v = null;
+    selectedBooks = function(){ const s = (typeof S!=='undefined' && S) ? String(S.myBooks||'') : ''; if (s!==k || !v){ k = s; v = base.apply(this, arguments) || []; } return v.slice(); }; }
+  if (typeof avOverridden==='function' && typeof AV_OK_LS!=='undefined'){ let seen = -1, obj = {};
+    // re-read only after the overrides key is written (this tab: Storage hook below; other tabs: storage event)
+    const store = () => { if (seen!==V163.avVer){ seen = V163.avVer; obj = (typeof avOkStore==='function') ? avOkStore() : {}; } return obj; };
+    addEventListener('storage', e=>{ if (!e.key || e.key===AV_OK_LS) V163.avVer++; });
+    avOverridden = function(item, board){ try{ return !!store()[avOkKey(item, board)]; }catch(e){ return false; } }; }
+})();
+
+/* ---------- 7) deferred localStorage writes for chatty cache keys ---------- */
+(function(){
+  const KEYS = new Set(['bl_geo','bl_sched','bl_legStab_v1','bl_play_tabs','bl_rosters','bl_prop_athletes']);
+  const P = new Map(); let t = 0;
+  const set0 = Storage.prototype.setItem, get0 = Storage.prototype.getItem, rm0 = Storage.prototype.removeItem;
+  const flush = () => { t = 0; for (const [k, v] of P){ P.delete(k); try{ set0.call(localStorage, k, v); }catch(e){} } };
+  const later = () => { if (t) return; t = setTimeout(()=>{ if (window.requestIdleCallback) requestIdleCallback(flush, {timeout:1500}); else flush(); }, 1200); };
+  Storage.prototype.setItem = function(k, v){ if (this===localStorage && typeof AV_OK_LS!=='undefined' && k===AV_OK_LS) V163.avVer++; if (this===localStorage && KEYS.has(k)){ P.set(k, String(v)); V163.stats.lsDeferred++; later(); return; } return set0.apply(this, arguments); };
+  Storage.prototype.getItem = function(k){ if (this===localStorage && P.has(k)) return P.get(k); return get0.apply(this, arguments); };
+  Storage.prototype.removeItem = function(k){ if (this===localStorage){ P.delete(k); if (typeof AV_OK_LS!=='undefined' && k===AV_OK_LS) V163.avVer++; } return rm0.apply(this, arguments); };
+  const clr0 = Storage.prototype.clear; Storage.prototype.clear = function(){ if (this===localStorage){ P.clear(); V163.avVer++; } return clr0.apply(this, arguments); };
+  addEventListener('pagehide', flush); document.addEventListener('visibilitychange', ()=>{ if (document.hidden) flush(); });
+  V163.lsFlush = flush;
+})();
+
+/* ---------- 5) stable order: fixed key first, then the board's own sort ---------- */
+const V163_KEYS = new WeakMap();
+function v163Key(x){ x = x && (x.x || x); if (!x) return ''; if (typeof x==='object'){ const c = V163_KEYS.get(x); if (c!==undefined) return c; const k = v163Key0(x); V163_KEYS.set(x, k); return k; } return v163Key0(x); }
+function v163Key0(x){ return String(x.id || x.pid || ((x.g && x.g.eventId)||x.eventId||'')+'|'+(x.playerId||'')+'|'+(x.kind||x.mk||'')+'|'+(x.side||'')+'|'+(x.line!=null?x.line:'')); }
+(function(){
+  if (typeof v121ArrangeItems!=='function') return; const base = v121ArrangeItems;
+  v121ArrangeItems = function(items){
+    const dec = (items||[]).map(it=>[v163Key(it), it]);
+    dec.sort((a,b)=>a[0]<b[0] ? -1 : a[0]>b[0] ? 1 : 0);
+    return base.call(this, dec.map(d=>d[1]));
+  };
+})();
+
+/* v147Fit read width, wrote a font size, then read again, card after card: one forced layout per card
+   (65 ms on All Games at 1280). Now all reads happen first, then all writes, in one pass per frame. */
+(function(){
+  if (typeof v147Fit!=='function') return; const one = v147Fit; const Q = new Set(); let sch = false;
+  const runQ = () => { sch = false; const cs = [...Q]; Q.clear();
+    const todo = [];
+    for (const c of cs){ if (!c.isConnected) continue; const w = c.querySelector('.pick .what'); if (!w || !w.offsetParent) continue;
+      todo.push([c, w, w.textContent]); }
+    // reads (one layout)
+    const meas = todo.map(([c, w, txt]) => [c, w, txt, w.clientWidth]);
+    const need = meas.filter(([c, w, txt, cw]) => w.dataset.v147fit !== txt + '|' + cw);
+    // writes: reset any shrunk size, then one more read for all, then mark the ones that fit
+    for (const [c, w] of need) if (w.style.fontSize) w.style.fontSize = '';
+    const over = [];
+    const m2 = need.map(([c, w, txt]) => [c, w, txt, w.scrollWidth, w.clientWidth]);
+    for (const [c, w, txt, sw, cw] of m2){ if (sw > cw + 1) over.push(c); else w.dataset.v147fit = txt + '|' + cw; }
+    for (const c of over) one(c);          // rare: long names shrink step by step as before
+  };
+  v147Fit = function(c){ if (!c) return; Q.add(c); if (!sch){ sch = true; queueMicrotask(runQ); } };
+})();
+
+/* ---------- 1) props keep their game log across refreshes ---------- */
+(function(){
+  if (typeof evaluatePropRaw==='function'){ const base = evaluatePropRaw;
+    evaluatePropRaw = function(raw){
+      try{ if (raw && !raw.rows && raw.playerId && !String(raw.playerId).startsWith('oa:') && typeof propLogCache!=='undefined'){
+        const c = propLogCache[(raw.league||(raw.g&&raw.g.league))+':'+raw.playerId];
+        if (c && c.rows && Date.now()-c.t < 30*60000){ raw.rows = c.rows; V163.stats.rowsFromCache++; } } }catch(e){}
+      return base.apply(this, arguments); };
+  }
+  if (typeof runPropEnrichment==='function'){ const base = runPropEnrichment;
+    // with every log already in memory the enrichment pass had nothing to load and skipped its end-of-pass rules
+    // (one side per player+stat, early drops, pulled, auto-off); run them here so the board matches a normal pass
+    runPropEnrichment = function(){
+      let need = 1; try{ need = (props||[]).filter(p => p && p.playerId && !String(p.playerId).startsWith('oa:') && !(p.raw && p.raw.rows)).length; }catch(e){}
+      if (need || (typeof propEnrich!=='undefined' && propEnrich.running)) return base.apply(this, arguments);
+      try{ const best = new Map();
+        const goods = (props||[]).filter(x=>x && x.verdict==='good').sort((a,b)=>(b.p||0)-(a.p||0) || (b.edge||0)-(a.edge||0) || (v163Key(a)<v163Key(b)?-1:1));
+        for (const x of goods){ const pk = `${(x.g&&x.g.eventId)||x.eventId||''}|${String(x.playerId||x.playerName||'').toLowerCase()}|${x.kind||''}`;
+          const keep = best.get(pk); if (keep && keep.side && x.side && keep.side!==x.side){ x.verdict = 'watch'; if (x.C) x.C.J = 'MAYBE LATER'; } else if (!keep) best.set(pk, x); } }catch(e){}
+      try{ if (typeof trackEarlyDrops==='function') trackEarlyDrops('props'); if (typeof applyPulledFinal==='function') applyPulledFinal('props'); if (typeof v42ApplyAutoOff==='function') v42ApplyAutoOff('props'); }catch(e){}
+      try{ if (typeof updateLegStability==='function') updateLegStability('props'); }catch(e){}
+      try{ if (typeof checkLockAlerts==='function') checkLockAlerts('props'); }catch(e){}
+      try{ if (typeof checkTailedBoardPulls==='function') checkTailedBoardPulls('props'); }catch(e){}
+      try{ if (typeof softRender==='function') softRender(); }catch(e){}
+      try{ if (typeof buildParlays==='function') buildParlays(); }catch(e){}
+      return Promise.resolve();
+    };
+  }
+})();
+
+/* ---------- 2) hidden copy gets the same post-processing as the live page; unchanged cards untouched ---------- */
+function v163Post(){
+  const v = document.getElementById('view'); if (!v) return;
+  try{ if (typeof ui!=='undefined' && ui.tab==='good' && typeof v142ProcessSlate==='function') v142ProcessSlate(); }catch(e){}
+  try{ if (typeof cardStatusFix==='function') cardStatusFix(v); }catch(e){}
+  try{ if (typeof v147Apply==='function') v147Apply(); }catch(e){}
+  try{ if (typeof v149Sweep==='function') v149Sweep(); }catch(e){}
+  try{ if (typeof v150Rename==='function') v150Rename(v); }catch(e){}
+}
+(function(){
+  if (typeof uiNodeKey==='function'){ const base = uiNodeKey;
+    uiNodeKey = function(n){ if (n && n.nodeType===1){ const pid = n.getAttribute('data-pid'); if (pid) return 'p:'+pid; const pn = n.getAttribute('data-pane'); if (pn) return 'pane:'+pn; } return base.apply(this, arguments); }; }
+  const KEEP = ['v147-opening','v147-anim'];
+  if (typeof uiPatchAttrs==='function'){ const base = uiPatchAttrs;
+    uiPatchAttrs = function(a, b){
+      const keep = a.classList ? KEEP.filter(c=>a.classList.contains(c)) : [];
+      const fit = a.getAttribute ? a.getAttribute('data-v147fit') : null;
+      base.apply(this, arguments);
+      for (const c of keep) a.classList.add(c);
+      if (fit!=null && !b.hasAttribute('data-v147fit')) a.setAttribute('data-v147fit', fit);
+    }; }
+  if (typeof uiPatchNode==='function'){ const base = uiPatchNode;
+    uiPatchNode = function(a, b){
+      if (a && a.nodeType===1 && a.classList.contains('card') && b && b.nodeType===1){
+        const s = b.outerHTML; if (V163.sig.get(a)===s){ V163.stats.skippedCards++; return; }
+        const r = base.apply(this, arguments); V163.sig.set(a, s); V163.stats.patchedCards++; return r;
+      }
+      return base.apply(this, arguments);
+    }; }
+  if (typeof v115PaintSlate==='function'){ const base = v115PaintSlate;
+    v115PaintSlate = function(){ if (V163.skipPaint){ V163.skipPaint = false; return; } return base.apply(this, arguments); }; }
+})();
+
+/* ---------- 3) + coalescing: one background patch at a time, at most one per V163.gap ms ---------- */
+var V163_R0 = typeof render==='function' ? render : null;
+(function(){
+  if (typeof uiBackgroundPatch!=='function') return; const prev = uiBackgroundPatch;
+  const wrapFn = f => function(){
+    V163.inPatch = true;
+    try{
+      if (v163BoardTab() && V163_R0){ V163_R0(); }          // full current board (v115 combined slate) into the hidden copy
+      else f.apply(this, arguments);
+      if (v163BoardTab()) v163Post();
+      if (v163BoardTab()) V163.skipPaint = true;              // v119 would paint the same slate again
+    } finally { V163.inPatch = false; setTimeout(()=>{ V163.skipPaint = false; }, 0); }
+  };
+  const run = () => { V163.t = 0; const f = V163.q; V163.q = null; if (!f) return; V163.last = performance.now(); V163.stats.runs++;
+    try{ prev.call(this, wrapFn(f)); } catch(e){ console.warn('v163 patch', e); } };
+  uiBackgroundPatch = function(fn, now){
+    V163.stats.sched++; if (V163.q) V163.stats.coalesced++; V163.q = fn;
+    if (now){ if (V163.t){ clearTimeout(V163.t); V163.t = 0; } return run(); }
+    if (V163.t) return;
+    const wait = Math.max(0, V163.gap - (performance.now() - V163.last), 320 - (performance.now() - V163.userAt));
+    // idle time, never in the frame right after a tap; a tap that repaints the board drops the queued patch
+    const go = () => { const u = 320 - (performance.now() - V163.userAt); if (u > 0){ V163.t = setTimeout(go, u + 10); return; }
+      if (window.requestIdleCallback) requestIdleCallback(()=>run(), {timeout:900}); else run(); };
+    V163.t = setTimeout(go, wait);
+  };
+})();
+(function(){
+  if (typeof render!=='function') return; const base = render; V163_R0 = base;
+  render = function(){
+    if (V163.inPatch) return base.apply(this, arguments);
+    const v = document.getElementById('view');
+    // timer / feed renders on the board: coalesced background patch (keeps cards, scroll and open state)
+    if (!v163UserEv() && v163BoardTab() && v && v.firstChild && !document.hidden && typeof uiBackgroundPatch==='function'){
+      V163.stats.directToPatch++;
+      try{ if (typeof UI_PATCH!=='undefined') UI_PATCH.pending = false; }catch(e){}
+      uiBackgroundPatch(()=>base());
+      return;
+    }
+    if (v163UserEv()){ V163.userAt = performance.now(); if (V163.q && v163BoardTab()){ V163.q = null; if (V163.t){ clearTimeout(V163.t); V163.t = 0; } } }
+    return base.apply(this, arguments);
+  };
+})();
+['pointerdown','keydown'].forEach(t=>addEventListener(t, ()=>{ V163.userAt = performance.now(); }, {capture:true, passive:true}));
+window.v163Status = () => ({build: APP_BUILD, stats: Object.assign({}, V163.stats), patch: (typeof UI_PATCH!=='undefined') ? {runs:UI_PATCH.runs, skipped:UI_PATCH.skipped, ms:Math.round(UI_PATCH.ms||0)} : null});
+/* While game logs are still loading, the board repaints at most every 3 s (was 1.5 s), so Picks arrive in a few
+   batches instead of one card at a time; the end of the pass always paints. */
+(function(){
+  if (typeof softRender!=='function') return; const base = softRender; let lastE = 0;
+  softRender = function(){
+    try{ if (!V163.inPatch && !v163UserEv() && v163BoardTab() && typeof propEnrich!=='undefined' && propEnrich && propEnrich.running){
+      const now = Date.now(); if (now - lastE < 3000){ V163.stats.enrichHeld = (V163.stats.enrichHeld||0) + 1; return; } lastE = now; } }catch(e){}
+    return base.apply(this, arguments);
+  };
+})();
+
+/* ================= v163 B: Results = sportsbooks by default, board Picks only, Pacific days, one row per bet =================
+   1) A row counts as a Pick only when the board itself showed it as a Pick at lock (sv === 'good', no fallback to the
+      model's own call) and its lock price is -250 or better. Polymarket copies get sv / shown only when the same bet is
+      actually on the board; a row with no board call never counts.
+   2) Results default to sportsbooks (DraftKings and the other normal books, src 'sb'). "All books" adds Polymarket and
+      the exchanges. One entry per bet: the board's Pick first, then the sportsbook copy, then the earliest; props match on
+      player + stat + side + line (so the same prop logged twice can't show twice in a day).
+   3) Day keys are Pacific dates everywhere (uniDay in 20_universe). Rows a UTC device filed under the next day are moved
+      back to their Pacific game day; day stats and day summaries rebuild once with a v163 stamp.
+   4) Dropdown menus are dark with light text on every platform.
+   5) Signed-in non-admins get the same day popup (wins / losses list): the publisher publishes compact per-day rows
+      to the Worker (key 'rows'), read over HTTP from the edge cache — no database reads. */
+var V163R = {src: null, rb: new Map(), moved: 0, rows: null, rowsAt: 0, rowsGot: false, rowsBusy: false, rowsPubAt: 0, potdFix: new WeakMap(), popSpec: '', pmSv: 0};
+var V163_FLOOR = -250, V163_ROWS_LS = 'bl_v163_rows';
+function v163Src(){ if (V163R.src) return V163R.src; try{ return S && S.resSrc==='all' ? 'all' : 'sb'; }catch(e){ return 'sb'; } }
+function v163WithSrc(src, fn){ const was = V163R.src; V163R.src = src; try{ return fn(); } finally { V163R.src = was; } }
+function v163Px(o){ const x = o && (o.lpr!=null ? o.lpr : o.pr); return x==null || x==='' || !isFinite(+x) ? null : +x; }
+function v163FloorOk(o){ const x = v163Px(o); return x!=null && x >= V163_FLOOR; }
+function v163SrcOk(o, src){ return (src || v163Src())==='all' || (!!o && o.s==='sb'); }
+function v163Nm(s){ try{ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\b(jr|sr|ii|iii|iv)\b/g,'').replace(/[^a-z0-9]/g,''); }catch(e){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); } }
+
+/* ---------- 1) the board's call, at the lock price, inside the floor ---------- */
+/* the board call (sv) has been logged on every row since Nov 21, 1:25 AM PT. Rows snapshotted before that keep the
+   model's call (that's all they have); any later row with no board call never counts as a Pick. */
+var V163_SV_SINCE = 1795253106612;
+v153BoardPick = function(o){
+  if (!o || !v163FloorOk(o)) return false;
+  if (o.sv) return o.sv==='good';
+  const at = +o.at || +o.t || 0;
+  return o.v==='good' && at > 0 && at < V163_SV_SINCE;
+};
+v160Counted = function(o){ return v153BoardPick(o) && v163SrcOk(o); };
+(function(){
+  if (typeof mlogAggAdd!=='function') return; const base = mlogAggAdd;
+  mlogAggAdd = function(agg, o){
+    if (!o) return;
+    const pick = v153BoardPick(o);
+    if (o.v==='good' && !pick) return;                    // the model liked it but the board never showed it as a Pick
+    if (pick && o.v!=='good') o = Object.assign({}, o, {v:'good'});
+    if (pick && o.lpr!=null) o = Object.assign({}, o, {pr:o.lpr});
+    return base.call(this, agg, o);
+  };
+})();
+/* Polymarket copies: the board's call only when the same bet is on the board */
+var V163_PB = {at: 0, arr: null, m: null};
+function v163BoardProp(base){
+  try{ const arr = (typeof props!=='undefined' && props) || []; const now = Date.now();
+    if (!V163_PB.m || V163_PB.arr!==arr || now - V163_PB.at > 3000){ const m = new Map(); for (const p of arr) if (p && p.id) m.set(String(p.id), p); V163_PB.m = m; V163_PB.arr = arr; V163_PB.at = now; }
+    if (!base.pid) return null;
+    return V163_PB.m.get(`prop:${base.ev}:${base.pid}:${base.kind}:${base.side}:${base.pt}`) || null;
+  }catch(e){ return null; }
+}
+(function(){
+  if (typeof uniUpsert!=='function') return; const base = uniUpsert;
+  uniUpsert = function(b, src, id, row, snap){
+    try{ if (src==='pm' && snap && !snap.sv && row){
+      if (b==='games'){ const tw = UNI.get(`g:${row.ev}:${row.mk}:${row.side}:${row.pt==null?'':row.pt}`);
+        if (tw && tw.sv){ snap = Object.assign({}, snap, {sv: tw.sv}); if (tw.shown) snap.shown = 1; V163R.pmSv++; } }
+      else if (b==='props'){ const bp = v163BoardProp(row);
+        if (bp && bp.verdict && bp.verdict!=='started'){ snap = Object.assign({}, snap, {sv: bp.verdict}); if (bp.verdict==='good' || bp.verdict==='watch') snap.shown = 1; V163R.pmSv++; } }
+    } }catch(e){}
+    return base.call(this, b, src, id, row, snap);
+  };
+})();
+
+/* ---------- 2) one entry per bet ---------- */
+mlogBetKey = function(o){
+  if (o.b==='props'){ const who = v163Nm(o.pn) || String(o.pid||''); const pt = o.pt!=null && o.pt!=='' && isFinite(+o.pt) ? +o.pt : '';
+    return `p|${who}|${o.k||''}|${String(o.sd||'').toLowerCase()}|${pt}`; }
+  return `g|${o.ev}|${o.mk||''}|${String(o.sd||'').toLowerCase()}`;
+};
+mlogOnePerBet = function(rows){
+  const best = new Map();
+  const score = o => [o.sv==='good' ? 0 : 1, o.s==='sb' ? 0 : 1, +o.at || +o.t || 0];
+  const better = (a, c) => { const x = score(a), y = score(c); for (let i=0;i<3;i++) if (x[i]!==y[i]) return x[i] < y[i]; return false; };
+  for (const o of rows){ if (!o || !o.b) continue; const k = mlogBetKey(o), c = best.get(k); if (!c || better(o, c)) best.set(k, o); }
+  return [...best.values()];
+};
+/* final guard on any list of popup rows: one line per bet per day */
+function v163DedupRows(rows){
+  const seen = new Set(), out = [];
+  for (const r of rows||[]){ const line = String(r.line||'').toLowerCase().replace(/\s+/g,' ').trim();
+    const k = `${r.d}|${line}|${/^(over|under)\b/.test(line) ? String(r.teams||'').toLowerCase() : ''}`;   // game totals need the matchup; props carry the player
+    if (seen.has(k)) continue; seen.add(k); out.push(r); }
+  return out;
+}
+
+/* ---------- 3) Pacific days ---------- */
+mlogDT = function(d){ d = String(d||''); return Date.UTC(+d.slice(0,4), +d.slice(4,6)-1, +d.slice(6,8), 20); };   // noon PT (11 AM in summer)
+mlogFmt = function(d){ try{ return new Date(mlogDT(d)).toLocaleDateString(undefined, {month:'short', day:'numeric', timeZone:'America/Los_Angeles'}); }catch(e){ return String(d); } };
+mrDays = function(n){ const out = []; const t0 = mlogDT(mlogDay(Date.now())); for (let i=0;i<n;i++) out.push(mlogDay(t0 - i*86400000)); return out; };
+/* rows filed under another day (a UTC device's date) move to their Pacific game day */
+function v163Rebucket(){
+  if (typeof MLOG==='undefined' || !MLOG.raw) return 0; let n = 0;
+  for (const [d, m] of [...MLOG.raw]){ if (!m || V163R.rb.get(d)===m.size) continue;
+    for (const [id, o] of [...m]){ if (!o || !(+o.t > 0)) continue; const pd = mlogDay(+o.t); if (pd===d) continue;
+      m.delete(id); let t = MLOG.raw.get(pd); if (!t){ t = new Map(); MLOG.raw.set(pd, t); }
+      const old = t.get(id); if (!old || mlogRank(o) >= mlogRank(old)) t.set(id, o); n++; }
+    V163R.rb.set(d, m.size); }
+  if (n){ MLOG.ver++; V163R.moved += n; for (const [d, m] of MLOG.raw) V163R.rb.set(d, m.size); }
+  return n;
+}
+(function(){
+  const pre = ['v145RefreshStats','v155Rows','v156Buckets','mlogDayAgg','v142AdminIndex','v131RowsFromRaw'];
+  for (const fn of pre){ if (typeof window[fn]!=='function') continue; const base = window[fn]; window[fn] = function(){ try{ v163Rebucket(); }catch(e){} return base.apply(this, arguments); }; }
+  for (const fn of ['mlogLoad','mlogDeltaSync']){ if (typeof window[fn]!=='function') continue; const base = window[fn];
+    window[fn] = async function(){ const r = await base.apply(this, arguments); try{ v163Rebucket(); }catch(e){} return r; }; }
+  if (typeof mlogFind==='function'){ const base = mlogFind; mlogFind = function(){ try{ v163Rebucket(); }catch(e){} return base.apply(this, arguments); }; }
+})();
+/* the shown Play of the Day list: entries filed under a UTC date move to their Pacific game day */
+function v163FixPotd(St){
+  try{ if (!St || !St.days) return St; let cnt = 0; for (const d in St.days){ const D = St.days[d] || {}; for (const b of ['games','props']) cnt += Object.keys(D[b]||{}).length; }
+    if (V163R.potdFix.get(St)===cnt) return St;
+    for (const d of Object.keys(St.days)){ const D = St.days[d] || {};
+      for (const b of ['games','props']){ const E = D[b] || {}; for (const k of Object.keys(E)){ const e = E[k]; if (!e || !(+e.st > 0)) continue;
+        const pd = uniDay(+e.st); if (pd===d) continue;
+        const T = St.days[pd] || (St.days[pd] = {games:{}, props:{}}); const TE = T[b] || (T[b] = {});
+        if (!TE[k]) TE[k] = e; else if (e.drop && !TE[k].drop) TE[k].drop = e.drop;
+        delete E[k]; } } }
+    let c2 = 0; for (const d in St.days){ const D = St.days[d] || {}; for (const b of ['games','props']) c2 += Object.keys(D[b]||{}).length; }
+    V163R.potdFix.set(St, c2);
+  }catch(e){}
+  return St;
+}
+(function(){ if (typeof v131Store!=='function') return; const base = v131Store; v131Store = function(){ return v163FixPotd(base.apply(this, arguments)); }; })();
+(function(){ if (typeof v153DayStore!=='function') return; const base = v153DayStore; v153DayStore = function(){ try{ if (typeof V132!=='undefined' && V132.shared) v163FixPotd(V132.shared); }catch(e){} return base.apply(this, arguments); }; })();
+
+/* day stats: sportsbooks (good) and all books (ga), both one per bet at the lock price */
+function v163Pack(rows, src){ const e = v142E(); for (const o of mlogOnePerBet(rows.filter(o=>v153BoardPick(o) && v163SrcOk(o, src)))) v145Grade(o.b==='props' ? e.p : e.g, o, v163Px(o)); return v142Pack(e); }
+(function(){
+  if (typeof v145DayStat==='function'){ const base = v145DayStat;
+    v145DayStat = function(m){ const x = base.apply(this, arguments) || {}; try{ const rows = [...m.values()]; x.good = v163Pack(rows, 'sb'); x.ga = v163Pack(rows, 'all'); x.v163 = 1; }catch(e){} return x; }; }
+  if (typeof v145RefreshStats==='function'){ const base = v145RefreshStats;
+    v145RefreshStats = function(){ try{ for (const d in V145.stat){ const s = V145.stat[d]; if (s && !s.v163 && MLOG.raw.has(d)) delete V145.stat[d]; } }catch(e){} return base.apply(this, arguments); }; }
+  try{ if (typeof V145!=='undefined' && V145.stat) for (const d in V145.stat){ const s = V145.stat[d]; if (s && !s.v163) delete V145.stat[d]; } }catch(e){}
+})();
+v145ModelIndex = function(metric){
+  const days = {}, months = {};
+  try{ v145RefreshStats(); }catch(e){ console.warn('v163 stats', e); }
+  const all = v163Src()==='all'; const key = metric==='good' ? (all ? 'ga' : 'good') : metric;
+  const seen = new Set();
+  for (const d in V145.stat){ const s = V145.stat[d]; if (!s || !s.v163) continue; seen.add(d); if (s[key]){ const e = v142Unpack(s[key]); if (v142N(e)) days[d] = e; } }
+  if (metric==='good') for (const [d, s] of MLOG.sums){ if (seen.has(d) || !s || !s.v163) continue; const x = all ? s.bpa : s.bp; if (!x) continue; const e = v142Unpack(x); if (v142N(e)) days[d] = e; }
+  return {days, months, kind:'model'};
+};
+/* summaries written before v163 (old rule, writer's own date) are not final: the day's rows load and the publisher rewrites them */
+(function(){
+  if (typeof MLOG==='undefined' || !MLOG.sums) return;
+  const fix = x => (x && x.final && !x.v163) ? Object.assign({}, x, {final:false, dd:0}) : x;
+  const set0 = MLOG.sums.set.bind(MLOG.sums);
+  MLOG.sums.set = function(k, x){ return set0(k, fix(x)); };
+  for (const [k, x] of [...MLOG.sums]) set0(k, fix(x));
+})();
+mlogWriteFinalSums = async function(){
+  if (typeof mlogOn==='function' && !mlogOn()) return;
+  if (typeof v154Pub==='function' && !v154Pub()) return;
+  try{ if (typeof v157Sweep==='function') v157Sweep(); }catch(e){}
+  v163Rebucket();
+  const now = Date.now(), cut = mlogDay(now - 86400000); const db = mlogFS(); let w = 0;
+  for (const [day, m] of MLOG.raw){
+    if (day > cut || !m || !m.size) continue; const s = MLOG.sums.get(day); if (s && s.v163 && s.final && s.dd && s.n===m.size) continue;
+    const rows = [...m.values()]; const open = rows.filter(o=>!o.res).length;
+    const final = open===0 || day <= mlogDay(now - 4*86400000); if (!final) continue;
+    const one = mlogOnePerBet(rows); const agg = {}; for (const o of one) mlogAggAdd(agg, o);
+    for (const k in agg) agg[k][4] = Math.round(agg[k][4]*100)/100;
+    const body = {d:day, final:true, dd:1, v157:1, v160:1, v163:1, n:m.size, nb:one.length, agg, bp: v163Pack(rows, 'sb'), bpa: v163Pack(rows, 'all'), at:now};
+    try{ await db.collection('modelSum').doc(day).set(body); MLOG.sums.set(day, body); w++; }catch(e){ break; }
+    if (w >= 6) break;
+  }
+};
+
+/* Play of the Day under "Sportsbooks": each shown play graded at its sportsbook copy (the lock price there) */
+(function(){
+  if (typeof v153Shown!=='function') return; const base = v153Shown;
+  v153Shown = function(d, rowsIn){
+    const out = base.apply(this, arguments);
+    if (v163Src()==='all') return out;
+    try{ const res = [];
+      for (const o of out){ if (o.s==='sb'){ res.push(o); continue; }
+        const k = mlogBetKey(o); let tw = null;
+        for (const dd of [v131DayAdd(d,-1), d, v131DayAdd(d,1)]){ const m = MLOG.raw.get(dd); if (!m) continue;
+          for (const x of m.values()){ if (!x || x.s!=='sb' || x.b!==o.b || mlogBetKey(x)!==k) continue; if (!tw || (x.lkd && !tw.lkd) || (x.res && !tw.res)) tw = x; } }
+        if (tw) res.push(Object.assign({}, tw, {pr: tw.lpr!=null ? tw.lpr : tw.pr, v:'good'})); }
+      return res;
+    }catch(e){ return out; }
+  };
+  window.v153Shown = v153Shown;
+})();
+
+/* popup rows (admin): rebuilt on the same rules — board Picks, chosen books, lock price, one per bet */
+(function(){
+  if (typeof v147ModelRows!=='function') return; const base = v147ModelRows;
+  v147ModelRows = function(metric, from, to){
+    try{ if (typeof v157Sweep==='function') v157Sweep(); }catch(e){} v163Rebucket();
+    if (metric!=='good') return v163DedupRows(base.apply(this, arguments));
+    const out = [];
+    try{ if (typeof v148LearnNames==='function') v148LearnNames();
+      const potdOf = d => { const s = new Set(); try{ V153.rec++; const rows = v131RowsFor(d); if (rows){ const pr = V131.byDay[d] || V131.params || V131.prior; for (const c of v131PotdOfDay(rows, pr)) s.add(mlogBetKey(c)); } }catch(e){} finally{ V153.rec--; } return s; };
+      for (const d of [...MLOG.raw.keys()].sort()){ if (d < from || d > to) continue; const m = MLOG.raw.get(d); if (!m || !m.size) continue;
+        const pick = mlogOnePerBet([...m.values()].filter(v160Counted)); if (!pick.length) continue; const P = potdOf(d);
+        for (const o of pick){ if (!o.res || o.res==='ungradeable') continue; const price = v163Px(o);
+          out.push({d, tier: P.has(mlogBetKey(o)) ? 'potd' : 'picks', line: v147RowLine(o), teams: (typeof v148Match==='function' ? v148Match(o) : (o.gm || String(o.l||'').toUpperCase())), price, res: o.res, u: v147Unit(o.res, price), t: +o.t||0, s: o.s||''}); } }
+    }catch(e){ console.warn('v163 rows', e); }
+    return v163DedupRows(out);
+  };
+})();
+
+/* ---------- the Books filter on Results (Model view) ---------- */
+(function(){
+  if (typeof v142HeadHTML!=='function') return; const base = v142HeadHTML;
+  v142HeadHTML = function(){ const h = base.apply(this, arguments);
+    try{ if (v140View()!=='model') return h; const s = v163Src();
+      const sel = `<label class="v140-sel v163-src"><span class="sr-only">Books</span><select data-v163-src aria-label="Which books"><option value="sb" ${s==='sb'?'selected':''}>Sportsbooks</option><option value="all" ${s==='all'?'selected':''}>All books</option></select></label>`;
+      const i = h.lastIndexOf('</div></div>'); return i < 0 ? h : h.slice(0, i) + sel + h.slice(i); }catch(e){ return h; } };
+})();
+document.addEventListener('change', e=>{
+  const t = e.target; if (!t || !t.closest || !t.closest('[data-v163-src]')) return;
+  try{ S.resSrc = t.value==='all' ? 'all' : 'sb'; v142Save(); }catch(err){}
+  try{ v142Repaint(); }catch(err){}
+}, true);
+v142UserIndex = function(m){
+  const days = {}, months = {}; const P = V142.pub2; const all = v163Src()==='all'; const alt = all ? (m==='good' ? 'ga' : m==='potd' ? 'pa' : m) : m;
+  if (P){ for (const d in (P.d||{})){ const x = P.d[d]; if (!x) continue; const v = x[alt]!=null ? x[alt] : x[m]; if (v) days[d] = v142Unpack(v); }
+    for (const k in (P.m||{})){ const x = P.m[k]; if (x && x[m]) months[k] = v142Unpack(x[m]); } }
+  return {days, months, kind:'model'};
+};
+
+/* ---------- publisher: day totals for both book sets + compact per-day rows ---------- */
+v142Publish = function(force){
+  try{
+    if (!v154Pub() || !MLOG.at) return;
+    const now = Date.now(); if (!force && now - (V154.pubAt.days2||0) < 20*60000) return;
+    const cut = uniDay(now - 400*86400000); const d = {};
+    for (const src of ['sb','all']) v163WithSrc(src, ()=>{ for (const [m] of V142_MET){ const I = v142AdminIndex(m); const key = src==='sb' ? m : (m==='good' ? 'ga' : m==='potd' ? 'pa' : m+'a');
+      for (const k in I.days) if (k >= cut && v142N(I.days[k])) (d[k] || (d[k] = {}))[key] = v142Pack(I.days[k]); } });
+    if (!Object.keys(d).length) return;
+    v154Put('days2', {at: now, d, m: {}, v: 163});
+    v163PublishRows(force);
+  }catch(e){ console.warn('v163 publish days', e); }
+};
+const V163_RES = {win:'w', loss:'l', push:'p', void:'v'}, V163_RES_B = {w:'win', l:'loss', p:'push', v:'void'};
+function v163RowsPack(rows){ return rows.map(r=>[r.tier==='potd' ? 1 : 0, String(r.line||'').slice(0,80), String(r.teams||'').slice(0,80), r.price==null || !isFinite(+r.price) ? null : Math.round(+r.price), V163_RES[r.res] || r.res, Math.round((+r.u||0)*1000)/1000, +r.t||0]); }
+function v163RowsBuild(){
+  const now = Date.now(); const from = uniDay(now - 45*86400000), to = uniDay(now + 86400000); const out = {at: now, v: 163, d: {}};
+  for (const src of ['sb','all']) v163WithSrc(src, ()=>{ for (const m of ['potd','good']){
+    for (const r of v147ModelRows(m, from, to)){ const D = out.d[r.d] || (out.d[r.d] = {}); const k = (m==='good' ? 'g' : 'p') + (src==='all' ? 'a' : ''); (D[k] || (D[k] = [])).push(r); } } });
+  for (const d in out.d){ const D = out.d[d];
+    for (const k of ['p','g','pa','ga']) if (D[k]) D[k] = v163RowsPack(D[k].sort((a,b)=>(a.t-b.t) || String(a.line).localeCompare(String(b.line))));
+    for (const k of ['p','g']) if (D[k+'a'] && JSON.stringify(D[k+'a'])===JSON.stringify(D[k]||[])) delete D[k+'a']; }
+  return out;
+}
+function v163PublishRows(force){
+  try{ if (!v154Pub()) return; const now = Date.now(); if (!force && now - V163R.rowsPubAt < 20*60000) return; V163R.rowsPubAt = now;
+    const out = v163RowsBuild(); if (!Object.keys(out.d).length) return; v154Put('rows', out); }catch(e){ console.warn('v163 publish rows', e); }
+}
+/* non-admin: rows from the Worker (edge cached), last copy in localStorage */
+async function v163RowsLoad(force){
+  try{
+    if (!V163R.rows){ try{ const c = JSON.parse(localStorage.getItem(V163_ROWS_LS)||'null'); if (c && c.d){ V163R.rows = c; } }catch(e){} }
+    if (V163R.rowsBusy) return V163R.rows; if (!force && Date.now() - V163R.rowsAt < 9*60000) return V163R.rows;
+    V163R.rowsBusy = true; V163R.rowsAt = Date.now();
+    const x = await v154Get('rows'); if (x && x.d){ V163R.rows = x; try{ localStorage.setItem(V163_ROWS_LS, JSON.stringify(x)); }catch(e){} }
+  }catch(e){ V163R.rowsErr = String(e && e.message || e).slice(0, 80); }
+  finally{ V163R.rowsBusy = false; V163R.rowsGot = true; }
+  return V163R.rows;
+}
+function v163PubRows(metric, from, to){
+  const P = V163R.rows; if (!P || !P.d) return []; const all = v163Src()==='all'; const k = metric==='good' ? 'g' : 'p'; const out = [];
+  for (const d in P.d){ if (d < from || d > to) continue; const D = P.d[d] || {}; const list = (all && D[k+'a']) || D[k] || [];
+    for (const a of list) out.push({d, tier: a[0] ? 'potd' : 'picks', line: a[1], teams: a[2], price: a[3], res: V163_RES_B[a[4]] || a[4], u: +a[5]||0, t: +a[6]||0}); }
+  return v163DedupRows(out);
+}
+function v163PopList(rows, showDate){
+  rows.sort((a,b)=>(b.d.localeCompare(a.d)) || (b.t - a.t));
+  const W = rows.filter(r=>r.res==='win'), L = rows.filter(r=>r.res==='loss'), O = rows.filter(r=>r.res==='push' || r.res==='void'); const CAP = 120;
+  const sec = (title, list, c) => !list.length ? '' : `<div class="v147-sh ${c}"><span class="v147-dot"></span>${title}<span class="v147-sn">${list.length}</span></div><div class="v147-list">${list.slice(0, CAP).map(r=>v147RowHTML(r, showDate)).join('')}${list.length > CAP ? `<div class="v147-more">+${list.length - CAP} more</div>` : ''}</div>`;
+  return sec('Wins', W, 'w') + sec('Losses', L, 'l') + sec('Push / void', O, 'o');
+}
+function v163FillPop(spec){
+  const sh = document.querySelector('#v142Pop .v147-sheet'); if (!sh || V163R.popSpec!==spec) return;
+  const [kind, key] = String(spec).split(':'); const [from, to] = v142Range(kind, key);
+  sh.querySelectorAll('.v163-list,.v163-wait').forEach(n=>n.remove());
+  const sum = sh.querySelector('.v147-sum'); if (!sum) return;
+  const rows = v163PubRows(v142Metric(), from, to);
+  if (!rows.length){ if (!V163R.rowsGot || V163R.rowsBusy) sum.insertAdjacentHTML('afterend', `<div class="hint v163-wait">Loading the picks…</div>`); return; }
+  sum.insertAdjacentHTML('afterend', `<div class="v163-list">${v163PopList(rows, kind!=='day')}</div>`);
+}
+(function(){
+  if (typeof v142OpenPop!=='function') return; const base = v142OpenPop;
+  v142OpenPop = function(spec){
+    V163R.popSpec = String(spec);
+    const r = base.apply(this, arguments);
+    try{ if (v140View()==='model' && !v138Admin() && v138Signed()){
+      v163FillPop(V163R.popSpec);
+      const stale = !V163R.rows || Date.now() - V163R.rowsAt > 9*60000;
+      if (stale) v163RowsLoad(true).then(()=>{ try{ if (document.querySelector('#v142Pop.open')) v163FillPop(String(spec)); }catch(e){} });
+    } }catch(e){ console.warn('v163 pop', e); }
+    return r;
+  };
+})();
+// warm the copy while Results is open (non-admin)
+setInterval(()=>{ try{ if (v138Signed() && !v138Admin() && ui.tab==='tracker' && v140View()==='model' && document.visibilityState==='visible') v163RowsLoad(false); }catch(e){} }, 60000);
+
+/* ---------- 4) dark dropdowns ---------- */
+(function(){
+  const st = document.createElement('style'); st.id = 'v163-css';
+  st.textContent = `select{color-scheme:dark}
+select option,select optgroup{background-color:#0f1a2b !important;color:#e6eef8 !important}
+select option:checked,select option:hover{background-color:#1e4fa8 !important;color:#ffffff !important}
+select option:disabled{color:#7f93ad !important}
+.v142-sels{flex-wrap:wrap}
+.v163-src select{max-width:100%}
+.v142-sels .v140-sel select{padding-right:40px}
+.v163-wait{margin:4px 0 10px}`;
+  document.head.appendChild(st);
+})();
+window.v163Results = () => ({src: v163Src(), moved: V163R.moved, pmSv: V163R.pmSv, rows: V163R.rows ? Object.keys(V163R.rows.d||{}).length : 0, rowsAt: V163R.rowsAt});
+
+/* ================= v163 A2: tap path trimmed (profiled at 1280: Picks tab tap ~45 ms of script) =================
+   - v150Rename walked every text node in the page after each DOM change (~9 ms a tap). Now only the nodes that changed.
+   - The Filters drawer position read layout in the middle of the tap (forced layout, twice). Now once, in the next frame.
+   - The six tab-badge counts (every list filtered again) run right after the tap's paint instead of inside it. */
+(function(){
+  if (typeof v150Rename!=='function') return; const base = v150Rename;
+  const pend = new Set(); let full = true;
+  new MutationObserver(ms=>{ if (full) return; for (const m of ms){ if (m.type==='characterData') pend.add(m.target.parentNode || m.target); else for (const n of m.addedNodes) pend.add(n.nodeType===3 ? (n.parentNode || n) : n); if (pend.size > 400){ full = true; pend.clear(); return; } } })
+    .observe(document.body, {childList:true, subtree:true, characterData:true});
+  v150Rename = function(root){
+    if (root!==document.body) return base.apply(this, arguments);
+    if (full){ full = false; pend.clear(); return base.call(this, root); }
+    const list = [...pend]; pend.clear();
+    for (const n of list){ if (n && n.isConnected && n.nodeType===1){ const t = n.textContent; if (t && t.indexOf('Tracker') < 0 && !(n.querySelector && n.querySelector('[aria-label*="Tracker"],[title*="Tracker"]')) && !((n.getAttribute && ((n.getAttribute('aria-label')||'') + (n.getAttribute('title')||'')).indexOf('Tracker') >= 0))) continue; base.call(this, n); } }
+  };
+  setInterval(()=>{ full = true; }, 30000);   // a full pass now and then, just in case
+})();
+(function(){
+  if (typeof syncFilterDrawerPos!=='function') return; const base = syncFilterDrawerPos; let q = 0;
+  syncFilterDrawerPos = function(){ if (q) return; q = requestAnimationFrame(()=>{ q = 0; try{ base(); }catch(e){} }); };
+})();
+(function(){
+  if (typeof v115UpdateCombinedCounts!=='function') return; const base = v115UpdateCombinedCounts; let t = 0;
+  v115UpdateCombinedCounts = function(){
+    if (!v163UserEv()) return base.apply(this, arguments);
+    if (t) return; t = setTimeout(()=>{ t = 0; try{ base(); }catch(e){} }, 60);
+  };
+})();
+
+/* small hot helpers seen in the 1280 tap profile */
+(function(){
+  if (typeof avDayKey==='function'){ const base = avDayKey; let v = '', at = 0; avDayKey = function(){ const now = Date.now(); if (now - at > 30000 || !v){ v = base(); at = now; } return v; }; }
+  if (typeof v145Mobile==='function'){ const base = v145Mobile; let v = null, at = 0, w = -1; v145Mobile = function(){ const now = Date.now(); if (v===null || w!==innerWidth || now - at > 1000){ v = base(); at = now; w = innerWidth; } return v; }; }
+})();
 </script>
 </body>
 </html>
