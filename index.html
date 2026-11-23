@@ -27821,6 +27821,34 @@ html.v145-lock,html.v145-lock body{overflow:hidden}
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
   addEventListener('resize', ()=>{ v145Head(); if (!v145Mobile()) close(); });
 })();
+/* ================= v146: one active bottom-nav item; Picks lit while the tier circles are up; no Switch button =================
+   Cause of the double highlight: MORE_TABS still listed "tracker" (and "results") from when Tracker lived in the
+   More menu, so syncTabChrome lit More on the Tracker tab too. */
+APP_BUILD = 146;
+try{ delete MORE_TABS.tracker; delete MORE_TABS.results; }catch(e){}
+function v146TiersUp(){ const o = document.getElementById('v145Tiers'); return !!(o && o.classList.contains('open') && !o.classList.contains('closing')); }
+function v146NavPicks(){
+  document.querySelectorAll('#bottomNav button[data-tab]').forEach(b=>b.classList.toggle('on', b.dataset.tab==='good'));
+  const m = document.getElementById('btnMore'); if (m) m.classList.remove('on');
+}
+(function(){
+  if (typeof syncTabChrome==='function'){ const base = syncTabChrome; syncTabChrome = function(){ const r = base.apply(this, arguments); try{ if (v146TiersUp()) v146NavPicks(); }catch(e){} return r; }; }
+  let watched = null;
+  const mo = new MutationObserver(()=>{ try{ if (v146TiersUp()) v146NavPicks(); else syncTabChrome(); }catch(e){} });
+  function hook(){ const o = document.getElementById('v145Tiers'); if (o && o!==watched){ watched = o; mo.observe(o, {attributes:true, attributeFilter:['class']}); } }
+  new MutationObserver(hook).observe(document.body, {childList:true});
+  hook();
+})();
+/* Switch button removed from the Picks header (Picks in the bottom bar reopens the circles; PC keeps the inline switch) */
+(function(){
+  const st = document.createElement('style'); st.id = 'v146css';
+  st.textContent = `.v145-th .v145-sw{display:none !important}`;
+  document.head.appendChild(st);
+  const base = window.v145Head;
+  if (typeof base==='function'){ window.v145Head = function(){ const r = base.apply(this, arguments); const b = document.querySelector('#v145Head .v145-sw'); if (b) b.remove(); return r; }; }
+  const kill = () => { const b = document.querySelector('#v145Head .v145-sw'); if (b) b.remove(); };
+  const kb = document.getElementById('kindsBar'); if (kb) new MutationObserver(kill).observe(kb, {childList:true, subtree:true}); kill();
+})();
 </script>
 </body>
 </html>
