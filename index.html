@@ -28187,7 +28187,7 @@ window.addEventListener('click', e=>{
   d.h = {[day]: Object.assign({}, d.h[day]||{}, {[v148HideKey(tier, c)]: Date.now()})};
   avSaveFlags(d); AV.ver++;
   try{ if (typeof sync2Push==='function') sync2Push(); }catch(err){}
-  const nm = {potd:'Picks of the Day', locked:'Locked', picks:'Picks'}[tier] || 'this list';
+  const nm = (V148.names||{potd:'Picks of the Day', locked:'Locked', picks:'Picks'})[tier] || 'this list';
   try{ toast(`Hidden from ${nm} for today.`); }catch(err){}
   if (typeof softRender==='function') softRender(); else render();
 }, true);
@@ -28250,28 +28250,34 @@ function v148StartTier(c, paneTier){
       if (!ui || ui.tab!=='good') return r;
       const panes = document.querySelector('#view .slate-main > .v142-panes'); if (!panes || panes.dataset.v148) return r;
       panes.dataset.v148 = '1';
-      const T = V148.tiers; const out = {potd:{games:[], props:[]}, locked:{games:[], props:[]}, picks:{games:[], props:[]}}; const hid = {potd:0, locked:0, picks:0};
-      for (const tier of T){
-        const pane = panes.querySelector(`.v142-pane[data-pane="${tier}"]`); if (!pane) continue;
+      const T = V148.tiers; const norm = t => T.includes(t) ? t : 'picks';
+      const out = {}, hid = {}; for (const t of T){ out[t] = {games:[], props:[]}; hid[t] = 0; }
+      for (const tier0 of ['potd','locked','picks']){
+        const pane = panes.querySelector(`.v142-pane[data-pane="${tier0}"]`); if (!pane) continue;
+        const tier = norm(tier0);
         for (const c of [...pane.querySelectorAll('.card')]){
           const kind = c.classList.contains('prop-card') ? 'props' : 'games';
           let chain;
-          if (v148Started(c)){ const ft = v148Freeze(c) || v148StartTier(c, tier); chain = [ft];
-            if (ft==='potd' && !c.querySelector(':scope > .v131-star')){ const tg = document.createElement('div'); tg.className = 'lk-tag v131-star'; tg.innerHTML = '<span aria-hidden="true">⭐</span> Pick of the Day · <span aria-hidden="true">🔒</span> Locked'; c.insertBefore(tg, c.querySelector(':scope > .chead') || c.firstChild); } }
+          if (v148Started(c)){ const ft = norm(v148Freeze(c) || v148StartTier(c, tier)); chain = [ft];
+            if (ft==='potd' && !c.querySelector(':scope > .v131-star')){ const tg = document.createElement('div'); tg.className = 'lk-tag v131-star'; tg.innerHTML = '<span aria-hidden="true">⭐</span> Pick of the Day'; c.insertBefore(tg, c.querySelector(':scope > .chead') || c.firstChild); } }
           else {
-            v148Snap(c, tier);
-            chain = tier==='potd' ? ['potd'].concat(c.classList.contains('locked-pick') ? ['locked'] : [], ['picks']) : tier==='locked' ? ['locked','picks'] : ['picks'];
+            let tier1 = tier;
+            if (tier1!=='potd'){ try{ const it = v148Item(c.dataset.pid); if (it && typeof v131IsPotd==='function' && v131IsPotd(kind, it)){ tier1 = 'potd';
+              if (!c.querySelector(':scope > .v131-star')){ const tg = document.createElement('div'); tg.className = 'lk-tag v131-star'; tg.innerHTML = '<span aria-hidden="true">⭐</span> Pick of the Day'; c.insertBefore(tg, c.querySelector(':scope > .chead') || c.firstChild); } c.classList.add('potd-pick'); } }catch(e){} }
+            v148Snap(c, tier1);
+            chain = tier1==='potd' ? ['potd'].concat(T.includes('locked') && c.classList.contains('locked-pick') ? ['locked'] : [], ['picks']) : tier1==='locked' ? ['locked','picks'] : ['picks'];
           }
           let placed = false;
           for (const t of chain){ if (v148Hidden(t, c)){ hid[t]++; continue; } out[t][kind].push(c); placed = true; break; }
           if (!placed) c.remove();
         }
       }
+      for (const t0 of ['potd','locked','picks']) if (!T.includes(t0)){ const pn = panes.querySelector(`.v142-pane[data-pane="${t0}"]`); if (pn) pn.remove(); }
       const n = {};
       for (const tier of T){
         const pane = panes.querySelector(`.v142-pane[data-pane="${tier}"]`); if (!pane) continue;
         pane.innerHTML = ''; n[tier] = out[tier].games.length + out[tier].props.length;
-        if (!n[tier]) pane.innerHTML = `<div class="empty-state v142-empty">${hid[tier] ? 'Everything here is hidden for today.' : EMPTY[tier]}</div>`;
+        if (!n[tier]) pane.innerHTML = `<div class="empty-state v142-empty">${hid[tier] ? 'Everything here is hidden for today.' : ((V148.empty||EMPTY)[tier]||'')}</div>`;
         const both = out[tier].games.length && out[tier].props.length;
         for (const kd of ['games','props']){ const L = out[tier][kd]; if (!L.length) continue;
           if (both){ const h = document.createElement('div'); h.className = 'v142-sub'; h.textContent = kd==='games' ? 'Games' : 'Props'; pane.appendChild(h); }
@@ -28460,6 +28466,243 @@ V148.fz = new Map();
       return r;
     };
   }
+})();
+/* ================= v149: no more Locked. Two lists: 🔒 Play of the Day and 🎯 Picks. Play of the Day is a learned filter =================
+   1) Locked is gone from the app: Picks nav circles (2), PC switch, card tags, Tracker dropdowns and popups, alerts, Settings,
+      Model learning. Plays that used to sit in Locked are just Picks. History is kept: every Locked bet was already a Pick in
+      the log, so it counts under Picks; tailed bets keep their records. Locks still happen inside the model (it's how a pick
+      freezes before the game and how Play of the Day is confirmed) but they're not a list anymore.
+   2) Play of the Day carries the 🔒 emoji.
+   3) The Play of the Day gate is learned from graded history: on top of the v131 self-tuning (model chance, edge, odds window,
+      stats, daily cap), the model searches bet strength, market, sport, odds window, model chance/edge and cap together for
+      the filter with the best profit, as long as it wins at least 56% and makes money over 30+ graded plays. Until there's
+      enough graded history the current rules stay. Retuned from the shared log, same cadence as the rest of the learning. */
+APP_BUILD = 149;
+var V149 = {WR:0.56, MIN_N:30, WIN:30, byDay:{}, info:{}, LS:'bl_v149_gate'};
+
+/* ---------- 1/2) tiers: Play of the Day + Picks ---------- */
+V148.tiers = ['potd','picks'];
+V148.names = {potd:'Play of the Day', picks:'Picks'};
+V148.empty = {potd:'No Play of the Day yet. The model only names one when a pick clears its Play of the Day filter.', picks:'No other picks in the next 24 hours. Zero picks is fine.'};
+try{ V142_SEGS[0][1] = 'Play of the Day'; }catch(e){}
+try{ for (let i = V142_MET.length - 1; i >= 0; i--){ if (V142_MET[i][0]==='locked') V142_MET.splice(i, 1); else if (V142_MET[i][0]==='potd') V142_MET[i][1] = 'Play of the Day'; } }catch(e){}
+try{ V144_IC.potd = '🔒'; V144_IC.locked = '🎯'; }catch(e){}
+try{ V145_TN.potd = 'Play of the Day'; V145_TN.locked = 'Picks'; }catch(e){}
+try{ V147_TIC.potd = '🔒'; V147_TIC.locked = '🎯'; }catch(e){}
+try{ V140_MNAME.potd = 'Play of the Day'; delete V140_MNAME.locked; }catch(e){}
+v142Seg = function(){ const s = S && S.pkSeg; return s==='picks' || s==='locked' ? 'picks' : 'potd'; };
+v142Metric = function(){ const m = S && S.trkMetric; return m==='good' || m==='locked' ? 'good' : 'potd'; };
+if (typeof v140Metrics==='function') v140Metrics = function(){ return v138Admin() ? ['good','potd','watch','avoid'] : ['good','potd']; };
+try{ if (S.pkSeg==='locked'){ S.pkSeg = 'picks'; } if (S.trkMetric==='locked'){ S.trkMetric = 'good'; } S.alertNewPlays = false; saveJSON(LS.settings, S); }catch(e){}
+// hides made in Locked now belong to Picks
+try{ const d = avFlags(); let ch = false; for (const day in (d.h||{})){ const H = d.h[day]; for (const k of Object.keys(H)) if (k.startsWith('t:locked|')){ const nk = 't:picks|' + k.slice(9); if (!H[nk]) H[nk] = H[k]; delete H[k]; ch = true; } } if (ch) avSaveFlags(d); }catch(e){}
+// frozen started picks that were in Locked are Picks now
+try{ const F = v148Frz(); let ch = false; for (const k in F) if (F[k] && F[k].tier==='locked'){ F[k].tier = 'picks'; ch = true; } if (ch) v148FrzSave(); }catch(e){}
+// Tracker rows: Locked tier shows as Picks
+(function(){
+  const fix = rows => { for (const r of rows||[]) if (r.tier==='locked') r.tier = 'picks'; return rows; };
+  const a = v147ModelRows; v147ModelRows = function(){ return fix(a.apply(this, arguments)); };
+  const b = v147TailedRows; v147TailedRows = function(){ return fix(b.apply(this, arguments)); };
+})();
+// alert titles
+(function(){
+  const t = s => String(s||'').replace(/⭐\s*Pick of the Day \(locked\)/g, '🔒 Play of the Day').replace(/⭐\s*(\d+) Picks of the Day/g, '🔒 $1 Plays of the Day').replace(/⭐\s*Pick of the Day/g, '🔒 Play of the Day').replace(/Picks of the Day/g, 'Plays of the Day').replace(/Pick of the Day/g, 'Play of the Day');
+  if (typeof postNotification==='function'){ const p = postNotification; postNotification = function(title){ const a = [...arguments]; a[0] = t(title); return p.apply(this, a); }; }
+  if (typeof ntfyPush==='function'){ const n = ntfyPush; ntfyPush = function(title){ const a = [...arguments]; a[0] = t(title); if (a[2] && a[2].tags) a[2] = Object.assign({}, a[2], {tags:'lock'}); return n.apply(this, a); }; }
+})();
+
+// no lock countdowns on cards (locks aren't a list anymore)
+if (typeof earlyLockBadgeHTML==='function') earlyLockBadgeHTML = function(){ return ''; };
+
+/* DOM pass: lists, tags and wording */
+var V149_TXT = [[/Picks of the Day/g, 'Plays of the Day'], [/Pick of the Day/g, 'Play of the Day']];
+function v149Text(root){
+  if (!root) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
+  while ((n = w.nextNode())){ const v = n.nodeValue; if (!v || v.indexOf(' of the Day') < 0) continue; let x = v; for (const [re, to] of V149_TXT) x = x.replace(re, to); if (x!==v) n.nodeValue = x; }
+}
+function v149Sweep(){
+  try{
+    // Picks switch / circles: two tiers
+    document.querySelectorAll('#v142Seg [data-v142-seg="locked"], #v145Tiers [data-v145-tier="locked"]').forEach(b=>b.remove());
+    document.querySelectorAll('#v145Tiers [data-v145-tier]').forEach((b, i)=>{ if (b.style.getPropertyValue('--i')!==String(i)) b.style.setProperty('--i', String(i)); });
+    document.querySelectorAll('#v142Seg [data-v142-seg="potd"] .v144-ic > span[aria-hidden], #v145Tiers [data-v145-tier="potd"] .v145-cc > span[aria-hidden]').forEach(s=>{ if (s.textContent!=='🔒') s.textContent = '🔒'; });
+    const f = document.querySelector('#v142Seg .v143-full'); if (f && f.textContent!=='Play of the Day') f.textContent = 'Play of the Day';
+    const tl = document.querySelector('#v145Tiers [data-v145-tier="potd"] .v145-cl'); if (tl && tl.textContent!=='Play of the Day') tl.textContent = 'Play of the Day';
+    const v = document.getElementById('view'); if (!v) return;
+    // card tags: 🔒 Play of the Day only; no Locked tags
+    v.querySelectorAll('.lk-tag.v131-star').forEach(t=>{ if (t.dataset.v149) return; t.dataset.v149 = '1'; t.innerHTML = '<span aria-hidden="true">🔒</span> Play of the Day'; });
+    v.querySelectorAll('.lk-tag.v134-lk, .bt.bt-locked, .lock-badge-row, .v119-locked').forEach(t=>t.remove());
+    v.querySelectorAll('.card.locked-pick:not(.potd-pick) > .v131-why').forEach(t=>t.remove());
+    // Tracker: no Locked rows anywhere
+    v.querySelectorAll('.uni-row').forEach(r=>{ const k = r.querySelector('.k'); if (k && /^\s*Locked\s*$/.test(k.textContent)) r.remove(); });
+    v.querySelectorAll('select option[value="locked"]').forEach(o=>o.remove());
+    v.querySelectorAll('[data-v142-met="locked"], [data-metric="locked"]').forEach(o=>o.remove());
+    // Settings: the Locked alert is gone
+    const al = v.querySelector('input[name="alertNewPlays"]'); if (al){ const l = al.closest('label'); if (l) l.remove(); }
+    v149Text(v); const pop = document.getElementById('v142Pop'); if (pop) v149Text(pop);
+  }catch(e){ console.warn('v149 sweep', e); }
+}
+(function(){
+  const css = `
+.v142-seg{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+.v142-seg [data-v142-seg="locked"],#v145Tiers [data-v145-tier="locked"]{display:none !important}
+.v142-panes > [data-pane="locked"]{display:none !important}
+.lk-tag.v134-lk,.bt.bt-locked,.card .lock-badge{display:none !important}
+.v142-pane[data-pane="potd"] .lk-tag.v131-star{display:inline-flex !important}
+.lk-tag.v131-star{color:#dbeafe;background:rgba(37,99,235,.18);border-color:rgba(96,165,250,.5)}
+.v149-rules .v131-kv .v{font-weight:650}
+.v149-gate{margin:2px 0 10px;padding:12px 14px;border-radius:14px;background:rgba(37,99,235,.10);border:1px solid rgba(96,165,250,.28)}
+.v149-gate h5{margin:0 0 6px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#93c5fd}
+.v149-gate p{margin:4px 0;font-size:13.5px;line-height:1.45;color:#e6eef8;overflow-wrap:break-word}
+.v149-gate .mut{color:var(--mut)}
+.v149-gate b.pos{color:var(--good)} .v149-gate b.neg{color:var(--avoid)}`;
+  const st = document.createElement('style'); st.id = 'v149css'; st.textContent = css; document.head.appendChild(st);
+  let q = 0; const run = () => { q = 0; v149Sweep(); };
+  new MutationObserver(()=>{ if (!q) q = requestAnimationFrame(run); }).observe(document.body, {childList:true, subtree:true});
+  run();
+})();
+
+/* ---------- 3) learned Play of the Day gate ---------- */
+// strength (the card's "Bet strength" source) and sport ride along in the log, the POTD rows and the live read
+function v149Conf(x){ try{ const v = x && x.j && x.j.conf && x.j.conf.v; return (v!=null && isFinite(+v)) ? Math.round(+v) : null; }catch(e){ return null; } }
+(function(){
+  const base = mlogCompact;
+  mlogCompact = function(r){ const out = base.apply(this, arguments);
+    try{ const o = out && out[1]; if (o && o.cf==null){
+      let x = null; const id = String(r.id||r.i||'');
+      if (o.b==='games') x = ((typeof plays!=='undefined' && plays) || []).find(p=>p && (p.id===id || (p.g && String(p.g.eventId)===o.ev && p.mk===o.mk && p.side===o.sd)));
+      else x = ((typeof props!=='undefined' && props) || []).find(p=>p && (p.id===id || (p.g && String(p.g.eventId)===o.ev && String(p.playerId||'')===String(o.pid||'') && p.kind===o.k && p.side===o.sd)));
+      const cf = v149Conf(x); if (cf!=null) o.cf = cf; } }catch(e){}
+    return out; };
+})();
+(function(){ const base = v131Compact; v131Compact = function(o){ const c = base.apply(this, arguments); if (o && o.cf!=null) c.cf = +o.cf; return c; }; })();
+(function(){ const base = v131Vals; v131Vals = function(c){ const v = base.apply(this, arguments); v.cf = c.cf!=null ? +c.cf : null; v.lg = c.l || ''; return v; }; })();
+(function(){ const base = v129Read; v129Read = function(board, x){ const v = base.apply(this, arguments); if (v){ v.cf = v149Conf(x); v.lg = (x && ((x.g && x.g.league) || x.league)) || ''; } return v; }; })();
+(function(){
+  const base = v131QualP;
+  v131QualP = function(b, v, pr){
+    if (!base.apply(this, arguments)) return false;
+    const R = b==='props' ? pr.P : pr.G; if (!R) return true;
+    if (R.cf && !(v.cf!=null && v.cf >= R.cf)) return false;
+    if (b==='games' && R.mkx && R.mkx.length && R.mkx.includes(v.kind)) return false;
+    if (R.lgx && R.lgx.length && v.lg && R.lgx.includes(v.lg)) return false;
+    return true;
+  };
+})();
+
+function v149Tally(days, P, b){
+  const T = v131T();
+  for (const d of days) for (const c of v131PotdOfDay(V131.rows.get(d)||[], P)) if (c.b===b && (c.res==='win' || c.res==='loss')) v131Add(T, c);
+  return T;
+}
+function v149Obj(T){
+  if (T.n < V149.MIN_N) return -Infinity; const wr = T.w / T.n, roi = v131Roi(T);
+  if (wr < V149.WR || !(roi > 0)) return -Infinity;
+  return v131Shr(T) + 0.05 * (wr - V149.WR);
+}
+// search score: proven filters (10+) beat unproven ones; unproven ones still climb toward profit so two-step fixes are found
+function v149Score(T){ if (T.n < V149.MIN_N) return -Infinity; const o = v149Obj(T); return isFinite(o) ? 10 + o : v131Shr(T); }
+function v149Cands(b, P, days){
+  const out = [], R = b==='props' ? P.P : P.G, r2 = x => Math.round(x*100)/100;
+  const set = (fn) => { const Q = v131Clone(P); fn(b==='props' ? Q.P : Q.G, Q); out.push(Q); };
+  const seen = {lg:new Set(), mk:new Set(), k:new Set()};
+  for (const d of days) for (const c of (V131.rows.get(d)||[])) if (c.b===b && c.lkd){ if (c.l) seen.lg.add(c.l); if (c.mk) seen.mk.add(c.mk); if (c.k) seen.k.add(c.k); }
+  if (b==='games'){ for (const p of [0.52,0.54,0.56,0.58,0.60,0.62,0.64,0.66,0.68,0.70]) if (Math.abs(p - R.p) > 0.001) set(G=>{ G.p = p; }); }
+  else { for (const e of [0.04,0.06,0.08,0.10,0.12,0.14,0.16,0.18,0.20]) if (Math.abs(e - R.edge) > 0.001) set(Q=>{ Q.edge = e; });
+    for (const k of seen.k){ const has = R.kinds.includes(k); if (has && R.kinds.length < 2) continue; set(Q=>{ Q.kinds = has ? Q.kinds.filter(x=>x!==k) : Q.kinds.concat(k); }); } }
+  for (const lo of (b==='props' ? [-200,-160,-140,-120,-110] : [-300,-250,-200,-175,-150,-130])) if (lo!==R.lo) set(Q=>{ Q.lo = lo; });
+  for (const hi of [100,120,150,200,250]) if (hi!==R.hi) set(Q=>{ Q.hi = hi; });
+  for (const cf of [0,60,75]) if ((R.cf||0)!==cf) set(Q=>{ Q.cf = cf; });
+  if (b==='games') for (const m of seen.mk){ const x = R.mkx||[]; const has = x.includes(m); if (!has && seen.mk.size - x.length <= 1) continue; set(Q=>{ Q.mkx = has ? x.filter(y=>y!==m) : x.concat(m); }); }
+  for (const l of seen.lg){ const x = R.lgx||[]; const has = x.includes(l); if (!has && seen.lg.size - x.length <= 1) continue; set(Q=>{ Q.lgx = has ? x.filter(y=>y!==l) : x.concat(l); }); }
+  for (const cap of [1,2,3,4,5]) if (cap!==P.cap[b]) set((Q, W)=>{ W.cap[b] = cap; });
+  return out;
+}
+function v149Learn(D, basePr){
+  const days = []; for (let d = v131DayAdd(D, -V149.WIN); d <= v131DayAdd(D, -2); d = v131DayAdd(d, 1)) if (d >= V131.first){ const rw = v131RowsFor(d); if (rw && rw.length) days.push(d); }
+  let P = v131Clone(basePr); const info = {};
+  for (const b of ['games','props']){
+    let cur = v149Score(v149Tally(days, P, b)); const moves = [];
+    for (let pass = 0; pass < 8; pass++){
+      let best = null;
+      for (const Q of v149Cands(b, P, days)){ const T = v149Tally(days, Q, b); const o = v149Score(T); if (o > (isFinite(cur) ? cur + 0.005 : -Infinity) && (!best || o > best.o)) best = {Q, T, o}; }
+      if (!best) break; P = best.Q; cur = best.o; moves.push(1);
+    }
+    cur = v149Obj(v149Tally(days, P, b));
+    const T = v149Tally(days, P, b);
+    // sample graded in the window (lock-first Picks)
+    let pool = 0; for (const d of days) for (const c of (V131.rows.get(d)||[])) if (c.b===b && c.lkd && (c.res==='win'||c.res==='loss')) pool++;
+    info[b] = {status: isFinite(cur) ? 'learned' : 'fallback', n:T.n, w:T.w, l:T.l, roi:v131Roi(T), pool, days:days.length, moves:moves.length};
+    if (!isFinite(cur)){ // not enough proof yet: keep the current (v131) rule for this board
+      if (b==='games') P.G = v131Clone(basePr.G); else P.P = v131Clone(basePr.P); P.cap[b] = basePr.cap[b];
+      const T2 = v149Tally(days, P, b); Object.assign(info[b], {n:T2.n, w:T2.w, l:T2.l, roi:v131Roi(T2)});
+    }
+  }
+  return {P, info};
+}
+function v149Load(){ try{ const c = JSON.parse(localStorage.getItem(V149.LS)||'null'); if (c && c.byDay){ V149.byDay = c.byDay; V149.info = c.info||{}; } }catch(e){} }
+v149Load();
+(function(){
+  const base = v131Fit;
+  v131Fit = function(){
+    const r = base.apply(this, arguments);
+    try{
+      const today = v131Day(Date.now()), redo = v131DayAdd(today, -2);
+      let last = null;
+      for (let D = V131.start; D <= today; D = v131DayAdd(D, 1)){
+        const bp = V131.byDay[D] || V131.params;
+        if (!V149.byDay[D] || D >= redo){ const L = v149Learn(D, bp); V149.byDay[D] = L.P; V149.info[D] = L.info; }
+        V131.byDay[D] = v131Clone(V149.byDay[D]); last = V149.byDay[D];
+      }
+      if (last) v131ApplyParams(v131Clone(last));
+      const ks = Object.keys(V149.byDay).sort(); for (const k of ks.slice(0, Math.max(0, ks.length - 120))){ delete V149.byDay[k]; delete V149.info[k]; }
+      try{ localStorage.setItem(V149.LS, JSON.stringify({byDay:V149.byDay, info:V149.info, at:Date.now()})); }catch(e){}
+      try{ localStorage.setItem('bl_v131_fit', JSON.stringify({params:V131.params, log:V131.log, seg:V131.seg, segLog:V131.segLog, sig:V131.sig, mute:V131.mute, byDay:V131.byDay, at:V131.fitAt})); }catch(e){}
+    }catch(e){ console.warn('v149 learn', e); }
+    return r;
+  };
+})();
+// apply today's learned gate at load (from the cache) so selection uses it before the next retune
+try{ const t = v131Day(Date.now()); const ks = Object.keys(V149.byDay).filter(k=>k<=t).sort(); if (ks.length) v131ApplyParams(v131Clone(V149.byDay[ks[ks.length-1]])); }catch(e){}
+
+/* plain-English rules for Model learning */
+function v149RuleText(b, pr){
+  const kn = k => (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[k]) || k;
+  const lgn = l => (typeof LMAP!=='undefined' && LMAP[l] && LMAP[l].label) || String(l).toUpperCase();
+  const mkn = {spread:'spreads', ml:'moneylines', total:'totals'};
+  const R = b==='props' ? pr.P : pr.G; const parts = [];
+  if (R.cf >= 75) parts.push('5/5 bet strength'); else if (R.cf >= 60) parts.push('4/5+ bet strength');
+  if (b==='games'){ parts.push(`model chance ${Math.round(R.p*100)}%+`); const all = ['spread','ml','total'].filter(m=>!(R.mkx||[]).includes(m)); if ((R.mkx||[]).length) parts.push(all.map(m=>mkn[m]).join(' and ') + ' only'); }
+  else { parts.push(R.kinds.map(kn).join(', ')); parts.push(`edge ${Math.round(R.edge*100)}%+`); }
+  parts.push(`odds ${v131Fmt(b==='props' ? R.lo : R.lo+1)} to ${v131Fmt(R.hi)}`);
+  if ((R.lgx||[]).length) parts.push('not ' + R.lgx.map(lgn).join(', '));
+  parts.push(`best ${pr.cap[b]} a day`);
+  return parts.join(', ');
+}
+v131LearnHTML = function(){
+  const pr = V131.params || V131.prior; const today = v131Day(Date.now());
+  const ik = Object.keys(V149.info).filter(k=>k<=today).sort(); const info = ik.length ? V149.info[ik[ik.length-1]] : null;
+  const st = b => { const I = info && info[b]; if (!I) return '<span class="mut">Not retuned yet on this device.</span>';
+    const rec = I.n ? `${I.w}–${I.l}, <b class="${(I.roi||0)>=0?'pos':'neg'}">${v131Pct(I.roi||0)}</b> on ${I.n} graded Plays of the Day over the last ${I.days} days` : `no graded Plays of the Day in the last ${I.days} days`;
+    return I.status==='learned' ? `Learned. Backtest: ${rec}.` : `Still learning (needs ${V149.MIN_N}+ graded plays winning ${Math.round(V149.WR*100)}%+ and making money; ${I.pool} graded picks in the window). Using the current rule meanwhile. Backtest: ${rec}.`; };
+  const gate = `<div class="v149-gate"><h5>🔒 Play of the Day filter</h5>
+    <p><b>Games:</b> ${esc(v149RuleText('games', pr))}.</p><p class="mut">${st('games')}</p>
+    <p><b>Props:</b> ${esc(v149RuleText('props', pr))}.</p><p class="mut">${st('props')}</p>
+    <p class="mut">The model picks these settings itself from graded results: the most profit it can find while winning ${Math.round(V149.WR*100)}%+ over ${V149.MIN_N}+ graded plays. It retunes as new results come in. Every other good play is a Pick.</p></div>`;
+  const dl = d => { try{ return urDate(d); }catch(e){ return d; } };
+  const ch = V131.log.concat(V131.segLog.map(x=>Object.assign({b:''}, x))).sort((a,b)=>a.d<b.d?1:-1).slice(0, 12);
+  const chHTML = ch.length ? `<ul class="v131-list">${ch.map(c=>`<li><b>${esc(dl(c.d))}:</b> ${esc(String(c.what).replace(/Picks of the Day/g,'Plays of the Day'))} <span class="mut">(${esc(c.why)})</span></li>`).join('')}</ul>` : `<div class="hint">No automatic changes yet.</div>`;
+  const segOn = Object.keys(V131.seg.demote||{}).map(k=>`${v131SegName(k)} Picks → Watch`).concat(Object.keys(V131.seg.promote||{}).map(k=>`${v131SegName(k)} Watch → Picks`));
+  return `<div class="v131-learn v149-rules">${gate}
+    <h4>Picks</h4><div class="hint">Every play the model rates a Bet. Groups that lose over ${V131.SEG_N}+ graded Picks drop to Watch; Watch groups that win move up. ${segOn.length ? 'Now: ' + esc(segOn.join(' · ')) : 'Right now every sport, market and prop stat uses the model\'s normal call.'}</div>
+    <h4>Recent automatic changes</h4>${chHTML}
+    <div class="hint" style="margin-top:8px">Retuned from the shared pick log through two days ago${V131.fitAt ? `, last run ${new Date(V131.fitAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}` : ''}.</div></div>`;
+};
+// section title in Model learning
+(function(){
+  const fix = () => { document.querySelectorAll('#view [data-sec="v131"]').forEach(s=>{ const sm = s.querySelector('summary, .v98-h, h3'); const w = sm && [...sm.childNodes].find(n=>n.nodeType===3 && /locks|of the Day/.test(n.nodeValue)); if (w) w.nodeValue = w.nodeValue.replace(/⭐?\s*Picks of the Day and locks|⭐?\s*Plays of the Day and locks/, '🔒 Play of the Day and Picks'); }); };
+  const base = renderResults; renderResults = function(){ const r = base.apply(this, arguments); try{ fix(); }catch(e){} return r; };
 })();
 </script>
 </body>
