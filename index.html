@@ -29025,6 +29025,191 @@ function v153BoardPick(o){ return !!o && (o.sv ? o.sv==='good' : o.v==='good'); 
     try{ for (const d in V145.stat){ const s = V145.stat[d]; if (s && !s.v153 && MLOG.raw.has(d)) delete V145.stat[d]; } }catch(e){}
     return br.apply(this, arguments); };
 })();
+/* ================= v154: database use stays flat no matter how many people or devices use the app =================
+   - One publisher. Admin devices ask a small Cloudflare Worker for a lease; one device holds it at a time (the always-on
+     Linux machine wins over PCs, PCs over phones). Only the publisher writes the pick log, runs learning, claims Play of
+     the Day, sends phone alerts and publishes shared data. Other admin devices only read, and only while Results is open.
+   - Shared data (the shown Play of the Day list with history, and the Results day totals for signed-in non-admins) is
+     published as JSON to the Worker and read by everyone over HTTP from Cloudflare's edge cache: no database reads.
+   - The shown Play of the Day list is kept on the publisher's device first, then published. If the database is down or
+     over its limit the list still shows (local fallback); if the Worker is down too, every device keeps its last copy,
+     and after 20 minutes an admin device falls back to doing the work itself.
+   - Verdict checks are pulled incrementally (only new ones), device lists only on Settings, heartbeat every 6 hours. */
+APP_BUILD = 154;
+var PUB_BASE = (function(){ try{ const o = localStorage.getItem('bl_pub_base'); if (o && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) return o; }catch(e){} return 'https://verdict-pub.verdict-sl1n1.workers.dev'; })();
+var V154 = { leader:false, holder:'', leaseOkAt:0, leaseTry:0, leaseErr:'', store:null, seeded:false, pubSig:{}, pubAt:{}, pubErr:'',
+  bootAt: Date.now(), potdOkAt:0, potdTry:0, potdSig:'', local:false, daysAt:0, reads:{worker:0}, me:'' };
+
+function v154Me(){ if (!V154.me){ try{ V154.me = (typeof mchkDev==='function' ? mchkDev().id : '') || (AUTH && AUTH.deviceId) || 'dev'; }catch(e){ V154.me = 'dev'; } } return V154.me; }
+function v154Admin(){ try{ return !!(typeof AUTH!=='undefined' && AUTH.user && typeof isAdminUser==='function' && isAdminUser()); }catch(e){ return false; } }
+function v154Pri(){ const ua = navigator.userAgent || ''; if (/Android|iPhone|iPad|Mobile/.test(ua)) return 0; if (/Linux|X11/.test(ua) && !/Windows|Macintosh/.test(ua)) return 2; return 1; }
+function v154Vis(){ return typeof document==='undefined' || document.visibilityState==='visible'; }
+function v154OnResults(){ try{ return v154Vis() && (ui.tab==='tracker' || ui.tab==='results'); }catch(e){ return false; } }
+/* "does the heavy work on this device": the lease holder, or any admin device after 20 min without the Worker */
+function v154Pub(){ if (!v154Admin()) return false; return V154.leader || (V154.leaseTry > 0 && Date.now() - Math.max(V154.leaseOkAt, V154.bootAt||0) > 20*60000); }
+window.v154Pub = v154Pub;
+async function v154Tok(){ try{ return await AUTH.user.getIdToken(); }catch(e){ return ''; } }
+
+/* ---------- lease ---------- */
+async function v154Lease(release){
+  if (!v154Admin()){ V154.leader = false; return; }
+  V154.leaseTry++;
+  try{
+    const t = await v154Tok(); if (!t) throw new Error('no token');
+    const r = await fetch(PUB_BASE + '/lease', {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer ' + t}, body: JSON.stringify({dev: v154Me(), pri: v154Pri(), release: !!release})});
+    const x = await r.json().catch(()=>null); if (!r.ok || !x || !x.ok) throw new Error('lease ' + r.status);
+    const was = V154.leader; V154.leader = !!x.leader; V154.holder = String(x.holder||''); V154.leaseOkAt = Date.now(); V154.leaseErr = '';
+    if (V154.leader && !was) v154BecameLeader();
+  }catch(e){ V154.leaseErr = String(e && e.message || e).slice(0, 80); }
+}
+setTimeout(function k(){ try{ if (typeof AUTH!=='undefined' && AUTH.ready) v154Lease(); else return setTimeout(k, 3000); }catch(e){} }, 2500);
+setInterval(()=>{ if (v154Admin()) v154Lease(); }, 4*60000);
+document.addEventListener('visibilitychange', ()=>{ if (v154Vis()){ if (v154Admin() && Date.now() - V154.leaseOkAt > 3*60000) v154Lease(); v154PotdPoll(true); v154DaysPoll(); } });
+
+/* ---------- publish (publisher only) ---------- */
+async function v154Put(key, obj){
+  const body = JSON.stringify(obj); if (V154.pubSig[key]===body) return true;
+  const t = await v154Tok(); if (!t) return false;
+  try{ const r = await fetch(PUB_BASE + '/p/' + key, {method:'PUT', headers:{'Content-Type':'application/json', Authorization:'Bearer ' + t}, body});
+    if (!r.ok) throw new Error('put ' + r.status); V154.pubSig[key] = body; V154.pubAt[key] = Date.now(); V154.pubErr = ''; return true; }
+  catch(e){ V154.pubErr = String(e && e.message || e).slice(0, 80); return false; }
+}
+async function v154Get(key){
+  const r = await fetch(PUB_BASE + '/p/' + key, {cache:'no-cache'}); V154.reads.worker++;
+  if (!r.ok) throw new Error('get ' + r.status); return r.json();
+}
+
+/* ---------- the shown Play of the Day list ---------- */
+const V154_LS = 'bl_v154_potd', V154_COPY = 'bl_v154_potd_copy';
+function v154Merge(A, B){   // union of two {days:{d:{games:{k:e},props:{k:e}}}}, a drop always wins
+  const out = {days:{}};
+  for (const S2 of [A, B]) for (const d in ((S2 && S2.days) || {})){ const D = S2.days[d] || {}; const O = out.days[d] || (out.days[d] = {games:{}, props:{}});
+    for (const b of ['games','props']) for (const k in (D[b]||{})){ const e = D[b][k]; if (!e) continue; const c = O[b][k];
+      if (!c) O[b][k] = Object.assign({}, e); else if (e.drop && !c.drop) c.drop = e.drop; else if (e.at && (!c.at || e.at < c.at)) Object.assign(c, e, c.drop ? {drop:c.drop} : {}); } }
+  return out;
+}
+function v154StoreLoad(){ if (!V154.store){ try{ V154.store = JSON.parse(localStorage.getItem(V154_LS)||'null'); }catch(e){} if (!V154.store || !V154.store.days) V154.store = {days:{}}; } return V154.store; }
+function v154StoreSave(){ try{ localStorage.setItem(V154_LS, JSON.stringify(v154StoreLoad())); }catch(e){} v154PublishSoon(); }
+function v154Trim(St){ const cut = v131DayAdd(v131Day(Date.now()), -150); const out = {days:{}}; for (const d in St.days) if (d >= cut) out.days[d] = St.days[d]; return out; }
+let _v154PubT = 0;
+function v154PublishSoon(){ if (!v154Pub()) return; clearTimeout(_v154PubT); _v154PubT = setTimeout(()=>{ v154Put('potd', Object.assign({at: Date.now()}, v154Trim(v154StoreLoad()))).then(ok=>{ if (!ok) setTimeout(v154PublishSoon, 60000); }); }, 4000); }
+async function v154BecameLeader(){
+  try{
+    const St = v154StoreLoad();
+    try{ const w = await v154Get('potd'); if (w && w.days) V154.store = v154Merge(St, w); }catch(e){}
+    // one-time seed from the old per-account list in the database (history from before v154)
+    if (!V154.seeded && !localStorage.getItem('bl_v154_seeded') && typeof v132Col==='function'){
+      const col = v132Col(); if (col){ try{ const qs = await col.where('d', '>=', V131.first).get(); const F = {days:{}};
+        qs.forEach(doc=>{ const x = doc.data()||{}; if (x.d) F.days[x.d] = {games:x.games||{}, props:x.props||{}}; });
+        V154.store = v154Merge(V154.store, F); localStorage.setItem('bl_v154_seeded', '1'); }catch(e){ console.warn('v154 seed', e && (e.code||e.message)); } }
+      V154.seeded = true;
+    }
+    V132.shared = V154.store; V131.sel = V154.store; v154StoreSave();
+  }catch(e){ console.warn('v154 leader', e); }
+}
+function v154ApplyShared(x){
+  if (!x || !x.days) return false; const sig = JSON.stringify(x.days); if (sig===V154.potdSig) return false; V154.potdSig = sig;
+  if (v154Pub()){ V154.store = v154Merge(v154StoreLoad(), x); V132.shared = V154.store; V131.sel = V154.store; try{ localStorage.setItem(V154_LS, JSON.stringify(V154.store)); }catch(e){} }
+  else { V132.shared = {days: x.days}; V131.sel = V132.shared; try{ localStorage.setItem(V154_COPY, JSON.stringify(V132.shared)); }catch(e){} }
+  return true;
+}
+async function v154PotdPoll(force){
+  if (!force && Date.now() - V154.potdTry < 150000) return; if (!force && !v154Vis()) return;
+  V154.potdTry = Date.now();
+  try{ const x = await v154Get('potd'); V154.potdOkAt = Date.now(); V154.local = false;
+    if (v154ApplyShared(x)){ try{ if (ui.tab==='good' && typeof render==='function') render(); }catch(e){} } }
+  catch(e){ if (!v154Admin() && Date.now() - (V154.potdOkAt || V154.bootAt) > 20*60000) V154.local = true; }
+}
+V154.bootAt = Date.now();
+// last copy first, so the list shows before any network
+try{ if (!V132.shared){ const c = JSON.parse(localStorage.getItem(V154_COPY)||'null'); if (c && c.days){ V132.shared = c; V131.sel = c; } } }catch(e){}
+setTimeout(()=>v154PotdPoll(true), 1500); setInterval(()=>v154PotdPoll(false), 60000);
+
+// no database listener for the list any more
+v132Listen = function(){ if (!V154.potdTry) v154PotdPoll(true); };
+// the store: the publisher's own copy, otherwise the published copy (or this device's own in local fallback)
+v131Store = function(){
+  if (v154Pub()){ const S2 = v154StoreLoad(); V132.shared = S2; return S2; }
+  if (V154.local){ if (!V154.localSt){ try{ V154.localSt = JSON.parse(localStorage.getItem('bl_potd_v132')||'null'); }catch(e){} if (!V154.localSt || !V154.localSt.days) V154.localSt = {days:{}}; } return V154.localSt; }
+  if (V132.shared) return V132.shared; if (!V131.sel || !V131.sel.days) V131.sel = {days:{}}; return V131.sel;
+};
+v131StoreSave = function(){ if (v154Pub()) return v154StoreSave(); if (V154.local){ try{ localStorage.setItem('bl_potd_v132', JSON.stringify(V154.localSt||{days:{}})); }catch(e){} } };
+// claims: one claimer, so the list is written on this device first; the database copy is best effort
+v132Claim = async function(d, b, k, entry, cap){
+  const St = v131Store(); const D = St.days[d] || (St.days[d] = {}); const E = D[b] || (D[b] = {});
+  if (E[k]) return false; if (Object.values(E).filter(e=>!e.drop).length >= cap) return false;
+  E[k] = entry; v131StoreSave();
+  if (v154Pub()){ try{ const col = v132Col(); if (col) col.doc(d).set({d, [b]: {[k]: entry}, at: Date.now()}, {merge: true}).catch(()=>{}); }catch(e){} }
+  return true;
+};
+(function(){ const base = v131Select; v131Select = function(){ if (!(v154Pub() || V154.local)) return []; const r = base.apply(this, arguments); return r; }; })();
+// drops land in the store too (the v137 pass mutates entries in place), so publish after each pass
+(function(){ const base = v137DropPass; v137DropPass = function(){ const w = base.apply(this, arguments); if (w && w.length && v154Pub()) v154StoreSave(); return w; }; })();
+v153HistFetch = async function(){};   // the published list carries the history
+
+/* ---------- Results day totals for signed-in non-admins ---------- */
+v142Publish = function(force){
+  try{
+    if (!v154Pub() || !MLOG.at) return;
+    const now = Date.now(); if (!force && now - (V154.pubAt.days2||0) < 20*60000) return;
+    const cut = uniDay(now - 400*86400000); const d = {}, mo = {};
+    for (const [m] of V142_MET){ const I = v142AdminIndex(m);
+      for (const k in I.days) if (k >= cut && v142N(I.days[k])) (d[k] || (d[k] = {}))[m] = v142Pack(I.days[k]); }
+    if (!Object.keys(d).length) return;
+    v154Put('days2', {at: now, d, m: mo, v: 154});
+  }catch(e){ console.warn('v154 publish days', e); }
+};
+async function v154DaysPoll(){
+  try{
+    if (!(v138Signed() && !v138Admin())) return; if (!v154Vis() || Date.now() - V154.daysAt < 9*60000) return; V154.daysAt = Date.now();
+    const uid = AUTH.user.uid;
+    if (!V142.pub2){ try{ const c = JSON.parse(localStorage.getItem(V145_PUB_COPY)||'null'); if (c && c.p){ V142.pub2 = c.p; V142.pub2At = c.at||0; V142.pub2Got = true; } }catch(e){} }
+    const x = await v154Get('days2');
+    if (x && x.d){ V142.pub2 = {d:x.d||{}, m:x.m||{}}; V142.pub2At = +x.at||0; try{ localStorage.setItem(V145_PUB_COPY, JSON.stringify({uid, at:V142.pub2At, p:V142.pub2})); }catch(e){} }
+    V142.pub2Got = true; v142Repaint();
+  }catch(e){ V142.pub2Got = true; V142.pubErr = String(e && e.message || e); }
+}
+v142Listen = function(){ V142.uid = (v138Signed() && !v138Admin()) ? AUTH.user.uid : ''; v154DaysPoll(); };
+setInterval(()=>{ try{ if (v138Signed() && !v138Admin()) v154DaysPoll(); }catch(e){} }, 60000);
+
+/* ---------- heavy admin work: publisher only (other admin devices read only while Results is open) ---------- */
+function v154Gate(name, ok, dflt){
+  const f = window[name]; if (typeof f!=='function') return;
+  window[name] = function(){ if (!ok.apply(this, arguments)) return dflt===undefined ? Promise.resolve(null) : dflt; return f.apply(this, arguments); };
+}
+v154Gate('mlogPush', ()=>v154Pub(), Promise.resolve(0));
+v154Gate('ushPush', ()=>v154Pub());
+v154Gate('ushLoad', ()=>v154Pub() || v154OnResults());
+v154Gate('lshSync', ()=>v154Pub() || v154OnResults());
+v154Gate('rtLoad', ()=>v154Pub());   // shared retune schedule: only the publisher retunes
+for (const n of ['learnRetune','propsLearnRetune','verdictLearnRetune','parlayLearnRetune'])
+  v154Gate(n, function(opts){ return v154Pub() || !!(opts && (opts.manual || opts.force)); });   // "Check & retune now" still works anywhere
+v154Gate('v131Tick', ()=>v154Pub());
+v154Gate('v131FetchMissing', ()=>v154Pub() || v154OnResults(), Promise.resolve(0));
+v154Gate('mchkMaybe', ()=>v154Pub());
+v154Gate('mlogWriteFinalSums', ()=>v154Pub());
+v154Gate('verdictAdminSync', ()=>v154Pub() || v154OnResults(), Promise.resolve(0));
+// device list only when Settings is open; heartbeat every 6 hours
+v154Gate('devList', ()=>{ try{ return ui.tab==='settings' || !DEVS.list.length; }catch(e){ return true; } }, Promise.resolve([]));
+v154Gate('devBeat', ()=>{ try{ const k = 'bl_v154_beat', t = +localStorage.getItem(k)||0; if (Date.now() - t < 6*3600000) return false; localStorage.setItem(k, String(Date.now())); return true; }catch(e){ return true; } });
+// phone alerts: the publisher sends them; other devices on the account skip the claim reads
+(function(){ const base = alertClaim; alertClaim = async function(keys){
+  try{ if (v154Admin() && !v154Pub() && V154.holder && Date.now() - V154.leaseOkAt < 20*60000 && typeof ntfyEnabled==='function' && ntfyEnabled()) return []; }catch(e){}
+  return base.apply(this, arguments); }; })();
+
+/* ---------- Verdict checks: only the new ones ---------- */
+verdictCloudPull = async function(){
+  if (!isAdminUser() || !AUTH.ready) return null;
+  const K = 'bl_v154_vc'; let st = {}; try{ st = JSON.parse(localStorage.getItem(K)||'{}')||{}; }catch(e){}
+  if (st.uid!==AUTH.user.uid || !(typeof VCHECKS!=='undefined' && VCHECKS.length)) st = {uid: AUTH.user.uid, max: 0};
+  try{
+    let q = fs().collection('verdict_checks'); if (st.max) q = q.where('createdAt', '>', st.max);
+    const snap = await q.orderBy('createdAt','desc').limit(400).get(); const rows = snap.docs.map(d=>d.data());
+    for (const r of rows) if (+r.createdAt > (st.max||0)) st.max = +r.createdAt;
+    try{ localStorage.setItem(K, JSON.stringify(st)); }catch(e){}
+    return rows;
+  }catch(e){ AUTH.vcErr = (e && e.code) || 'read failed'; return null; }
+};
 </script>
 </body>
 </html>
