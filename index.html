@@ -31175,6 +31175,87 @@ window.addEventListener('popstate', ()=>{ if (V166.id) v166Close(true); });
 })();
 
 window.v166Status = () => ({build: APP_BUILD, open: V166.id, min: v166Min(), gone: V166.gone});
+/* ================= v167: center the pick popup on phones; Tail on the right =================
+   On phones the popup content sits in a centered column with even side padding. Strength and
+   size stay on the left; Tail (and Open book / Not on my book, when they show) sit on the right
+   of the same row, with no wrap at 360px. Desktop popup uses the same footer row; the board
+   cards themselves are unchanged. */
+APP_BUILD = 167;
+
+(function(){
+  const st = document.createElement('style');
+  st.id = 'v167css';
+  st.textContent = `
+/* In the popup, one footer row: chips left, actions right (board cards stay as they are) */
+#v166Modal .cfoot{display:flex !important;flex-direction:row !important;align-items:center !important;justify-content:space-between !important;flex-wrap:nowrap !important;gap:8px !important;width:100%}
+#v166Modal .cfoot-meta{display:flex !important;flex-wrap:nowrap !important;align-items:center;justify-content:flex-start;gap:6px;min-width:0;flex:1 1 auto;margin:0 !important}
+#v166Modal .cfoot-acts{display:flex !important;flex-direction:row !important;flex-wrap:nowrap !important;align-items:center;justify-content:flex-end !important;gap:6px;margin:0 0 0 auto !important;flex:0 0 auto}
+#v166Modal .cfoot-acts > .btn,
+#v166Modal .cfoot-acts > .open-book-wrap,
+#v166Modal .cfoot-acts > *{flex:0 0 auto !important;width:auto !important}
+#v166Modal .cfoot-acts .open-book-wrap > .btn{width:auto !important}
+#v166Modal .cfoot .btn{min-height:40px;padding:0 12px !important;white-space:nowrap}
+
+@media (max-width:767.98px){
+  #v166Modal .v166-body{
+    padding:calc(52px + env(safe-area-inset-top,0px)) 18px calc(24px + env(safe-area-inset-bottom,0px)) !important;
+    display:flex;flex-direction:column;align-items:center;
+  }
+  #v166Modal .v166-head,
+  #v166Modal .v166-grid,
+  #v166Modal .v166-note{width:100%;max-width:400px;margin-left:auto;margin-right:auto;box-sizing:border-box}
+  #v166Modal .v166-head{text-align:center}
+  #v166Modal .v166-head .teams-block,
+  #v166Modal .v166-head .teams,
+  #v166Modal .v166-head .prop-head,
+  #v166Modal .v166-head .prop-who,
+  #v166Modal .v166-head .prop-name,
+  #v166Modal .v166-head .prop-meta,
+  #v166Modal .v166-head .beton,
+  #v166Modal .v166-head .hint{text-align:center;justify-content:center}
+  #v166Modal .v166-head .prop-head{flex-direction:column;align-items:center;gap:8px}
+  #v166Modal .v166-head .pick{text-align:left}
+  #v166Modal .cfoot{margin-top:14px !important}
+  /* compact chips so Tail + Open + No book fit at 360 */
+  #v166Modal .cfoot .conf.bstr{font-size:0 !important;letter-spacing:0;padding:0 8px;height:28px;min-height:28px}
+  #v166Modal .cfoot .conf.bstr b{font-size:12px !important;font-weight:700;letter-spacing:0}
+  #v166Modal .cfoot .bstr-stars{display:none !important}
+  #v166Modal .cfoot .unit-pill{padding:0 8px;min-height:28px;height:28px;font-size:12px}
+  #v166Modal .cfoot .btn{min-height:36px;padding:0 10px !important;font-size:13px !important}
+}
+`;
+  document.head.appendChild(st);
+})();
+
+function v167TidyFoot(root){
+  try{
+    if (!root || (typeof window!=='undefined' && window.innerWidth>767.98)) return;
+    root.querySelectorAll('.btn-nob').forEach(b=>{
+      if (b.dataset.v167) return;
+      const t = (b.textContent||'').trim(); if (!t) return;
+      b.dataset.v167 = t; b.textContent = 'No book';
+      if (!b.getAttribute('aria-label')) b.setAttribute('aria-label', t);
+    });
+    root.querySelectorAll('[data-open-book-toggle]').forEach(b=>{
+      if (b.dataset.v167) return;
+      const t = (b.textContent||'').trim(); if (!t) return;
+      b.dataset.v167 = t; b.textContent = 'Open';
+      if (!b.getAttribute('aria-label')) b.setAttribute('aria-label', t);
+    });
+  }catch(e){}
+}
+(function(){
+  if (typeof v166FillBody==='function'){
+    const base = v166FillBody;
+    v166FillBody = function(){
+      const r = base.apply(this, arguments);
+      try{ const body = document.querySelector('#v166Modal .v166-body'); if (body) v167TidyFoot(body); }catch(e){}
+      return r;
+    };
+  }
+})();
+
+window.v167Status = () => ({build: APP_BUILD});
 </script>
 </body>
 </html>
