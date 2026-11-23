@@ -27487,7 +27487,7 @@ function v145Grade(z, o, price){
 }
 function v145DayStat(m){
   const rows = [...m.values()];
-  const good = mlogOnePerBet(rows.filter(o=>o && o.v==='good'));
+  const good = mlogOnePerBet(rows.filter(o=>o && (typeof v153BoardPick==='function' ? v153BoardPick(o) : o.v==='good')));
   const locked = mlogOnePerBet(rows.filter(o=>o && o.lkd));
   const eg = v142E(), el = v142E();
   for (const o of good) v145Grade(o.b==='props' ? eg.p : eg.g, o, o.pr);
@@ -27987,7 +27987,7 @@ function v147ModelRows(metric, from, to){
       let list = [];
       if (metric==='potd'){ const rows = (typeof v131RowsFor==='function' && v131RowsFor(d)) || []; const pr = V131.byDay[d] || V131.params || V131.prior; list = v131PotdOfDay(rows, pr).map(c=>({o:c, price:c.pr, tier:'potd'})); }
       else { const m = MLOG.raw.get(d); if (!m) continue; const rows = [...m.values()];
-        const pick = metric==='locked' ? mlogOnePerBet(rows.filter(o=>o && o.lkd)) : mlogOnePerBet(rows.filter(o=>o && o.v==='good'));
+        const pick = metric==='locked' ? mlogOnePerBet(rows.filter(o=>o && o.lkd)) : mlogOnePerBet(rows.filter(o=>o && (typeof v153BoardPick==='function' ? v153BoardPick(o) : o.v==='good')));
         const P = potdOf(d);
         list = pick.map(o=>({o, price: metric==='locked' ? (o.lpr!=null ? o.lpr : o.pr) : o.pr, tier: P.has(mlogBetKey(o)) ? 'potd' : o.lkd ? 'locked' : 'picks'})); }
       for (const x of list){ const o = x.o; if (!o || !o.res || o.res==='ungradeable') continue;
@@ -28925,6 +28925,105 @@ APP_BUILD = 152;
   .mkt-table td:nth-child(3) > .mut:empty{display:none}
 `;
   const st = document.createElement('style'); st.id = 'v152css'; st.textContent = css; document.head.appendChild(st);
+})();
+/* ================= v153: Results counts only the Play of the Day list you actually saw =================
+   Before: Results (Model view) rebuilt Play of the Day after the fact. It ran the POTD rule over every logged Pick of the day
+   (top 4 games + top 4 props by score, with that day's current or learned rule), even if those plays were never on the shown
+   list. The shown list is a separate, lock-first list saved on the account (users/{uid}/potd/{day}); when that list was empty
+   (e.g. Firestore writes failing on a quota day) Results still showed a full 8-play record.
+   Now: every Results/record path (summary rows, calendar, popups, published days) counts exactly the entries that were on the
+   shown list before game time (not dropped before start), one per bet, at the price when it was locked. Learners and
+   backtests still use the rule (that's how a new filter is tested), but records never do.
+   Picks: the Model-view Picks record now counts the board's own pregame call (sv: what the Picks list showed at lock / last
+   pregame look), not every play the model ever called good (some never showed: sports off, filters, props under the bar). */
+APP_BUILD = 153;
+var V153 = { rec: 0, hist: null, histAt: 0, loading: false, key: 'bl_v153_potd' };
+
+/* day tag on the per-day rows, so the record path knows which day's shown list to use */
+(function(){ const base = v131RowsFor; v131RowsFor = function(d){ const r = base.apply(this, arguments);
+  if (r && typeof r==='object'){ try{ Object.defineProperty(r, '__d', {value: d, configurable: true, enumerable: false, writable: true}); }catch(e){} }
+  return r; }; })();
+
+/* shown-list history for older days (the live listener only covers yesterday on). Admin only, one read per day doc, cached */
+function v153HistLoad(){
+  if (!V153.hist){ try{ V153.hist = JSON.parse(localStorage.getItem(V153.key)||'null'); }catch(e){} if (!V153.hist || !V153.hist.days) V153.hist = {days:{}, at:0}; }
+  return V153.hist;
+}
+async function v153HistFetch(){
+  try{
+    if (V153.loading || typeof v132Col!=='function') return; const col = v132Col(); if (!col) return;
+    if (typeof v138Admin==='function' && !v138Admin()) return;
+    const H = v153HistLoad(); const today = v131Day(Date.now()); const yest = v131DayAdd(today, -1);
+    let miss = false; for (let d = V131.first; d < yest; d = v131DayAdd(d, 1)) if (!H.days[d] || !H.days[d].fin){ miss = true; break; }
+    if (!miss || Date.now() - (H.at||0) < 6*3600000) return;
+    V153.loading = true;
+    const qs = await col.where('d', '>=', V131.first).where('d', '<', yest).get();
+    qs.forEach(doc=>{ const x = doc.data()||{}; if (x.d) H.days[x.d] = {games: x.games||{}, props: x.props||{}, fin: 1}; });
+    for (let d = V131.first; d < yest; d = v131DayAdd(d, 1)) if (!H.days[d]) H.days[d] = {games:{}, props:{}, fin: 1};
+    H.at = Date.now(); try{ localStorage.setItem(V153.key, JSON.stringify(H)); }catch(e){}
+    try{ if (typeof v140PublishDays==='function') v140PublishDays(true); }catch(e){}
+    try{ if (typeof render==='function' && ui && (ui.tab==='tracker' || ui.tab==='results')) render(); }catch(e){}
+  }catch(e){ console.warn('v153 hist', e && (e.code||e.message)); }
+  finally{ V153.loading = false; }
+}
+setTimeout(function k(){ try{ if (typeof AUTH!=='undefined' && AUTH.user) v153HistFetch(); else setTimeout(k, 20000); }catch(e){} }, 30000);
+
+function v153DayStore(d){
+  try{
+    const sh = (typeof V132!=='undefined' && V132.shared && V132.shared.days) ? V132.shared.days : null;
+    if (sh && sh[d]) return sh[d];
+    const H = v153HistLoad(); if (H.days[d]) return H.days[d];
+    const St = v131Store(); return (St && St.days && St.days[d]) || null;
+  }catch(e){ return null; }
+}
+/* was this entry on the shown list before its game? */
+function v153WasShown(e){
+  if (!e || typeof e!=='object' || !e.at) return false;
+  if (e.st && +e.at > +e.st) return false;                       // claimed after the start: never shown pregame
+  if (e.drop){ const da = +e.drop.at||0; if (!e.st || da < +e.st) return false; }   // dropped before the game
+  return true;
+}
+function v153RowKeys(o){
+  if (o.b==='props'){ const sd = String(o.sd||'').toLowerCase(); const ks = []; if (o.pid) ks.push(`pp|${o.ev}|${o.pid}|${o.k||''}|${sd}`); if (o.pn) ks.push(`pp|${o.ev}|${o.pn}|${o.k||''}|${sd}`); return ks; }
+  return [`${o.ev}|${o.mk||''}|${o.sd||''}`];
+}
+function v153Shown(d, rowsIn){
+  const out = []; const D = v153DayStore(d); if (!D) return out;
+  const want = {games:new Map(), props:new Map()};
+  for (const b of ['games','props']){ const E = D[b] || {}; for (const k in E) if (v153WasShown(E[k])) want[b].set(k, E[k]); }
+  if (!want.games.size && !want.props.size) return out;
+  const cand = new Map();   // store key -> best row
+  const better = (a, c) => { const s = o => [o.lkd ? 0 : 1, o.v==='good' ? 0 : 1, o.res ? 0 : 1]; const x = s(a), y = s(c); for (let i=0;i<3;i++) if (x[i]!==y[i]) return x[i] < y[i]; return false; };
+  const consider = o => { if (!o || !o.b) return; const W = want[o.b]; if (!W) return; for (const k of v153RowKeys(o)) if (W.has(k)){ const c = cand.get(o.b+'#'+k); if (!c || better(o, c)) cand.set(o.b+'#'+k, o); } };
+  try{ if (typeof MLOG!=='undefined' && MLOG.raw) for (const dd of [v131DayAdd(d,-1), d, v131DayAdd(d,1)]){ const m = MLOG.raw.get(dd); if (m) for (const o of m.values()) consider(o); } }catch(e){}
+  for (const o of (rowsIn||[])) consider(o);
+  for (const o of cand.values()) out.push(Object.assign({}, o, {pr: o.lpr!=null ? o.lpr : o.pr, v:'good'}));
+  return out;
+}
+window.v153Shown = v153Shown;
+
+/* record mode: Play of the Day = the shown list. Rule-based selection stays for learners/backtests */
+(function(){ const base = v131PotdOfDay; v131PotdOfDay = function(rows, pr){
+  if (V153.rec > 0 && rows && rows.__d) return v153Shown(rows.__d, rows);
+  return base.apply(this, arguments); }; })();
+function v153Rec(fn){ return function(){ V153.rec++; try{ return fn.apply(this, arguments); } finally{ V153.rec--; } }; }
+try{ v131PotdTally = v153Rec(v131PotdTally); }catch(e){}
+try{ v138PotdTally = v153Rec(v138PotdTally); }catch(e){}
+try{ v140AdminIndex = v153Rec(v140AdminIndex); }catch(e){}   // retired path, kept honest anyway
+
+/* Picks record = what the board showed as a Pick before the game */
+function v153BoardPick(o){ return !!o && (o.sv ? o.sv==='good' : o.v==='good'); }
+(function(){ const base = v142AdminIndex; v142AdminIndex = v153Rec(base); })();
+
+/* popups / rows: same record mode (the Picks filter itself lives in v147ModelRows / v145DayStat) */
+(function(){ const base = v147ModelRows; v147ModelRows = v153Rec(base); })();
+
+/* Picks day stats cached before v153 used the model's call: rebuild them once with the board's call */
+(function(){
+  const bs = v145DayStat; v145DayStat = function(){ const x = bs.apply(this, arguments); if (x) x.v153 = 1; return x; };
+  const br = v145RefreshStats; v145RefreshStats = function(){
+    try{ for (const d in V145.stat){ const s = V145.stat[d]; if (s && !s.v153 && MLOG.raw.has(d)) delete V145.stat[d]; } }catch(e){}
+    return br.apply(this, arguments); };
 })();
 </script>
 </body>
