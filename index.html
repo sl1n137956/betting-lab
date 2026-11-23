@@ -28903,6 +28903,29 @@ APP_BUILD = 151;
 .card.v147:hover .v147-hint{opacity:1;color:#bfdbfe}`;
   const st = document.createElement('style'); st.id = 'v151css'; st.textContent = css; document.head.appendChild(st);
 })();
+/* v152: stacked layout for the All Games market table (the verdict column was squeezed to ~60px by td:last-child{width:1%}, so pick names and reasons wrapped word-per-line) */
+APP_BUILD = 152;
+(function(){
+  const css = `
+/* all widths: the card column is narrow on PC too (grid of ~360px cards) */
+  .mkt-table,.mkt-table > tbody{display:block;width:100%}
+  .mkt-table tr{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"lab pill" "px px" "nm nm" "why why";align-items:center;column-gap:10px;padding:10px 4px;border-top:1px solid rgba(96,165,250,.14)}
+  .mkt-table tr:first-child{border-top:0}
+  .mkt-table td{display:block;border:0 !important;box-shadow:none !important;padding:0 !important;width:auto !important;text-align:left !important;min-width:0}
+  .mkt-table td:first-child{grid-area:lab;font-size:11px;letter-spacing:.06em;white-space:nowrap}
+  .mkt-table td:nth-child(2){grid-area:px;margin-top:6px}
+  .mkt-table td:nth-child(2).mut{grid-area:pill;margin:0;text-align:right !important}
+  .mkt-table td:nth-child(2) > div{display:flex;align-items:baseline;gap:8px;white-space:nowrap !important;line-height:1.45}
+  .mkt-table td:nth-child(2) > div > span:first-child{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .mkt-table td:nth-child(3){display:contents}
+  .mkt-table td:nth-child(3) > .badge{grid-area:pill;justify-self:end;font-size:11px;padding:3px 9px}
+  .mkt-table td:nth-child(3) > div:not(.mut){grid-area:nm;margin-top:6px !important;font-size:13px !important;font-weight:700;color:#e6eef8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mkt-table td:nth-child(3) > div:not(.mut):empty{display:none}
+  .mkt-table td:nth-child(3) > .mut{grid-area:why;margin-top:2px;font-size:12px !important;line-height:1.4;overflow-wrap:normal;word-break:normal}
+  .mkt-table td:nth-child(3) > .mut:empty{display:none}
+`;
+  const st = document.createElement('style'); st.id = 'v152css'; st.textContent = css; document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
