@@ -29527,6 +29527,11 @@ mlogWriteFinalSums = async function(){
     if (w >= 6) break;
   }
 };
+/* v158: Results calendar Daily / Monthly / Yearly bar fills its full width (it still had 4 columns from when Weekly existed). */
+APP_BUILD = 158;
+(function(){ const st = document.createElement('style'); st.id = 'v158css';
+  st.textContent = '.v142-modes{grid-template-columns:repeat(3,minmax(0,1fr))!important}';
+  document.head.appendChild(st); })();
 </script>
 </body>
 </html>
