@@ -29541,6 +29541,268 @@ APP_BUILD = 159;
     '#view .v140-stats{margin-top:0}'
   ].join('');
   document.head.appendChild(st); })();
+/* ================= v160: Picks must beat the price (out-of-sample backtest, Nov 23) =================
+   Games: a Pick needs the shown price to beat the sharp no-vig fair chance by V160.G_EDGE (2.5 points of probability:
+          fair − implied(price)). Fair = Pinnacle no-vig when it prices both sides, else the multi-book no-vig consensus
+          (analyzeMarket sd.nv; the vig is already removed there, so it is not counted twice). Price checked = the worse of
+          the logged best price and the price at your books (v155Price). No negative-edge Game Picks. -250 floor stays (v156).
+   Props: the chance starts from the sportsbook's own no-vig fair chance (DraftKings over/under pair), and the old
+          form/minutes/matchup read only nudges it (×V160.SHRINK, capped ±V160.MAX). NBA combo unders (PRA/PR/PA) get the
+          measured under lean (+2.8 pts; +4.0 in the heavy-minutes / -130…-120 pocket) from 5 weeks of real DraftKings lines.
+          A prop is a Pick only if
+            a) another book / exchange beats the fair price by V160.XB_OVER (overs, 3 pts) / V160.XB_UNDER (unders, 2 pts)
+               and the player read does not lean against it, or
+            b) NBA combo under in the pocket (L5 minutes ≥ 34, or DraftKings price -130…-120) with positive value at its
+               own price after the measured under lean.
+          Standalone overs without cross-book value are never Picks. -250 floor stays.
+   Results: Picks count only if still a Pick at the pregame lock (last pregame look on older rows), graded at the lock
+          price (lpr, else pr), one per bet, 1u. Day totals rebuild once (v160 flag); v157 cleanup untouched. */
+APP_BUILD = 160;
+var V160 = {
+  G_EDGE: 0.025, XB_OVER: 0.03, XB_UNDER: 0.02, SHRINK: 0.25, MAX: 0.04,
+  COMBO: ['pra','pr','pa'], LEAN_ALL: 0.028, LEAN_POCKET: 0.040, POCKET_LO: -130, POCKET_HI: -120, POCKET_MIN: 34,
+  fair: new Map(), ctx: null, cut: {games: 0, props: 0}, pass: {games: 0, props: 0, xb: 0, pocket: 0}, at: Date.now()
+};
+function v160Imp(a){ a = +a; if (!isFinite(a) || !a) return null; return a > 0 ? 100/(a+100) : -a/(-a+100); }
+/* fair chance of the Over from a two-sided price pair; null when the pair is not a real two-way market */
+function v160FairOver(o, u){ const a = v160Imp(o), b = v160Imp(u); if (a==null || b==null) return null; const s = a + b; if (!(s >= 0.97 && s <= 1.25)) return null; return a / s; }
+function v160Key(ev, pid, kind, line){ return `${ev}|${pid}|${kind}|${line}`; }
+function v160FairPut(k, o, u){ const f = v160FairOver(o, u); if (f==null) return; V160.fair.set(k, {f, o:+o, u:+u, t:Date.now()});
+  if (V160.fair.size > 6000){ const cut = Date.now() - 12*3600000; for (const [kk, x] of V160.fair) if (x.t < cut) V160.fair.delete(kk); } }
+function v160Combo(lg, kind){ return lg==='nba' && V160.COMBO.indexOf(kind) >= 0; }
+function v160Pocket(lg, kind, minL5, underPrice){
+  if (!v160Combo(lg, kind)) return false;
+  const up = +underPrice;
+  return (minL5!=null && +minL5 >= V160.POCKET_MIN) || (isFinite(up) && up >= V160.POCKET_LO && up <= V160.POCKET_HI);
+}
+function v160Lean(lg, kind, minL5, underPrice){ if (!v160Combo(lg, kind)) return 0; return v160Pocket(lg, kind, minL5, underPrice) ? V160.LEAN_POCKET : V160.LEAN_ALL; }
+
+/* ---------- pure rules (also used by the verification script) ---------- */
+function v160GameRule(fair, price){
+  const im = v160Imp(price); if (fair==null || im==null) return {ok:false, edge:null, why:'No fair price to check this against'};
+  const edge = fair - im;
+  return {ok: edge >= V160.G_EDGE - 1e-9, edge, why: edge >= V160.G_EDGE - 1e-9 ? '' : (edge < 0 ? 'The price is worse than the fair chance' : 'The price does not beat the fair chance by enough')};
+}
+/* x: {lg, kind, side, price (this row's price), under (DK under price), fairOver, best (best other price for the side), pSide, minL5} */
+function v160PropRule(x){
+  if (x.fairOver==null) return {ok:false, path:'', xb:null, edge:null, why:'No two-sided sportsbook price to check value against'};
+  const fairSide = x.side==='under' ? 1 - x.fairOver : x.fairOver;
+  const prices = [x.price, x.best].filter(v=>v!=null && isFinite(+v)).map(Number);
+  const bestP = prices.length ? Math.max.apply(null, prices) : null;
+  const xb = bestP==null ? null : fairSide - v160Imp(bestP);
+  const edge = (x.pSide!=null && x.price!=null) ? x.pSide - v160Imp(x.price) : null;
+  const notAgainst = x.pSide==null || x.pSide >= fairSide - 1e-9;
+  if (x.side==='over'){
+    if (xb!=null && xb >= V160.XB_OVER - 1e-9 && notAgainst) return {ok:true, path:'xb', xb, edge, why:''};
+    return {ok:false, path:'', xb, edge, why:'Overs are only Picks when another book beats the fair price by 3%+'};
+  }
+  if (xb!=null && xb >= V160.XB_UNDER - 1e-9 && notAgainst) return {ok:true, path:'xb', xb, edge, why:''};
+  if (v160Pocket(x.lg, x.kind, x.minL5, x.under!=null ? x.under : x.price) && edge!=null && edge > 0) return {ok:true, path:'pocket', xb, edge, why:''};
+  return {ok:false, path:'', xb, edge, why: v160Combo(x.lg, x.kind) ? 'Combo under outside the proven pocket or no value at this price' : 'No price edge over the fair chance'};
+}
+
+/* ---------- Games ---------- */
+function v160GameEdge(p){ try{ const sd = p && p.sd; if (!sd || sd.nv==null) return null; const pr = typeof v155Price==='function' ? v155Price('games', p) : (sd.best && sd.best.price);
+  return v160GameRule(+sd.nv, pr); }catch(e){ return null; } }
+function v160GameDemote(p){
+  if (!p || p.verdict!=='good' || p._v148) return p;
+  if (p.g && p.g.state && p.g.state!=='pre') return p;                  // started: frozen call (v148)
+  const r = v160GameEdge(p); p._v160e = r ? r.edge : null;
+  if (r && r.ok) return p;
+  p.verdict = 'watch'; if (p._v0==='good') p._v0 = 'watch'; p._v160 = 1; if (!p._v155) p._v155 = 'edge';   // _v155 blocks re-promotion paths
+  const why = r ? r.why : 'No fair price to check this against';
+  if (!(p.reasons||[]).includes(why)) (p.reasons || (p.reasons = [])).unshift(why);
+  return p;
+}
+(function(){
+  if (typeof evalGame==='function'){ const base = evalGame;
+    evalGame = function(g){ const r = base.apply(this, arguments);
+      try{ if (Array.isArray(r) && g && (!g.state || g.state==='pre')) for (const p of r) v160GameDemote(p); }catch(e){}
+      return r; };
+  }
+  if (typeof evaluateAll==='function'){ const base = evaluateAll;
+    evaluateAll = function(){ V160.cut.games = 0; const r = base.apply(this, arguments);
+      try{ let n = 0, c = 0; for (const p of (plays||[])){ v160GameDemote(p); if (p && p.verdict==='good') n++; else if (p && p._v160) c++; } V160.pass.games = n; V160.cut.games = c; }catch(e){}
+      return r; };
+  }
+})();
+
+/* ---------- Props ---------- */
+try{ if (typeof PROP_V2_SKIP_KINDS!=='undefined'){ PROP_V2_SKIP_KINDS.nba = ['pts']; PROP_V2_SKIP_KINDS.wnba = ['pts']; } }catch(e){}
+function v160CtxFromRaw(raw){
+  if (!raw) return null;
+  const lg = raw.league || (raw.g && raw.g.league) || '';
+  const k = v160Key(raw.eventId || (raw.g && raw.g.eventId) || '', raw.playerId, raw.kind, raw.line);
+  let fo = v160FairOver(raw.overPrice, raw.underPrice), under = raw.underPrice;
+  if (fo==null){ const c = V160.fair.get(k); if (c){ fo = c.f; under = c.u; } } else v160FairPut(k, raw.overPrice, raw.underPrice);
+  const best = {over:null, under:null};
+  try{ const bp = raw.bookPrices || {}; for (const b in bp){ const q = bp[b] || {}; for (const s of ['over','under']){ const v = q[s]; if (v!=null && isFinite(+v) && (best[s]==null || +v > best[s])) best[s] = +v; } } }catch(e){}
+  return {lg, kind: raw.kind, fairOver: fo, under, best};
+}
+function v160CtxFromUni(gm, pid, kind, line){
+  const c = V160.fair.get(v160Key(gm && gm.ev, pid, kind, line));
+  return {lg: gm && gm.l, kind, fairOver: c ? c.f : null, under: c ? c.u : null, best: c ? {over:c.o, under:c.u} : {over:null, under:null}};
+}
+function v160With(ctx, fn){ const prev = V160.ctx; V160.ctx = ctx; try{ return fn(); } finally{ V160.ctx = prev; } }
+/* market-anchored chance of the Over */
+(function(){
+  if (typeof estimateProp!=='function') return;
+  const base = estimateProp;
+  estimateProp = function(feat){
+    const e = base.apply(this, arguments); const c = V160.ctx;
+    if (!c || !e || e.pOver==null || c.fairOver==null) return e;
+    const shift = Math.max(-V160.MAX, Math.min(V160.MAX, (e.pOver - 0.5) * V160.SHRINK));
+    const lean = v160Lean(c.lg, c.kind, feat && feat.minL5, c.under);
+    const pOver = Math.max(0.02, Math.min(0.98, c.fairOver + shift - lean));
+    const notes = [{k:'mkt', dp:null, txt:`Starts from the sportsbook's fair chance: ${Math.round(c.fairOver*100)}% over`}]
+      .concat((e.notes||[]).map(n=>Object.assign({}, n, {dp: n.dp!=null ? n.dp*V160.SHRINK : n.dp})));
+    if (lean) notes.push({k:'cu', dp:-lean, txt:'NBA combo unders have hit more often than the line says (5 weeks of real lines)'});
+    return {pOver, notes, v160:{fo:c.fairOver, shift, lean}};
+  };
+})();
+(function(){
+  if (typeof preferredPropSide!=='function') return;
+  const base = preferredPropSide;
+  preferredPropSide = function(raw, feat, est){
+    if (!est || !est.v160 || est.pOver==null) return base.apply(this, arguments);
+    try{ const c = v160CtxFromRaw(raw); if (c && c.fairOver!=null) for (const side of ['under','over']){
+      const R = v160PropRule({lg:c.lg, kind:c.kind, side, price: side==='over' ? raw.overPrice : raw.underPrice, under:c.under, fairOver:c.fairOver, best:c.best[side], pSide: side==='under' ? 1-est.pOver : est.pOver, minL5: feat && feat.minL5});
+      if (R.ok) return side; } }catch(e){}
+    const eo = raw.overPrice!=null ? est.pOver - v160Imp(raw.overPrice) : -1, eu = raw.underPrice!=null ? (1-est.pOver) - v160Imp(raw.underPrice) : -1;
+    return eo > eu ? 'over' : 'under';
+  };
+})();
+function v160PropCall(pOver, price, feat, side, raw){
+  const c = (raw && (raw.overPrice!=null || raw.underPrice!=null || raw.bookPrices)) ? v160CtxFromRaw(raw) : V160.ctx;
+  if (!c) return null;
+  const pSide = pOver==null ? null : (side==='under' ? 1 - pOver : pOver);
+  const best = c.best ? c.best[side] : null;
+  return v160PropRule({lg: c.lg || (raw && (raw.league || (raw.g && raw.g.league))), kind: c.kind || (raw && raw.kind), side, price, under: c.under, fairOver: c.fairOver, best, pSide, minL5: feat && feat.minL5});
+}
+/* the call: data checks from the old gates, then the v160 price rule decides Pick */
+(function(){
+  if (typeof strictPropGates!=='function') return;
+  const base = strictPropGates;
+  strictPropGates = function(pOver, price, feat, side, raw){
+    const r = base.apply(this, arguments) || {verdict:'avoid', fails:[]};
+    try{
+      const R = v160PropCall(pOver, price, feat, side, raw); if (!R) return r;
+      const fails = [];
+      if (feat && feat.n < 8) fails.push('small sample (under 8 prior games)');
+      if (feat && feat.l10n < 5) fails.push('short recent sample (under 5 of last 10)');
+      if (pOver==null) fails.push('no estimate yet');
+      if (R.ok && !fails.length) return {verdict:'good', fails:[], v160:R};
+      if (!R.ok) fails.push(R.why);
+      const lean = R.xb!=null && R.xb > -0.01;
+      return {verdict: (r.verdict==='good' || r.verdict==='watch' || lean) && pOver!=null ? 'watch' : 'avoid', fails, v160:R};
+    }catch(e){ return r; }
+  };
+})();
+/* outermost: the board call is the v160 call (v69/v114/v115 layers can't flip it) */
+(function(){
+  if (typeof buildPropPlay!=='function') return;
+  const base = buildPropPlay;
+  buildPropPlay = function(raw, side, feat, est){
+    const p = base.apply(this, arguments);
+    try{
+      if (!p || p.verdict==='started' || (raw && raw.g && raw.g.state && raw.g.state!=='pre')) return p;
+      const pOver = est && est.pOver!=null ? est.pOver : null; const price = side==='over' ? raw.overPrice : raw.underPrice;
+      if (pOver==null) return p;
+      const G = strictPropGates(pOver, price, feat, side, raw); if (!G || !G.v160) return p;
+      p._v160 = G.v160;
+      if (G.verdict==='good'){ p.verdict = 'good'; p._v0 = 'good'; p.strictFails = []; }
+      else { if (p.verdict==='good') V160.cut.props++; p.verdict = G.verdict; p._v0 = G.verdict; p.strictFails = G.fails;
+        const w = G.fails[G.fails.length-1]; if (w && !(p.reasons||[]).includes(w)) (p.reasons || (p.reasons = [])).push(w); }
+    }catch(e){}
+    return p;
+  };
+})();
+(function(){
+  if (typeof evaluatePropRaw==='function'){ const base = evaluatePropRaw;
+    evaluatePropRaw = function(raw){ const self = this, args = arguments; return v160With(v160CtxFromRaw(raw), ()=>base.apply(self, args)); };
+  }
+  if (typeof uniPropModel==='function'){ const base = uniPropModel;
+    uniPropModel = function(gm, pid, kind, line, side, price){ const self = this, args = arguments; return v160With(v160CtxFromUni(gm, pid, kind, line), ()=>base.apply(self, args)); };
+  }
+  if (typeof uniPairDk==='function'){ const base = uniPairDk;
+    uniPairDk = function(recs, gm){ const out = base.apply(this, arguments);
+      try{ const by = {}; for (const x of out||[]){ if (x.alt || x.yes) continue; const k = v160Key(gm.ev, x.pid, x.kind, x.line); (by[k] || (by[k] = {}))[x.side] = x.price; }
+        for (const k in by) if (by[k].over!=null && by[k].under!=null) v160FairPut(k, by[k].over, by[k].under); }catch(e){}
+      return out; };
+  }
+  if (typeof loadLiveProps==='function'){ const base = loadLiveProps;
+    loadLiveProps = async function(){ V160.cut.props = 0; const r = await base.apply(this, arguments);
+      try{ V160.pass.props = 0; V160.pass.xb = 0; V160.pass.pocket = 0; for (const p of (props||[])) if (p && p.verdict==='good'){ V160.pass.props++; if (p._v160 && p._v160.path) V160.pass[p._v160.path]++; } }catch(e){}
+      return r; };
+  }
+})();
+
+/* ---------- Results: still a Pick at lock, graded at the lock price ---------- */
+function v160Px(o){ return o.lpr!=null ? o.lpr : o.pr; }
+function v160Counted(o){ return !!o && (typeof v153BoardPick==='function' ? v153BoardPick(o) : o.v==='good'); }
+(function(){
+  /* new rows keep the lock price whenever a lock snapshot exists (before: only top-rated locks) */
+  if (typeof mlogCompact==='function'){ const base = mlogCompact;
+    mlogCompact = function(r){ const out = base.apply(this, arguments);
+      try{ if (out && out[1] && r && r.lk && r.lk.price!=null && isFinite(+r.lk.price) && out[1].lpr==null){ const lp = Math.round(+r.lk.price); if (lp!==out[1].pr) out[1].lpr = lp; } }catch(e){}
+      return out; };
+  }
+  if (typeof v145DayStat==='function'){ const base = v145DayStat;
+    v145DayStat = function(m){ const x = base.apply(this, arguments);
+      try{ if (x){ const good = mlogOnePerBet([...m.values()].filter(v160Counted)); const eg = v142E();
+        for (const o of good) v145Grade(o.b==='props' ? eg.p : eg.g, o, v160Px(o)); x.good = v142Pack(eg); x.v160 = 1; } }catch(e){}
+      return x; };
+  }
+  try{ if (typeof V145!=='undefined' && V145.stat) for (const d in V145.stat){ const s = V145.stat[d]; if (s && !s.v160) delete V145.stat[d]; } }catch(e){}
+  /* day summaries (days with no rows on a device): board Picks at lock price when the summary has them */
+  if (typeof v145ModelIndex==='function'){ const base = v145ModelIndex;
+    v145ModelIndex = function(metric){ const I = base.apply(this, arguments);
+      try{ if (metric==='good') for (const [d, s] of MLOG.sums){ if (!s || !s.bp || (V145.stat[d] && V145.stat[d].good)) continue; const e = v142Unpack(s.bp); if (v142N(e)) I.days[d] = e; } }catch(e){}
+      return I; };
+  }
+  /* calendar popups: Picks at the lock price */
+  if (typeof v147ModelRows==='function'){ const base = v147ModelRows;
+    v147ModelRows = function(metric, from, to){
+      if (metric==='potd' || metric==='locked') return base.apply(this, arguments);
+      const rows = base.apply(this, arguments);
+      try{ const px = new Map();
+        for (const d of MLOG.raw.keys()){ if (d < from || d > to) continue; const m = MLOG.raw.get(d);
+          for (const o of mlogOnePerBet([...m.values()].filter(v160Counted))) if (o.res && o.res!=='ungradeable') px.set(d+'|'+v147RowLine(o)+'|'+(+o.t||0), v160Px(o)); }
+        for (const r of rows){ const k = r.d+'|'+r.line+'|'+(r.t||0); if (px.has(k)){ r.price = px.get(k); r.u = v147Unit(r.res, r.price); } }
+      }catch(e){}
+      return rows; };
+  }
+})();
+/* publisher: final day summaries also carry the board Picks at lock price (bp); only for days already loaded, no extra reads */
+(function(){
+  if (typeof mlogWriteFinalSums!=='function') return;
+  const base = mlogWriteFinalSums;
+  mlogWriteFinalSums = async function(){
+    await base.apply(this, arguments);
+    try{
+      if (typeof mlogOn==='function' && !mlogOn()) return; if (typeof v154Pub==='function' && !v154Pub()) return;
+      const db = mlogFS(); let w = 0;
+      for (const [day, m] of MLOG.raw){ const s = MLOG.sums.get(day); if (!s || !s.final || s.v160 || s.n!==m.size) continue;
+        const e = v142E(); for (const o of mlogOnePerBet([...m.values()].filter(v160Counted))) v145Grade(o.b==='props' ? e.p : e.g, o, v160Px(o));
+        const bp = v142Pack(e);
+        try{ await db.collection('modelSum').doc(day).set({bp, v160:1}, {merge:true}); MLOG.sums.set(day, Object.assign({}, s, {bp, v160:1})); w++; }catch(err){ break; }
+        if (w >= 6) break; }
+    }catch(e){}
+  };
+})();
+
+/* ---------- Model learning text (built from V160 + live counts) ---------- */
+function v160P(x, d){ return (Math.round(x*1000)/10).toFixed(d==null ? 1 : d).replace(/\.0$/, '') + '%'; }
+function v160RuleHTML(k){
+  if (k==='games') return `<div class="v150-kv v150-top"><span>Pick rule (v160)</span></div>
+    <div class="hint">A game is a Pick only when the price beats the sharp fair chance (vig removed, Pinnacle when it has the game) by at least ${v160P(V160.G_EDGE)}. Negative-value games are never Picks. Right now: ${V160.pass.games} Pick${V160.pass.games===1?'':'s'}, ${V160.cut.games} held back for price.</div>`;
+  if (k==='props') return `<div class="v150-kv v150-top"><span>Pick rule (v160)</span></div>
+    <div class="hint">Every prop starts from the sportsbook's fair chance; the player read only nudges it (up to ${v160P(V160.MAX, 0)}). A prop is a Pick when another book beats the fair price (overs ${v160P(V160.XB_OVER, 0)}+, unders ${v160P(V160.XB_UNDER, 0)}+), or it is an NBA PRA / PR / PA under in the proven spot (${V160.POCKET_MIN}+ minutes lately, or DraftKings ${V160.POCKET_LO} to ${V160.POCKET_HI}) with value at its price. Overs need the cross-book price. Right now: ${V160.pass.props} Pick${V160.pass.props===1?'':'s'} (${V160.pass.xb} better price elsewhere, ${V160.pass.pocket} combo unders), ${V160.cut.props} held back.</div>`;
+  return '';
+}
+(function(){ if (typeof v150PickHTML!=='function') return; const base = v150PickHTML;
+  v150PickHTML = function(k){ const h = base.apply(this, arguments); try{ return v160RuleHTML(k) + h; }catch(e){ return h; } }; })();
+window.v160Status = () => ({cut: V160.cut, pass: V160.pass, fair: V160.fair.size});
 </script>
 </body>
 </html>
