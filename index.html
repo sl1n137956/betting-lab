@@ -21250,7 +21250,7 @@ async function rtDone(k, manual){
   if (typeof mlogOn==='function' && mlogOn()){ try{ await rtRef().set({[k]:e}, {merge:true}); RT101.at = Date.now(); }catch(err){ RT101.err = (err && (err.code||err.message)) || 'schedule write failed'; } }
 }
 function rtWrap(fn, k){
-  return async function(opts){
+  const w = async function(opts){
     opts = opts || {};
     const manual = !!(opts.manual || opts.force);
     if (!manual){ await rtLoad(false); if (!(await rtClaim(k))) return null; }
@@ -21263,6 +21263,7 @@ function rtWrap(fn, k){
     if (r && manual) r.notified = true;
     return r;
   };
+  w.__orig = fn; return w;
 }
 learnRetune = rtWrap(learnRetune, 'games');
 propsLearnRetune = rtWrap(propsLearnRetune, 'props');
@@ -28703,6 +28704,187 @@ v131LearnHTML = function(){
 (function(){
   const fix = () => { document.querySelectorAll('#view [data-sec="v131"]').forEach(s=>{ const sm = s.querySelector('summary, .v98-h, h3'); const w = sm && [...sm.childNodes].find(n=>n.nodeType===3 && /locks|of the Day/.test(n.nodeValue)); if (w) w.nodeValue = w.nodeValue.replace(/⭐?\s*Picks of the Day and locks|⭐?\s*Plays of the Day and locks/, '🔒 Play of the Day and Picks'); }); };
   const base = renderResults; renderResults = function(){ const r = base.apply(this, arguments); try{ fix(); }catch(e){} return r; };
+})();
+/* ================= v150 (t328): Model learning page reorganized; Tracker is called Results =================
+   Model learning (admin), top to bottom:
+     🔒 Play of the Day (the learned filter only) · 🧠 Models (Games, Props, Verdict: status, version history, logs as dropdowns)
+     🎚️ Pickiness (one row, pick Games / Props / Verdict) · 🤖 Automatic changes (dropdown) · 🩺 Weekly model check (says what it covers)
+     ▸ How learning works & safety checks (one dropdown at the very bottom, for every model)
+   Every line is built from the live model state and the model code's own settings (versions, thresholds, features, minimum
+   samples, retune timing), so when a model upgrades or gains features the text follows. Lock time is no longer shown. */
+APP_BUILD = 150;
+var V150 = {pk:'games'};
+
+/* ---------- live settings read from the model code itself ---------- */
+function v150Src(fn, re, dflt){ try{ while (fn && fn.__orig) fn = fn.__orig; const m = re.exec(String(fn)); return m ? m[1] : dflt; }catch(e){ return dflt; } }
+function v150Pct(x, d){ return x==null || !isFinite(+x) ? '—' : (Math.round(+x*1000)/10).toFixed(d==null ? 0 : d).replace(/\.0$/, '') + '%'; }
+var V150_FEAT = {b2b:'back-to-backs', margin:'scoring margin', split:'home/away split', model:"ESPN's model", form:'recent form', h2h:'head-to-head', rest:'rest days', inj:'injuries', totMove:'total line movement'};
+function v150Feats(){ try{ return (LEARN_FEATS||[]).map(k=>V150_FEAT[k] || k); }catch(e){ return []; } }
+function v150Ver(tr){ try{ return 'v' + (tr ? (tr.cur || tr.v || 1) : (LEARN && (LEARN.cur || (LEARN.versions && LEARN.versions.length)) || 1)); }catch(e){ return 'v1'; } }
+function v150Need(k){ try{ return (typeof RT_NEED!=='undefined' && RT_NEED[k]) || null; }catch(e){ return null; } }
+function v150Gap(k){ try{ return typeof rtGapWords==='function' ? rtGapWords(k) : ''; }catch(e){ return ''; } }
+
+/* ---------- pickiness per model ---------- */
+function v150PickHTML(k){
+  try{
+    if (k==='verdict'){
+      const tr = LEARN && LEARN.verdict; const P = Object.assign({}, typeof VERDICT_LEARN_DEFAULTS!=='undefined' ? VERDICT_LEARN_DEFAULTS : {}, (tr && tr.params) || {});
+      return `<div class="v150-kv"><span>BET when the win chance is</span><b>${v150Pct(P.betMinProb)}+</b></div>
+        <div class="v150-kv"><span>Maybe later from</span><b>${v150Pct(P.watchMinProb)}</b></div>
+        <div class="v150-kv"><span>Edge it needs over the price</span><b>${v150Pct(P.edgeFloor, 1)}+</b></div>
+        <div class="v150-kv"><span>Pull toward 50/50</span><b>${v150Pct(P.probShrink)}</b></div>
+        <div class="hint">Verdict ${esc(v150Ver(tr))}. Retuned by Verdict learning.</div>`;
+    }
+    const line = typeof v42ModelPickLine==='function' ? String(v42ModelPickLine(k)).replace('Model picks: ', '') : '';
+    const why = [typeof v42PickReason==='function' ? v42PickReason(k) : '', typeof v42Checked==='function' ? v42Checked(k) : ''].filter(Boolean).join(' ');
+    const offs = typeof v42GroupOff==='function' ? v42GroupOff(v42SportsOffList(k).filter(x=>!x.hard)) : [];
+    const sp = offs.length ? offs.map(g=>`${esc(g.labs.join(', '))} <span class="mut">(${esc(g.why)})</span>`).join('<br>') : '<span class="mut">None. Every sport you have on is in play.</span>';
+    return `<div class="v150-kv"><span>Pickiness</span><b>${esc(line)}</b></div>${why ? `<div class="hint">${esc(why)}${/\.$/.test(why) ? '' : '.'}</div>` : ''}
+      <div class="v150-kv v150-top"><span>Sports switched off</span></div><div class="v150-sp">${sp}</div>`;
+  }catch(e){ return '<div class="hint">Not loaded yet.</div>'; }
+}
+document.addEventListener('change', e=>{ const s = e.target && e.target.closest && e.target.closest('#v150Pk'); if (!s) return; V150.pk = s.value; const b = document.getElementById('v150PkBody'); if (b) b.innerHTML = v150PickHTML(V150.pk); });
+
+/* ---------- automatic changes (all models + Play of the Day + Picks) ---------- */
+function v150Changes(){
+  const out = [];
+  try{ if (typeof mchkChanges==='function') for (const x of mchkChanges(0)) out.push({at:+x.at, who:x.who, txt:x.txt}); }catch(e){}
+  try{ for (const c of (V131.log||[]).concat(V131.segLog||[])){ const t = c.d ? new Date(+c.d.slice(0,4), +c.d.slice(4,6)-1, +c.d.slice(6,8), 12).getTime() : 0; out.push({at:t, who: c.b==='props' ? 'Props' : c.b==='games' ? 'Games' : 'Picks', txt:`${String(c.what).replace(/Picks of the Day/g,'Plays of the Day')} (${c.why})`}); } }catch(e){}
+  out.sort((a,b)=>b.at-a.at); return out.slice(0, 30);
+}
+
+/* ---------- how learning works, built from each model's own settings ---------- */
+function v150HowHTML(){
+  const li = (t, x) => `<li><b>${t}:</b> ${x}</li>`; const blocks = [];
+  try{ // Games
+    const st = typeof LEARN_STEPS!=='undefined' ? LEARN_STEPS : {}; const f = x => (+x > 0 && +x < 1) ? v150Pct(x) : x; const bars = Object.keys(st).map(k=>{ const a = st[k]; return `${k==='sModelMin' ? 'ESPN bar' : k==='sMinWin' ? 'win bar' : k==='sMinPos' ? 'reasons needed' : k} ${f(a[0])}–${f(a[a.length-1])}`; }).join(', ');
+    blocks.push(`<h5>🏟️ Games ${esc(v150Ver())}</h5><ul class="why">
+      ${li('Retunes', `after ${v150Need('games') || LEARN_NEW_GAMES} new graded games, never sooner than ${esc(v150Gap('games'))} after the last run`)}
+      ${li('Learns from', `the last ${LEARN_WINDOW} days, newer games count more; it trains on the older days and tests on the newest ${LEARN_HOLD} it never saw`)}
+      ${li('Weighs', esc(v150Feats().join(', ')) + (typeof LEARN_INJ_MIN!=='undefined' ? `, plus injuries once ${LEARN_INJ_MIN} live games are graded` : ''))}
+      ${li('Keeps a change only if', `it wins more on those unseen days with ${LEARN_MIN_HOLD_PLAYS}+ plays and no loss of money; weights move at most ${LEARN_CAP} per step`)}
+      ${bars ? li('Allowed ranges', esc(bars)) : ''}</ul>`);
+  }catch(e){}
+  try{ // Props
+    const fn = typeof propsLearnRetune==='function' ? propsLearnRetune : '';
+    const steps = v150Src(fn, /steps\s*=\s*\[([^\]]+)\]/, '').split(',').filter(x=>x.trim()).map(x=>+x).filter(isFinite);
+    const hold = v150Src(typeof retuneThresholds==='function' ? retuneThresholds : '', /graded\.length\s*\*\s*(0\.\d+)/, null);
+    blocks.push(`<h5>🏀 Props ${esc(v150Ver(LEARN && LEARN.props))}</h5><ul class="why">
+      ${li('Retunes', `after ${v150Need('props')} new graded props, never sooner than ${esc(v150Gap('props'))} after the last run, once ${typeof PROPS_LEARN_MIN!=='undefined' ? PROPS_LEARN_MIN : '—'} are graded in total`)}
+      ${li('Tunes', `the win-chance bar${steps.length ? ` (${v150Pct(steps[0])}–${v150Pct(steps[steps.length-1])})` : ''}${hold ? `, tested on the newest ${v150Pct(+hold)} of graded props it didn't train on` : ''}, and can switch off a cold sport or stat`)}</ul>`);
+  }catch(e){}
+  try{ // Verdict
+    const tr = LEARN && LEARN.verdict; const fn = typeof verdictLearnRetune==='function' ? verdictLearnRetune : '';
+    const split = +v150Src(fn, /rows\.length\s*\*\s*(0\.\d+)/, 0); const P = Object.assign({}, typeof VERDICT_LEARN_DEFAULTS!=='undefined' ? VERDICT_LEARN_DEFAULTS : {}, (tr && tr.params) || {});
+    blocks.push(`<h5>⚖️ Verdict ${esc(v150Ver(tr))}</h5><ul class="why">
+      ${li('Retunes', `after ${v150Need('verdict')} new graded Verdict checks, never sooner than ${esc(v150Gap('verdict'))} after the last run, once ${typeof VERDICT_LEARN_MIN!=='undefined' ? VERDICT_LEARN_MIN : '—'} are graded in total`)}
+      ${li('Tunes', esc(Object.keys(P).map(k=>({probShrink:'pull toward 50/50', edgeFloor:'edge needed', betMinProb:'BET bar', watchMinProb:'Maybe later bar', dogAdj:'underdog adjustment'})[k] || k).join(', ')) + (split ? `, trained on the oldest ${v150Pct(split)} of checks and kept only if the newest ${v150Pct(1-split)} get more accurate` : ''))}
+      ${li('Separate', 'Verdict learns only from the picks you check in Verdict, apart from Games and Props')}</ul>`);
+  }catch(e){}
+  try{ // Play of the Day + Picks
+    blocks.push(`<h5>🔒 Play of the Day and 🎯 Picks</h5><ul class="why">
+      ${li('Play of the Day', `the model searches its own filter (strength, model chance or edge, odds range, market, sport, stat, picks a day) on the last ${V149.WIN} days of graded picks and keeps the most profitable one that wins ${v150Pct(V149.WR)}+ over ${V149.MIN_N}+ plays; otherwise it keeps the previous rule`)}
+      ${li('Picks', `every play the model rates a Bet; a sport, market or stat that loses over ${V131.SEG_N}+ graded Picks drops to Watch, and Watch groups that win move up`)}</ul>`);
+  }catch(e){}
+  blocks.push(`<h5>🛡️ Safety checks for every model</h5><ul class="why">
+    <li>Never changed by learning: your odds range${typeof S!=='undefined' && S.sFavMin!=null && typeof fmtAmRaw==='function' ? ` (${fmtAmRaw(S.sFavMin)} to ${fmtAmRaw(S.sDogMax)})` : ''}, your books, sports you turned off, your bet size.</li>
+    <li>Every model can be paused or rolled back from its card, and every change is written to its log with the reason.</li>
+    <li>Learning runs inside the app on admin devices (including the always-on one). Nothing for you to press.</li></ul>`);
+  return `<div class="v150-how">${blocks.join('')}</div>`;
+}
+
+/* ---------- rebuild the page ---------- */
+function v150Det(title, inner, key){ return `<details class="dd v150-dd" data-v150-dd="${key}"><summary>${title}</summary><div class="v150-ddb">${inner}</div></details>`; }
+function v150Learn(){
+  const L = document.querySelector('#view .v55-learn.v98-flat'); if (!L || L.dataset.v150) return; L.dataset.v150 = '1';
+  const sec = k => L.querySelector(`[data-sec="${k}"]`);
+  const sAuto = sec('v55-auto'), sG = sec('v55-learn-games'), sP = sec('v55-learn-props'), sV = sec('v55-learn-verdict'), sC = sec('v55-learn-check'), sPotd = sec('v131');
+  // Play of the Day: only the learned filter
+  const gate = sPotd && sPotd.querySelector('.v149-gate'); if (gate){ const ps = gate.querySelectorAll('p'); const last = ps[ps.length-1]; if (last && /picks these settings itself/.test(last.textContent)) last.remove(); const h = gate.querySelector('h5'); if (h) h.remove(); }
+  // models: tidy each card
+  const tidy = (s, how) => { if (!s) return null; const body = s.querySelector('.v55-dd-body'); if (!body) return null;
+    body.querySelectorAll(':scope > .section-title, .ln-panel .section-title').forEach(x=>x.remove());
+    body.querySelectorAll('.ln-knob').forEach(k=>{ if (/^\s*Lock\b/i.test(k.textContent)) k.remove(); });
+    body.querySelectorAll('details[data-dd="learn-how"]').forEach(d=>d.remove());
+    body.querySelectorAll('p.hint').forEach(p=>{ if (/snapshotted|saved and graded|walk-forward/i.test(p.textContent)) p.remove(); });
+    body.querySelectorAll('details').forEach(d=>{ d.open = false; d.removeAttribute('data-flat'); });
+    // Version history as a dropdown
+    body.querySelectorAll('h3').forEach(h=>{ const t = h.textContent.trim(); if (!/^(Version history|Recent Verdict checks)$/.test(t)) return;
+      const tbl = h.nextElementSibling; const d = document.createElement('details'); d.className = 'dd v150-dd'; d.innerHTML = `<summary>${esc(t)}</summary>`; const box = document.createElement('div'); box.className = 'v150-ddb';
+      if (tbl && !/^H3$/.test(tbl.tagName) && !tbl.matches('details')){ box.appendChild(tbl); }
+      d.appendChild(box); h.replaceWith(d); });
+    return body; };
+  const models = [['🏟️ Games', tidy(sG)], ['🏀 Props', tidy(sP)], ['⚖️ Verdict', tidy(sV)]].filter(x=>x[1]);
+  // weekly check
+  const chk = sC && sC.querySelector('.v55-dd-body');
+  // new layout
+  const ch = v150Changes();
+  const chHTML = ch.length ? `<ul class="why">${ch.map(c=>`<li><span class="mut">${esc(typeof v42When==='function' ? v42When(c.at) : new Date(c.at).toLocaleDateString())} · ${esc(c.who)}</span> — ${esc(c.txt)}</li>`).join('')}</ul>` : '<div class="hint">No automatic changes yet.</div>';
+  const head = L.querySelector(':scope > .section-title');
+  const wrap = document.createElement('div'); wrap.className = 'v150';
+  wrap.innerHTML = `
+    <section class="v98-sec v150-sec" data-sec="v150-potd"><h3 class="v98-h">🔒 Play of the Day</h3><div class="v150-potd"></div></section>
+    <section class="v98-sec v150-sec" data-sec="v150-models"><h3 class="v98-h">🧠 Models</h3><div class="v150-models"></div></section>
+    <section class="v98-sec v150-sec" data-sec="v150-pick"><h3 class="v98-h">🎚️ Pickiness</h3>
+      <label class="v150-sel"><span class="mut">Model</span><select id="v150Pk"><option value="games">Games</option><option value="props">Props</option><option value="verdict">Verdict</option></select></label>
+      <div id="v150PkBody">${v150PickHTML(V150.pk)}</div></section>
+    <section class="v98-sec v150-sec" data-sec="v150-auto"><h3 class="v98-h">🤖 Automatic changes</h3>
+      <div class="hint">Every change below was made by the models on their own. Nothing for you to do.</div>${v150Det(`Automatic changes (${ch.length})`, chHTML, 'auto')}</section>
+    <section class="v98-sec v150-sec" data-sec="v150-check"><h3 class="v98-h">🩺 Weekly model check</h3>
+      <div class="hint v150-covers">Covers <b>Games and Props</b>: how their BET, Watch and Avoid calls did against the model's own estimates. It also lists that week's changes from Games, Props and Verdict. It never changes a model.</div><div class="v150-chk"></div></section>
+    ${v150Det('How learning works &amp; safety checks', v150HowHTML(), 'how')}`;
+  if (gate) wrap.querySelector('.v150-potd').appendChild(gate); else wrap.querySelector('.v150-potd').innerHTML = '<div class="hint">Not retuned yet.</div>';
+  const mbox = wrap.querySelector('.v150-models');
+  for (const [t, body] of models){ const d = document.createElement('div'); d.className = 'v150-model';
+    const h = body.querySelector('.ln-head-left h3'); if (h){ const w = [...h.childNodes].reverse().find(n=>n.nodeType===3 && n.nodeValue.trim()) || [...h.querySelectorAll('*')].reverse().find(x=>/Model learning/.test(x.textContent) && !x.children.length); const lab = t.replace(/^\S+\s/, ''); if (w){ if (w.nodeType===3) w.nodeValue = ' ' + lab; else w.textContent = lab; } const ic = h.querySelector('.ln-ic, [aria-hidden="true"]'); if (ic && /🧠/.test(ic.textContent)) ic.textContent = t.split(' ')[0]; }
+    else d.innerHTML = `<h4>${t}</h4>`;
+    d.appendChild(body); mbox.appendChild(d); }
+  if (chk){ chk.querySelectorAll('.mchk-intro').forEach(x=>x.remove()); wrap.querySelector('.v150-chk').appendChild(chk); }
+  const sel = wrap.querySelector('#v150Pk'); if (sel) sel.value = V150.pk;
+  [sAuto, sG, sP, sV, sC, sPotd].forEach(s=>{ if (s) s.remove(); });
+  L.querySelectorAll(':scope > .v98-sec').forEach(s=>s.remove());
+  if (head){ const h = head.querySelector('.hint'); if (h) h.textContent = 'Every model tunes itself from graded results. Nothing here needs you.'; head.after(wrap); } else L.prepend(wrap);
+}
+(function(){
+  const base = renderResults;
+  renderResults = function(){ const r = base.apply(this, arguments); try{ v150Learn(); }catch(e){ console.warn('v150 learn', e); } return r; };
+})();
+// weekly check: no Locked row anymore
+(function(){ if (typeof mchkStats!=='function') return; const base = mchkStats; mchkStats = function(){ const S = base.apply(this, arguments); try{ for (const k of Object.keys(S||{})) if (/\|locked$/.test(k)) delete S[k]; }catch(e){} return S; }; })();
+
+/* ---------- Tracker is called Results ---------- */
+function v150Rename(root){
+  if (!root) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {acceptNode: n => (n.parentElement && /^(SCRIPT|STYLE|TEXTAREA|INPUT)$/.test(n.parentElement.tagName)) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
+  let n; while ((n = w.nextNode())){ const v = n.nodeValue; if (v && v.indexOf('Tracker') >= 0){ const x = v.replace(/\bTracker\b/g, 'Results'); if (x!==v) n.nodeValue = x; } }
+  root.querySelectorAll && root.querySelectorAll('[aria-label*="Tracker"],[title*="Tracker"]').forEach(el=>{ for (const a of ['aria-label','title']){ const v = el.getAttribute(a); if (v && v.includes('Tracker')) el.setAttribute(a, v.replace(/\bTracker\b/g, 'Results')); } });
+}
+(function(){
+  let q = 0; const run = () => { q = 0; try{ v150Rename(document.body); if (/\bTracker\b/.test(document.title)) document.title = document.title.replace(/\bTracker\b/g, 'Results'); }catch(e){} };
+  new MutationObserver(()=>{ if (!q) q = requestAnimationFrame(run); }).observe(document.body, {childList:true, subtree:true, characterData:true});
+  run();
+  const css = `
+.v150-sec{margin-top:14px}
+.v150-model{padding:12px 0 4px;border-top:1px solid rgba(96,165,250,.16)}
+.v150-model:first-child{border-top:0;padding-top:2px}
+.v150-model > h4{margin:0 0 8px;font-size:15px;font-weight:800}
+.v150-sel{display:flex;align-items:center;gap:10px;margin:2px 0 10px}
+.v150-sel select{min-height:40px;border-radius:12px;padding:0 12px;background:rgba(10,22,44,.8);color:#e6eef8;border:1px solid rgba(96,165,250,.4);font-weight:700}
+.v150-kv{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.v150-kv span{color:var(--mut);min-width:0}
+.v150-kv b{text-align:right;white-space:nowrap}
+.v150-kv.v150-top{border-bottom:0;padding-bottom:2px}
+.v150-sp{font-size:13px;line-height:1.5}
+.v150-dd{margin-top:10px}
+.v150-ddb{padding-top:6px}
+details.v150-dd[data-v150-dd="how"]{margin-top:18px}
+.v150-how h5{margin:12px 0 4px;font-size:13.5px;color:#cfe0f7}
+.v150-how h5:first-child{margin-top:4px}
+.v150-how ul{margin:0}
+.v150-covers b{color:#dbeafe}
+.v150-chk .mchk-intro{display:none !important}
+.v150-sel select{-webkit-appearance:none;appearance:none;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2393c5fd' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}`;
+  const st = document.createElement('style'); st.id = 'v150css'; st.textContent = css; document.head.appendChild(st);
 })();
 </script>
 </body>
