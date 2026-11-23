@@ -29210,6 +29210,176 @@ verdictCloudPull = async function(){
     return rows;
   }catch(e){ AUTH.vcErr = (e && e.code) || 'read failed'; return null; }
 };
+/* v155: odds band. Since v115 the board shows the model's own call with the user's odds range switched off,
+   so a 99% favorite (-10000, or 99¢ on a prediction market) could be a Pick that wins 0.01u.
+   1) Hard floor, always on: a Pick or Play of the Day must win at least 0.25u per 1u (no shorter than -400).
+   2) Learned band per model (Games, Props): the heaviest favorite and the longest underdog that made the most
+      profit on graded Picks, with sample floors. It can only be tighter than the hard floor, never looser.
+   Started games keep their frozen call. The band only filters; explanation text never talks price. */
+APP_BUILD = 155;
+
+const V155_HARD = -400;                         // win >= 0.25u per 1u risked
+const V155_LO = [-400, -350, -300, -250, -200, -175, -150, -130];
+const V155_HI = [150, 200, 250, 300, 400, 600, null];   // null = no cap on underdogs
+const V155_MIN_TOTAL = 80, V155_MIN_KEEP = 50, V155_GAIN = 0.01, V155_WIN = 60;
+const V155_LS = 'bl_v155_band';
+const V155 = {log:[], band:{games:{lo:V155_HARD, hi:null}, props:{lo:V155_HARD, hi:null}}, at:0, cut:{games:0, props:0}, last:{}};
+try{ const o = JSON.parse(localStorage.getItem(V155_LS) || 'null'); if (o && o.band){ V155.band = v155Clean(o.band); V155.at = +o.at || 0; V155.log = Array.isArray(o.log) ? o.log : []; } }catch(e){}
+
+function v155Clean(B){
+  const one = x => ({lo: Math.max(V155_HARD, x && isFinite(+x.lo) ? +x.lo : V155_HARD), hi: x && x.hi!=null && isFinite(+x.hi) ? +x.hi : null,
+    n: x && x.n ? +x.n : 0, u: x && x.u!=null ? +x.u : null, at: x && x.at ? +x.at : 0});
+  return {games: one(B && B.games), props: one(B && B.props)};
+}
+function v155Lo(b){ const L = V155.band[b]; return Math.max(V155_HARD, L && L.lo!=null ? +L.lo : V155_HARD); }
+function v155Hi(b){ const L = V155.band[b]; return L && L.hi!=null ? +L.hi : Infinity; }
+/* 'floor' = pays too little, 'cap' = longer shot than the model's band, '' = fine */
+function v155Out(b, price){
+  price = +price; if (price==null || !isFinite(price) || price===0) return '';
+  if (price < v155Lo(b)) return 'floor';
+  if (price > v155Hi(b)) return 'cap';
+  return '';
+}
+/* the logged price and, for games, the price shown for your books: whichever pays less */
+function v155Price(b, x){ let pr = null;
+  try{ const v = v129Read(b, x); if (v && v.price!=null && isFinite(+v.price)) pr = +v.price; }catch(e){}
+  try{ if (b==='games' && x && x.my && x.my.best && x.my.best.price!=null && isFinite(+x.my.best.price)){ const m = +x.my.best.price; pr = pr==null ? m : Math.min(pr, m); } }catch(e){}
+  return pr; }
+const V155_WHY = {floor:'Too little to win for the risk', cap:'Longer shot than this model makes money on'};
+function v155Demote(b, x){
+  if (!x || x.verdict!=='good') return x;
+  if (x.g && x.g.state && x.g.state!=='pre') return x;          // started: frozen, never removed
+  const why = v155Out(b, v155Price(b, x)); if (!why) return x;
+  x.verdict = 'watch'; if (x._v0==='good') x._v0 = 'watch'; x._v155 = why;
+  (x.reasons || (x.reasons = [])).unshift(V155_WHY[why]);
+  V155.cut[b] = (V155.cut[b]||0) + 1;
+  return x;
+}
+
+/* ---------- apply: games at evalGame (so the call logged for Results matches), props after each evaluation ---------- */
+(function(){
+  if (typeof evalGame==='function'){ const base = evalGame;
+    evalGame = function(g){ const r = base.apply(this, arguments);
+      try{ if (Array.isArray(r) && g && (!g.state || g.state==='pre')) for (const p of r) if (!p._v148) v155Demote('games', p); }catch(e){}
+      return r; };
+  }
+  if (typeof evaluateAll==='function'){ const base = evaluateAll;
+    evaluateAll = function(){ V155.cut.games = 0; const r = base.apply(this, arguments);
+      try{ for (const p of (plays||[])) if (p && p._v155 && p.verdict==='good' && !p._v148) v155Demote('games', p); }catch(e){}
+      return r; };
+  }
+  if (typeof evaluatePropRaw==='function'){ const base = evaluatePropRaw;
+    evaluatePropRaw = function(){ const p = base.apply(this, arguments); try{ v155Demote('props', p); }catch(e){} return p; };
+  }
+  if (typeof loadLiveProps==='function'){ const base = loadLiveProps;
+    loadLiveProps = async function(){ V155.cut.props = 0; return base.apply(this, arguments); };
+  }
+  /* nothing may put a filtered play back as a Pick */
+  if (typeof v131SegApply==='function'){ const base = v131SegApply; v131SegApply = function(b, x){ if (x && x._v155) return x; return base.apply(this, arguments); }; }
+  if (typeof bdKeepModelPick==='function'){ const base = bdKeepModelPick; bdKeepModelPick = function(p){ if (p && p._v155) return p; return base.apply(this, arguments); }; }
+  if (typeof v115RestoreRaw==='function'){ const base = v115RestoreRaw; v115RestoreRaw = function(p){ const r = base.apply(this, arguments); try{ if (p && p._v155 && p.verdict==='good') p.verdict = 'watch'; }catch(e){} return r; }; }
+  /* props model call logged for Results */
+  if (typeof uniPropModel==='function'){ const base = uniPropModel;
+    uniPropModel = function(gm, pid, kind, line, side, price){ const m = base.apply(this, arguments);
+      try{ if (m && m.v==='good' && v155Out('props', price)) return Object.assign({}, m, {v:'watch'}); }catch(e){}
+      return m; };
+  }
+  /* Play of the Day: same floor and band on top of its own learned rule */
+  if (typeof v131QualP==='function'){ const base = v131QualP;
+    v131QualP = function(b, v){ if (!base.apply(this, arguments)) return false; return !(v && v155Out(b, v.price)); };
+  }
+  if (typeof v149RuleText==='function'){ const base = v149RuleText;
+    v149RuleText = function(b, pr){
+      try{ const R = b==='props' ? pr.P : pr.G; const lo = v155Lo(b), hi = v155Hi(b);
+        const off = b==='props' ? 0 : 1;                               // games rule is lo-exclusive
+        const R2 = Object.assign({}, R, {lo: Math.max(+R.lo, lo - off), hi: Math.min(+R.hi, hi)});
+        pr = Object.assign({}, pr, b==='props' ? {P:R2} : {G:R2}); }catch(e){}
+      return base.call(this, b, pr);
+    };
+  }
+})();
+
+/* ---------- learning: per model, on graded board Picks of the last 60 days (one per bet) ---------- */
+function v155Units(o){ const pr = +(o.lpr!=null ? o.lpr : o.pr); if (!isFinite(pr) || !pr) return null;
+  if (o.res==='win') return pr > 0 ? pr/100 : 100/-pr; if (o.res==='loss') return -1; return null; }
+function v155Rows(b){
+  const out = []; if (typeof MLOG==='undefined' || !MLOG.raw) return out;
+  const cut = Date.now() - V155_WIN*86400000;
+  for (const [d, m] of MLOG.raw){
+    const t = new Date(+String(d).slice(0,4), +String(d).slice(4,6)-1, +String(d).slice(6,8)).getTime(); if (!(t >= cut)) continue;
+    const rows = typeof mlogOnePerBet==='function' ? mlogOnePerBet(m.values()) : [...m.values()];
+    for (const o of rows){ if (!o || o.b!==b) continue;
+      const pick = typeof v153BoardPick==='function' ? v153BoardPick(o) : o.v==='good'; if (!pick) continue;
+      const u = v155Units(o); if (u==null) continue; out.push({pr:+(o.lpr!=null ? o.lpr : o.pr), u}); }
+  }
+  return out;
+}
+function v155Score(rows, lo, hi){ let n = 0, u = 0; for (const r of rows){ if (r.pr < lo || (hi!=null && r.pr > hi)) continue; n++; u += r.u; } return {n, u, s: u/(n+30)}; }
+function v155LearnOne(b){
+  const rows = v155Rows(b), cur = V155.band[b] || {lo:V155_HARD, hi:null};
+  const now = v155Score(rows, Math.max(V155_HARD, cur.lo), cur.hi);
+  const info = {total: rows.length, n: now.n, u: now.u};
+  if (rows.length < V155_MIN_TOTAL){ V155.last[b] = Object.assign(info, {why:'few'}); return null; }
+  let best = {lo:Math.max(V155_HARD, cur.lo), hi:cur.hi, sc:now};
+  for (const lo of V155_LO) for (const hi of V155_HI){ if (hi!=null && hi <= 100) continue;
+    const sc = v155Score(rows, lo, hi); if (sc.n < Math.max(V155_MIN_KEEP, rows.length*0.5)) continue;
+    if (sc.s > best.sc.s + 1e-9) best = {lo, hi, sc}; }
+  V155.last[b] = Object.assign(info, {why: 'ok'});
+  if (best.lo===cur.lo && best.hi===cur.hi) return null;
+  if (best.sc.s < now.s + V155_GAIN) return null;               // must beat the current band clearly
+  return {lo: Math.max(V155_HARD, best.lo), hi: best.hi, n: best.sc.n, u: Math.round(best.sc.u*100)/100, at: Date.now()};
+}
+function v155Name(b){ return b==='props' ? 'Props' : 'Games'; }
+function v155Learn(force){
+  if (!force && Date.now() - V155.at < 20*3600000) return false;
+  let ch = false; const B = v155Clean(V155.band);
+  for (const b of ['games','props']){ const nb = v155LearnOne(b); if (nb){
+      const was = B[b]; B[b] = nb; ch = true;
+      V155.log.unshift({at: Date.now(), b, txt: `${v155Name(b)} Picks odds band: ${v155Txt(b, nb)} (was ${v155Txt(b, was)}).`}); V155.log = V155.log.slice(0, 20);
+    } }
+  V155.band = B; V155.at = Date.now(); v155Save();
+  try{ if (typeof v154Put==='function') v155Pub(); }catch(e){}
+  if (ch){ try{ if (typeof evaluateAll==='function') evaluateAll(); if (typeof softRender==='function') softRender(); }catch(e){} }
+  return ch;
+}
+function v155Save(){ try{ localStorage.setItem(V155_LS, JSON.stringify({band:V155.band, at:V155.at, log:V155.log})); }catch(e){} }
+async function v155Pub(){ if (typeof v154Pub==='function' && v154Pub()) return v154Put('meta', {band:V155.band, at:V155.at, log:V155.log, v:155}); }
+async function v155Poll(){
+  try{ if (typeof v154Get!=='function') return; if (typeof v154Pub==='function' && v154Pub()) return;
+    const m = await v154Get('meta'); if (!m || !m.band) return;
+    const nb = v155Clean(m.band); const ch = JSON.stringify(nb) !== JSON.stringify(v155Clean(V155.band));
+    V155.band = nb; V155.at = Math.max(V155.at, +m.at||0); if (Array.isArray(m.log)) V155.log = m.log.slice(0, 20); v155Save();
+    if (ch){ if (typeof evaluateAll==='function') evaluateAll(); if (typeof softRender==='function') softRender(); }
+  }catch(e){}
+}
+setTimeout(v155Poll, 8000);
+setInterval(()=>{ if (typeof v154Vis!=='function' || v154Vis()) v155Poll(); }, 30*60000);
+/* leader retunes with the hourly learning tick (daily throttle) */
+setInterval(()=>{ try{ if (typeof mlogOn==='function' && mlogOn() && typeof v154Pub==='function' && v154Pub() && typeof MLOG!=='undefined' && MLOG.at) v155Learn(false); }catch(e){} }, 60*60000);
+setTimeout(()=>{ try{ if (typeof mlogOn==='function' && mlogOn() && typeof v154Pub==='function' && v154Pub() && typeof MLOG!=='undefined' && MLOG.at) v155Learn(false); }catch(e){} }, 5*60000);
+/* also retune whenever the Play of the Day / segment fit runs (leader only, daily throttle) */
+(function(){ if (typeof v131Fit!=='function') return; const base = v131Fit;
+  v131Fit = function(){ const r = base.apply(this, arguments); try{ if (typeof v154Pub!=='function' || v154Pub()) v155Learn(false); }catch(e){} return r; }; })();
+(function(){ if (typeof v150Changes!=='function') return; const base = v150Changes;
+  v150Changes = function(){ const out = base.apply(this, arguments); try{ for (const c of V155.log) out.push({at:+c.at, who: v155Name(c.b), txt:c.txt}); out.sort((a,b)=>b.at-a.at); }catch(e){} return out.slice(0, 30); }; })();
+
+/* ---------- plain-English text (admin Model learning) ---------- */
+function v155Am(x){ return x==null ? '' : (x > 0 ? '+' + x : String(x)); }
+function v155Win(lo){ return (Math.round(100/-lo*100)/100).toFixed(2).replace(/0$/, ''); }
+function v155Txt(b, L){ L = L || V155.band[b]; const lo = Math.max(V155_HARD, +L.lo);
+  return `favorites no shorter than ${v155Am(lo)}, ` + (L.hi==null ? 'underdogs at any price' : `underdogs up to ${v155Am(+L.hi)}`); }
+function v155HTML(k){
+  if (k!=='games' && k!=='props') return '';
+  const L = V155.band[k], s = V155.last[k];
+  const learned = L.lo > V155_HARD || L.hi!=null;
+  const src = learned ? `Learned from ${L.n||0} graded Picks${L.u!=null ? ` (${L.u>=0?'+':''}${L.u}u in that band)` : ''}.` : (!s ? 'Not checked yet: the first check runs with the next daily retune.' : s.why==='few' ? `Not enough graded Picks to tighten yet (${s.total} of ${V155_MIN_TOTAL}).` : `Checked ${s.total} graded Picks: no tighter band made more money, so only the safety floor applies.`);
+  const lo = Math.max(V155_HARD, +L.lo);
+  return `<div class="v150-kv"><span>Heaviest favorite</span><b>${esc(v155Am(lo))}</b></div>
+    <div class="v150-kv"><span>Longest underdog</span><b>${L.hi==null ? 'Any' : esc(v155Am(+L.hi))}</b></div>
+    <div class="hint">Always on: a Pick or Play of the Day must win at least ${v155Win(V155_HARD)}u per 1u. ${esc(src)} Learning can make it stricter than that floor, never looser, and retunes daily. Play of the Day uses it too. Started games keep their call.</div>`;
+}
+(function(){ if (typeof v150PickHTML!=='function') return; const base = v150PickHTML;
+  v150PickHTML = function(k){ const h = base.apply(this, arguments); try{ return h + v155HTML(k); }catch(e){ return h; } }; })();
 </script>
 </body>
 </html>
