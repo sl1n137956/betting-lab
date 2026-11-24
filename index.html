@@ -31567,6 +31567,213 @@ v140RenderModel = function(){ v142RenderModel(); };
 v142Listen = function(){ v170DaysPoll(); };
 setInterval(()=>{ try{ if (ui.tab==='tracker' && v140View()==='model' && document.visibilityState==='visible') v170DaysPoll(); }catch(e){} }, 60000);
 window.v170ResStatus = () => ({usePub: v170UsePub(), pub2At: V142.pub2At, days: V142.pub2 ? Object.keys(V142.pub2.d||{}).length : 0, err: V170R.err});
+/* ================= v171 (BL-79): simpler cards and lists =================
+   1) No "Not on my book" and no "Open book" buttons anywhere.
+   2) No hiding: every bet shows. Saved hides and "not offered" flags are ignored (kept on the device, not used);
+      the "N picks hidden" lists are gone.
+   3) No All Games tab (desktop tabs, bottom bar, More sheet). A saved All Games tab opens Picks.
+   4) Verdict page: no "Nothing checked yet" box; the ticket summary only shows for 2+ picks; the result card shows
+      everything inline (courtroom, matchup and the rest open), not the simple card + popup used on Picks.
+   5) Cards: one bottom row, strength + size on the left, Tail in the bottom-right corner ("Details" sits above it).
+   6) Picks is one list again: Play of the Day pinned at the top (gold, star, POD tag) only when there is one;
+      no Play of the Day / Picks chooser (pills on desktop, circles on phones). Picks badge = cards shown. */
+APP_BUILD = 171;
+var V171 = {testPod: ''};
+
+/* ---------- 1) buttons ---------- */
+nobBtnHTML = function(){ return ''; };
+openInBookHTML = function(){ return ''; };
+
+/* ---------- 2) no hiding ---------- */
+(function(){
+  const EMPTY = {f:{}, h:{}};
+  avFlags = function(){ EMPTY.f = {}; EMPTY.h = {}; return EMPTY; };
+  avSaveFlags = function(){};
+  avHiddenToday = function(){ return false; };
+  avBookBlocked = function(){ return false; };
+  avHiddenHTML = function(){ return ''; };
+  if (typeof avSettingsHTML==='function') avSettingsHTML = function(){ return ''; };
+  if (typeof v148Hidden==='function') v148Hidden = function(){ return false; };
+  try{ if (typeof AV!=='undefined'){ AV.flags = EMPTY; AV.ver++; } }catch(e){}
+})();
+
+/* ---------- 3) no All Games ---------- */
+(function(){
+  if (typeof setTab==='function'){ const base = setTab; setTab = function(t, opts){ if (t==='all') t = 'good'; return base.call(this, t, opts); }; }
+  try{ if (typeof ui!=='undefined' && ui.tab==='all'){ ui.tab = 'good'; } }catch(e){}
+})();
+
+/* ---------- 4) Verdict page ---------- */
+(function(){
+  if (typeof parlaySummary==='function'){ const base = parlaySummary; parlaySummary = function(){ try{ if (!PK.legs || PK.legs.length < 2) return ''; }catch(e){ return ''; } return base.apply(this, arguments); }; }
+  if (typeof renderPicks==='function'){ const base = renderPicks; renderPicks = function(){ const r = base.apply(this, arguments);
+    try{ document.querySelectorAll('#view .pk-empty').forEach(el=>{ if (/Nothing checked yet/i.test(el.textContent||'')) el.remove(); }); document.querySelectorAll('#view .pk-grid .card details:not([open])').forEach(d=>{ d.open = true; }); }catch(e){}
+    return r; }; }
+  if (typeof legCard==='function'){ const base = legCard; legCard = function(){ let h = base.apply(this, arguments);
+    try{ h = String(h).replace(/^(\s*<div class="[^"]*)\bv166-card\b([^"]*")/, '$1v171-full$2').replace(/\sdata-v166-id="[^"]*"/, '').replace(/<details(?![^>]*\bopen\b)/g, '<details open'); }catch(e){}
+    return h; }; }
+})();
+/* the simple-card decorator skips the Verdict page (its cards stay fully open) and puts "Details" above the bottom row */
+v147Apply = function(){
+  const v = document.getElementById('view'); if (!v || (typeof ui!=='undefined' && (ui.tab==='tracker' || ui.tab==='picks'))) return;
+  v.querySelectorAll('.card[data-pid]').forEach(c=>{
+    if (c.closest('.tracker, #betForm, .pk-grid')) return;
+    if (!c.classList.contains('v147')) c.classList.add('v147');
+    if (c.classList.contains('v147-open')) c.classList.remove('v147-open');
+    try{ v147LiveTag(c); }catch(e){}
+    try{ v147Fit(c); }catch(e){}
+    const foot = c.querySelector(':scope > .cfoot');
+    let h = c.querySelector(':scope > .v147-hint');
+    if (!h && foot){ h = document.createElement('div'); h.className = 'v147-hint'; h.setAttribute('aria-hidden', 'true'); }
+    if (h && foot && foot.previousElementSibling !== h) foot.before(h);
+    if (c.getAttribute('aria-expanded') !== 'false') c.setAttribute('aria-expanded', 'false');
+  });
+};
+
+/* ---------- 6) Picks: one list, Play of the Day on top only when there is one ---------- */
+v142Seg = function(){ return 'picks'; };
+try{ if (S.pkSeg!=='picks'){ S.pkSeg = 'picks'; saveJSON(LS.settings, S); } }catch(e){}
+v145Counts = function(){ const out = {potd:'', picks:''}; try{
+  const n = document.querySelectorAll('#view .v142-panes .card[data-pid]:not([hidden])').length; out.picks = String(n); out.potd = String(document.querySelectorAll('#view .v142-pane[data-pane="potd"] .card[data-pid]:not([hidden])').length); }catch(e){} return out; };
+window.v145OpenTiers = function(){};
+/* phones: the bottom-bar Picks button just opens Picks (no circles) */
+window.addEventListener('click', e=>{
+  const nb = e.target && e.target.closest && e.target.closest('#bottomNav [data-tab="good"]'); if (!nb) return;
+  e.preventDefault(); e.stopImmediatePropagation(); e.stopPropagation();
+  try{ if (typeof v145CloseTiers==='function') v145CloseTiers(); }catch(err){}
+  try{ S.pkSeg = 'picks'; if (!(ui && ui.tab==='good')){ setTab('good', {board: ui.board||'games'}); render(); } window.scrollTo({top:0}); }catch(err){}
+}, true);
+function v171Pod(){
+  try{
+    if (typeof ui==='undefined' || ui.tab!=='good') return;
+    const panes = document.querySelector('#view .v142-panes'); if (!panes) return;
+    const pod = panes.querySelector(':scope > .v142-pane[data-pane="potd"]'); const picks = panes.querySelector(':scope > .v142-pane[data-pane="picks"]');
+    if (pod && picks && pod.nextElementSibling !== picks && panes.firstElementChild !== pod) panes.insertBefore(pod, panes.firstElementChild);
+    if (V171.testPod && pod && !pod.querySelector('.card[data-pid]')){   // test hook only (never set in the app)
+      const c = panes.querySelector(`.card[data-pid="${CSS.escape(V171.testPod)}"]`);
+      if (c){ let g = pod.querySelector(':scope > .grid'); if (!g){ g = document.createElement('div'); g.className = 'grid'; pod.appendChild(g); } c.classList.add('potd-pick'); g.appendChild(c); }
+    }
+    if (pod){
+      const has = !!pod.querySelector('.card[data-pid]:not([hidden])');
+      if (pod.classList.contains('v171-has') !== has) pod.classList.toggle('v171-has', has);
+      pod.querySelectorAll('.card[data-pid]').forEach(c=>{ const hd = c.querySelector(':scope > .chead > span:first-child') || c.querySelector(':scope > .chead'); if (hd && !hd.querySelector('.v171-podtag')){ const t = document.createElement('span'); t.className = 'v171-podtag'; t.title = 'Play of the Day'; t.innerHTML = '<span aria-hidden="true">★</span> POD'; hd.insertBefore(t, hd.firstChild); } });
+    }
+    if (panes.dataset.seg !== 'picks') panes.dataset.seg = 'picks';
+  }catch(e){}
+}
+(function(){
+  const v = document.getElementById('view'); let q = 0;
+  if (v) new MutationObserver(()=>{ if (q) return; q = requestAnimationFrame(()=>{ q = 0; v171Pod(); }); }).observe(v, {childList:true, subtree:true});
+  setInterval(v171Pod, 1500);
+})();
+
+/* ---------- CSS ---------- */
+(function(){
+  const st = document.createElement('style'); st.id = 'v171css';
+  st.textContent = `.btn-nob,[data-nob],.open-book-wrap,.btn-book,.av-hid,.av-flags-sec{display:none!important}
+[data-tab="all"]{display:none!important}
+#v142Seg,#v145Head .v145-sw,.v145-ov{display:none!important}
+.v142-panes > .v142-pane[data-pane="picks"]{display:block!important}
+.v142-panes > .v142-pane[data-pane="potd"]{display:none!important}
+.v142-panes > .v142-pane[data-pane="potd"].v171-has{display:block!important;margin-bottom:12px}
+.v142-pane[data-pane="potd"] > .empty-state,.v142-pane[data-pane="potd"] > .v166-empty,.v142-pane[data-pane="potd"] > .v142-sub,.v142-pane[data-pane="potd"] .lk-tag.v131-star{display:none!important}
+.v142-pane[data-pane="potd"] .card[data-pid]{border-color:rgba(245,196,81,.75)!important;box-shadow:0 0 0 1px rgba(245,196,81,.35),0 8px 26px rgba(245,180,40,.14),inset 3px 0 0 #f5c451!important;background:linear-gradient(180deg,rgba(245,196,81,.10),rgba(245,196,81,0) 46%),var(--card,#0f1a2e)}
+.v171-podtag{display:inline-flex!important;align-items:center;gap:4px;margin:0 6px 0 0;padding:2px 8px;vertical-align:middle;border-radius:999px;background:linear-gradient(90deg,#f5c451,#e9a92b);color:#1b1405;font-weight:800;font-size:12px;letter-spacing:.4px;white-space:nowrap}
+.v142-pane:not([data-pane="potd"]) .v171-podtag{display:none}
+#view .card.v147 > .cfoot{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;width:100%}
+#view .card.v147 > .cfoot > .cfoot-meta{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:6px;min-width:0;flex:1 1 auto;margin:0!important;overflow:hidden}
+#view .card.v147 > .cfoot > .cfoot-acts{display:flex!important;flex-wrap:nowrap!important;justify-content:flex-end!important;margin:0 0 0 auto!important;flex:0 0 auto;gap:6px}
+#view .card.v147 > .cfoot > .cfoot-acts > *{flex:0 0 auto!important;width:auto!important}
+#view .card.v147 > .cfoot .btn{min-height:38px;padding:0 16px!important;white-space:nowrap}
+#view .card.v147 > .v147-hint{margin:2px 0 6px}
+@media (max-width:400px){ #view .card.v147 > .cfoot .conf.bstr .bstr-stars,#view .card.v147 > .cfoot .conf.bstr .stars{display:none} }
+.pk-grid .card.v171-full > *{display:revert}
+.pk-grid .card .v147-hint{display:none!important}`;
+  document.head.appendChild(st);
+})();
+window.v171Status = () => ({build: APP_BUILD, pod: document.querySelectorAll('#view .v142-pane[data-pane="potd"] .card[data-pid]').length, cards: document.querySelectorAll('#view .v142-panes .card[data-pid]:not([hidden])').length, nav: (document.querySelector('[data-cnt="good"]')||{}).textContent});
+/* Picks badge before Picks has been opened this visit: last count shown on Picks (kept per device), not 0 */
+(function(){
+  const K = 'bl_v171_navn';
+  try{ if (typeof V165!=='undefined' && V165.navN==null){ const n = localStorage.getItem(K); if (n!=null && n!=='' && isFinite(+n)){ V165.navN = +n; setTabCount('good', +n); } } }catch(e){}
+  setInterval(()=>{ try{ if (typeof V165!=='undefined' && V165.navN!=null){ const s = String(V165.navN); if (localStorage.getItem(K)!==s) localStorage.setItem(K, s); } }catch(e){} }, 5000);
+})();
+/* ================= v171: log every evaluated bet (BL-76 patch, shipped in v171) =================
+   Why: mlogCompact only uploads good / watch / avoid. "No call" rows (the model had no read yet, a stat it
+   does not model, or a side that never appeared on the board) stay in the publisher's local universe and
+   never reach Firestore. After the game is graded they still don't upload. That is why yesterday's 11 NFL
+   games and 4 of 5 NHL games have full game-market logs but almost no props in the shared log — those props
+   were evaluated as no-call (game logs often still loading; alt / yes-no / period lines are also skipped
+   unless the board showed them).
+
+   This file only wraps existing functions. Do not paste into /workspace/betting-lab-app/dev/src while v166
+   is being built. Coordinator should add it as the next source file after v166 lands, bump APP_BUILD, and
+   have the publisher reload so it re-queues local universe rows (including already-graded no-calls).
+
+   1) Keep no-call rows, and unshown alt / yes-no props, in the compact log (still requires a price + id).
+   2) One-time re-queue of local universe + last-30-day graded rows so already-captured no-calls get uploaded.
+*/
+(function () {
+  if (typeof mlogCompact !== 'function') return;
+  const base = mlogCompact;
+  function pack(r, v) {
+    const id = String(r.id || r.i || '');
+    if (!id) return null;
+    const o = { b: r.b, s: r.src || '', l: r.l || '', ev: String(r.ev || ''), t: +r.t || 0, sd: r.side || '', v: v || 'nocall' };
+    const pr = (typeof uniBPrice === 'function' ? uniBPrice(r) : (r.lk && r.lk.price != null ? r.lk.price : r.price));
+    const p = (typeof uniBP === 'function' ? uniBP(r) : (r.lk && r.lk.p != null ? r.lk.p : r.p));
+    if (typeof uniLocked === 'function' && uniLocked(r)) {
+      o.lkd = 1;
+      const lp = (typeof uniPrice === 'function' ? uniPrice(r) : (r.lk && r.lk.price));
+      if (lp != null && isFinite(+lp) && Math.round(+lp) !== Math.round(+pr)) o.lpr = Math.round(+lp);
+    }
+    if (pr != null && isFinite(+pr)) o.pr = Math.round(+pr); else return null;
+    if (p != null && isFinite(+p)) o.p = Math.round(+p * 10000) / 10000;
+    if (r.b === 'games') { o.mk = r.mk || ''; if (r.game) o.gm = String(r.game).slice(0, 40); }
+    else { o.k = r.kind || ''; if (r.pn) o.pn = String(r.pn).slice(0, 40); if (r.pid) o.pid = String(r.pid); }
+    if (r.pt != null && isFinite(+r.pt)) o.pt = +r.pt;
+    if (r.book) o.bk = String(r.book).slice(0, 24);
+    { const sv = (r.lk && r.lk.sv) || r.sv; if (sv) o.sv = sv; }
+    if (r.shown) o.sh = 1; if (r.u != null) o.u = +r.u; if (r.lk) o.lk = 1; if (r.mins != null) o.mn = +r.mins;
+    o.at = +((r.lk && r.lk.at) || r.at || r.first || 0);
+    if (r.res) { o.res = r.res; if (r.act != null) o.act = typeof r.act === 'number' ? r.act : String(r.act).slice(0, 16); o.g = +r.g || Date.now(); }
+    return [id, o];
+  }
+  mlogCompact = function (r) {
+    const out = base.apply(this, arguments);
+    if (out) return out;
+    try {
+      if (!r || (r.b !== 'games' && r.b !== 'props')) return null;
+      const v = (typeof uniB === 'function' ? uniB(r) : (r.lk ? r.lk.v : r.v)) || 'nocall';
+      return pack(r, v);
+    } catch (e) { return null; }
+  };
+})();
+
+/* One-time re-queue after this file loads on the publisher, so already-graded no-calls in IndexedDB get uploaded.
+   Uses a new localStorage flag; it does not rewrite cloud rows the log already considers "better." */
+(function () {
+  const FLAG = 'bl_mlog_requue_nocall_v1';
+  async function requue() {
+    try {
+      if (typeof mlogOn !== 'function' || !mlogOn()) return;
+      if (typeof v154Pub === 'function' && !v154Pub()) return;
+      if (localStorage.getItem(FLAG) === '1') return;
+      if (typeof UNI !== 'undefined') for (const r of UNI.values()) if (!r._cloud) { try { mlogQueue(r); } catch (e) {} }
+      if (typeof idbOpen === 'function' && typeof UNI_ST !== 'undefined' && UNI_ST.idb !== false && typeof mlogDay === 'function') {
+        const d = await idbOpen(); const lo = mlogDay(Date.now() - 31 * 86400000);
+        await new Promise((res, rej) => {
+          const req = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound(lo));
+          req.onsuccess = () => { const c = req.result; if (!c) return res(); const r = c.value; if (r && !r._cloud) { try { mlogQueue(r); } catch (e) {} } c.continue(); };
+          req.onerror = () => rej(req.error);
+        });
+      }
+      localStorage.setItem(FLAG, '1');
+      if (typeof mlogPush === 'function') mlogPush().catch(() => {});
+    } catch (e) { console.warn('mlog requue', e); }
+  }
+  setTimeout(requue, 20000);
+})();
 </script>
 </body>
 </html>
