@@ -33374,6 +33374,155 @@ function v184LearnSec(){
   document.head.appendChild(st);
 })();
 window.v184Status = () => ({build: APP_BUILD, wind: V184.wx, made: V184.made, at: V184.at, record: v184Tally()});
+/* ===== v185: stat-style pick cards (Stanley's reference, Nov 24 10:27 AM PT) =====
+   Every Pick card (props and games, phone and PC; PC keeps its current grid and card width) gets:
+   - a ring in the header with the model's win chance for the side (Under/Over or the team),
+   - a row of context chips (team win chance from the moneyline, opponent, rest, minutes, records),
+   - a row of hit-rate tiles colored green/red (props: L5, L10, L15, H2H, streak, average, diff, season;
+     games: record, L10, L5, average margin, opponent L10),
+   - the books row with DraftKings first.
+   Only real data the app already has (ESPN game logs and schedules, DraftKings and the other books). A tile without
+   real data is left out. Cards are decorated in the same frame they are drawn (no flicker), and the card, its tap
+   popup, Tail and the BET / POD tags are unchanged. ===== */
+APP_BUILD = 185;
+var V185 = {cache: new Map(), n: 0};
+function v185Pct(x){ return x==null || !isFinite(x) ? null : Math.round(x*100); }
+function v185Cls(r){ return r==null ? 'n' : r >= 0.6 ? 'g' : r <= 0.4 ? 'r' : 'n'; }
+function v185Ring(p, lab){
+  if (p==null || !isFinite(p)) return '';
+  const v = Math.max(0, Math.min(1, p)), C = 2*Math.PI*19, on = (v*C).toFixed(1);
+  const col = v >= 0.6 ? '#4ade80' : v >= 0.52 ? '#60a5fa' : '#f87171';
+  return `<div class="v185-ring" title="Model win chance ${Math.round(v*100)}%"><svg viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="19" class="v185-rt"/><circle cx="23" cy="23" r="19" class="v185-rf" style="stroke:${col};stroke-dasharray:${on} ${C.toFixed(1)}"/></svg><div class="v185-rv"><b>${Math.round(v*100)}%</b><small>${esc(lab)}</small></div></div>`;
+}
+function v185Tile(k, val, cls, title){ return `<div class="v185-t v185-${cls}"${title ? ` title="${esc(title)}"` : ''}><span>${esc(k)}</span><b>${esc(val)}</b></div>`; }
+function v185Chip(txt, cls){ return `<span class="v185-c${cls ? ' ' + cls : ''}">${txt}</span>`; }
+function v185Sgn(x, d){ return (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x).toFixed(d==null ? 1 : d); }
+function v185Ab(g, s){ return (g && g[s] && (g[s].abbr || g[s].short || g[s].nick || g[s].name)) || ''; }
+
+/* props */
+function v185PropHTML(p){
+  const f = p.feat || {}; const L0 = +p.line; const under = p.side==='under';
+  const hitOf = v => v===L0 ? null : (under ? v < L0 : v > L0);
+  const vals = Array.isArray(f.seasonVals) ? f.seasonVals.filter(v=>v!=null && isFinite(v)) : [];
+  const rate = arr => { const h = arr.map(hitOf).filter(x=>x!=null); return h.length ? {r: h.filter(Boolean).length / h.length, k: h.filter(Boolean).length, n: h.length} : null; };
+  const tiles = [];
+  const add = (lab, arr, need) => { if (arr.length < need) return; const R = rate(arr); if (!R) return; tiles.push(v185Tile(lab, R.r*100 >= 99.5 ? '100%' : Math.round(R.r*100) + '%', v185Cls(R.r), `${under?'Under':'Over'} in ${R.k} of ${R.n}`)); };
+  if (vals.length){
+    add('L5', vals.slice(-5), 5); add('L10', vals.slice(-10), 10); add('L15', vals.slice(-15), 15);
+    const h2h = Array.isArray(f.h2hVals) ? f.h2hVals : []; if (h2h.length){ const R = rate(h2h); if (R) tiles.push(v185Tile('H2H', `${R.k}/${R.n}`, v185Cls(R.n >= 2 ? R.r : null), `vs ${p.opp||'this opponent'}: ${R.k} of ${R.n}`)); }
+    let s = 0, w = null; for (let i = vals.length - 1; i >= 0; i--){ const h = hitOf(vals[i]); if (h==null) break; if (w==null) w = h; if (h!==w) break; s++; }
+    if (s && w!=null) tiles.push(v185Tile('Streak', `${s}${w ? 'W' : 'L'}`, s >= 3 ? (w ? 'g' : 'r') : 'n', `${s} straight ${w ? 'hits' : 'misses'} on this side`));
+    const avg = f.l10avg!=null ? f.l10avg : f.seasonAvg;
+    if (avg!=null && isFinite(avg)){ const d = avg - L0; const good = under ? d < 0 : d > 0;
+      tiles.push(v185Tile('Avg', avg.toFixed(1), 'n', f.l10avg!=null ? 'Last 10 average' : 'Season average'));
+      tiles.push(v185Tile('Diff', v185Sgn(d), Math.abs(d) < 0.05 ? 'n' : good ? 'g' : 'r', 'Average minus the line')); }
+    if (vals.length >= 8 && f.seasonHit!=null && (f.n||0) > 15){ const r = under ? 1 - f.seasonHit : f.seasonHit; tiles.push(v185Tile('Szn', Math.round(r*100) + '%', v185Cls(r), `Season: ${f.n} games`)); }
+  }
+  const chips = [];
+  try{ const wp = typeof tmWinProb==='function' ? tmWinProb(p.g) : null; const mine = p.home ? 'home' : 'away';
+    if (wp && wp.src==='odds') chips.push(v185Chip(`${esc(v185Ab(p.g, mine))} win <b>${Math.round(wp[mine]*100)}%</b>`)); }catch(e){}
+  try{ const T = typeof TM!=='undefined' && p.g ? TM[p.g.league + ':' + (p.g[p.home ? 'away' : 'home'] || {}).id] : null; const oa = v185Ab(p.g, p.home ? 'away' : 'home');
+    if (oa) chips.push(v185Chip(`vs ${esc(oa)}${T && T.n ? ` <b>${T.w}-${T.l}</b>` : ''}`)); }catch(e){}
+  if (f.rest!=null && isFinite(f.rest)) chips.push(v185Chip(f.rest <= 1 ? 'Back-to-back' : `${f.rest} days rest`, f.rest <= 1 ? 'warn' : ''));
+  if (f.minL5!=null && isFinite(f.minL5)) chips.push(v185Chip(`Min L5 <b>${f.minL5.toFixed(0)}</b>`));
+  return {ring: v185Ring(p.p, under ? 'Under' : 'Over'), chips, tiles};
+}
+
+/* games */
+function v185GameHTML(p){
+  const g = p.g; if (!g) return null; const T = s => (typeof TM!=='undefined' && g[s]) ? TM[g.league + ':' + g[s].id] : null;
+  const teamSide = (p.mk==='ml' || p.mk==='spread') && (p.side==='home' || p.side==='away') ? p.side : null;
+  const lab = teamSide ? v185Ab(g, teamSide) : p.side==='over' ? 'Over' : p.side==='under' ? 'Under' : '';
+  const prob = p.est!=null ? p.est : p.p;
+  const chips = [], tiles = [];
+  try{ const wp = typeof tmWinProb==='function' ? tmWinProb(g) : null;
+    if (wp && wp.src==='odds'){ for (const s of ['away','home']) chips.push(v185Chip(`${esc(v185Ab(g, s))} win <b>${Math.round(wp[s]*100)}%</b>`, teamSide===s ? 'me' : '')); } }catch(e){}
+  if (p.mk==='total' && p._v184 != null) chips.push(v185Chip(`Wind <b>${Math.round(p._v184)} mph</b>`, 'warn'));
+  const rec = (t, n) => { const s2 = (t && t.l10s) ? t.l10s.slice(-n) : ''; if (s2.length < n) return null; const w = (s2.match(/W/g)||[]).length; return {w, l: s2.length - w, r: w / s2.length}; };
+  const teamTiles = (s, pre) => { const t = T(s); if (!t || !t.n) return;
+    tiles.push(v185Tile(pre + 'Rec', `${t.w}-${t.l}`, v185Cls(t.w / Math.max(1, t.w + t.l)), 'Season record'));
+    const a = rec(t, 10); if (a) tiles.push(v185Tile(pre + 'L10', `${a.w}-${a.l}`, v185Cls(a.r), 'Last 10 games'));
+    const b = rec(t, 5); if (b) tiles.push(v185Tile(pre + 'L5', `${b.w}-${b.l}`, v185Cls(b.r), 'Last 5 games'));
+    if (t.avg!=null && isFinite(t.avg)) tiles.push(v185Tile(pre + 'Margin', v185Sgn(t.avg), t.avg > 0.5 ? 'g' : t.avg < -0.5 ? 'r' : 'n', 'Average scoring margin')); };
+  if (teamSide){ teamTiles(teamSide, ''); const o = teamSide==='home' ? 'away' : 'home'; const a = rec(T(o), 10); if (a) chips.push(v185Chip(`${esc(v185Ab(g, o))} L10 <b>${a.w}-${a.l}</b>`)); }
+  else { for (const s of ['away','home']){ const t = T(s); const a = rec(t, 10); if (a) tiles.push(v185Tile(`${v185Ab(g, s)} L10`, `${a.w}-${a.l}`, 'n', 'Last 10 games'));
+    if (t && t.avg!=null && isFinite(t.avg)) tiles.push(v185Tile(`${v185Ab(g, s)} Mrg`, v185Sgn(t.avg), 'n', 'Average scoring margin')); } }
+  return {ring: v185Ring(prob, lab), chips, tiles};
+}
+
+function v185Block(x){
+  let o = null; try{ o = x.isProp ? v185PropHTML(x) : v185GameHTML(x); }catch(e){ o = null; }
+  if (!o) return null;
+  const body = `${o.chips.length ? `<div class="v185-cs">${o.chips.join('')}</div>` : ''}${o.tiles.length ? `<div class="v185-ts">${o.tiles.join('')}</div>` : ''}`;
+  return {ring: o.ring, body};
+}
+function v185Item(id, maps){ return maps.p.get(id) || maps.g.get(id) || null; }
+function v185Decorate(root){
+  try{
+    const cards = (root || document).querySelectorAll('.card[data-pid]'); if (!cards.length) return;
+    const maps = {p: new Map(((typeof props!=='undefined' && props) || []).map(x=>[x.id, x])), g: new Map(((typeof plays!=='undefined' && plays) || []).map(x=>[x.id, x]))};
+    for (const c of cards){
+      if (c.closest('.v185-skip')) continue;
+      const x = v185Item(c.getAttribute('data-pid'), maps); if (!x || x.isParlay || x._stub) continue;
+      const B = v185Block(x); if (!B) continue;
+      const sig = B.ring + B.body;
+      if (c.dataset.v185 === String(sig.length) + ':' + (sig.charCodeAt(sig.length>>1)||0) && c.querySelector(':scope > .v185')) continue;
+      c.dataset.v185 = String(sig.length) + ':' + (sig.charCodeAt(sig.length>>1)||0);
+      const slot = c.querySelector('.verdict-slot');
+      if (slot){ let r = slot.querySelector('.v185-ring'); if (B.ring){ const t = document.createElement('div'); t.innerHTML = B.ring; const nr = t.firstElementChild; if (r){ if (r.outerHTML !== nr.outerHTML) r.replaceWith(nr); } else slot.prepend(nr); slot.classList.add('v185-slot'); } else if (r) r.remove(); }
+      let blk = c.querySelector(':scope > .v185');
+      if (!B.body){ if (blk) blk.remove(); continue; }
+      if (!blk){ blk = document.createElement('div'); blk.className = 'v185'; const at = c.querySelector(':scope > .pick'); if (at) at.before(blk); else c.appendChild(blk); }
+      if (blk.innerHTML !== B.body) blk.innerHTML = B.body;
+      c.classList.add('v185-card');
+    }
+    V185.n++;
+  }catch(e){ console.warn('v185', e); }
+}
+(function(){
+  // decorate in the same frame the cards are drawn: right after render / softRender, and for any card added later
+  for (const name of ['render', 'softRender']){ const f = window[name]; if (typeof f!=='function') continue;
+    window[name] = function(){ const r = f.apply(this, arguments); try{ v185Decorate(document.getElementById('view')); }catch(e){} return r; }; }
+  let q = false;
+  const mo = new MutationObserver(muts=>{ if (q) return; for (const m of muts){ for (const n of m.addedNodes){ if (n.nodeType===1 && (n.matches && (n.matches('.card[data-pid]') || n.querySelector && n.querySelector('.card[data-pid]')))){ q = true; break; } } if (q) break; }
+    if (q){ q = false; v185Decorate(document); } });
+  const start = () => { try{ mo.observe(document.body, {childList: true, subtree: true}); }catch(e){} };
+  if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+  // books row: DraftKings first
+  if (typeof v173RowHTML==='function'){ const base = v173RowHTML; v173RowHTML = function(ev, mk, side, pt, dk){ let h = base.apply(this, arguments);
+    try{ if (h && dk!=null && isFinite(+dk)){ const am = (+dk > 0 ? '+' : '−') + Math.abs(+dk); h = h.replace('<span class="v173-l">Other books</span><span class="v173-cs">', `<span class="v173-l">Books</span><span class="v173-cs"><span class="v173-c dk" title="DraftKings (the line we bet and grade)"><b>DK</b> ${am}</span>`); } }catch(e){}
+    return h; }; }
+  const st = document.createElement('style');
+  st.textContent = `
+.verdict-slot.v185-slot{display:flex;flex-direction:column;align-items:center;gap:5px;flex:0 0 auto}
+.v185-ring{position:relative;width:52px;height:52px;flex:0 0 52px}
+.v185-ring svg{width:52px;height:52px;transform:rotate(-90deg)}
+.v185-rt{fill:none;stroke:rgba(148,163,184,.18);stroke-width:4.5}
+.v185-rf{fill:none;stroke-width:4.5;stroke-linecap:round;transition:stroke-dasharray .4s ease}
+.v185-rv{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1}
+.v185-rv b{font-size:13px;font-weight:700;color:#e2e8f0}
+.v185-rv small{font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:#94a3b8;margin-top:2px;max-width:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.verdict-slot.v185-slot .verdict-pill{font-size:10.5px;padding:3px 9px}
+#view .card > .v185, .card > .v185{display:block !important;margin:2px 0 10px;min-width:0}
+.v185{container-type:inline-size}
+@container (min-width:420px){.v185-ts{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr)}}
+.v185-cs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.v185-c{font-size:11.5px;line-height:1;padding:5px 9px;border-radius:999px;background:rgba(59,130,246,.10);border:1px solid rgba(96,165,250,.20);color:#cbd5e1;white-space:nowrap}
+.v185-c b{color:#e2e8f0;font-weight:700}
+.v185-c.me{border-color:rgba(96,165,250,.45);background:rgba(59,130,246,.18)}
+.v185-c.warn{border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.10);color:#fde68a}
+.v185-ts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.v185-t{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:7px 2px 8px;border-radius:10px;min-width:0;border:1px solid transparent}
+.v185-t span{font-size:10px;letter-spacing:.03em;text-transform:uppercase;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.v185-t b{font-size:14px;font-weight:700;color:#e2e8f0;white-space:nowrap}
+.v185-g{background:rgba(34,197,94,.13);border-color:rgba(34,197,94,.28)} .v185-g b{color:#86efac}
+.v185-r{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.26)} .v185-r b{color:#fca5a5}
+.v185-n{background:rgba(59,130,246,.08);border-color:rgba(96,165,250,.16)}
+.v173-c.dk{border-color:rgba(34,197,94,.35)!important;background:rgba(34,197,94,.10)!important}
+@media (max-width:370px){.v185-t b{font-size:13px}.v185-t span{font-size:9px}.v185-c{font-size:11px;padding:5px 8px}.v185-ring,.v185-ring svg{width:48px;height:48px;flex-basis:48px}}`;
+  document.head.appendChild(st);
+})();
+window.v185Status = () => ({build: APP_BUILD, passes: V185.n, cards: document.querySelectorAll('.card.v185-card').length});
 </script>
 </body>
 </html>
