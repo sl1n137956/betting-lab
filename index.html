@@ -33117,6 +33117,145 @@ var V182 = {t0: Date.now(), seen: {}};
     return list.filter(o=>{ try{ const D = v131Store().days[o.d]; if (D && D[o.b] && D[o.b][o.k] && !D[o.b][o.k].drop) return true; }catch(e){} return now - V182.seen[o.b + '|' + o.k] >= 120000; });
   };
 })();
+/* ===== v183: Play of the Day, Stanley's rules (Nov 24 3:15 AM PT) =====
+   - Several a day: every Pick that clears the model's own learned POD bar (V131 params: price range, edge / win
+     chance, prop types, per-board cap, which the model retunes) becomes POD. None qualify -> none shown.
+   - Only about 1 hour before its game (75 to 15 minutes out). Earlier it is a regular Pick.
+   - Stable first: it must have held its BET call and cleared the bar with room to spare for 20 straight minutes.
+   - Locked once named: it stays POD / BET until graded (never cools to Watch/Avoid, never dropped). The model's own
+     live read is still logged for learning.
+   - Older entries named before this rule (more than 75 minutes before their game) step back to regular Picks. ===== */
+APP_BUILD = 183;
+var V183 = {WIN: 75*60000, LATE: 15*60000, HOLD: 20*60000, GAP: 5*60000, LS: 'bl_v183_seen', seen: {}, held: 0, claims: [], migrated: 0};
+try{ V183.seen = JSON.parse(localStorage.getItem(V183.LS)||'{}') || {}; }catch(e){ V183.seen = {}; }
+function v183Params(){ return (typeof V131!=='undefined' && (V131.params || V131.prior)) || null; }
+function v183Margin(b, v, pr){
+  if (!v || !pr) return false;
+  if (b==='props') return v.edge!=null && v.edge >= pr.P.edge + 0.01 - 1e-9;
+  return v.p!=null && v.p >= pr.G.p + 0.01 - 1e-9;
+}
+function v183Locked(e){ return !!(e && !e.drop && e.v183); }
+function v183LockedKeys(){
+  const out = {games: new Set(), props: new Set()};
+  try{ const St = v131Store(); const cut = v131DayAdd(v131Day(Date.now()), -2);
+    for (const d in (St.days||{})){ if (d < cut) continue; const D = St.days[d] || {};
+      for (const b of ['games','props']) for (const k in (D[b]||{})) if (v183Locked(D[b][k])) out[b].add(k); } }catch(e){}
+  return out;
+}
+/* a locked POD keeps its BET call on the board; its live call is kept on the side (_v183live) */
+function v183Hold(){
+  let n = 0;
+  try{
+    const L = v183LockedKeys(); if (!L.games.size && !L.props.size) return 0;
+    for (const b of ['games','props']){
+      if (!L[b].size) continue;
+      const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+      for (const x of src){
+        if (!x || x.tailedKeep || x.pulledNote || x.verdict==='started' || x.verdict==='good') continue;
+        let k = null; try{ k = boardKeyOf(b, x); }catch(e){} if (!k || !L[b].has(k)) continue;
+        x._v183live = x.verdict; x.verdict = 'good'; x._v183held = 1;
+        if (x.C) x.C.J = 'BET';
+        if (Array.isArray(x.reasons) && !x.reasons.some(r=>/Locked Play of the Day/.test(r))) x.reasons.unshift('Locked Play of the Day: stays a Bet until it is graded');
+        n++;
+      }
+    }
+  }catch(e){ console.warn('v183 hold', e); }
+  V183.held = n; return n;
+}
+(function(){
+  // apply the hold wherever the shared list is applied (after judging, before every paint) and before publishing
+  if (typeof v165Apply==='function'){ const base = v165Apply; v165Apply = function(){ const r = base.apply(this, arguments); v183Hold(); return r; }; }
+  if (typeof v165Collect==='function'){ const base = v165Collect; v165Collect = function(){ v183Hold(); return base.apply(this, arguments); }; }
+  // learning logs the model's live call for games, not the held one
+  if (typeof uniCaptureGames==='function'){ const base = uniCaptureGames; uniCaptureGames = function(){
+    const sw = []; try{ for (const x of ((typeof plays!=='undefined' && plays) || [])) if (x && x._v183held && x.verdict==='good'){ sw.push(x); x.verdict = x._v183live; } }catch(e){}
+    try{ return base.apply(this, arguments); } finally { for (const x of sw) x.verdict = 'good'; } }; }
+  // the POD tag: locked v183 entries, plus older entries whose game already started (history)
+  v131IsPotd = function(b, x){
+    if (!x || (b!=='games' && b!=='props')) return false;
+    try{ const k = boardKeyOf(b, x); if (!k) return false; const st = itemStartMs(x); if (!st) return false;
+      const D = v131Store().days[v131Day(st)]; const e = D && D[b] && D[b][k]; if (!e || e.drop) return false;
+      return !!e.v183 || (+e.st > 0 && +e.st <= Date.now() && !(+e.at > 0 && +e.st - +e.at > V183.WIN + 5*60000 && !e.v183 && +e.at > V183.REL)); }catch(e){ return false; }
+  };
+  window.v131IsPotd = v131IsPotd;
+  // no more cooling drops: a named POD is locked
+  v137DropPass = function(){ return []; };
+  // merging two copies of the list: the newer revision of an entry wins (so a re-named POD is not re-dropped)
+  if (typeof v154Merge==='function'){ const base = v154Merge; v154Merge = function(A, B){
+    const rv = e => (e && +e.rv) || 0; const cp = S2 => { const o = {days:{}}; for (const d in ((S2&&S2.days)||{})){ const D = S2.days[d]||{}; o.days[d] = {games: Object.assign({}, D.games||{}), props: Object.assign({}, D.props||{})}; } return o; };
+    const a = cp(A), c = cp(B);
+    for (const d in a.days){ if (!c.days[d]) continue; for (const b of ['games','props']) for (const k in a.days[d][b]){ const x = a.days[d][b][k], y = c.days[d][b][k]; if (!y || rv(x)===rv(y)) continue;
+      if (rv(x) > rv(y)) delete c.days[d][b][k]; else delete a.days[d][b][k]; } }
+    return base.call(this, a, c); }; }
+})();
+V183.REL = Date.UTC(2026, 10, 24, 11, 0);   // entries named after this (3 AM PT Nov 24) by the old rule are not history
+/* one-time: unstarted entries named by the old rule step back to regular Picks */
+function v183Migrate(St, now){
+  let dirty = false;
+  for (const d in (St.days||{})){ const D = St.days[d] || {};
+    for (const b of ['games','props']) for (const k in (D[b]||{})){ const e = D[b][k];
+      if (!e || e.drop || e.v183 || !(+e.st > now)) continue;
+      e.drop = {at: now, why: 'moved to the 1-hour POD timing', v: 'good'}; e.rv = 1; dirty = true; V183.migrated++; } }
+  return dirty;
+}
+function v183Select(){
+  const St = v131Store(); if (!St || !St.days) return [];
+  const now = Date.now(), pr = v183Params(); if (!pr) return [];
+  let dirty = v183Migrate(St, now); const added = []; const live = {};
+  const room = {};
+  for (const b of ['games','props']){
+    const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+    for (const x of src){
+      if (!x || x.tailedKeep || x.pulledNote || x._v183held || x.verdict!=='good') continue;
+      if (b==='games' && !(x.g && x.g.state==='pre')) continue;
+      const st = itemStartMs(x); if (!st || st <= now) continue;
+      let v = null; try{ v = v129Read(b, x); }catch(e){} if (!v) continue;
+      if (v.price!=null && isFinite(v.price) && v.price < -250) continue;
+      if (!v131QualP(b, v, pr) || !v183Margin(b, v, pr)) continue;
+      const k = boardKeyOf(b, x); if (!k) continue; const id = b + '|' + k; live[id] = 1;
+      const s = V183.seen[id]; if (s && now - s.last <= V183.GAP) s.last = now; else V183.seen[id] = {since: now, last: now};
+      const left = st - now; if (left > V183.WIN || left < V183.LATE) continue;          // about an hour out
+      if (now - V183.seen[id].since < V183.HOLD) continue;                               // held its call for 20 minutes
+      const d = v131Day(st); const D = St.days[d] || (St.days[d] = {}); const E = D[b] || (D[b] = {});
+      if (v183Locked(E[k])) continue;
+      const rk = d + '|' + b; if (room[rk]==null) room[rk] = (pr.cap[b]||4) - Object.values(E).filter(v183Locked).length;
+      if (room[rk] <= 0) continue;
+      let sc = 0; try{ sc = v129Score(b, v); }catch(e){}
+      added.push({b, x, k, d, st, sc, E});
+    }
+  }
+  for (const id in V183.seen) if (!live[id] && now - V183.seen[id].last > V183.GAP) delete V183.seen[id];
+  try{ localStorage.setItem(V183.LS, JSON.stringify(V183.seen)); }catch(e){}
+  // strongest first when the cap is tight
+  added.sort((a, c)=>c.sc - a.sc); const out = [];
+  for (const o of added){ const rk = o.d + '|' + o.b; if (room[rk] <= 0) continue; room[rk]--;
+    o.E[o.k] = {id: String(o.x.id||'').slice(0,120), label: String(o.x.label||'').slice(0,140), sc: Math.round(o.sc*1000)/1000, at: now, lat: now, st: o.st,
+      dev: String((typeof AUTH!=='undefined' && AUTH.deviceId)||'').slice(0,40), v183: 1, rv: now};
+    dirty = true; out.push(o); V183.claims.push({at: now, label: o.x.label}); }
+  if (dirty){ try{ v131StoreSave(); }catch(e){} }
+  for (const o of out){ try{ if (typeof v132AlertPotd==='function') v132AlertPotd(o); }catch(e){} }
+  if (out.length){ try{ v183Hold(); if (ui.tab==='good') render(); }catch(e){} }
+  return out;
+}
+v131Select = function(){
+  try{ if (!(v154Pub() || V154.local)) return []; }catch(e){ return []; }
+  return v183Select();
+};
+window.v183Status = () => ({build: APP_BUILD, held: V183.held, watching: Object.keys(V183.seen).length, claims: V183.claims.slice(-10), migrated: V183.migrated, bar: v183Params()});
+
+/* admin Model learning: describe the new POD rule */
+function v183LearnText(){
+  const pr = v183Params(); const cap = pr ? Math.max(pr.cap.games||4, pr.cap.props||4) : 4;
+  return `<div class="hint">Named about an hour before the game (75 to 15 minutes out) when a Pick clears the model's own POD bar (price range, win chance or edge, prop types, which it retunes from graded results) with room to spare, and has held its Bet call for 20 straight minutes. There can be several a day (up to ${cap} per board) or none. Once named it is locked as a Bet until it is graded, so it never turns into Watch or Avoid; the model's own live read is still logged for learning. The POD record is graded on its own.</div>`;
+}
+// keep the learned POD settings visible (v180 had replaced them with a one-per-day note)
+if (typeof v180LearnSec==='function'){ const b180 = v180LearnSec; v180LearnSec = function(){ try{ const pd = document.querySelector('#view .v150 [data-sec="v150-potd"] .v150-potd'); if (pd) pd.dataset.v180 = '1'; }catch(e){} return b180.apply(this, arguments); }; }
+(function(){
+  if (typeof v150Learn!=='function') return; const base = v150Learn;
+  v150Learn = function(){ const r = base.apply(this, arguments);
+    try{ const pd = document.querySelector('#view .v150 [data-sec="v150-potd"] .v150-potd'); if (pd && pd.dataset.v183!=='1'){ pd.dataset.v183 = '1'; pd.insertAdjacentHTML('afterbegin', v183LearnText()); } }catch(e){}
+    return r; };
+})();
 </script>
 </body>
 </html>
