@@ -31902,6 +31902,328 @@ input[type=checkbox].v172-sw:focus-visible{box-shadow:0 0 0 3px rgba(59,130,246,
   document.head.appendChild(st);
 })();
 window.v172Status = () => ({build: APP_BUILD, moreOpen: (document.getElementById('v140More')||{}).open, notif: !!document.getElementById('v172Notif')});
+/* ================= v173: other books (Pinnacle + Action Network) =================
+   - Two free public feeds, fetched by every device (Pinnacle through our Worker's 90 s edge-cached relay, Action direct):
+       Pinnacle guest feed  → the sharp reference line (moneyline / spread / total, incl. its alternate lines)
+       Action Network       → FanDuel, BetMGM, Caesars, bet365, BetRivers game lines
+     Pinnacle every 120 s, Action every 90 s, only while the tab is visible and only for sports with games in the next
+     36 hours. Results are cached (memory + a small saved copy). A failed or blocked feed is skipped silently.
+   - DraftKings stays the board line, the price the app tells you to bet, and the grading price. These feeds never
+     become the bet line or the grading price; a game without DraftKings prices simply isn't priced (as before).
+   - Sharp check: when Pinnacle prices the same market at DraftKings' exact number (main or alternate line), the fair
+     chance for the +2.5-point game rule is Pinnacle's no-vig price (analyzeMarket already prefers Pinnacle). The rule,
+     the -250 floor and DraftKings as the checked price are unchanged.
+   - Cards and the popup show an "Other books" row (best price highlighted).
+   - Game rows in the model log carry the other books' prices for that side (xb: {pin, fd, mgm, czr, b365, br}).
+   - Soccer (3-way moneylines) and props are not covered by these feeds yet. */
+APP_BUILD = 173;
+var V173 = window.V173 = {ev: {}, at: {pin: 0, an: 0}, busy: {pin: false, an: false}, err: {pin: '', an: ''}, n: {pin: 0, an: 0}, used: 0};
+const V173_LS = 'bl_v173_xb';
+const V173_PIN_LG = {nba: 487, nfl: 889, nhl: 1456, ncaaf: 880, ncaab: 493, mlb: 246, wnba: 578};
+const V173_AN_LG = {nba: 'nba', nfl: 'nfl', nhl: 'nhl', ncaaf: 'ncaaf', ncaab: 'ncaab', mlb: 'mlb', wnba: 'wnba'};
+const V173_AN_BOOK = {69: 'fd', 75: 'mgm', 123: 'czr', 79: 'b365', 71: 'br'};
+const V173_LAB = {pin: 'Pinnacle', fd: 'FanDuel', mgm: 'BetMGM', czr: 'Caesars', b365: 'bet365', br: 'BetRivers'};
+const V173_SHORT = {pin: 'PIN', fd: 'FD', mgm: 'MGM', czr: 'CZR', b365: '365', br: 'BR'};
+const V173_ORDER = ['fd', 'mgm', 'czr', 'b365', 'br', 'pin'];
+try{ const c = JSON.parse(localStorage.getItem(V173_LS) || 'null'); if (c && c.ev && Date.now() - (c.at||0) < 6*3600000) V173.ev = c.ev; }catch(e){}
+
+function v173Norm(s){ return String(s||'').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function v173TeamHit(t, name, abbr){
+  if (!t) return 0; const n = v173Norm(name); if (!n) return 0;
+  const full = v173Norm(t.name), loc = v173Norm(t.loc), nick = v173Norm(t.nick);
+  if (n === full) return 3;
+  if (abbr && t.short && String(abbr).toUpperCase() === String(t.short).toUpperCase() && (full.indexOf(n.split(' ')[0]) >= 0)) return 3;
+  if (full && (full.indexOf(n) === 0 || n.indexOf(full) === 0)) return 2;
+  if (loc && (n === loc || n.indexOf(loc + ' ') === 0)) return 2;
+  if (nick && n.split(' ').pop() === nick.split(' ').pop() && loc && n.indexOf(loc.split(' ')[0]) >= 0) return 2;
+  return 0;
+}
+/* find the app game for a feed game; returns {g, flip} (flip = the feed's home is the app's away) */
+function v173Match(lg, startIso, homeName, awayName, homeAbbr, awayAbbr){
+  try{
+    const t0 = Date.parse(startIso); if (!isFinite(t0)) return null;
+    let best = null, bs = 0;
+    for (const g of (typeof games!=='undefined' ? games : [])){
+      if (!g || g.league !== lg || !g.home || !g.away) continue;
+      const gt = +new Date(g.start); if (!isFinite(gt) || Math.abs(gt - t0) > 3*3600000) continue;
+      const s1 = Math.min(v173TeamHit(g.home, homeName, homeAbbr), v173TeamHit(g.away, awayName, awayAbbr));
+      const s2 = Math.min(v173TeamHit(g.home, awayName, awayAbbr), v173TeamHit(g.away, homeName, homeAbbr));
+      if (s1 > bs){ bs = s1; best = {g, flip: false}; }
+      if (s2 > bs){ bs = s2; best = {g, flip: true}; }
+    }
+    return bs >= 2 ? best : null;
+  }catch(e){ return null; }
+}
+function v173Leagues(){
+  const out = new Set(); const now = Date.now();
+  try{ for (const g of games){ if (!g || g.state === 'post') continue; const t = +new Date(g.start); if (isFinite(t) && t - now < 36*3600000 && t - now > -4*3600000) out.add(g.league); } }catch(e){}
+  return [...out];
+}
+function v173Rec(ev){ return V173.ev[ev] || (V173.ev[ev] = {t: Date.now(), ml: {}, spread: {}, total: {}}); }
+/* put one book's price: mk, side (app side), point, price */
+function v173Put(rec, bk, mk, side, point, price){
+  if (!isFinite(+price) || !price) return;
+  const S0 = rec[mk] || (rec[mk] = {}); const L = S0[side] || (S0[side] = {});
+  const arr = L[bk] || (L[bk] = []);
+  const pt = point==null || point==='' ? null : +point;
+  const i = arr.findIndex(x=>x.pt === pt); const v = {pt, pr: Math.round(+price)};
+  if (i >= 0) arr[i] = v; else arr.push(v);
+  rec.t = Date.now();
+}
+function v173Clear(bk){ for (const ev in V173.ev){ const r = V173.ev[ev]; for (const mk of ['ml','spread','total']) for (const sd in (r[mk]||{})) delete r[mk][sd][bk]; } }
+function v173Save(){
+  try{ const cut = Date.now() - 12*3600000; for (const k in V173.ev) if ((V173.ev[k].t||0) < cut) delete V173.ev[k];
+    localStorage.setItem(V173_LS, JSON.stringify({at: Date.now(), ev: V173.ev})); }catch(e){}
+}
+async function v173Json(url, headers){
+  const ctl = typeof AbortController!=='undefined' ? new AbortController() : null; const to = setTimeout(()=>{ try{ ctl && ctl.abort(); }catch(e){} }, 15000);
+  try{ const r = await fetch(url, {headers: headers || {}, signal: ctl ? ctl.signal : undefined, cache: 'no-store', credentials: 'omit'}); if (!r.ok) throw new Error('http ' + r.status); return await r.json(); }
+  finally{ clearTimeout(to); }
+}
+async function v173Pin(){
+  if (V173.busy.pin) return; V173.busy.pin = true; V173.at.pin = Date.now();
+  try{
+    const H = {}; const base = (typeof PUB_BASE!=='undefined' && PUB_BASE ? PUB_BASE : '') + '/x/pin/';   // our Worker relays Pinnacle (it only answers its own site)
+    if (!/^https?:/.test(base)) return;
+    const fresh = {}; let n = 0;
+    for (const lg of v173Leagues()){
+      const id = V173_PIN_LG[lg]; if (!id) continue;
+      let mu, mk;
+      try{ [mu, mk] = await Promise.all([v173Json(base + id + '/matchups', H), v173Json(base + id + '/straight', H)]); }catch(e){ V173.err.pin = String(e.message||e).slice(0,60); continue; }
+      const map = {};
+      for (const m of (mu||[])){
+        if (!m || !Array.isArray(m.participants)) continue;
+        const h = m.participants.find(p=>p.alignment==='home'), a = m.participants.find(p=>p.alignment==='away'); if (!h || !a) continue;
+        const hit = v173Match(lg, m.startTime, h.name, a.name); if (hit && hit.g.eventId) map[m.id] = hit;
+      }
+      for (const x of (mk||[])){
+        const hit = map[x.matchupId]; if (!hit || !Array.isArray(x.prices)) continue;
+        const ev = String(hit.g.eventId); const rec = fresh[ev] || (fresh[ev] = {t: Date.now(), ml:{}, spread:{}, total:{}, alt:{}});
+        const sideOf = d => !hit.flip ? d : (d==='home' ? 'away' : d==='away' ? 'home' : d);
+        for (const p of x.prices){
+          if (x.type === 'moneyline' && (p.designation==='home' || p.designation==='away') && !x.isAlternate) v173Put(rec, 'pin', 'ml', sideOf(p.designation), null, p.price);
+          else if (x.type === 'spread' && (p.designation==='home' || p.designation==='away')) v173Put(rec, 'pin', 'spread', sideOf(p.designation), p.points, p.price);
+          else if (x.type === 'total' && (p.designation==='over' || p.designation==='under')) v173Put(rec, 'pin', 'total', p.designation, p.points, p.price);
+        }
+        if (!x.isAlternate && (x.type==='spread' || x.type==='total')) rec.alt[x.type] = 0;
+        n++;
+      }
+    }
+    if (n){ v173Clear('pin'); for (const ev in fresh){ const r = v173Rec(ev); for (const mk of ['ml','spread','total']) for (const sd in fresh[ev][mk]){ (r[mk][sd] || (r[mk][sd] = {})).pin = fresh[ev][mk][sd].pin; } r.t = Date.now(); }
+      V173.n.pin = Object.keys(fresh).length; V173.err.pin = ''; v173Save(); v173Changed(); }
+  }catch(e){ V173.err.pin = String(e && e.message || e).slice(0, 60); }
+  finally{ V173.busy.pin = false; }
+}
+function v173Ymd(t){ const d = new Date(t); return d.getFullYear() + String(d.getMonth()+1).padStart(2,'0') + String(d.getDate()).padStart(2,'0'); }
+async function v173An(){
+  if (V173.busy.an) return; V173.busy.an = true; V173.at.an = Date.now();
+  try{
+    const books = '68,' + Object.keys(V173_AN_BOOK).join(','); const fresh = {}; let n = 0;
+    const days = [...new Set([v173Ymd(Date.now()), v173Ymd(Date.now() + 86400000)])];
+    for (const lg of v173Leagues()){
+      const slug = V173_AN_LG[lg]; if (!slug) continue;
+      for (const day of days){
+        let d; try{ d = await v173Json(`https://api.actionnetwork.com/web/v2/scoreboard/${slug}?bookIds=${books}&date=${day}&periods=event`); }catch(e){ V173.err.an = String(e.message||e).slice(0,60); continue; }
+        for (const gm of ((d && d.games) || [])){
+          if (!gm || gm.status === 'complete' || gm.status === 'closed') continue;
+          const tm = {}; (gm.teams||[]).forEach(t=>{ tm[t.id] = t; });
+          const H = tm[gm.home_team_id], A = tm[gm.away_team_id]; if (!H || !A) continue;
+          const hit = v173Match(lg, gm.start_time, H.full_name || H.display_name, A.full_name || A.display_name, H.abbr, A.abbr); if (!hit || !hit.g.eventId) continue;
+          const ev = String(hit.g.eventId); const rec = fresh[ev] || (fresh[ev] = {ml:{}, spread:{}, total:{}});
+          const sideOf = d => !hit.flip ? d : (d==='home' ? 'away' : d==='away' ? 'home' : d);
+          for (const bid in (gm.markets||{})){
+            const bk = V173_AN_BOOK[bid]; if (!bk) continue; const E = gm.markets[bid] && gm.markets[bid].event; if (!E) continue;
+            for (const x of (E.moneyline||[])) if (!x.is_live && !x.is_alt_market && (x.side==='home'||x.side==='away')) v173Put(rec, bk, 'ml', sideOf(x.side), null, x.odds);
+            for (const x of (E.spread||[])) if (!x.is_live && !x.is_alt_market && (x.side==='home'||x.side==='away')) v173Put(rec, bk, 'spread', sideOf(x.side), x.value, x.odds);
+            for (const x of (E.total||[])) if (!x.is_live && !x.is_alt_market && (x.side==='over'||x.side==='under')) v173Put(rec, bk, 'total', x.side, x.value, x.odds);
+          }
+          n++;
+        }
+      }
+    }
+    if (n){ for (const bk of Object.values(V173_AN_BOOK)) v173Clear(bk);
+      for (const ev in fresh){ const r = v173Rec(ev); for (const mk of ['ml','spread','total']) for (const sd in fresh[ev][mk]){ Object.assign(r[mk][sd] || (r[mk][sd] = {}), fresh[ev][mk][sd]); } r.t = Date.now(); }
+      V173.n.an = Object.keys(fresh).length; V173.err.an = ''; v173Save(); v173Changed(); }
+  }catch(e){ V173.err.an = String(e && e.message || e).slice(0, 60); }
+  finally{ V173.busy.an = false; }
+}
+let _v173Ch = 0;
+function v173Changed(){ clearTimeout(_v173Ch); _v173Ch = setTimeout(v173Patch, 300); }
+/* new feed data: update the rows in place (no re-render, so cards never flicker); the next normal render picks it up too */
+function v173CardRow(p){
+  try{
+    if (!p || p._stub || !p.g || !p.mk || !p.side) return '';
+    const dk = ((p.g.quotes && p.g.quotes[p.mk] && p.g.quotes[p.mk][p.side]) || []).find(q=>q.bk==='draftkings');
+    const pt = p.mk==='ml' ? null : (p.sd && p.sd.point!=null ? p.sd.point : dk && dk.point);
+    return v173RowHTML(p.g.eventId, p.mk, p.side, pt, dk ? dk.price : null);
+  }catch(e){ return ''; }
+}
+function v173Patch(){
+  try{
+    if (typeof plays==='undefined') return; const byId = new Map(plays.map(x=>[x.id, x]));
+    for (const c of document.querySelectorAll('.card[data-pid]')){
+      const p = byId.get(c.getAttribute('data-pid')); if (!p || !p.mk) continue;
+      const html = v173CardRow(p); const cur = c.querySelector(':scope > .v173-ob');
+      if (!html){ continue; }
+      const t = document.createElement('div'); t.innerHTML = html; const row = t.firstElementChild;
+      if (cur){ if (cur.querySelector('.v173-cs').textContent !== row.querySelector('.v173-cs').textContent) cur.replaceWith(row); }
+      else { const at = c.querySelector(':scope > .v147-hint') || c.querySelector(':scope > .cfoot'); if (at) at.before(row); }
+    }
+  }catch(e){}
+}
+function v173Tick(){
+  try{
+    if (document.visibilityState !== 'visible' || typeof games==='undefined' || !games.length) return;
+    const now = Date.now();
+    if (now - V173.at.pin > 120000) v173Pin();
+    if (now - V173.at.an > 90000) v173An();
+  }catch(e){}
+}
+setTimeout(v173Tick, 8000); setInterval(v173Tick, 15000);
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='visible') setTimeout(v173Tick, 1500); });
+
+/* price of one book for (event, market, side) at a point (exact; null when it doesn't price that number) */
+function v173Price(ev, mk, side, point, bk){
+  const r = V173.ev[String(ev)]; if (!r || !r[mk] || !r[mk][side] || !r[mk][side][bk]) return null;
+  const arr = r[mk][side][bk]; if (mk==='ml') return arr[0] ? arr[0].pr : null;
+  const x = arr.find(a=>a.pt === +point); return x ? x.pr : null;
+}
+/* main-line price of a book (its own number), for the card row when it hangs a different number */
+function v173Main(ev, mk, side, bk){
+  const r = V173.ev[String(ev)]; if (!r || !r[mk] || !r[mk][side] || !r[mk][side][bk]) return null;
+  return r[mk][side][bk][0] || null;
+}
+
+/* ---------- sharp check: Pinnacle joins the fair-price math at DraftKings' exact number ---------- */
+(function(){
+  if (typeof analyzeMarket!=='function') return;
+  const base = analyzeMarket;
+  analyzeMarket = function(g, mk){
+    let saved = null;
+    try{
+      if (g && g.eventId && g.quotes && g.quotes[mk] && V173.ev[String(g.eventId)]){
+        const sides = mk==='ml' ? ['home','away'] : mk==='spread' ? ['home','away'] : ['over','under'];
+        const Q = g.quotes[mk];
+        const dk = s => (Q[s]||[]).find(q=>(q.bk||'')==='draftkings');
+        if (sides.every(s=>dk(s))){
+          const adds = {};
+          for (const s of sides){ const pr = v173Price(g.eventId, mk, s, mk==='ml' ? null : dk(s).point, 'pin'); if (pr==null) { sides.length = 0; break; } adds[s] = pr; }
+          if (sides.length){
+            saved = {};
+            for (const s of sides){ saved[s] = Q[s]; Q[s] = (Q[s]||[]).filter(q=>q.src!=='v173').concat([{book:'Pinnacle', bk:'pinnacle', price: adds[s], point: mk==='ml' ? undefined : dk(s).point, src:'v173', openIsFirstSeen: true}]); }
+            V173.used++;
+          }
+        }
+      }
+    }catch(e){ saved = null; }
+    try{ return base.apply(this, arguments); }
+    finally{ if (saved){ try{ for (const s in saved) g.quotes[mk][s] = saved[s]; }catch(e){} } }
+  };
+})();
+
+/* ---------- "Other books" row ---------- */
+function v173RowHTML(ev, mk, side, point, dkPrice){
+  try{
+    if (!ev) return '';
+    const items = [];
+    for (const bk of V173_ORDER){
+      let pr = v173Price(ev, mk, side, point, bk), pt = point, alt = false;
+      if (pr==null && mk!=='ml'){ const m = v173Main(ev, mk, side, bk); if (m && m.pt!=null){ pr = m.pr; pt = m.pt; alt = true; } }
+      if (pr==null) continue;
+      items.push({bk, pr, pt, alt});
+    }
+    if (!items.length) return '';
+    const cmp = (a, b) => (a > 0 ? a/100 + 1 : 100/(-a) + 1) - (b > 0 ? b/100 + 1 : 100/(-b) + 1);   // decimal odds difference
+    let best = null; for (const x of items) if (!x.alt && x.bk!=='pin' && (best==null || cmp(x.pr, best.pr) > 0)) best = x;
+    const beatsDk = best && dkPrice!=null && isFinite(+dkPrice) && cmp(best.pr, +dkPrice) > 0;
+    const am = v => (v > 0 ? '+' : '−') + Math.abs(v);
+    const ptTxt = x => x.alt ? (mk==='spread' ? ((x.pt>0?'+':x.pt<0?'−':'') + Math.abs(x.pt) + ' ') : (mk==='total' ? (side==='over'?'o':'u') : '') + x.pt + ' ') : '';
+    // order: best price first, then the rest at DraftKings' number, Pinnacle, then books hanging a different number
+    const rank = x => x===best && beatsDk ? 0 : x.alt ? 3 : x.bk==='pin' ? 2 : 1;
+    items.sort((a, b) => rank(a) - rank(b) || cmp(b.pr, a.pr));
+    const chips = items.map(x=>`<span class="v173-c${x===best && beatsDk ? ' best' : ''}${x.bk==='pin' ? ' pin' : ''}${x.alt ? ' alt' : ''}" title="${V173_LAB[x.bk]}${x.alt ? ' (different number)' : ''}"><b>${V173_SHORT[x.bk]}</b> ${esc(ptTxt(x) + am(x.pr))}</span>`).join('');
+    return `<div class="v173-ob" style="display:flex!important" aria-label="Other books"><span class="v173-l">Other books</span><span class="v173-cs">${chips}</span></div>`;
+  }catch(e){ return ''; }
+}
+(function(){
+  if (typeof playCard!=='function') return;
+  const base = playCard;
+  playCard = function(p){
+    let h = base.apply(this, arguments);
+    try{
+      const row = v173CardRow(p);
+      if (row){ const i = String(h).indexOf('<div class="cfoot'); h = i > 0 ? h.slice(0, i) + row + h.slice(i) : h; }
+    }catch(e){}
+    return h;
+  };
+})();
+
+/* ---------- model log: game rows carry the other books' prices ---------- */
+(function(){
+  if (typeof mlogCompact!=='function') return;
+  const base = mlogCompact;
+  mlogCompact = function(r){
+    const out = base.apply(this, arguments);
+    try{
+      if (out && Array.isArray(out) && out[1] && out[1].b==='games' && r && r.ev){
+        const o = out[1]; const mk = o.mk || r.mk, sd = o.sd || r.side; if (!mk || !sd) return out;
+        const xb = {}; for (const bk of V173_ORDER){ const pr = v173Price(r.ev, mk, sd, mk==='ml' ? null : o.pt, bk); if (pr!=null) xb[bk] = pr; }
+        if (Object.keys(xb).length) o.xb = xb;
+      }
+    }catch(e){}
+    return out;
+  };
+})();
+
+/* ---------- Settings: Pick log sync above Advanced, with a plain explanation ---------- */
+function v173SyncCard(){
+  try{
+    if (typeof ui==='undefined' || ui.tab!=='settings') return;
+    const c = document.getElementById('v145Sync'); if (!c) return;
+    const adv = document.querySelector('#setForm details.adv, #view details.adv'); if (!adv) return;
+    if (adv.previousElementSibling !== c) adv.before(c);
+    const h = c.querySelector('h3'); if (h && h.textContent !== 'Pick log sync') h.textContent = 'Pick log sync';
+    if (!c.querySelector('.v173-ex')){ const d = document.createElement('div'); d.className = 'hint v173-ex';
+      d.textContent = 'This device keeps its own copy of the model\'s pick log (every bet the model priced and how it graded), so Results and the model\'s learning load fast. It only downloads new changes; Resync downloads the whole log again if the numbers ever look wrong.';
+      h ? h.after(d) : c.prepend(d); }
+  }catch(e){}
+}
+setInterval(v173SyncCard, 600);
+document.addEventListener('click', ()=>setTimeout(v173SyncCard, 450), true);
+
+(function(){
+  const st = document.createElement('style'); st.id = 'v173css';
+  st.textContent = `.v173-ob{display:flex;align-items:center;gap:8px;margin:8px 0 2px;min-width:0;overflow:hidden}
+.card.v147 > .v173-ob{display:flex!important}
+.v173-l{font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--mut,#8aa0bf);white-space:nowrap;flex:none}
+.v173-cs{display:flex;gap:5px;flex-wrap:nowrap;overflow:hidden;min-width:0;flex:1 1 auto}
+.v173-c.v173-x{display:none}
+.v173-cs::-webkit-scrollbar{display:none}
+.v173-c{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;line-height:1;padding:5px 8px;border-radius:999px;border:1px solid rgba(120,160,225,.28);background:rgba(92,135,204,.10);color:#dbe7ff;font-variant-numeric:tabular-nums;flex:none}
+.v173-c b{font-weight:700;font-size:10.5px;letter-spacing:.3px;color:#9fb6da}
+.v173-c.pin{border-style:solid;opacity:.85}
+.v173-c.best{border-color:rgba(74,222,128,.7);background:rgba(34,197,94,.14);color:#bbf7d0}
+.v173-c.best b{color:#86efac}
+@media (max-width:420px){ .v173-c{font-size:11.5px;padding:4px 7px} .v173-l{font-size:10.5px} }
+#v145Sync .v173-ex{margin:0 0 4px}`;
+  document.head.appendChild(st);
+})();
+/* keep every chip row on one line: drop chips from the end (different-number books go first) until it fits */
+function v173Fit(){
+  try{
+    for (const cs of document.querySelectorAll('.v173-cs')){
+      if (!cs.clientWidth) continue;
+      const kids = [...cs.children]; const key = cs.clientWidth + ':' + kids.length;
+      if (cs.dataset.fit === key) continue;
+      kids.forEach(k=>k.classList.remove('v173-x'));
+      for (let i = kids.length - 1; i > 0 && cs.scrollWidth > cs.clientWidth + 1; i--) kids[i].classList.add('v173-x');
+      cs.dataset.fit = key;
+    }
+  }catch(e){}
+}
+setInterval(v173Fit, 500); window.addEventListener('resize', ()=>setTimeout(v173Fit, 50));
+try{ new MutationObserver(()=>{ clearTimeout(window.__v173f); window.__v173f = setTimeout(v173Fit, 30); }).observe(document.documentElement, {childList:true, subtree:true}); }catch(e){}
+window.v173Status = () => ({build: APP_BUILD, games: Object.keys(V173.ev).length, pin: V173.n.pin, an: V173.n.an, err: V173.err, sharpChecks: V173.used, ageS: {pin: Math.round((Date.now()-V173.at.pin)/1000), an: Math.round((Date.now()-V173.at.an)/1000)}});
 </script>
 </body>
 </html>
