@@ -31774,6 +31774,134 @@ window.v171Status = () => ({build: APP_BUILD, pod: document.querySelectorAll('#v
   }
   setTimeout(requue, 20000);
 })();
+/* ================= v172: filters, popup sections, Settings layout =================
+   1) "More filters" opens again: the filter arranger re-applied its remembered (closed) state before the
+      dropdown's own toggle event fired, so every tap closed it at once. The tap now sets the state itself.
+   2) Filters: every sport pill always shows (no "+N more"); Sort and Strength live inside More filters.
+   3) Pick popup: Lineups, Injuries and News start open (as well as the Courtroom); the rest stay closed.
+   4) Settings: Bet size is its own section; Notifications is its own section that folds (closed by default);
+      the alert choices and on/off settings are blue switches instead of boxed checkboxes. */
+APP_BUILD = 172;
+var V172 = {notifOpen: false};
+
+/* ---------- 1+2) filters ---------- */
+try{ V140F.allSports = true; }catch(e){}
+document.addEventListener('click', e=>{
+  const s = e.target && e.target.closest && e.target.closest('#v140More > summary'); if (!s) return;
+  e.preventDefault();
+  const d = s.parentNode; const open = !d.open;
+  try{ V140F.moreOpen = open; }catch(err){}
+  d.open = open;
+}, true);
+function v172Filters(){
+  try{
+    try{ V140F.allSports = true; }catch(e){}
+    const more = document.getElementById('v140More'); if (!more) return;
+    const body = more.querySelector('.v140-more-body'); if (!body) return;
+    const sort = document.getElementById('sortRow'), str = document.getElementById('v166StrRow');
+    if (str && str.parentNode !== body) body.insertBefore(str, body.firstChild);
+    if (sort && sort.parentNode !== body) body.insertBefore(sort, body.firstChild);
+    if (sort && str && sort.nextElementSibling !== str) sort.after(str);
+    try{ if (more.open !== !!V140F.moreOpen) more.open = !!V140F.moreOpen; }catch(e){}
+  }catch(e){}
+}
+(function(){
+  if (typeof v140ArrangeFilters==='function'){ const base = v140ArrangeFilters; v140ArrangeFilters = function(){ const r = base.apply(this, arguments); v172Filters(); return r; }; }
+  if (typeof setFiltersOpen==='function'){ const base = setFiltersOpen; setFiltersOpen = function(){ const r = base.apply(this, arguments); try{ v140ArrangeFilters(); }catch(e){} v172Filters(); return r; }; }
+  setInterval(v172Filters, 1000);
+})();
+
+/* ---------- 3) popup: Lineups / Injuries / News open on first view ---------- */
+function v172OpenSections(root){
+  try{
+    (root || document.getElementById('v166Modal') || document).querySelectorAll('details').forEach(d=>{
+      const s = d.querySelector(':scope > summary'); if (!s || d.open) return;
+      if (/lineup|injur|news/i.test(s.textContent||'')){ d.open = true; try{ if (typeof fillLazyDetails==='function') fillLazyDetails(d); }catch(e){} }
+    });
+    if (typeof v166RememberOpen==='function'){ const b = document.querySelector('#v166Modal .v166-body'); if (b) v166RememberOpen(b); }
+  }catch(e){}
+}
+(function(){
+  if (typeof v166FillBody==='function'){ const base = v166FillBody; v166FillBody = function(p, opts){ const first = !(opts && opts.keep && opts.keep.length); const r = base.apply(this, arguments); if (first) v172OpenSections(); return r; }; }
+  if (typeof v170FillFromCard==='function'){ const b2 = v170FillFromCard; v170FillFromCard = function(){ const r = b2.apply(this, arguments); v172OpenSections(); return r; }; }
+})();
+
+/* ---------- 4) Settings layout ---------- */
+function v172Settings(){
+  try{
+    if (typeof ui==='undefined' || ui.tab!=='settings') return;
+    const form = document.getElementById('setForm'); if (!form) return;
+    const rows = [...form.querySelectorAll('.s-row')];
+    const byHead = re => rows.find(r=>{ const h = r.querySelector(':scope > .s-h'); return h && re.test(h.textContent.trim()); });
+    const bet = byHead(/^Bet size/), notif = byHead(/^Notifications/), phone = byHead(/^Phone alerts/), pin = document.getElementById('v168PinRow');
+    if (!bet) return;
+    const panel = bet.closest('.panel'); if (!panel) return;
+    let nd = document.getElementById('v172Notif');
+    if (!nd || nd.closest('#setForm') !== form){
+      nd = document.createElement('details'); nd.id = 'v172Notif'; nd.className = 'panel simple v172-notif';
+      nd.innerHTML = '<summary><span class="v172-st"><span aria-hidden="true">🔔</span> Notifications</span><span class="v172-chev" aria-hidden="true"></span></summary><div class="v172-nb"></div>';
+      nd.open = !!V172.notifOpen;
+      nd.addEventListener('toggle', ()=>{ V172.notifOpen = nd.open; });
+      panel.after(nd);
+      panel.classList.add('v172-bet');
+    }
+    const nb = nd.querySelector('.v172-nb');
+    if (notif && notif.parentNode !== nb) nb.appendChild(notif);
+    if (phone && phone.parentNode !== nb) nb.appendChild(phone);
+    if (notif){ const h = notif.querySelector(':scope > .s-h'); if (h && !h.classList.contains('v172-hid')) h.classList.add('v172-hid'); }
+    let pp = document.getElementById('v172Pub');
+    if (pin){
+      if (!pp || pp.closest('#setForm') !== form){ pp = document.createElement('div'); pp.id = 'v172Pub'; pp.className = 'panel simple v172-pub'; nd.after(pp); }
+      if (pin.parentNode !== pp) pp.appendChild(pin);
+    } else if (pp) pp.remove();
+    // Save stays last
+    const save = [...panel.querySelectorAll('button')].find(b=>/^\s*Save\s*$/.test(b.textContent||''));
+    if (save){ const wrap = save.parentNode; let sp = document.getElementById('v172Save');
+      if (!sp || sp.closest('#setForm') !== form){ sp = document.createElement('div'); sp.id = 'v172Save'; sp.className = 'v172-save'; }
+      const last = pp && pp.parentNode ? pp : nd; if (last.nextElementSibling !== sp) last.after(sp);
+      if (wrap !== sp && wrap !== panel) sp.appendChild(wrap); else if (wrap === panel) sp.appendChild(save); }
+    form.querySelectorAll('.v132-alerts input[type=checkbox], #v168Pin, input[name="ntfyOn"], .v172-nb label.chk > input[type=checkbox]').forEach(i=>{ if (!i.classList.contains('v172-sw')) i.classList.add('v172-sw'); });
+  }catch(e){ console.warn('v172 settings', e); }
+}
+(function(){
+  if (typeof renderSettings==='function'){ const base = renderSettings; renderSettings = function(){ const r = base.apply(this, arguments); try{ v168SettingsRow(); }catch(e){} v172Settings(); return r; }; }
+  document.addEventListener('click', ()=>setTimeout(v172Settings, 30), true);
+  setInterval(v172Settings, 700);
+})();
+
+(function(){
+  const st = document.createElement('style'); st.id = 'v172css';
+  st.textContent = `#filterBar .chip.v140-zero{display:inline-flex!important}
+#filterBar .chip.v140-more-sp{display:none!important}
+#filterBar .v140-more-body > #sortRow,#filterBar .v140-more-body > #v166StrRow{margin:0 0 8px}
+#setForm .v172-bet{margin-bottom:12px}
+#setForm details.v172-notif{padding:0!important;margin:0 0 12px;overflow:hidden}
+#setForm details.v172-notif > summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:52px;padding:0 16px;cursor:pointer;font-weight:700;font-size:15px}
+#setForm details.v172-notif > summary::-webkit-details-marker{display:none}
+#setForm details.v172-notif > summary::before{display:none!important;content:none!important}
+#setForm .v172-chev{width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);opacity:.7;transition:transform .15s ease;flex:none}
+#setForm details.v172-notif[open] .v172-chev{transform:rotate(225deg) translateY(-1px)}
+#setForm details.v172-notif > .v172-nb{padding:0 16px 14px}
+#setForm details.v172-notif .s-row{border-top:1px solid var(--line);padding-top:14px;margin-top:0}
+#setForm details.v172-notif .s-row:first-child{border-top:0;padding-top:4px}
+#setForm .v172-hid{display:none!important}
+#setForm .v172-pub{margin:0 0 12px}
+#setForm .v172-save{margin:4px 0 16px}
+#setForm .v172-save > *{margin:0!important}
+.v132-alerts{gap:0!important}
+.v132-alerts .v132-al{border:0!important;background:none!important;border-radius:0!important;padding:12px 0!important;flex-direction:row-reverse!important;justify-content:space-between!important;align-items:center!important;gap:14px!important;border-bottom:1px solid var(--line)!important;min-height:52px}
+.v132-alerts .v132-al:last-child{border-bottom:0!important}
+.v132-alerts .v132-al .v132-al-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+input[type=checkbox].v172-sw{-webkit-appearance:none;appearance:none;width:44px;height:26px;min-width:44px;border-radius:999px;background:rgba(148,163,184,.28);border:1px solid rgba(148,163,184,.35);position:relative;cursor:pointer;margin:0!important;flex:none;transition:background .18s ease,border-color .18s ease;outline:none}
+input[type=checkbox].v172-sw::before{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#e6eef8;box-shadow:0 1px 3px rgba(0,0,0,.4);transition:transform .18s ease}
+input[type=checkbox].v172-sw:checked{background:#3b82f6;border-color:#60a5fa}
+input[type=checkbox].v172-sw:checked::before{transform:translateX(18px)}
+input[type=checkbox].v172-sw:focus-visible{box-shadow:0 0 0 3px rgba(59,130,246,.45)}
+#setForm label.chk:has(> input.v172-sw){display:flex;align-items:center;justify-content:space-between;flex-direction:row-reverse;gap:14px;min-height:44px}
+@media (prefers-reduced-motion:reduce){ input[type=checkbox].v172-sw,input[type=checkbox].v172-sw::before{transition:none} }`;
+  document.head.appendChild(st);
+})();
+window.v172Status = () => ({build: APP_BUILD, moreOpen: (document.getElementById('v140More')||{}).open, notif: !!document.getElementById('v172Notif')});
 </script>
 </body>
 </html>
