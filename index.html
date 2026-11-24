@@ -33606,6 +33606,349 @@ v185PropHTML = function(p){
   document.head.appendChild(st);
 })();
 window.v185Status = () => ({build: APP_BUILD, passes: V185.n, cards: document.querySelectorAll('.card.v185-card').length});
+/* ===== v187: DFS lab (Stanley, Nov 24 3:04 PM PT: "use prizepicks lines and underdog and stuff") =====
+   Research only, admin only. Never shown as Picks, never mixed into Picks or Results.
+   The publisher device pulls live PrizePicks (via our worker relay, since PrizePicks sends no CORS header) and
+   Underdog (direct, CORS open) lines every few minutes, matches each one to DraftKings (ESPN feed already in `props`)
+   and Pinnacle player props at the same number, and turns the two-sided prices into a no-vig hit chance.
+   A leg qualifies when that chance beats the per-pick breakeven by 2+ points. Goblin/Demon lines (PrizePicks) and
+   Underdog boosted/reduced multipliers are labelled; Goblin/Demon never go into entries. Lines that sit 1+ away from
+   the books' number are flagged "stale". Each day it builds one 6-pick PrizePicks Power + Flex and one Underdog
+   Standard + Flex (same 6 legs per platform, at most one same-game pair, 2+ teams), freezes them 30 min before the
+   first leg starts, logs every qualifying leg and entry to /p/dfs, and grades them from ESPN box scores. Record and
+   ROI (1 unit per entry, real 2026 payout tables) show in Settings > DFS lab. ===== */
+APP_BUILD = 187;
+const V187 = {pp:{}, ppAt:{}, ud:null, udAt:0, pin:{}, pinAt:{}, log:null, logAt:0, busy:false, err:'', lastRun:0, open:false, sig:'', today:null, gradeAt:0};
+const V187_LG = {nba:{pp:7, pin:487, ud:'NBA'}, nhl:{pp:8, pin:1456, ud:'NHL'}, nfl:{pp:9, pin:889, ud:'NFL'}};
+const V187_PPK = {
+  nba:{'Points':'pts','Rebounds':'reb','Assists':'ast','3-PT Made':'threes','Pts+Rebs+Asts':'pra','Pts+Rebs':'pr','Pts+Asts':'pa','Rebs+Asts':'ar','Steals':'stl','Blocked Shots':'blk','Turnovers':'tov'},
+  nhl:{'Shots On Goal':'sog','Goalie Saves':'saves','Points':'pts','Goals':'goals','Assists':'ast'},
+  nfl:{'Pass Yards':'pass_yds','Rush Yards':'rush_yds','Receiving Yards':'rec_yds','Receptions':'rec','Rush Attempts':'rush_att','Pass Attempts':'pass_att','Pass Completions':'pass_cmp'}};
+const V187_UDK = {
+  nba:{points:'pts',rebounds:'reb',assists:'ast',three_points_made:'threes',pts_rebs_asts:'pra',pts_rebs:'pr',pts_asts:'pa',rebs_asts:'ar',steals:'stl',blocks:'blk',turnovers:'tov'},
+  nhl:{shots:'sog',saves:'saves',points:'pts',goals:'goals',assists:'ast'},
+  nfl:{passing_yds:'pass_yds',rushing_yds:'rush_yds',receiving_yds:'rec_yds',receiving_rec:'rec',rushing_att:'rush_att',passing_att:'pass_att',passing_comps:'pass_cmp'}};
+const V187_PINK = {
+  nba:{'Points':'pts','Rebounds':'reb','Assists':'ast','Threes Made':'threes','Pts & Rebs & Asts':'pra'},
+  nhl:{'Shots On Goal':'sog','Saves':'saves','Points':'pts','Goals':'goals','Assists':'ast'},
+  nfl:{'Passing Yards':'pass_yds','Rushing Yards':'rush_yds','Receiving Yards':'rec_yds','Receptions':'rec','Rush Attempts':'rush_att','Pass Attempts':'pass_att','Pass Completions':'pass_cmp'}};
+const V187_LAB = {pts:'Points',reb:'Rebounds',ast:'Assists',threes:'3-Pointers',pra:'Pts+Reb+Ast',pr:'Pts+Reb',pa:'Pts+Ast',ar:'Reb+Ast',stl:'Steals',blk:'Blocks',tov:'Turnovers',sog:'Shots on goal',saves:'Saves',goals:'Goals',pass_yds:'Pass yds',rush_yds:'Rush yds',rec_yds:'Rec yds',rec:'Receptions',rush_att:'Rush att',pass_att:'Pass att',pass_cmp:'Completions'};
+// Real 2026 payout tables (PrizePicks Help Center Oct 19 2026; Underdog help center Oct 4 2026). Voids step down a tier.
+const V187_PAY = {
+  pp_power:{2:{2:3},3:{3:6},4:{4:10},5:{5:20},6:{6:37.5}},
+  pp_flex:{2:{2:3},3:{3:3,2:1},4:{4:6,3:1.5},5:{5:10,4:2,3:0.4},6:{6:25,5:2,4:0.4}},
+  ud_std:{2:{2:3.5},3:{3:6.5},4:{4:12},5:{5:20},6:{6:35}},
+  ud_flex:{2:{2:3.5},3:{3:3,2:1},4:{4:6,3:1.5},5:{5:10,4:2.5},6:{6:25,5:2.6,4:0.25}}};
+const V187_TYPES = [['pp_power','PrizePicks Power'],['pp_flex','PrizePicks Flex'],['ud_std','Underdog Standard'],['ud_flex','Underdog Flex']];
+const V187_BE = {pp:0.5421, ud:0.5529}, V187_EDGE = 0.02, V187_PMAX = 0.70;
+const V187_SLOPE = k => ({pts:0.035, pra:0.035, pr:0.035, pa:0.035, reb:0.06, ast:0.06, ar:0.06, threes:0.12, sog:0.12, pass_yds:0.012, rush_yds:0.02, rec_yds:0.02})[k] || 0.05;
+const V187_AB = {WSH:'WAS', GS:'GSW', NY:'NYK', SA:'SAS', NO:'NOP', UTAH:'UTA', PHO:'PHX', NJ:'NJD', SJ:'SJS', TB:'TBL', LA:'LAK', 'L.A':'LAK', JAX:'JAC', WAS:'WAS'};
+function v187Ab(a, lg){ a = String(a||'').toUpperCase(); if (lg==='nfl' && (a==='WSH')) return 'WAS'; if (lg==='nfl' && a==='LA') return 'LAR'; if (lg==='nfl' && a==='TB') return 'TB'; if (lg==='nba' && a==='TB') return a; return V187_AB[a] || a; }
+function v187Imp(a){ a = +a; if (!isFinite(a) || !a) return null; return a < 0 ? -a/(-a+100) : 100/(a+100); }
+function v187Nv(o, u){ const a = v187Imp(o), b = v187Imp(u); return a && b ? a/(a+b) : null; }
+function v187Day(ms){ try{ return v131Day(ms); }catch(e){ const d = new Date(ms); return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); } }
+function v187N(s){ try{ return norm(s); }catch(e){ return String(s||'').toLowerCase().replace(/[^a-z ]/g,'').trim(); } }
+async function v187Fetch(url, ms){ const c = new AbortController(); const t = setTimeout(()=>c.abort(), ms||20000); try{ const r = await fetch(url, {signal:c.signal, cache:'no-store'}); if (!r.ok) throw new Error('http ' + r.status); return await r.json(); } finally { clearTimeout(t); } }
+function v187Leagues(){ const now = Date.now(); const s = new Set(); for (const g of (typeof games!=='undefined' ? games : [])){ if (!g || !V187_LG[g.league] || g.state!=='pre') continue; const t = +new Date(g.start); if (t > now - 600000 && t < now + 36*3600000) s.add(g.league); } return [...s]; }
+
+/* ---------- book index: DraftKings (ESPN feed in `props`) + Pinnacle player props ---------- */
+function v187BookIndex(){
+  const I = new Map();   // key lg|lastname -> [{nm, kind, src, g, pid, ev, start, lines:[{l,o,u}]}]
+  const add = (lg, name, kind, src, g, pid, ev, start, l, o, u) => {
+    const nm = v187N(name); if (!nm || !kind || !isFinite(l)) return; const last = nm.split(' ').pop(); const k = lg+'|'+last;
+    let A = I.get(k); if (!A) I.set(k, A = []);
+    let e = A.find(x => x.nm===nm && x.kind===kind && x.src===src); if (!e) A.push(e = {nm, name, kind, src, g, pid, ev, start, lines:[]});
+    if (!e.lines.some(x => x.l===l)) e.lines.push({l, o, u});
+  };
+  for (const p of (typeof props!=='undefined' ? props : [])){
+    const r = p && (p.raw || p); if (!r || !V187_LG[r.league] || r.overPrice==null || r.underPrice==null) continue;
+    const kind = r.league==='nhl' && r.kind==='hpts' ? 'pts' : r.kind; const g = r.g || null;
+    add(r.league, r.playerName || p.playerName || p.player || '', kind, 'dk', g, r.playerId, r.eventId, g ? +new Date(g.start) : 0, +r.line, +r.overPrice, +r.underPrice);
+  }
+  for (const lg in V187.pin){
+    for (const m of (V187.pin[lg] || [])){
+      const kind = (V187_PINK[lg] || {})[m.u]; if (!kind) continue; const name = String(m.d||'').split(' Total ')[0].replace(/\s*\(.*\)$/, '');
+      const mt = typeof v173Match==='function' ? v173Match(lg, m.s, (m.tm||[])[1], (m.tm||[])[0], '', '') : null;
+      for (const q of (m.ou || [])) add(lg, name, kind, 'pin', mt ? mt.g : null, null, mt ? mt.g.eventId : null, Date.parse(m.s) || 0, +q[0], +q[1], +q[2]);
+    }
+  }
+  return I;
+}
+function v187BookFind(I, lg, name, kind, start){
+  const nm = v187N(name); if (!nm) return []; const A = I.get(lg+'|'+nm.split(' ').pop()) || [];
+  return A.filter(e => e.kind===kind && (e.nm===nm || nameScore(name, e.name) >= 7) && (!start || !e.start || Math.abs(e.start - start) < 4*3600000));
+}
+// fair over chance at line L from one book entry: same number = plain no-vig; otherwise nearest line, slope-adjusted
+function v187FairOne(e, L){
+  let best = null; for (const x of e.lines){ const nv = v187Nv(x.o, x.u); if (nv==null) continue; const d = Math.abs(x.l - L); if (!best || d < best.d) best = {d, x, nv}; }
+  if (!best) return null;
+  if (best.d > 0 && (L < 8 || best.d > Math.max(1.5, L*0.05))) return null;   // only estimate off a nearby number on big-count stats; small counts (goals, threes, assists) need the same number
+  const p = best.d === 0 ? best.nv : best.nv + V187_SLOPE(e.kind) * (best.x.l - L);
+  return {p: Math.min(0.97, Math.max(0.03, p)), same: best.d===0, bl: best.x.l, o: best.x.o, u: best.x.u};
+}
+function v187Price(I, lg, name, kind, L, start){
+  const E = v187BookFind(I, lg, name, kind, start); if (!E.length) return null;
+  const dk = E.find(e=>e.src==='dk'), pin = E.find(e=>e.src==='pin');
+  const fd = dk ? v187FairOne(dk, L) : null, fp = pin ? v187FairOne(pin, L) : null; if (!fd && !fp) return null;
+  const same = [fd, fp].filter(x => x && x.same), use = same.length ? same : [fd, fp].filter(Boolean);
+  const pO = use.reduce((a, x) => a + x.p, 0) / use.length;
+  const ref = fd || fp; const g = (dk && dk.g) || (pin && pin.g) || null;
+  const bookLine = fd ? (fd.same ? L : fd.bl) : (fp.same ? L : fp.bl);
+  return {pO, est: !same.length, dk: fd, pin: fp, bookLine, stale: !same.length && Math.abs(bookLine - L) >= 1, g, ev: (dk && dk.ev) || (g && g.eventId) || null, pid: dk ? dk.pid : null};
+}
+function v187GameFor(lg, t, o, s){
+  const t0 = Date.parse(s); const A = v187Ab(t, lg), B = v187Ab(o, lg);
+  for (const g of (typeof games!=='undefined' ? games : [])){
+    if (!g || g.league!==lg || !g.home || !g.away) continue; if (isFinite(t0) && Math.abs(+new Date(g.start) - t0) > 3*3600000) continue;
+    const h = v187Ab(g.home.short, lg), a = v187Ab(g.away.short, lg);
+    if ((h===A && a===B) || (h===B && a===A)) return g;
+  }
+  return null;
+}
+
+/* ---------- pull + score ---------- */
+async function v187Pull(){
+  const lgs = v187Leagues(); const now = Date.now();
+  for (const lg of lgs){
+    const L = V187_LG[lg];
+    if (now - (V187.ppAt[lg]||0) > 5*60000){ try{ V187.pp[lg] = await v187Fetch(PUB_BASE + '/x/pp/' + L.pp); V187.ppAt[lg] = now; }catch(e){ V187.err = 'PrizePicks ' + lg.toUpperCase() + ' feed unavailable'; } }
+    if (now - (V187.pinAt[lg]||0) > 5*60000){ try{ V187.pin[lg] = await v187Fetch(PUB_BASE + '/x/pinp/' + L.pin); V187.pinAt[lg] = now; }catch(e){} }
+  }
+  if (lgs.length && now - V187.udAt > 10*60000){
+    try{ const d = await v187Fetch('https://api.underdogfantasy.com/v1/over_under_lines', 45000); V187.ud = v187UdTrim(d); V187.udAt = now; }catch(e){ V187.err = 'Underdog feed unavailable'; }
+  }
+}
+function v187UdTrim(d){
+  const G = {}, A = {}, P = {}, out = [];
+  for (const g of (d.games || [])) if (g && ['NBA','NHL','NFL'].includes(g.sport_id) && g.status==='scheduled') G[g.id] = g;
+  for (const a of (d.appearances || [])) if (a && G[a.match_id]) A[a.id] = a;
+  for (const p of (d.players || [])) if (p) P[p.id] = p;
+  for (const l of (d.over_under_lines || [])){
+    const ou = l && l.over_under, st = ou && ou.appearance_stat; if (!st || l.status!=='active' || l.live_event) continue;
+    const a = A[st.appearance_id]; if (!a) continue; const g = G[a.match_id], p = P[a.player_id]; if (!g || !p) continue;
+    const lg = g.sport_id.toLowerCase(); const kind = (V187_UDK[lg] || {})[st.stat]; if (!kind) continue;
+    const opt = c => (l.options || []).find(o => o.choice===c && o.status==='active');
+    const hi = opt('higher'), lo = opt('lower');
+    out.push({lg, n: (p.first_name + ' ' + p.last_name).trim(), team: a.team_id, kind, l: +l.stat_value, s: g.scheduled_at, gt: g.full_team_names_title || g.title || '',
+      mh: hi ? +hi.payout_multiplier || 1 : null, ml: lo ? +lo.payout_multiplier || 1 : null});
+  }
+  return out;
+}
+function v187Score(){
+  const I = v187BookIndex(); const now = Date.now(); const today = v187Day(now); const legs = []; const cnt = {pp:{all:0, std:0, gob:0, dem:0, priced:0, q:0, promo:0}, ud:{all:0, priced:0, q:0, mult:0}};
+  for (const lg in V187.pp){
+    for (const x of (V187.pp[lg] || [])){
+      const s = Date.parse(x.s); if (!(s > now) || v187Day(s) !== today) continue;   // today's PT slate only
+      const kind = (V187_PPK[lg] || {})[x.st]; cnt.pp.all++; if (x.ot==='goblin') cnt.pp.gob++; else if (x.ot==='demon') cnt.pp.dem++; else cnt.pp.std++;
+      if (x.pr) cnt.pp.promo++;
+      if (!kind || !isFinite(+x.l)) continue;
+      const pr = v187Price(I, lg, x.n, kind, +x.l, s); if (!pr) continue; if (x.ot==='standard') cnt.pp.priced++;
+      const g = pr.g || v187GameFor(lg, x.t, x.o, x.s);
+      const only = x.w==='over' ? ['over'] : x.w==='under' ? ['under'] : x.ot==='standard' ? ['over','under'] : ['over'];   // Goblin/Demon are over-only
+      for (const side of only){
+        const p = side==='over' ? pr.pO : 1 - pr.pO;
+        const ok = x.ot==='standard' && !x.pr && p <= V187_PMAX && p - V187_BE.pp >= V187_EDGE;
+        legs.push({pf:'pp', lg, n:x.n, team:x.t, opp:x.o, kind, l:+x.l, side, p, m:1, v:p, ot:x.ot, promo:!!x.pr, est:pr.est, stale:pr.stale && ok, bl:pr.bookLine,
+          src:[pr.dk?'DK':'', pr.pin?'Pin':''].filter(Boolean).join('+'), s, ev:(g && g.eventId) || pr.ev, pid:pr.pid, ok});
+        if (ok) cnt.pp.q++;
+      }
+    }
+  }
+  for (const x of (V187.ud || [])){
+    const s = Date.parse(x.s); if (!(s > now) || v187Day(s) !== today) continue; cnt.ud.all++;
+    if ((x.mh && x.mh !== 1) || (x.ml && x.ml !== 1)) cnt.ud.mult++;
+    const pr = v187Price(I, x.lg, x.n, x.kind, x.l, s); if (!pr) continue; cnt.ud.priced++;
+    let g = pr.g; if (!g && typeof v173Match==='function'){ const tt = String(x.gt).split(' @ '); const mt = v173Match(x.lg, x.s, tt[1], tt[0], '', ''); g = mt && mt.g; }
+    for (const side of ['over','under']){
+      const m = side==='over' ? x.mh : x.ml; if (m==null) continue;
+      const p = side==='over' ? pr.pO : 1 - pr.pO; const v = p * m;
+      const ok = p <= V187_PMAX && v - V187_BE.ud >= V187_EDGE;
+      legs.push({pf:'ud', lg:x.lg, n:x.n, team:x.team, kind:x.kind, l:x.l, side, p, m, v, est:pr.est, stale:pr.stale && ok, bl:pr.bookLine,
+        src:[pr.dk?'DK':'', pr.pin?'Pin':''].filter(Boolean).join('+'), s, ev:(g && g.eventId) || pr.ev, pid:pr.pid, ok});
+      if (ok) cnt.ud.q++;
+    }
+  }
+  legs.sort((a, b) => (b.v - (b.pf==='pp' ? V187_BE.pp : V187_BE.ud)) - (a.v - (a.pf==='pp' ? V187_BE.pp : V187_BE.ud)));
+  return {at: now, legs, cnt};
+}
+function v187Key(x){ return [x.pf, x.lg, v187N(x.n).replace(/ /g,'_'), x.kind, x.l, x.side].join('|'); }
+function v187Pick6(cands){
+  const out = [], players = new Set(), games2 = new Map(); let pairUsed = false;
+  for (const x of cands){
+    if (out.length >= 6) break; const pk = x.lg + '|' + v187N(x.n); if (players.has(pk)) continue;
+    const gk = x.ev || ('t' + x.team + x.s); const c = games2.get(gk) || 0;
+    if (c >= 2 || (c === 1 && pairUsed)) continue;
+    out.push(x); players.add(pk); games2.set(gk, c + 1); if (c === 1) pairUsed = true;
+  }
+  if (out.length < 6) return null;
+  if (new Set(out.map(x => x.team || x.ev)).size < 2) return null;
+  return out;
+}
+
+/* ---------- log: build today's entries, keep qualifying legs, grade ---------- */
+function v187Lean(x){ return {pf:x.pf, lg:x.lg, n:x.n, team:x.team, kind:x.kind, l:x.l, side:x.side, p:Math.round(x.p*1000)/1000, m:x.m, ot:x.ot||'', est:x.est?1:0, stale:x.stale?1:0, bl:x.bl, src:x.src, s:x.s, ev:x.ev||null, pid:x.pid||null}; }
+function v187Update(sc){
+  const L = V187.log || (V187.log = {v:1, days:{}}); const now = Date.now(); const today = v187Day(now);
+  const D = L.days[today] || (L.days[today] = {legs:{}, entries:[], cnt:null});
+  D.cnt = sc.cnt; D.at = now;
+  const todays = sc.legs.filter(x => x.ok && x.ev && v187Day(x.s) === today);
+  for (const x of todays){ const k = v187Key(x); if (!D.legs[k]) D.legs[k] = v187Lean(x); else if (!D.legs[k].res && x.s > now){ const o = D.legs[k]; o.p = Math.round(x.p*1000)/1000; o.m = x.m; o.stale = x.stale?1:0; o.bl = x.bl; o.ev = o.ev || x.ev; } }
+  for (const pf of ['pp','ud']){
+    if (D.entries.some(e => e.pf===pf && e.frozen)) continue;
+    const c = todays.filter(x => x.pf===pf && x.s > now + 30*60000);
+    const six = v187Pick6(c); const types = pf==='pp' ? ['pp_power','pp_flex'] : ['ud_std','ud_flex'];
+    D.entries = D.entries.filter(e => e.pf!==pf);
+    if (!six) continue;
+    const first = Math.min(...six.map(x => x.s)); const frozen = now >= first - 30*60000 - 6*60000;   // freeze on the last pass before T-30
+    for (const t of types) D.entries.push({pf, t, legs: six.map(v187Key), first, frozen, at: now});
+    for (const x of six){ const k = v187Key(x); if (!D.legs[k]) D.legs[k] = v187Lean(x); }
+  }
+  // freeze anything whose first leg is now within 30 min
+  for (const e of D.entries) if (!e.frozen && now >= e.first - 30*60000) e.frozen = true;
+  // keep 75 days
+  const days = Object.keys(L.days).sort(); while (days.length > 75) delete L.days[days.shift()];
+  L.at = now;
+}
+async function v187Grade(){
+  const L = V187.log; if (!L) return false; let ch = false; const now = Date.now();
+  for (const d in L.days){
+    const D = L.days[d];
+    for (const k in D.legs){
+      const x = D.legs[k]; if (x.res || !(x.s < now - 2.5*3600000)) continue;
+      if (!x.ev){ if (now - x.s > 48*3600000){ x.res = 'void'; ch = true; } continue; }
+      try{ const bx = await uniBoxFor(x.lg, x.ev); const r = uniGradePropRow({l:x.lg, kind:x.kind, pid:x.pid, pn:x.n, side:x.side, pt:x.l}, bx);
+        if (r && r.res){ x.res = r.res==='ungradeable' ? 'void' : r.res; if (r.act!=null) x.act = r.act; ch = true; }
+        else if (now - x.s > 72*3600000){ x.res = 'void'; ch = true; } }catch(e){}
+    }
+    for (const e of D.entries){
+      if (e.res || !e.frozen) continue; const X = e.legs.map(k => D.legs[k]); if (X.some(x => !x || !x.res)) continue;
+      e.pay = v187Payout(e.t, X); e.res = e.pay > 1 ? 'win' : e.pay === 1 ? 'push' : e.pay > 0 ? 'part' : 'loss'; ch = true;
+    }
+  }
+  return ch;
+}
+function v187Payout(t, X){
+  const live = X.filter(x => x.res !== 'void' && x.res !== 'push'); const n = live.length, k = live.filter(x => x.res==='win').length;
+  if (n < 2) return 1;
+  const T = V187_PAY[t][n] || {}; let pay = T[k] || 0;
+  if (t.indexOf('ud_')===0 && pay) pay *= live.reduce((a, x) => a * (+x.m || 1), 1);
+  return Math.round(pay * 1000) / 1000;
+}
+function v187Record(L){
+  const R = {}; for (const [t] of V187_TYPES) R[t] = {n:0, cash:0, pay:0, open:0};
+  const legs = {pp:{w:0, l:0, v:0}, ud:{w:0, l:0, v:0}};
+  for (const d in ((L && L.days) || {})){
+    const D = L.days[d];
+    for (const e of D.entries){ const r = R[e.t]; if (!r || !e.frozen) continue; if (!e.res){ r.open++; continue; } r.n++; r.pay += e.pay || 0; if ((e.pay||0) > 1) r.cash++; }
+    for (const k in D.legs){ const x = D.legs[k], z = legs[x.pf]; if (!z || !x.res) continue; if (x.res==='win') z.w++; else if (x.res==='loss') z.l++; else z.v++; }
+  }
+  return {R, legs};
+}
+
+/* ---------- publisher loop ---------- */
+async function v187Tick(){
+  if (V187.busy) return; V187.busy = true;
+  try{
+    if (typeof v154Pub==='function' && v154Pub()){
+      if (!V187.logTried){ try{ const j = await v154Get('dfs'); if (j && j.days) V187.log = j; V187.logTried = true; }catch(e){ return; } }   // never start a fresh log over one we could not read
+      if (Date.now() - V187.lastRun > 4.5*60000){
+        V187.lastRun = Date.now(); V187.err = '';
+        await v187Pull(); const sc = v187Score(); V187.today = sc; v187Update(sc);
+        if (Date.now() - V187.gradeAt > 15*60000){ V187.gradeAt = Date.now(); await v187Grade(); }
+        const pub = Object.assign({}, V187.log, {today: v187TodayLean(sc), build: APP_BUILD});
+        if (JSON.stringify(pub).length < 1800000) await v154Put('dfs', pub);
+      }
+    } else if (typeof v154Admin==='function' && v154Admin() && V187.open && Date.now() - V187.logAt > 60000){
+      V187.logAt = Date.now(); try{ const j = await v154Get('dfs'); if (j && j.days) V187.log = j; }catch(e){}
+    }
+  }catch(e){ V187.err = 'DFS lab: ' + String(e && e.message || e).slice(0, 60); }
+  finally{ V187.busy = false; }
+}
+function v187TodayLean(sc){
+  const top = pf => sc.legs.filter(x => x.pf===pf && x.ok).slice(0, 25).map(v187Lean);
+  return {at: sc.at, cnt: sc.cnt, pp: top('pp'), ud: top('ud')};
+}
+setInterval(()=>{ v187Tick(); }, 30000);
+setTimeout(()=>{ v187Tick(); }, 15000);
+
+/* ---------- Settings > DFS lab (admin only) ---------- */
+function v187Pct(x){ return (x*100).toFixed(1) + '%'; }
+function v187LegHTML(x){
+  const be = x.pf==='pp' ? V187_BE.pp : V187_BE.ud; const edge = (x.pf==='ud' ? x.p * (x.m||1) : x.p) - be;
+  const tags = [];
+  if (x.ot==='goblin') tags.push('<em class="v187-tg v187-gob">Goblin</em>'); if (x.ot==='demon') tags.push('<em class="v187-tg v187-dem">Demon</em>');
+  if (x.pf==='ud' && x.m && x.m !== 1) tags.push(`<em class="v187-tg v187-mul">${x.m > 1 ? 'Boosted' : 'Reduced'} ×${x.m}</em>`);
+  if (x.stale) tags.push(`<em class="v187-tg v187-stl">Stale: books at ${esc(String(x.bl))}</em>`); else if (x.est) tags.push('<em class="v187-tg">Estimated</em>');
+  const res = x.res ? `<b class="v187-r v187-${x.res}">${x.res==='win'?'Hit':x.res==='loss'?'Miss':'Void'}${x.act!=null ? ' · ' + esc(String(x.act)) : ''}</b>` : '';
+  const tm = new Date(x.s).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  return `<div class="v187-leg"><div class="v187-l1"><span class="v187-nm">${esc(x.n)}</span>${res || `<span class="v187-p">${v187Pct(x.p)}</span>`}</div>
+    <div class="v187-l2">${x.side==='over'?'Over':'Under'} ${esc(String(x.l))} ${esc(V187_LAB[x.kind]||x.kind)} · ${x.lg.toUpperCase()} ${esc(tm)} · ${esc(x.src||'')} · edge ${edge >= 0 ? '+' : ''}${(edge*100).toFixed(1)} pts</div>${tags.length ? `<div class="v187-tgs">${tags.join('')}</div>` : ''}</div>`;
+}
+function v187HTML(){
+  const L = V187.log; const T = V187.today ? v187TodayLean(V187.today) : (L && L.today) || null;
+  const rec = v187Record(L); const rows = V187_TYPES.map(([t, lab]) => { const r = rec.R[t]; const roi = r.n ? (r.pay - r.n) / r.n : null;
+    return `<tr><td>${lab}</td><td>${r.n ? `${r.cash}/${r.n}` : '0'}${r.open ? ` <i>(+${r.open} open)</i>` : ''}</td><td class="${roi==null?'':roi>=0?'v187-pos':'v187-neg'}">${roi==null ? '—' : (roi>=0?'+':'') + Math.round(roi*100) + '%'}</td></tr>`; }).join('');
+  const lr = z => z.w + z.l ? `${z.w}-${z.l} (${v187Pct(z.w/(z.w+z.l))})` : '—';
+  let h = `<p class="v187-note">Research only. These are not Picks and are not bet. Each day it logs fake 1-unit 6-pick entries so we can see if lines that beat DraftKings/Pinnacle actually win over time.</p>
+  <table class="v187-tb"><thead><tr><th>Entry</th><th>Cashed</th><th>ROI</th></tr></thead><tbody>${rows}</tbody></table>
+  <p class="v187-sub">Single legs: PrizePicks ${lr(rec.legs.pp)} · Underdog ${lr(rec.legs.ud)} (breakeven about 54–55%)</p>`;
+  if (T && T.cnt){ const c = T.cnt; h += `<p class="v187-sub">Today: PrizePicks ${c.pp.std} standard lines (+${c.pp.gob} Goblin, ${c.pp.dem} Demon), ${c.pp.priced} matched to books, <b>${c.pp.q}</b> qualify. Underdog ${c.ud.all} lines (${c.ud.mult} with boosted/reduced payouts), ${c.ud.priced} matched, <b>${c.ud.q}</b> qualify.</p>`; }
+  else h += `<p class="v187-sub">${v154Pub() ? 'Pulling today\'s lines…' : 'Waiting for the publisher to post today\'s lines.'}</p>`;
+  const today = v187Day(Date.now()); const D = L && L.days && L.days[today];
+  if (D && D.entries.length){
+    for (const pf of ['pp','ud']){ const E = D.entries.filter(e => e.pf===pf); if (!E.length) continue;
+      h += `<div class="v187-h">${pf==='pp' ? 'PrizePicks 6-pick (Power + Flex)' : 'Underdog 6-pick (Standard + Flex)'}${E[0].frozen ? ' · locked' : ' · updates until 30 min before first game'}</div>`;
+      h += E[0].legs.map(k => D.legs[k]).filter(Boolean).map(v187LegHTML).join('');
+      const done = E.filter(e => e.res); if (done.length) h += `<p class="v187-sub">${done.map(e => `${(V187_TYPES.find(t=>t[0]===e.t)||[])[1]}: ${e.pay}x`).join(' · ')}</p>`; }
+  } else if (T) h += `<p class="v187-sub">No 6-pick entry yet today: it needs 6 qualifying legs from different players.</p>`;
+  if (T && (T.pp.length || T.ud.length)){
+    h += `<details class="v187-more"><summary>Top qualifying legs today</summary>${T.pp.length ? '<div class="v187-h">PrizePicks</div>' + T.pp.slice(0, 12).map(v187LegHTML).join('') : ''}${T.ud.length ? '<div class="v187-h">Underdog</div>' + T.ud.slice(0, 12).map(v187LegHTML).join('') : ''}</details>`;
+  }
+  if (V187.err) h += `<p class="v187-sub v187-neg">${esc(V187.err)}</p>`;
+  return h;
+}
+function v187Settings(){
+  try{
+    if (typeof ui==='undefined' || ui.tab!=='settings') return;
+    const form = document.getElementById('setForm'); if (!form) return;
+    let nd = document.getElementById('v187Dfs');
+    if (!v154Admin()){ if (nd) nd.remove(); return; }
+    if (!nd || nd.closest('#setForm') !== form){
+      nd = document.createElement('details'); nd.id = 'v187Dfs'; nd.className = 'panel simple v172-notif v187-dfs';
+      nd.innerHTML = '<summary><span class="v172-st"><span aria-hidden="true">🧪</span> DFS lab <small class="v187-badge">research</small></span><span class="v172-chev" aria-hidden="true"></span></summary><div class="v172-nb v187-body"></div>';
+      nd.open = !!V187.open; nd.addEventListener('toggle', ()=>{ V187.open = nd.open; V187.sig = ''; if (nd.open){ V187.logAt = 0; v187Tick(); } });
+      form.appendChild(nd);
+    }
+    if (!nd.open) return;
+    const html = v187HTML(); if (html === V187.sig) return; V187.sig = html;
+    const keep = nd.querySelector('.v187-more'); const mo = keep && keep.open;
+    nd.querySelector('.v187-body').innerHTML = html; if (mo){ const m = nd.querySelector('.v187-more'); if (m) m.open = true; }
+  }catch(e){}
+}
+setInterval(v187Settings, 1000);
+(function(){ const st = document.createElement('style'); st.textContent = `
+#setForm .v187-badge{font-weight:600;font-size:11px;color:#3b82f6;background:rgba(59,130,246,.12);border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle}
+#setForm .v187-body{font-size:13px;line-height:1.4}
+#setForm .v187-note{margin:0 0 10px;color:var(--muted,#64748b);font-size:12.5px}
+#setForm .v187-sub{margin:8px 0;color:var(--muted,#64748b);font-size:12.5px}
+#setForm .v187-tb{width:100%;border-collapse:collapse;font-size:13px}
+#setForm .v187-tb th{text-align:left;font-weight:600;color:var(--muted,#64748b);font-size:11.5px;padding:4px 6px;border-bottom:1px solid rgba(59,130,246,.25)}
+#setForm .v187-tb td{padding:6px;border-bottom:1px solid rgba(148,163,184,.18)} #setForm .v187-tb td i{font-style:normal;color:var(--muted,#64748b);font-size:11.5px}
+#setForm .v187-tb th:nth-child(n+2),#setForm .v187-tb td:nth-child(n+2){text-align:right;white-space:nowrap}
+#setForm .v187-pos{color:#16a34a;font-weight:700} #setForm .v187-neg{color:#dc2626;font-weight:700}
+#setForm .v187-h{margin:12px 0 4px;font-weight:700;font-size:13px;color:#2563eb}
+#setForm .v187-leg{padding:8px 10px;margin:6px 0;border:1px solid rgba(59,130,246,.22);border-radius:10px;background:rgba(59,130,246,.05);min-width:0}
+#setForm .v187-l1{display:flex;justify-content:space-between;gap:8px;align-items:baseline;min-width:0}
+#setForm .v187-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#setForm .v187-p{font-weight:700;color:#2563eb;flex:none} #setForm .v187-r{flex:none;font-size:12px}
+#setForm .v187-win{color:#16a34a} #setForm .v187-loss{color:#dc2626} #setForm .v187-void{color:#64748b}
+#setForm .v187-l2{color:var(--muted,#64748b);font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+#setForm .v187-tgs{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+#setForm .v187-tg{font-style:normal;font-size:11px;font-weight:600;border-radius:999px;padding:1px 7px;background:rgba(148,163,184,.16);color:#cbd5e1}
+#setForm .v187-gob{background:rgba(22,163,74,.12);color:#15803d} #setForm .v187-dem{background:rgba(220,38,38,.1);color:#b91c1c}
+#setForm .v187-mul{background:rgba(59,130,246,.12);color:#1d4ed8} #setForm .v187-stl{background:rgba(234,179,8,.15);color:#a16207}
+#setForm details.v187-more{margin-top:10px} #setForm details.v187-more > summary{cursor:pointer;font-weight:600;color:#2563eb;font-size:13px;padding:4px 0}
+`; document.head.appendChild(st); })();
 </script>
 </body>
 </html>
