@@ -32756,6 +32756,238 @@ color:#dbeafe;font-size:13px;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0
 #v179Pill .v179-x{margin-left:4px;padding:0 6px;color:#94a3b8;font-size:12px}`;
   document.head.appendChild(st);
 })();
+/* ===== v180: (1) watch angles in the model's self-learning, (2) exactly one Play of the Day per day =====
+   1) Three angles from the Nov 24 backtest are tagged on logged rows and graded like everything else. They never show
+      as Picks. The model's regular check (learnTick, plus every 30 min) tallies each one from graded DraftKings rows
+      (one bet per game, graded at the lock price, 1u). After 100+ graded bets with a profit it is promoted: on the
+      publisher, a matching DraftKings side becomes a Pick (−250 floor, one Pick per game, pulled stays pulled).
+      If a promoted angle later drops to a loss, it goes back to watching. Shown in admin Model learning.
+        cfb_u62  NCAAF total 62+ → Under
+        cfb_hdog NCAAF home underdog +150..+250 → home moneyline
+        nhl_move NHL total moved a full goal since open → the side it moved to (up = Over, down = Under)
+   2) Play of the Day: one per game day, the strongest Pick on the board (Confidence, then edge). Chosen by the
+      publisher into the published list everyone follows. Kept once chosen; if it cools or is pulled before its game,
+      the next strongest takes its place; a clearly stronger Pick (+8 confidence) can replace it before its game, max
+      2 swaps a day. No Picks that day = no Play of the Day. Other rules unchanged. */
+APP_BUILD = 180;
+const V180 = window.V180 = {LS: 'bl_v180_ang', OPEN: 'bl_v180_open', N: 100, st: {}, prom: {}, log: [], at: 0, open: {}, pod: {swaps: {}}};
+const V180_ANG = {
+  cfb_u62:  {name: 'College football unders when the total is 62+', short: 'NCAAF unders, total 62+'},
+  cfb_hdog: {name: 'College football home underdogs at +150 to +250', short: 'NCAAF home dogs +150 to +250'},
+  nhl_move: {name: 'NHL totals that moved a full goal since open (bet the way it moved)', short: 'NHL totals that moved a full goal'}
+};
+try{ const c = JSON.parse(localStorage.getItem(V180.LS) || 'null'); if (c){ V180.st = c.st || {}; V180.prom = c.prom || {}; V180.log = c.log || []; V180.at = c.at || 0; } }catch(e){}
+try{ V180.open = JSON.parse(localStorage.getItem(V180.OPEN) || '{}') || {}; }catch(e){}
+function v180Save(){ try{ localStorage.setItem(V180.LS, JSON.stringify({st: V180.st, prom: V180.prom, log: V180.log.slice(0, 20), at: V180.at})); }catch(e){} }
+function v180SaveOpen(){ try{ const cut = Date.now() - 5*86400000; for (const k in V180.open) if (!(V180.open[k].t > cut)) delete V180.open[k]; localStorage.setItem(V180.OPEN, JSON.stringify(V180.open)); }catch(e){} }
+
+/* ---------- opening NHL totals: ESPN's DraftKings open line, else the first line this device saw ---------- */
+(function(){
+  if (typeof uniSbOdds==='function'){ const base = uniSbOdds;
+    uniSbOdds = function(c){ const out = base.apply(this, arguments);
+      try{ if (out){ const o = (c.odds||[]).find(x=>x && x.provider && String(x.provider.id)==='100') || (c.odds||[])[0];
+        const op = o && o.total && o.total.over && o.total.over.open; const v = op ? UNI_PT(op.line) : null; if (v!=null) out.tOpen = v; } }catch(e){}
+      return out; };
+  }
+  if (typeof uniNoteGame==='function'){ const base = uniNoteGame;
+    uniNoteGame = function(o){ try{ if (o && o.l==='nhl' && o.sbOdds && o.sbOdds.tOpen!=null){ const k = String(o.ev), cur = V180.open[k];
+      if (!cur || cur.src!=='espn' || cur.v!==o.sbOdds.tOpen){ V180.open[k] = {v: o.sbOdds.tOpen, src: 'espn', t: +o.t || Date.now()}; V180.openDirty = 1; } } }catch(e){}
+      return base.apply(this, arguments); };
+  }
+  setInterval(()=>{ if (V180.openDirty){ V180.openDirty = 0; v180SaveOpen(); } }, 60000);
+})();
+function v180Open(ev, pt, t){
+  const k = String(ev||''); if (!k) return null; const c = V180.open[k];
+  if (c) return +c.v;
+  if (pt!=null && isFinite(+pt)){ V180.open[k] = {v: +pt, src: 'seen', t: +t || Date.now()}; V180.openDirty = 1; }
+  return null;   // first sighting: no move yet
+}
+
+/* ---------- which angle a logged row belongs to ---------- */
+function v180Px(o){ const v = o.lpr!=null ? o.lpr : o.pr; return v==null ? null : +v; }
+function v180RowAng(o){
+  if (!o || o.b!=='games' || o.s!=='sb' || (o.bk && !/draftkings/i.test(o.bk))) return '';
+  const pr = v180Px(o), pt = o.pt!=null ? +o.pt : null;
+  if (o.l==='ncaaf' && o.mk==='total' && o.sd==='under' && pt!=null && pt >= 62) return 'cfb_u62';
+  if (o.l==='ncaaf' && o.mk==='ml' && o.sd==='home' && pr!=null && pr >= 150 && pr <= 250) return 'cfb_hdog';
+  if (o.l==='nhl' && o.mk==='total' && pt!=null){
+    if (o.ang==='nhl_move') return 'nhl_move';
+    if (o.op!=null && Math.abs(pt - +o.op) >= 1 - 1e-9 && o.sd===(pt > +o.op ? 'over' : 'under')) return 'nhl_move';
+  }
+  return '';
+}
+/* tag new log rows (and keep the opening total on NHL totals) */
+(function(){
+  if (typeof mlogCompact!=='function') return; const base = mlogCompact;
+  mlogCompact = function(r){ const out = base.apply(this, arguments);
+    try{ if (out && out[1] && out[1].b==='games'){ const o = out[1];
+      if (o.l==='nhl' && o.mk==='total' && o.pt!=null){ const op = v180Open(o.ev, o.pt, o.t); if (op!=null) o.op = op; }
+      const a = v180RowAng(o); if (a) o.ang = a; } }catch(e){}
+    return out; };
+})();
+
+/* ---------- the regular check: tally, promote, demote ---------- */
+function v180Profit(pr){ pr = +pr; return pr > 0 ? pr/100 : 100/-pr; }
+function v180Tally(){
+  const st = {}; for (const a in V180_ANG) st[a] = {w: 0, l: 0, p: 0, open: 0, pf: 0, first: '', last: ''};
+  if (typeof MLOG==='undefined' || !MLOG.raw) return st;
+  const best = new Map();
+  for (const [d, m] of MLOG.raw){ for (const o of m.values()){ const a = v180RowAng(o); if (!a) continue;
+    const k = a + '|' + o.ev; const c = best.get(k);
+    const sc = x => [x.res && x.res!=='ungradeable' ? 1 : 0, x.lkd ? 1 : 0, +x.at || 0];
+    if (!c){ best.set(k, {o, a, d}); continue; }
+    const s1 = sc(o), s2 = sc(c.o); if (s1[0] > s2[0] || (s1[0]===s2[0] && (s1[1] > s2[1] || (s1[1]===s2[1] && s1[2] > s2[2])))) best.set(k, {o, a, d}); } }
+  for (const {o, a, d} of best.values()){ const T = st[a]; const pr = v180Px(o);
+    if (o.res==='win' && pr!=null){ T.w++; T.pf += v180Profit(pr); } else if (o.res==='loss'){ T.l++; T.pf -= 1; } else if (o.res==='push'){ T.p++; } else if (!o.res){ T.open++; } else continue;
+    if (!T.first || d < T.first) T.first = d; if (!T.last || d > T.last) T.last = d; }
+  for (const a in st){ const T = st[a]; T.n = T.w + T.l; T.roi = T.n ? T.pf / T.n : null; T.pf = Math.round(T.pf*100)/100; }
+  return st;
+}
+function v180Check(){
+  try{
+    if (typeof MLOG==='undefined' || !MLOG.raw || !MLOG.raw.size) return;
+    const st = v180Tally(); V180.st = st; V180.at = Date.now();
+    for (const a in st){ const T = st[a], on = !!V180.prom[a];
+      if (!on && T.n >= V180.N && T.roi > 0){ V180.prom[a] = Date.now(); V180.log.unshift({at: Date.now(), txt: `Promoted to Picks: ${V180_ANG[a].short} (${T.w}-${T.l}, ${(T.roi*100).toFixed(1)}% ROI over ${T.n} graded bets)`}); }
+      else if (on && T.n >= V180.N && !(T.roi > 0)){ delete V180.prom[a]; V180.log.unshift({at: Date.now(), txt: `Back to watching: ${V180_ANG[a].short} (fell to ${(T.roi*100).toFixed(1)}% ROI)`}); } }
+    v180Save();
+  }catch(e){ console.warn('v180 check', e); }
+}
+(function(){
+  if (typeof learnTick==='function'){ const base = learnTick; learnTick = async function(){ const r = await base.apply(this, arguments); v180Check(); return r; }; }
+  setTimeout(v180Check, 90000); setInterval(v180Check, 30*60000);
+  if (typeof v150Changes==='function'){ const base = v150Changes; v150Changes = function(){ const out = base.apply(this, arguments) || [];
+    try{ for (const c of V180.log) out.push({at: c.at, who: 'Games', txt: c.txt}); out.sort((a, b)=>b.at - a.at); }catch(e){} return out.slice(0, 30); }; }
+})();
+
+/* ---------- promoted angles become Picks (publisher / own list only; followers keep the shared list) ---------- */
+function v180GameSide(a, g){
+  const A = g.analysis || {};
+  if (a==='cfb_u62'){ if (g.league!=='ncaaf' || !A.total) return null; const sd = A.total.sides.under; return sd && sd.point!=null && +sd.point >= 62 ? {mk: 'total', side: 'under'} : null; }
+  if (a==='cfb_hdog'){ if (g.league!=='ncaaf' || !A.ml) return null; const sd = A.ml.sides.home; const pr = sd && sd.best ? +sd.best.price : null; return pr!=null && pr >= 150 && pr <= 250 ? {mk: 'ml', side: 'home'} : null; }
+  if (a==='nhl_move'){ if (g.league!=='nhl' || !A.total) return null; const sd = A.total.sides.over; if (!sd || sd.point==null) return null;
+    const op = v180Open(g.eventId, sd.point, +g.start); if (op==null || Math.abs(+sd.point - op) < 1 - 1e-9) return null; return {mk: 'total', side: +sd.point > op ? 'over' : 'under'}; }
+  return null;
+}
+function v180Promote(){
+  const on = Object.keys(V180.prom); if (!on.length) return 0;
+  try{ if (typeof v165Active==='function' && v165Active() && !(typeof v165IsPub==='function' && v165IsPub())) return 0; }catch(e){}
+  let n = 0;
+  for (const g of ((typeof games!=='undefined' && games) || [])){
+    if (!g || g.state!=='pre' || !g.analysis || !g.verdicts) continue;
+    for (const a of on){
+      const m = v180GameSide(a, g); if (!m) continue;
+      const A = g.analysis[m.mk]; const sd = A && A.sides[m.side]; if (!sd || !sd.best || sd.best.price==null || +sd.best.price < -250) continue;
+      const play = g.verdicts[m.mk]; if (!play || play.verdict==='started') continue;
+      try{ if (typeof isFinalPulled==='function' && isFinalPulled(play.id)) continue; }catch(e){}
+      if ((plays||[]).some(p=>p && p.g===g && p!==play && p.verdict==='good')) continue;   // one Pick per game
+      if (play.side!==m.side){ play.side = m.side; play.sd = sd; play.label = sideLabel(g, m.mk, m.side, sd.point); if (sd.nv!=null) play.est = sd.nv; }
+      if (play.verdict!=='good'){ play.verdict = 'good'; play._v0 = 'good'; play._v180 = a; (play.reasons || (play.reasons = [])).unshift('Proven angle: ' + V180_ANG[a].short); n++; }
+    }
+  }
+  return n;
+}
+(function(){
+  if (typeof evaluateAll!=='function') return; const base = evaluateAll;
+  evaluateAll = function(){ const r = base.apply(this, arguments); try{ v180Promote(); }catch(e){ console.warn('v180 promote', e); } return r; };
+})();
+
+/* ---------- admin Model learning: Watch angles ---------- */
+function v180Rec(T){ return `${T.w}-${T.l}${T.p ? '-' + T.p : ''}`; }
+function v180LearnHTML(){
+  const rows = Object.keys(V180_ANG).map(a=>{ const T = V180.st[a] || {w:0,l:0,p:0,n:0,open:0,roi:null}; const on = !!V180.prom[a];
+    const roi = T.roi==null ? '—' : (T.roi >= 0 ? '+' : '') + (T.roi*100).toFixed(1) + '%';
+    const status = on ? `<b class="v180-on">In Picks</b>` : `<span class="v180-w">Watching · ${Math.min(T.n||0, V180.N)}/${V180.N}</span>`;
+    return `<div class="v180-row"><div class="v180-name">${esc(V180_ANG[a].short)}</div><div class="v180-st"><span>${v180Rec(T)}</span><span class="${T.roi>0 ? 'v180-pos' : T.roi<0 ? 'v180-neg' : ''}">${roi}</span>${status}</div>${T.open ? `<div class="hint">${T.open} waiting on results</div>` : ''}</div>`; }).join('');
+  return `<div class="hint">Tracked and graded quietly on DraftKings prices, never shown as Picks. An angle moves into Picks on its own after ${V180.N}+ graded bets with a profit, and goes back to watching if it turns into a loss.</div>${rows}${V180.at ? `<div class="hint">Last checked ${esc(new Date(V180.at).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}))}.</div>` : ''}`;
+}
+function v180LearnSec(){
+  const wrap = document.querySelector('#view .v150'); if (!wrap) return;
+  let s = wrap.querySelector('.v180-ang');
+  if (!s){ s = document.createElement('section'); s.className = 'v98-sec v150-sec v180-ang'; s.innerHTML = '<h3 class="v98-h">👀 Watch angles</h3><div class="v180-body"></div>';
+    const potd = wrap.querySelector('[data-sec="v150-potd"]'); if (potd) potd.after(s); else wrap.prepend(s); }
+  const b = s.querySelector('.v180-body'); const h = v180LearnHTML(); if (b.innerHTML !== h) b.innerHTML = h;
+  const pd = wrap.querySelector('[data-sec="v150-potd"] .v150-potd');
+  if (pd && !pd.dataset.v180){ pd.dataset.v180 = '1'; pd.innerHTML = '<div class="hint">One every day: the strongest Pick on the board (highest confidence). Picked by the publisher, so everyone sees the same one. If it cools or gets pulled before its game, the next strongest Pick takes its place. No Picks that day means no Play of the Day.</div>'; }
+}
+(function(){
+  if (typeof v150Learn==='function'){ const base = v150Learn; v150Learn = function(){ const r = base.apply(this, arguments); try{ v180LearnSec(); }catch(e){} return r; }; }
+})();
+
+/* ---------- Play of the Day: exactly one per game day ---------- */
+function v180Strength(b, x){ let c = 0, e = 0; try{ c = v121Conf(x) || 0; }catch(err){} try{ const v = v129Read(b, x); e = v && v.edge!=null ? +v.edge : 0; }catch(err){} return c + e; }
+function v180Cands(){
+  const now = Date.now(), out = [];
+  for (const b of ['games','props']){
+    const src = b==='props' ? ((typeof props!=='undefined' && props) || []) : ((typeof plays!=='undefined' && plays) || []);
+    for (const x of src){
+      if (!x || x.tailedKeep || x.pulledNote || x.verdict!=='good') continue;
+      if (b==='games' && !(x.g && x.g.state==='pre')) continue;
+      const st = itemStartMs(x); if (!st || st <= now) continue;
+      let pr = null; try{ const v = v129Read(b, x); pr = v ? v.price : null; }catch(e){} if (pr!=null && isFinite(pr) && pr < -250) continue;
+      const k = boardKeyOf(b, x); if (!k) continue;
+      out.push({b, x, k, d: v131Day(st), st, sc: v180Strength(b, x)});
+    }
+  }
+  return out.sort((a, c)=>c.sc - a.sc);
+}
+function v180Entry(o){ return {id: String(o.x.id||'').slice(0,120), label: String(o.x.label||'').slice(0,140), sc: Math.round(o.sc*1000)/1000, at: Date.now(), lat: Date.now(), st: o.st, dev: String((typeof AUTH!=='undefined' && AUTH.deviceId)||'').slice(0,40), v180: 1}; }
+function v180PodPick(){
+  const St = v131Store(); if (!St || !St.days) return [];
+  const now = Date.now(), today = v131Day(now), added = []; let dirty = false;
+  const cands = v180Cands(); const byDay = {}; for (const o of cands) (byDay[o.d] || (byDay[o.d] = [])).push(o);
+  const days = new Set(Object.keys(byDay)); for (const d in St.days) if (d >= today) days.add(d);
+  for (const d of days){
+    const D = St.days[d] || {}; const act = [];
+    for (const b of ['games','props']){ const E = D[b] || {}; for (const k in E){ const e = E[k]; if (e && !e.drop) act.push({b, k, e}); } }
+    const started = act.filter(a=>a.e.st && +a.e.st <= now);
+    const list = byDay[d] || []; const now2 = new Map(list.map(o=>[o.b + '|' + o.k, o.sc]));
+    const scOf = a => now2.has(a.b + '|' + a.k) ? now2.get(a.b + '|' + a.k) : -1e9;
+    let keep = started.length ? started.sort((a, c)=>(+a.e.st) - (+c.e.st))[0] : act.sort((a, c)=>scOf(c) - scOf(a))[0];
+    // a clearly stronger Pick can take over before the game (max 2 swaps a day)
+    if (keep && !started.length && list.length){ const top = list[0]; const cur = list.find(o=>o.b===keep.b && o.k===keep.k);
+      const curSc = cur ? cur.sc : -1e9; const sw = V180.pod.swaps[d] || 0;
+      if (cur && top.k !== keep.k && top.sc >= curSc + 8 && sw < 2){ keep.e.drop = {at: now, why: 'a stronger Pick came in'}; V180.pod.swaps[d] = sw + 1; dirty = true; keep = null; } }
+    // one per day: every other open entry that hasn't started is dropped
+    for (const a of act){ if (keep && a.b===keep.b && a.k===keep.k) continue; if (a.e.drop) continue; if (a.e.st && +a.e.st <= now) continue; a.e.drop = {at: now, why: 'one Play of the Day per day'}; dirty = true; }
+    if (keep && !keep.e.drop) continue;
+    const top = list.find(o=>!(D[o.b] && D[o.b][o.k])); if (!top) continue;
+    const Dd = St.days[d] || (St.days[d] = {}); const E = Dd[top.b] || (Dd[top.b] = {});
+    E[top.k] = v180Entry(top); dirty = true; added.push(top);
+  }
+  if (dirty){ try{ v131StoreSave(); }catch(e){} }
+  for (const o of added){ try{ if (typeof v132AlertPotd==='function') v132AlertPotd(o); }catch(e){} }
+  return added;
+}
+v131Select = function(){
+  try{ if (!(v154Pub() || V154.local)) return []; }catch(e){ return []; }
+  let w = []; try{ w = v137DropPass() || []; }catch(e){}
+  if (w.length){ Promise.all(w).then(()=>{ try{ v180PodPick(); if (ui.tab==='good') render(); }catch(e){} }); return []; }
+  return v180PodPick();
+};
+setInterval(()=>{ try{ if (typeof v154Pub==='function' && v154Pub()) v131Select(); }catch(e){} }, 60000);
+window.v180Status = () => ({build: APP_BUILD, ang: V180.st, prom: V180.prom, pod: (()=>{ try{ const St = v131Store(), o = {}; for (const d in St.days){ const D = St.days[d]; o[d] = ['games','props'].flatMap(b=>Object.entries(D[b]||{}).filter(([k,e])=>e && !e.drop).map(([k,e])=>e.label)); } return o; }catch(e){ return null; } })()});
+
+(function(){
+  const st = document.createElement('style');
+  st.textContent = `.v180-ang .v180-row{padding:10px 0;border-top:1px solid rgba(96,165,250,.14)}
+.v180-ang .v180-row:first-of-type{border-top:0}
+.v180-ang .v180-name{font-weight:600;color:#dbeafe;font-size:14px}
+.v180-ang .v180-st{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:4px;font-size:13px;color:#a9bad3}
+.v180-ang .v180-pos{color:#86efac}.v180-ang .v180-neg{color:#fca5a5}
+.v180-ang .v180-on{color:#86efac}.v180-ang .v180-w{color:#93c5fd}`;
+  document.head.appendChild(st);
+})();
+/* the board keeps one card per game + stat + side; make sure that card is the Play of the Day when it is one */
+(function(){
+  if (typeof splitLockedEarly!=='function') return; const base = splitLockedEarly;
+  splitLockedEarly = function(list, board){
+    try{ if ((board==='games' || board==='props') && Array.isArray(list) && list.length > 1){
+      const pod = [], rest = []; for (const x of list) ((x && !x.tailedKeep && v131IsPotd(board, x)) ? pod : rest).push(x);
+      if (pod.length) list = pod.concat(rest); } }catch(e){}
+    return base.call(this, list, board);
+  };
+})();
 </script>
 </body>
 </html>
