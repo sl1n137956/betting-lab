@@ -32625,6 +32625,39 @@ ${F} .v136-done-row:not(#zz){margin:0 -24px !important;padding:12px 24px 14px !i
 }`;
   document.head.appendChild(st);
 })();
+/* ================= v178: Filters always fully open + roomier chips =================
+   - No "More filters" dropdown: Strength, Odds, Stats and Markets always show under Sports.
+   - Bigger gaps between chip rows (14px) and chips (10px), same everywhere. */
+APP_BUILD = 178;
+function v178Open(){
+  try{
+    if (typeof V140F!=='undefined' && V140F && !V140F.moreOpen) V140F.moreOpen = true;
+    const d = document.getElementById('v140More'); if (d && !d.open) d.open = true;
+  }catch(e){}
+}
+let _v178q = false;
+try{ new MutationObserver(()=>{ if (_v178q) return; _v178q = true; queueMicrotask(()=>{ _v178q = false; v178Open(); }); }).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['open']}); }catch(e){}
+setInterval(v178Open, 1000); v178Open();
+/* the summary can't be clicked any more, but block any toggle just in case */
+document.addEventListener('click', e=>{ const s = e.target && e.target.closest && e.target.closest('#v140More > summary'); if (s){ e.preventDefault(); e.stopPropagation(); } }, true);
+(function(){
+  const F = 'html body #filterBar.v175';
+  const st = document.createElement('style'); st.id = 'v178css';
+  st.textContent = `
+${F} #v140More > summary:not(#zz){display:none !important}
+${F} .v140-more:not(#zz){border-top:0 !important;margin:0 !important;padding:0 !important}
+${F} .v140-more-body:not(#zz){padding:0 !important}
+${F} #sportChips:not(#zz),${F} #v166StrChips:not(#zz),${F} .v133-chips:not(#zz){gap:14px 10px !important}
+${F} .v175-row:not(#zz),${F} #v166StrRow:not(#zz),${F} #oddsRow:not(#zz),${F} #v133Stats:not(#zz),${F} #v133Mkts:not(#zz){margin:0 0 22px !important}
+${F} .v175-sports:not(#zz){padding-bottom:22px !important;margin-bottom:22px !important;border-bottom:1px solid rgba(120,160,225,.14) !important}
+@media (max-width:640px){
+  ${F} #sportChips:not(#zz),${F} #v166StrChips:not(#zz){gap:12px 8px !important}
+  ${F} .v133-chips:not(#zz){gap:8px !important}
+  ${F} .v175-row:not(#zz),${F} #v166StrRow:not(#zz),${F} #oddsRow:not(#zz),${F} #v133Stats:not(#zz),${F} #v133Mkts:not(#zz){margin:0 0 20px !important}
+  ${F} .v175-sports:not(#zz){padding-bottom:20px !important;margin-bottom:20px !important}
+}`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
