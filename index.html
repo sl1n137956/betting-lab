@@ -31291,6 +31291,236 @@ window.v167Status = () => ({build: APP_BUILD});
    treated that page as the board). A shared pick still shows if only its DraftKings
    line moved. The strength row no longer fights the filter bar. */
 APP_BUILD = 169;
+/* ================= v170 (built as v168 on top of v169): a reliable shared-Picks publisher =================
+   1) Admin-only Settings toggle "Always-on publisher (use on the VPS)", saved on this device only
+      (localStorage, never synced to the account). A device with it on asks for the top tier, above
+      Linux, desktop and phone, so it takes the slot from any other device on its next lease check.
+   2) Every admin device checks the lease every 60 s. The Worker gives v168 devices a 3-minute lease,
+      renewed on every check, so a closed, frozen or sleeping publisher loses the slot within 3 minutes
+      and the next eligible admin device takes over within about 4. Closing or reloading the publisher
+      tab releases the slot right away.
+   3) The publisher re-posts the shared list at least every 5 minutes, even when nothing changed, so
+      everyone can see how fresh it is. Devices keep following the last list for up to 15 minutes
+      without a publisher (was 40), then show their own picks again. An empty shared list is never
+      forced, so the board is never blank just because the publisher is down or half-loaded.
+   The lease and the list now live in a Durable Object on the Worker, so none of this uses KV writes. */
+APP_BUILD = 170;
+const V168_PIN_KEY = 'bl_v168_pin', V168_CHECK = 60000, V168_HEART = 5*60000, V168_STALE = 15*60000;
+const V168 = window.V168 = {tok: '', hpri: null, lastCheck: 0, checks: 0, heartN: 0, inflight: false};
+function v168Pinned(){ try{ return localStorage.getItem(V168_PIN_KEY)==='1'; }catch(e){ return false; } }
+
+/* ---------- 1) tier: pinned > Linux > desktop > phone ---------- */
+(function(){
+  const base = v154Pri;
+  v154Pri = function(){ return v168Pinned() ? 3 : base(); };
+})();
+
+/* ---------- 2) lease: every 60 s, 3-minute lease, release on close ---------- */
+v154Lease = async function(release){
+  if (!v154Admin()){ V154.leader = false; return; }
+  V154.leaseTry++; V168.lastCheck = Date.now(); V168.checks++;
+  try{
+    const t = await v154Tok(); if (!t) throw new Error('no token'); V168.tok = t;
+    const r = await fetch(PUB_BASE + '/lease', {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer ' + t},
+      body: JSON.stringify({dev: v154Me(), pri: v154Pri(), v: 168, release: !!release})});
+    const x = await r.json().catch(()=>null); if (!r.ok || !x || !x.ok) throw new Error('lease ' + r.status);
+    const was = V154.leader; V154.leader = !!x.leader; V154.holder = String(x.holder||''); V168.hpri = (x.hpri!=null ? +x.hpri : null);
+    V154.leaseOkAt = Date.now(); V154.leaseErr = '';
+    if (V154.leader && !was) v154BecameLeader();
+  }catch(e){ V154.leaseErr = String(e && e.message || e).slice(0, 80); }
+};
+setInterval(()=>{ try{ if (v154Admin() && Date.now() - V168.lastCheck > V168_CHECK - 5000) v154Lease(); }catch(e){} }, 15000);
+window.addEventListener('pagehide', ()=>{
+  try{ if (!V154.leader || !V168.tok) return; V154.leader = false;
+    fetch(PUB_BASE + '/lease', {method:'POST', keepalive:true, headers:{'Content-Type':'application/json', Authorization:'Bearer ' + V168.tok},
+      body: JSON.stringify({dev: v154Me(), pri: v154Pri(), v: 168, release: true})}); }catch(e){}
+});
+
+/* ---------- 3) heartbeat + freshness ---------- */
+function v168PubTick(){
+  try{
+    if (V168.inflight || !V165.pubAt || !v165IsPub() || !lastUpdated) return;   // the first post comes from the v165 tick
+    if (Date.now() - V165.pubAt < V168_HEART) return;
+    const pe = (typeof propEnrich!=='undefined' && propEnrich && propEnrich.running);
+    const slateProps = (games||[]).some(g=>g && typeof PROP_SPORTS!=='undefined' && PROP_SPORTS[g.league] && g.state==='pre' && !g.pickOnly);
+    if (pe || (slateProps && !V165.propsOk)) return;
+    const c = v165Collect(); const sig = JSON.stringify(c); const now = Date.now(); V168.inflight = true;
+    v154Put('board', {at: now, v: 168, g: c.g, p: c.p}).then(ok=>{ if (ok){ V165.pubSig = sig; V165.pubAt = now; V165.pubN++; V168.heartN++; } }).finally(()=>{ V168.inflight = false; });
+  }catch(e){ V168.inflight = false; }
+}
+setInterval(v168PubTick, 15000);
+v165Active = function(){ const s = V165.sh; return !!(s && s.n > 0 && !v165IsPub() && Date.now() - s.at < V168_STALE); };
+/* same as v165/v169 apply, but it remembers each device's own call so it can be put back the moment the
+   shared list goes stale, empty or away (no blank board while waiting for the next local pass) */
+function v170Restore(){
+  if (!V168.forced) return 0; let n = 0;
+  const back = x => { if (!x || !x._v165) return; const forcedTo = x._v165==='off' ? 'watch' : 'good';
+    if (x.verdict===forcedTo && x._v165o){ x.verdict = x._v165o; if (x.C && x._v165j!==undefined) x.C.J = x._v165j; n++; }
+    delete x._v165; delete x._v165o; delete x._v165j; };
+  try{ ((typeof plays!=='undefined' && plays) || []).forEach(back); ((typeof props!=='undefined' && props) || []).forEach(back); }catch(e){}
+  V168.forced = false; V168.restored = (V168.restored||0) + n; return n;
+}
+v165Apply = function(){
+  if (!v165Active()){ if (V168.forced && v170Restore()){ try{ if (typeof softRender==='function') setTimeout(softRender, 0); }catch(e){} } return; }
+  const s = V165.sh; let on = 0, off = 0;
+  try{
+    const gStem = s.gStem || new Set([...s.g].map(v165Stem)), pStem = s.pStem || new Set([...s.p].map(v165Stem));
+    const seenGStem = new Set(), seenPStem = new Set();
+    const force = (x, to, J) => { if (!x._v165){ x._v165o = x.verdict; x._v165j = x.C ? x.C.J : undefined; } x.verdict = to; x._v165 = to==='good' ? 'on' : 'off'; if (x.C && J) x.C.J = J; V168.forced = true; };
+    for (const p of ((typeof plays!=='undefined' && plays) || [])){
+      if (!p || !p.g || !p.mk || p.verdict==='started') continue;
+      const k = playResultKey(p); const inS = v165Has(s.g, gStem, k); if (inS) seenGStem.add(v165Stem(k));
+      if (p.verdict==='good' && !inS){ force(p, 'watch'); off++; }
+      else if (p.verdict!=='good' && inS){ force(p, 'good'); on++; }
+    }
+    for (const p of ((typeof props!=='undefined' && props) || [])){
+      if (!p || !p.id) continue; const inS = v165Has(s.p, pStem, p.id); if (inS) seenPStem.add(v165Stem(p.id));
+      if (p.verdict==='good' && !inS){ force(p, 'watch', 'MAYBE LATER'); off++; }
+      else if (p.verdict!=='good' && inS){ force(p, 'good', 'BET'); on++; }
+    }
+    V165.missing = {g: [...s.g].filter(id=>!seenGStem.has(v165Stem(id))).length, p: [...s.p].filter(id=>!seenPStem.has(v165Stem(id))).length};
+    V165.applied++; V165.stats.on += on; V165.stats.off += off;
+  }catch(e){ console.warn('v170 apply', e); }
+};
+setInterval(()=>{ try{ if (V168.forced && !v165Active()) v165Apply(); }catch(e){} }, 15000);
+
+/* ---------- 1) the Settings toggle (admin only) ---------- */
+function v168Ago(ms){ if (!ms) return ''; const m = Math.round((Date.now() - ms)/60000); return m < 1 ? 'just now' : m + ' min ago'; }
+function v168StatusTxt(){
+  const tier = {3:'an always-on device', 2:'a Linux computer', 1:'a desktop', 0:'a phone'};
+  if (V154.leader) return 'This device is publishing the shared list' + (V165.pubAt ? ' (last posted ' + v168Ago(V165.pubAt) + ')' : '') + '.';
+  if (V154.holder) return 'Published by ' + (tier[V168.hpri] || 'another device') + (V165.sh ? ' (updated ' + v168Ago(V165.sh.at) + ')' : '') + '.';
+  return V154.leaseErr ? 'Publisher status unavailable right now.' : 'No device is publishing right now.';
+}
+function v168SettingsRow(){
+  try{
+    if (typeof ui==='undefined' || ui.tab!=='settings') return;
+    const v = document.getElementById('view'); if (!v) return;
+    let row = document.getElementById('v168PinRow');
+    if (!v154Admin()){ if (row) row.remove(); return; }
+    if (!row){
+      const rows = [...v.querySelectorAll('.s-row')]; const anchor = rows.find(r=>{ const h = r.querySelector('.s-h'); return h && /^Phone alerts/.test(h.textContent.trim()); }) || rows[rows.length-1];
+      if (!anchor) return;
+      row = document.createElement('div'); row.className = 's-row'; row.id = 'v168PinRow';
+      row.innerHTML = `<div class="s-h">Always-on publisher (use on the VPS)</div>
+        <label class="chk"><input type="checkbox" id="v168Pin"> This device publishes the shared Picks list for everyone</label>
+        <div class="s-note" id="v168PinSt"></div>
+        <div class="s-note">Saved on this device only. Turn it on just on the computer that stays on all day. It takes over from any other device within a minute, and if it closes or freezes another admin device takes over within about 4 minutes.</div>`;
+      anchor.insertAdjacentElement('afterend', row);
+      row.querySelector('#v168Pin').addEventListener('change', e=>{
+        try{ if (e.target.checked) localStorage.setItem(V168_PIN_KEY, '1'); else localStorage.removeItem(V168_PIN_KEY); }catch(err){}
+        v154Lease().then(v168SettingsRow);
+      });
+    }
+    const cb = row.querySelector('#v168Pin'); if (cb && cb.checked!==v168Pinned()) cb.checked = v168Pinned();
+    const st = row.querySelector('#v168PinSt'); const t = v168StatusTxt(); if (st && st.textContent!==t) st.textContent = t;
+  }catch(e){}
+}
+setInterval(v168SettingsRow, 1000);
+document.addEventListener('click', ()=>setTimeout(v168SettingsRow, 0), true);
+
+window.v168Status = () => ({build: APP_BUILD, pinned: v168Pinned(), pri: v154Pri(), leader: !!V154.leader, holderPri: V168.hpri, checks: V168.checks,
+  lastCheckSecAgo: V168.lastCheck ? Math.round((Date.now()-V168.lastCheck)/1000) : null, leaseErr: V154.leaseErr, heartN: V168.heartN,
+  listAgeMin: V165.sh ? Math.round((Date.now()-V165.sh.at)/6000)/10 : null, active: v165Active()});
+
+/* ---------- 4) cards: "Details" (no arrow) always opens the big popup; no inline expand / Hide anywhere ---------- */
+(function(){
+  const st = document.createElement('style'); st.id = 'v170css';
+  st.textContent = `.card.v147 .v147-hint svg{display:none!important}
+.card.v147 .v147-hint::before,.card.v147.v147-open .v147-hint::before{content:'Details'!important}
+.card.v147 .v147-hint{cursor:pointer}`;
+  document.head.appendChild(st);
+})();
+try{ V147.open.clear(); V147.open.add = function(){ return this; }; }catch(e){}
+function v170FillFromCard(c){
+  const body = document.querySelector('#v166Modal .v166-body'); if (!body) return false;
+  const tmp = document.createElement('div'); tmp.innerHTML = c.outerHTML;
+  const card = tmp.firstElementChild; if (!card) return false;
+  card.classList.remove('v147-open', 'v147-opening', 'v147-anim'); card.removeAttribute('aria-expanded');
+  card.querySelectorAll(':scope > .v147-hint').forEach(h=>h.remove());
+  const details = [...card.querySelectorAll(':scope > details.dd')]; details.forEach(d=>d.remove());
+  const grid = document.createElement('div'); grid.className = 'v166-grid';
+  details.forEach((d, i)=>{ if (i===0) d.open = true; else d.removeAttribute('open'); grid.appendChild(d); });
+  body.innerHTML = '<div class="v166-head"></div>'; body.querySelector('.v166-head').appendChild(card);
+  if (details.length) body.appendChild(grid);
+  grid.querySelectorAll('details[open]').forEach(d=>{ if (typeof fillLazyDetails==='function') fillLazyDetails(d); });
+  return true;
+}
+function v170OpenCard(c){
+  if (!c || (typeof V166!=='undefined' && V166.id)) return;
+  const id = c.getAttribute('data-v166-id') || c.getAttribute('data-pid') || '';
+  if (id && typeof v166Find==='function' && v166Find(id)){ v166Open(id, c.getAttribute('data-v166-kind') || ''); return; }
+  // not in the live slate (e.g. a pulled or settled card): show this card's own content in the same popup
+  const host = v166Host(); if (!v170FillFromCard(c)) return;
+  V166.id = '__card:' + (id || Date.now()); V166.kind = ''; V166.gone = true; V166.openKeys = [];
+  host.hidden = false; requestAnimationFrame(()=>host.classList.add('open')); v166Lock(true);
+  try{ const x = host.querySelector('.v166-x'); if (x) x.focus(); }catch(e){}
+  try{ if (!V166.pushed){ history.pushState({v166: V166.id}, ''); V166.pushed = true; } }catch(e){}
+}
+v147Toggle = function(c){
+  try{ if (c && c.classList){ c.classList.remove('v147-open'); c.setAttribute('aria-expanded', 'false'); } }catch(e){}
+  v170OpenCard(c);
+};
+setInterval(()=>{ try{ if (V147.open.size) V147.open.clear(); document.querySelectorAll('#view .card.v147.v147-open').forEach(c=>{ c.classList.remove('v147-open'); c.setAttribute('aria-expanded', 'false'); }); }catch(e){} }, 1000);
+
+/* ---------- 5) Filters: Strength sits right above More filters, strongest first (5/5, 4+, 3+, All),
+   every bubble uses one font size, and More filters is a plain dropdown line (no box around it) ---------- */
+(function(){
+  const st = document.createElement('style'); st.id = 'v170fcss';
+  st.textContent = `#filterBar .chip,#filterBar .seg label,#filterBar #v166StrChips .chip,#filterBar #oddsRow .chip,#filterBar .v140-more-body .chip{font-size:12.5px!important;font-weight:600}
+#filterBar .v140-more{border:0!important;border-radius:0!important;background:none!important;box-shadow:none!important;margin:2px 0!important;padding:0!important}
+#filterBar .v140-more > summary{padding:0 2px!important;min-height:44px;font-size:13px}
+#filterBar .v140-more > summary::after{content:'';width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);margin-left:2px;opacity:.75;transition:transform .15s ease}
+#filterBar .v140-more[open] > summary::after{transform:rotate(225deg) translateY(-1px)}
+#filterBar .v140-more > summary::before{display:none!important;content:none!important}
+#filterBar #v166StrRow .horizon-lab{align-self:center!important;margin:0!important}
+#filterBar .v140-more-body{padding:4px 0 12px!important}`;
+  document.head.appendChild(st);
+})();
+const V170_STR = [['5','5/5'],['4','4+'],['3','3+'],['0','All']];
+function v170StrTidy(){
+  try{
+    const chips = document.getElementById('v166StrChips'); const row = document.getElementById('v166StrRow');
+    if (chips){
+      const cur = [...chips.querySelectorAll('[data-v166-str]')];
+      if (cur.map(c=>c.getAttribute('data-v166-str')).join()!==V170_STR.map(x=>x[0]).join()){
+        V170_STR.forEach(([v, l])=>{ const c = cur.find(x=>x.getAttribute('data-v166-str')===v); if (c){ if (c.textContent!==l) c.textContent = l; chips.appendChild(c); } });
+      }
+    }
+    const more = document.getElementById('v140More');
+    if (row && more && more.parentNode===row.parentNode && more.previousElementSibling!==row) more.before(row);
+  }catch(e){}
+}
+(function(){
+  const base = v166PaintStr;
+  v166PaintStr = function(){ const r = base.apply(this, arguments); v170StrTidy(); return r; };
+  if (typeof v140ArrangeFilters==='function'){ const b2 = v140ArrangeFilters; v140ArrangeFilters = function(){ const r = b2.apply(this, arguments); v170StrTidy(); return r; }; }
+})();
+v170StrTidy(); setTimeout(v170StrTidy, 0);
+
+/* ---------- 6) popup: the Courtroom is a plain, always-open section (other sections stay dropdowns) ---------- */
+(function(){
+  const st = document.createElement('style'); st.id = 'v170ccss';
+  st.textContent = `#v166Modal details.court-dd.v170-flat > summary{pointer-events:none;cursor:default;list-style:none}
+#v166Modal details.court-dd.v170-flat > summary::-webkit-details-marker{display:none}
+#v166Modal details.court-dd.v170-flat > summary::before,#v166Modal details.court-dd.v170-flat > summary::after{display:none!important;content:none!important}
+#v166Modal .v166-grid > details.court-dd.v170-flat{grid-column:1/-1;order:-1}`;
+  document.head.appendChild(st);
+})();
+function v170FlatCourt(){
+  try{
+    document.querySelectorAll('#v166Modal details.court-dd').forEach(d=>{
+      if (!d.classList.contains('v170-flat')){ d.classList.add('v170-flat'); const s = d.querySelector(':scope > summary'); if (s){ s.setAttribute('tabindex', '-1'); s.setAttribute('aria-disabled', 'true'); } }
+      if (!d.open){ d.open = true; if (typeof fillLazyDetails==='function') fillLazyDetails(d); }
+    });
+  }catch(e){}
+}
+(function(){
+  const base = v166FillBody; v166FillBody = function(){ const r = base.apply(this, arguments); v170FlatCourt(); return r; };
+  const b2 = v170FillFromCard; v170FillFromCard = function(){ const r = b2.apply(this, arguments); v170FlatCourt(); return r; };
+})();
+document.addEventListener('click', e=>{ const s = e.target && e.target.closest && e.target.closest('#v166Modal details.court-dd > summary'); if (s){ e.preventDefault(); } }, true);
+document.addEventListener('toggle', e=>{ const d = e.target; if (d && d.tagName==='DETAILS' && d.classList.contains('v170-flat') && !d.open) d.open = true; }, true);
 </script>
 </body>
 </html>
