@@ -31521,6 +31521,52 @@ function v170FlatCourt(){
 })();
 document.addEventListener('click', e=>{ const s = e.target && e.target.closest && e.target.closest('#v166Modal details.court-dd > summary'); if (s){ e.preventDefault(); } }, true);
 document.addEventListener('toggle', e=>{ const d = e.target; if (d && d.tagName==='DETAILS' && d.classList.contains('v170-flat') && !d.open) d.open = true; }, true);
+
+/* ---------- 7) Results: the model's results show for everyone (published numbers), not only signed-in users ----------
+   Signed-out users only saw "Sign in to see…", and admin devices that aren't the publisher (e.g. the PC once the VPS
+   publishes) built Results from their own partial copy of the log, so the calendar came up empty. Every device that
+   isn't the publisher now reads the publisher's day totals (Worker `days2`, public, refreshed every 20 min). */
+var V170R = {at:0, busy:false, err:''};
+async function v170DaysPoll(force){
+  try{
+    if (typeof v154Pub==='function' && v154Pub()) return;
+    if (V170R.busy || (!force && Date.now() - V170R.at < 5*60000)) return;
+    V170R.busy = true; V170R.at = Date.now();
+    if (!V142.pub2){ try{ const c = JSON.parse(localStorage.getItem(V145_PUB_COPY)||'null'); if (c && c.p){ V142.pub2 = c.p; V142.pub2At = c.at||0; } }catch(e){} }
+    const x = await v154Get('days2');
+    if (x && x.d){ V142.pub2 = {d:x.d||{}, m:x.m||{}}; V142.pub2At = +x.at||0; V170R.err = ''; try{ localStorage.setItem(V145_PUB_COPY, JSON.stringify({uid:'any', at:V142.pub2At, p:V142.pub2})); }catch(e){} }
+  }catch(e){ V170R.err = String(e && e.message || e).slice(0, 80); V142.pubErr = V170R.err; }
+  finally{ V170R.busy = false; V142.pub2Got = true; try{ if (ui.tab==='tracker' && v140View()==='model') v142RenderModel(); }catch(e){} }
+}
+function v170UsePub(){ try{ return !(typeof v154Pub==='function' && v154Pub()); }catch(e){ return true; } }
+v142Index = function(){
+  if (v140View()!=='model') return v142TailedIndex();
+  const m = v142Metric();
+  if (!v170UsePub() && v138Admin()) return v142AdminIndex(m);
+  if (V142.pub2) return v142UserIndex(m);
+  return v138Admin() ? v142AdminIndex(m) : v142UserIndex(m);
+};
+v142CalCard = (function(base){ return function(){
+  let h = base.apply(this, arguments);
+  try{
+    if (v140View()==='model' && v138Admin() && v170UsePub() && !/v142-tap">[^<]*Updated/.test(h)){
+      const note = !V142.pub2Got ? 'Loading the model\'s results…' : V142.pub2 && V142.pub2At ? `Updated ${new Date(V142.pub2At).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}` : '';
+      if (note) h = h.replace('<div class="hint v142-tap">Tap a day, month or year for its stats.', `<div class="hint v142-tap">Tap a day, month or year for its stats. ${esc(note)}`);
+    }
+  }catch(e){}
+  return h;
+}; })(v142CalCard);
+v142RenderModel = function(){
+  const view = $('#view'); if (!view) return;
+  document.body.classList.add('v140-model');
+  if (v170UsePub() && (!V142.pub2 || Date.now() - V170R.at > 5*60000)) v170DaysPoll(!V142.pub2Got);
+  view.innerHTML = v142HeadHTML() + v142CalCard();
+  try{ V140.sig = v140Sig(); }catch(e){}
+};
+v140RenderModel = function(){ v142RenderModel(); };
+v142Listen = function(){ v170DaysPoll(); };
+setInterval(()=>{ try{ if (ui.tab==='tracker' && v140View()==='model' && document.visibilityState==='visible') v170DaysPoll(); }catch(e){} }, 60000);
+window.v170ResStatus = () => ({usePub: v170UsePub(), pub2At: V142.pub2At, days: V142.pub2 ? Object.keys(V142.pub2.d||{}).length : 0, err: V170R.err});
 </script>
 </body>
 </html>
