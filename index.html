@@ -32356,6 +32356,186 @@ ${F}:not(#zz){background:linear-gradient(180deg,#11243b,#0e1d31) !important;bord
 }`;
   const st = document.createElement('style'); st.id = 'v175css'; st.textContent = css; document.head.appendChild(st);
 })();
+/* ================= v176 =================
+   1) Odds filter = Min odds / Max odds boxes (American odds). Empty = no limit. Hides/shows picks by their price.
+      Saved with your other filters (and synced with them).
+   2) No Reset button in Filters at all (sports area or footer).
+   3) Sort moved out of Filters to a sort icon button at the top right of the Picks list (Start time / Confidence). */
+APP_BUILD = 176;
+function v176Dec(a){ a = +a; if (!isFinite(a) || a===0) return null; return a > 0 ? 1 + a/100 : 1 + 100/(-a); }
+function v176Parse(s){
+  s = String(s==null?'':s).trim().replace(/[−–]/g, '-').replace(/\s+/g, ''); if (!s) return null;
+  const n = parseInt(s, 10); if (!isFinite(n) || Math.abs(n) < 100) return undefined;
+  return n;
+}
+function v176Fmt(n){ return n==null ? '' : (n > 0 ? '+' + n : String(n)); }
+function v176Range(){ return {min: (typeof ui!=='undefined' && ui.oddsMin!=null) ? ui.oddsMin : null, max: (typeof ui!=='undefined' && ui.oddsMax!=null) ? ui.oddsMax : null}; }
+(function(){ try{ const f = loadJSON(LS.filters, {})||{}; ui.oddsMin = (f.omin!=null && isFinite(+f.omin)) ? +f.omin : null; ui.oddsMax = (f.omax!=null && isFinite(+f.omax)) ? +f.omax : null; ui.odds = V121_ODDS.slice(); }catch(e){} })();
+
+/* the filter itself: price between min and max (by payout, so -250 < -110 < +100 < +300) */
+v121OddsAllows = function(x){
+  const R = v176Range(); if (R.min==null && R.max==null) return true;
+  const px = v121PriceOf(x); const am = px && px.am!=null ? px.am : (px && px.c>0 && px.c<1 ? (px.c>=.5 ? -Math.round(100*px.c/(1-px.c)) : Math.round(100*(1-px.c)/px.c)) : null);
+  if (am==null) return true;
+  const d = v176Dec(am); if (d==null) return true;
+  if (R.min!=null && d < v176Dec(R.min) - 1e-9) return false;
+  if (R.max!=null && d > v176Dec(R.max) + 1e-9) return false;
+  return true;
+};
+v121OddsAllOn = function(){ const R = v176Range(); return R.min==null && R.max==null; };
+v121OddsSel = function(){ return V121_ODDS.slice(); };   // old price buckets are gone; keep everything "on" for older code paths
+(function(){
+  const base = v121Persist;
+  v121Persist = function(){
+    const out = base.apply(this, arguments);
+    try{
+      const f = loadJSON(LS.filters, {})||{}; f.omin = ui.oddsMin; f.omax = ui.oddsMax; saveJSON(LS.filters, f);
+      if (typeof filterViews!=='undefined' && typeof filterViewKey==='function'){ const k = filterViewKey(ui.board||'games', ui.tab); if (k && filterViews[k]){ filterViews[k].omin = ui.oddsMin; filterViews[k].omax = ui.oddsMax; saveJSON(LS.filterViews, filterViews); } }
+    }catch(e){}
+    return out;
+  };
+})();
+if (typeof applyFilterView==='function'){ const baseAV = applyFilterView; applyFilterView = function(key){ const out = baseAV.apply(this, arguments);
+  try{ const v = (typeof filterViews!=='undefined' && filterViews[key]) || {}; const f = loadJSON(LS.filters, {})||{};
+    const pick = (a, b) => (a!=null && isFinite(+a)) ? +a : (b!=null && isFinite(+b)) ? +b : null;
+    ui.oddsMin = pick(v.omin, f.omin); ui.oddsMax = pick(v.omax, f.omax); ui.odds = V121_ODDS.slice(); setTimeout(()=>v176OddsPaint(), 0); }catch(e){}
+  return out; }; }
+let _v176t = 0;
+function v176Apply(which, val){
+  const n = v176Parse(val); if (n===undefined) return false;
+  if (which==='min') ui.oddsMin = n; else ui.oddsMax = n;
+  clearTimeout(_v176t); _v176t = setTimeout(()=>{ try{ v121Persist(); v176OddsCards(); if (typeof updateFilterChrome==='function') updateFilterChrome(); render(); }catch(e){} }, 250);
+  return true;
+}
+function v176OddsUI(){
+  try{
+    const row = document.getElementById('oddsRow'); if (!row) return;
+    let box = document.getElementById('v176Odds');
+    if (!box){
+      box = document.createElement('div'); box.id = 'v176Odds'; box.className = 'v176-odds';
+      box.innerHTML = `<label class="v176-f"><span>Min</span><input id="v176Min" type="text" inputmode="text" autocomplete="off" placeholder="Any" maxlength="6" aria-label="Minimum odds"></label>
+        <span class="v176-dash" aria-hidden="true">to</span>
+        <label class="v176-f"><span>Max</span><input id="v176Max" type="text" inputmode="text" autocomplete="off" placeholder="Any" maxlength="6" aria-label="Maximum odds"></label>
+        <button type="button" class="v176-clr" id="v176Clr" hidden>Clear</button>`;
+      row.appendChild(box);
+      const wire = (id, which) => { const i = box.querySelector(id);
+        i.addEventListener('input', ()=>{ const ok = v176Apply(which, i.value); i.classList.toggle('bad', !ok); v176OddsPaint(true); });
+        i.addEventListener('blur', ()=>{ if (!i.classList.contains('bad')) i.value = v176Fmt(which==='min' ? ui.oddsMin : ui.oddsMax); });
+        i.addEventListener('keydown', e=>{ if (e.key==='Enter'){ e.preventDefault(); i.blur(); } }); };
+      wire('#v176Min', 'min'); wire('#v176Max', 'max');
+      box.querySelector('#v176Clr').addEventListener('click', ()=>{ ui.oddsMin = null; ui.oddsMax = null; box.querySelectorAll('input').forEach(i=>{ i.value=''; i.classList.remove('bad'); }); v176Apply('min', ''); v176OddsPaint(); });
+    }
+    v176OddsPaint();
+  }catch(e){}
+}
+function v176OddsPaint(typing){
+  const a = document.getElementById('v176Min'), b = document.getElementById('v176Max'), c = document.getElementById('v176Clr');
+  if (!a || !b) return;
+  if (!typing){ if (document.activeElement!==a) a.value = v176Fmt(ui.oddsMin); if (document.activeElement!==b) b.value = v176Fmt(ui.oddsMax); }
+  if (c) c.hidden = (ui.oddsMin==null && ui.oddsMax==null);
+}
+
+/* ---------- sort button above the Picks list ---------- */
+const V176_SORT = {time: 'Start time', conf: 'Confidence'};
+function v176SortBar(){
+  try{
+    if (typeof ui==='undefined' || (ui.tab!=='good' && ui.tab!=='picks')) return;
+    const main = document.querySelector('#view .slate-main'); if (!main) return;
+    let bar = document.getElementById('v176SortBar');
+    if (!bar || bar.parentElement!==main){
+      if (bar) bar.remove();
+      bar = document.createElement('div'); bar.id = 'v176SortBar'; bar.className = 'v176-bar';
+      bar.innerHTML = `<div class="v176-sw"><button type="button" class="v176-sb" id="v176SortBtn" aria-haspopup="menu" aria-expanded="false" title="Sort picks">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M7 4v14M7 18l-3-3M7 18l3-3M17 20V6M17 6l-3 3M17 6l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="v176-sl"></span></button>
+        <div class="v176-menu" id="v176SortMenu" role="menu" hidden>
+          <button type="button" role="menuitemradio" data-v176-sort="time">Start time</button>
+          <button type="button" role="menuitemradio" data-v176-sort="conf">Confidence</button></div></div>`;
+      main.prepend(bar);
+    }
+    const cur = v121Sort(); const l = bar.querySelector('.v176-sl'); const t = V176_SORT[cur];
+    if (l.textContent !== t) l.textContent = t;
+    bar.querySelectorAll('[data-v176-sort]').forEach(b=>{ const on = b.getAttribute('data-v176-sort')===cur; if (b.classList.contains('on')!==on){ b.classList.toggle('on', on); b.setAttribute('aria-checked', on?'true':'false'); } });
+  }catch(e){}
+}
+function v176Menu(open){
+  const m = document.getElementById('v176SortMenu'), b = document.getElementById('v176SortBtn'); if (!m || !b) return;
+  m.hidden = !open; b.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+document.addEventListener('click', e=>{
+  const t = e.target; if (!t || !t.closest) return;
+  if (t.closest('#v176SortBtn')){ e.preventDefault(); e.stopPropagation(); const m = document.getElementById('v176SortMenu'); v176Menu(m && m.hidden); return; }
+  const opt = t.closest('[data-v176-sort]');
+  if (opt){ e.preventDefault(); e.stopPropagation(); const v = opt.getAttribute('data-v176-sort'); v176Menu(false);
+    ui.sort = v==='conf' ? 'conf' : 'time'; try{ v121Persist(); if (typeof v121PaintFilters==='function') v121PaintFilters(); }catch(err){} v176SortBar(); try{ render(); }catch(err){} return; }
+  if (!t.closest('#v176SortMenu')) v176Menu(false);
+}, true);
+document.addEventListener('keydown', e=>{ if (e.key==='Escape') v176Menu(false); });
+
+/* Picks / Verdict lists are built by several layers, so the price range is applied to the cards on screen (before paint) */
+function v176CardAm(c){
+  const el = c.querySelector('.pick .price') || c.querySelector('.price'); if (!el) return null;
+  const m = String(el.textContent||'').replace(/[−–]/g, '-').match(/([+-]\d{3,5})|\b(\d{3,5})\b/); if (!m) return null;
+  const n = parseInt(m[1] || m[2], 10); return Math.abs(n) >= 100 ? n : null;
+}
+function v176OddsCards(){
+  try{
+    const R = v176Range(); const on = R.min!=null || R.max!=null;
+    const main = document.querySelector('#view .slate-main') || document.getElementById('view'); if (!main) return;
+    let shown = 0, total = 0;
+    for (const c of main.querySelectorAll('.card[data-pid]')){
+      let hide = false;
+      if (on){ const am = v176CardAm(c); const d = am!=null ? v176Dec(am) : null;
+        if (d!=null && ((R.min!=null && d < v176Dec(R.min) - 1e-9) || (R.max!=null && d > v176Dec(R.max) + 1e-9))) hide = true; }
+      if (hide && !c.hasAttribute('data-v176off')){ c.setAttribute('data-v176off', ''); c.hidden = true; }
+      else if (!hide && c.hasAttribute('data-v176off')){ c.removeAttribute('data-v176off'); c.hidden = false; }
+      total++; if (!hide) shown++;
+    }
+    let em = document.getElementById('v176Empty');
+    const need = on && total > 0 && shown === 0;
+    if (need && !em){ em = document.createElement('div'); em.id = 'v176Empty'; em.className = 'empty-state v176-empty'; em.textContent = 'No picks in your odds range. Change Min or Max odds in Filters to see more.'; const bar = document.getElementById('v176SortBar'); bar ? bar.after(em) : main.prepend(em); }
+    else if (!need && em) em.remove();
+  }catch(e){}
+}
+let _v176q = false;
+function v176Run(){ v176OddsUI(); v176SortBar(); v176OddsCards(); }
+try{ new MutationObserver(()=>{ if (_v176q) return; _v176q = true; queueMicrotask(()=>{ _v176q = false; v176Run(); }); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
+setInterval(v176Run, 1000);
+
+(function(){
+  const F = 'html body #filterBar.v175';
+  const st = document.createElement('style'); st.id = 'v176css';
+  st.textContent = `
+${F} #sortRow:not(#zz),${F} #oddsChips:not(#zz),#v175Reset{display:none !important}
+${F} .v136-done-row:not(#zz){justify-content:flex-end !important}
+${F} #oddsRow:not(#zz){align-items:center !important}
+.v176-odds{grid-column:2;display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0}
+.v176-f{display:flex;align-items:center;gap:0;height:34px;border:1px solid rgba(120,160,225,.28);border-radius:999px;background:rgba(255,255,255,.035);padding:0 4px 0 12px;box-sizing:border-box;min-width:0}
+.v176-f:focus-within{border-color:rgba(96,165,250,.8);box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+.v176-f > span{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut,#8aa0bf);margin-right:6px}
+.v176-f input{width:62px;min-width:0;height:30px;border:0;outline:0;background:none;color:#eef4ff;font:600 13px/1 inherit;font-family:inherit;font-variant-numeric:tabular-nums;padding:0 6px 0 0}
+.v176-f input::placeholder{color:#6f86a8;font-weight:500}
+.v176-f input.bad{color:#fca5a5}
+.v176-dash{font-size:12px;color:var(--mut,#8aa0bf)}
+.v176-clr{background:none;border:0;color:#8fb4ff;font:600 12.5px/1 inherit;font-family:inherit;padding:8px 4px;cursor:pointer}
+@media (max-width:640px){ .v176-odds{grid-column:1} .v176-f{flex:1 1 0} .v176-f input{width:100%} }
+.card[data-v176off]{display:none !important}
+.v176-empty{margin:0 0 12px}
+.v176-bar{display:flex;justify-content:flex-end;align-items:center;margin:0 0 10px;min-height:34px}
+.v176-sw{position:relative}
+.v176-sb{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:999px;border:1px solid rgba(120,160,225,.28);background:rgba(255,255,255,.04);color:#cfe0fb;font:600 12.5px/1 inherit;font-family:inherit;cursor:pointer;white-space:nowrap}
+.v176-sb:hover,.v176-sb[aria-expanded="true"]{border-color:rgba(96,165,250,.7);color:#fff;background:rgba(59,130,246,.16)}
+.v176-sb svg{color:#93c5fd;flex:none}
+.v176-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:170px;padding:6px;border-radius:14px;border:1px solid rgba(96,165,250,.3);background:#11243b;box-shadow:0 18px 40px -12px rgba(0,0,0,.8)}
+.v176-menu[hidden]{display:none}
+.v176-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;height:40px;padding:0 12px;border:0;border-radius:10px;background:none;color:#cfe0fb;font:600 13px/1 inherit;font-family:inherit;cursor:pointer;text-align:left}
+.v176-menu button:hover{background:rgba(59,130,246,.14)}
+.v176-menu button.on{color:#fff}
+.v176-menu button.on::after{content:'✓';color:#60a5fa;font-weight:800}`;
+  document.head.appendChild(st);
+})();
+/* Sort is no longer a filter, so it doesn't add to the Filters count */
+if (typeof activeFilterCount==='function'){ const baseAF = activeFilterCount; activeFilterCount = function(){ let n = baseAF.apply(this, arguments) || 0; if (v121Sort()==='conf') n = Math.max(0, n - 1); return n; }; }
 </script>
 </body>
 </html>
