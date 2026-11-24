@@ -33523,6 +33523,89 @@ function v185Decorate(root){
   document.head.appendChild(st);
 })();
 window.v185Status = () => ({build: APP_BUILD, passes: V185.n, cards: document.querySelectorAll('.card.v185-card').length});
+/* ===== v186: PickFinder-style slim stat row (Stanley, Nov 24 2:36 PM PT) =====
+   The v185 tiles were too big (two rows of rounded boxes). They are now one slim row of eight equal narrow
+   cells: L5, L10, L15, H2H, STRK, AVG, Diff, SZN. Grey label on top, bold value below, a light green or red
+   wash and a thin colored bottom edge. No wrapping on phone; fonts shrink at 360, and the row only scrolls
+   sideways if it truly cannot fit. H2H can show a small 4/14 count under the rate. Chips are smaller and stay
+   on one line (scroll if needed). The win-chance ring is a bit smaller, so the whole card is shorter.
+   Missing data is a dash, never a made-up number. Games use the same slim cells for the tiles they have.
+   Everything else from v185 is unchanged. The unapproved price-sanity fix is not in this build. ===== */
+APP_BUILD = 186;
+v185Tile = function(k, val, cls, title, sub){
+  return `<div class="v185-t v185-${cls||'n'}"${title ? ` title="${esc(title)}"` : ''}><span>${esc(k)}</span><b>${esc(val)}</b>${sub ? `<i>${esc(sub)}</i>` : ''}</div>`;
+};
+function v186Pct(R){ return !R ? '—' : (R.r*100 >= 99.5 ? '100%' : Math.round(R.r*100) + '%'); }
+v185PropHTML = function(p){
+  const f = p.feat || {}; const L0 = +p.line; const under = p.side==='under';
+  const hitOf = v => v===L0 ? null : (under ? v < L0 : v > L0);
+  const vals = Array.isArray(f.seasonVals) ? f.seasonVals.filter(v=>v!=null && isFinite(v)) : [];
+  const rate = arr => { const h = (arr||[]).map(hitOf).filter(x=>x!=null); return h.length ? {r: h.filter(Boolean).length / h.length, k: h.filter(Boolean).length, n: h.length} : null; };
+  const cell = (lab, arr, need, title) => {
+    if (!arr || arr.length < need) return v185Tile(lab, '—', 'n', title);
+    const R = rate(arr); if (!R) return v185Tile(lab, '—', 'n', title);
+    return v185Tile(lab, v186Pct(R), v185Cls(R.r), `${under?'Under':'Over'} in ${R.k} of ${R.n}`);
+  };
+  const tiles = [
+    cell('L5', vals.slice(-5), 5, 'Last 5'),
+    cell('L10', vals.slice(-10), 10, 'Last 10'),
+    cell('L15', vals.slice(-15), 15, 'Last 15')
+  ];
+  const h2h = Array.isArray(f.h2hVals) ? f.h2hVals : [];
+  const hR = h2h.length ? rate(h2h) : null;
+  tiles.push(hR ? v185Tile('H2H', v186Pct(hR), v185Cls(hR.n >= 2 ? hR.r : null), `vs ${p.opp||'this opponent'}: ${hR.k} of ${hR.n}`, `${hR.k}/${hR.n}`) : v185Tile('H2H', '—', 'n', 'No games vs this opponent yet'));
+  let s = 0, w = null; for (let i = vals.length - 1; i >= 0; i--){ const h = hitOf(vals[i]); if (h==null) break; if (w==null) w = h; if (h!==w) break; s++; }
+  tiles.push(s && w!=null ? v185Tile('STRK', `${s}${w ? 'W' : 'L'}`, s >= 3 ? (w ? 'g' : 'r') : 'n', `${s} straight ${w ? 'hits' : 'misses'} on this side`) : v185Tile('STRK', '—', 'n', 'No streak yet'));
+  const avg = f.l10avg!=null ? f.l10avg : f.seasonAvg;
+  if (avg!=null && isFinite(avg) && isFinite(L0)){ const d = avg - L0; const good = under ? d < 0 : d > 0;
+    tiles.push(v185Tile('AVG', avg.toFixed(1), 'n', f.l10avg!=null ? 'Last 10 average' : 'Season average'));
+    tiles.push(v185Tile('Diff', v185Sgn(d), Math.abs(d) < 0.05 ? 'n' : good ? 'g' : 'r', 'Average minus the line')); }
+  else { tiles.push(v185Tile('AVG', '—', 'n'), v185Tile('Diff', '—', 'n')); }
+  if (f.seasonHit!=null && (f.n||0) >= 8){ const r = under ? 1 - f.seasonHit : f.seasonHit; tiles.push(v185Tile('SZN', Math.round(r*100) + '%', v185Cls(r), `Season: ${f.n} games`)); }
+  else tiles.push(v185Tile('SZN', '—', 'n', 'Not enough season games'));
+  const chips = [];
+  try{ const wp = typeof tmWinProb==='function' ? tmWinProb(p.g) : null; const mine = p.home ? 'home' : 'away';
+    if (wp && wp.src==='odds') chips.push(v185Chip(`${esc(v185Ab(p.g, mine))} win <b>${Math.round(wp[mine]*100)}%</b>`)); }catch(e){}
+  try{ const T = typeof TM!=='undefined' && p.g ? TM[p.g.league + ':' + (p.g[p.home ? 'away' : 'home'] || {}).id] : null; const oa = v185Ab(p.g, p.home ? 'away' : 'home');
+    if (oa) chips.push(v185Chip(`vs ${esc(oa)}${T && T.n ? ` <b>${T.w}-${T.l}</b>` : ''}`)); }catch(e){}
+  if (f.rest!=null && isFinite(f.rest)) chips.push(v185Chip(f.rest <= 1 ? 'Back-to-back' : `${f.rest} days rest`, f.rest <= 1 ? 'warn' : ''));
+  if (f.minL5!=null && isFinite(f.minL5)) chips.push(v185Chip(`Min L5 <b>${f.minL5.toFixed(0)}</b>`));
+  return {ring: v185Ring(p.p, under ? 'Under' : 'Over'), chips, tiles};
+};
+(function(){
+  const st = document.createElement('style');
+  st.textContent = `
+.verdict-slot.v185-slot{gap:3px}
+.v185-ring,.v185-ring svg{width:40px!important;height:40px!important;flex-basis:40px!important;flex:0 0 40px}
+.v185-rv b{font-size:11px!important}
+.v185-rv small{font-size:7px!important;margin-top:1px;max-width:34px}
+.verdict-slot.v185-slot .verdict-pill{font-size:10px;padding:2px 7px}
+#view .card > .v185,.card > .v185{margin:0 0 8px!important}
+.v185{container-type:normal}
+.v185-cs{display:flex;flex-wrap:nowrap;gap:4px;margin-bottom:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.v185-cs::-webkit-scrollbar{display:none}
+.v185-c{font-size:10px!important;padding:3px 7px!important;flex:0 0 auto}
+.v185-ts{display:flex!important;flex-wrap:nowrap!important;gap:3px!important;overflow-x:auto;grid-template-columns:none!important;grid-auto-flow:unset!important;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.v185-ts::-webkit-scrollbar{display:none}
+.v185-t{flex:1 1 0;min-width:0;padding:3px 1px 4px!important;border-radius:0!important;gap:1px!important;border:0!important;border-bottom:2px solid rgba(148,163,184,.22)!important;background:rgba(148,163,184,.06)!important}
+.v185-t span{font-size:8px!important;letter-spacing:.04em;color:#94a3b8}
+.v185-t b{font-size:11.5px!important;line-height:1.15}
+.v185-t i{display:block;font-style:normal;font-size:8px;line-height:1;color:#94a3b8;margin-top:0}
+.v185-g{background:rgba(34,197,94,.10)!important;border-bottom-color:rgba(34,197,94,.55)!important}
+.v185-g b{color:#86efac!important}
+.v185-r{background:rgba(239,68,68,.10)!important;border-bottom-color:rgba(239,68,68,.55)!important}
+.v185-r b{color:#fca5a5!important}
+.v185-n{background:rgba(148,163,184,.06)!important;border-bottom-color:rgba(148,163,184,.22)!important}
+@media (max-width:370px){
+  .v185-t b{font-size:10px!important}
+  .v185-t span,.v185-t i{font-size:7px!important}
+  .v185-c{font-size:9px!important;padding:2px 6px!important}
+  .v185-ring,.v185-ring svg{width:36px!important;height:36px!important;flex-basis:36px!important;flex:0 0 36px}
+  .v185-rv b{font-size:10px!important}
+}`;
+  document.head.appendChild(st);
+})();
+window.v185Status = () => ({build: APP_BUILD, passes: V185.n, cards: document.querySelectorAll('.card.v185-card').length});
 </script>
 </body>
 </html>
