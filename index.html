@@ -32536,6 +32536,95 @@ ${F} #oddsRow:not(#zz){align-items:center !important}
 })();
 /* Sort is no longer a filter, so it doesn't add to the Filters count */
 if (typeof activeFilterCount==='function'){ const baseAF = activeFilterCount; activeFilterCount = function(){ let n = baseAF.apply(this, arguments) || 0; if (v121Sort()==='conf') n = Math.max(0, n - 1); return n; }; }
+/* ================= v177 =================
+   1) Sort button reads "Sort" (with the sort icon); menu: Confidence, Start time.
+   2) Filters panel: more room at the top, wider chip gaps, labels lined up with the first chip row, even section spacing,
+      chips wrap with right padding (nothing touches the edge).
+   3) Odds Min/Max boxes: no placeholder text.
+   4) Card / popup price line: just "Playable down to −132" = the worst price that still clears the model's bar for that
+      bet type (games: fair chance − 2.5 pts; prop unders − 2 pts; prop overs − 3 pts), never past the −250 floor. */
+APP_BUILD = 177;
+var V177 = {ctx: null};
+function v177Playable(prob, margin){
+  if (!(prob > 0 && prob < 1)) return null;
+  const q = prob - (margin || 0); if (!(q > 0 && q < 1)) return null;
+  let am = q >= 0.5 ? -Math.round(100*q/(1-q)) : Math.round(100*(1-q)/q);
+  if (am > -100 && am < 100) am = am < 0 ? -100 : 100;
+  if (am < -250) am = -250;
+  return am;
+}
+function v177Fmt(a){ return (a > 0 ? '+' : '−') + Math.abs(a); }
+/* props: NBA combo unders qualify while the model's chance still beats the price (and, without the 34-minute
+   workload, only inside the -130 to -120 price window); other props need the fair chance minus 2 pts (unders) / 3 pts (overs) */
+function v177PropPlayable(p){
+  if (!p || p.p==null) return null;
+  const V = typeof V160!=='undefined' ? V160 : null;
+  const combo = V && p.side==='under' && (p.league==='nba') && V.COMBO.indexOf(p.kind) >= 0;
+  if (combo){
+    let am = v177Playable(p.p, 0); if (am==null) return null;
+    const minL5 = p.feat && p.feat.minL5;
+    if (!(minL5!=null && minL5 >= V.POCKET_MIN) && am < V.POCKET_LO) am = V.POCKET_LO;
+    return am;
+  }
+  const fo = p._v160 && p._v160.fo!=null ? p._v160.fo : (p.est && p.est.v160 && p.est.v160.fo!=null ? p.est.v160.fo : null);
+  const fair = fo!=null ? (p.side==='under' ? 1 - fo : fo) : p.p;
+  return v177Playable(fair, p.side==='over' ? (V ? V.XB_OVER : 0.03) : (V ? V.XB_UNDER : 0.02));
+}
+worthLine = function(head, estP, cost){
+  const c = V177.ctx || {};
+  if (c.am !== undefined){ return c.am!=null ? `Playable down to ${v177Fmt(c.am)}` : 'Not playable at any price'; }
+  const prob = c.prob!=null ? c.prob : estP; const margin = c.margin!=null ? c.margin : (typeof V160!=='undefined' ? V160.G_EDGE : 0.025);
+  const am = v177Playable(prob, margin);
+  return am!=null ? `Playable down to ${v177Fmt(am)}` : 'Not playable at any price';
+};
+(function(){
+  if (typeof betOnText==='function'){ const base = betOnText; betOnText = function(p){
+    const prev = V177.ctx;
+    try{ const fair = p && p.sd && p.sd.nv!=null ? p.sd.nv : null; V177.ctx = {prob: fair!=null ? fair : null, margin: (typeof V160!=='undefined' ? V160.G_EDGE : 0.025)}; }catch(e){ V177.ctx = null; }
+    try{ return base.apply(this, arguments); } finally { V177.ctx = prev; } }; }
+  if (typeof propCard==='function'){ const base = propCard; propCard = function(p){
+    const prev = V177.ctx;
+    try{ V177.ctx = {am: v177PropPlayable(p)}; }catch(e){ V177.ctx = null; }
+    try{ return base.apply(this, arguments); } finally { V177.ctx = prev; } }; }
+})();
+
+/* sort button text + menu order (v176 paints the label from this table) */
+try{ V176_SORT.time = 'Sort'; V176_SORT.conf = 'Sort'; }catch(e){}
+function v177Sort(){
+  try{
+    const b = document.getElementById('v176SortBtn'); if (!b) return;
+    const m = document.getElementById('v176SortMenu');
+    if (m && m.firstElementChild && m.firstElementChild.getAttribute('data-v176-sort') !== 'conf'){ const c = m.querySelector('[data-v176-sort="conf"]'); if (c) m.prepend(c); }
+    const cur = typeof v121Sort==='function' ? v121Sort() : 'time'; const t = 'Sort picks (now: ' + (cur==='conf' ? 'Confidence' : 'Start time') + ')';
+    if (b.title !== t) b.title = t;
+    for (const id of ['v176Min','v176Max']){ const i = document.getElementById(id); if (i && i.placeholder) i.placeholder = ''; }
+  }catch(e){}
+}
+let _v177q = false;
+try{ new MutationObserver(()=>{ if (_v177q) return; _v177q = true; queueMicrotask(()=>{ _v177q = false; v177Sort(); }); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
+setInterval(v177Sort, 1000);
+
+(function(){
+  const F = 'html body #filterBar.v175';
+  const st = document.createElement('style'); st.id = 'v177css';
+  st.textContent = `
+html body.filters-open #filterBar.v175:not([hidden]):not(#zz){padding:22px 24px 0 !important;box-sizing:border-box !important}
+${F} .v175-row:not(#zz),${F} #v166StrRow:not(#zz),${F} #oddsRow:not(#zz),${F} #v133Stats:not(#zz),${F} #v133Mkts:not(#zz){margin:0 0 18px !important;column-gap:16px !important}
+${F} #sportChips:not(#zz),${F} #v166StrChips:not(#zz),${F} .v133-chips:not(#zz){gap:8px 8px !important;padding-right:4px !important;max-width:100% !important;box-sizing:border-box !important}
+${F} .horizon-lab:not(#zz){padding:10px 0 0 2px !important;line-height:14px !important}
+@media (min-width:641px){ ${F} .v175-row .horizon-lab:not(#zz),${F} #v166StrRow .horizon-lab:not(#zz),${F} #v133Stats .horizon-lab:not(#zz),${F} #v133Mkts .horizon-lab:not(#zz),${F} #oddsRow .horizon-lab:not(#zz){padding-top:13px !important;align-self:start !important;margin-top:0 !important} }
+${F} .v140-more:not(#zz){margin:4px 0 14px !important;padding-top:10px !important}
+${F} .v140-more-body:not(#zz){padding:8px 0 0 !important}
+${F} .v136-done-row:not(#zz){margin:0 -24px !important;padding:12px 24px 14px !important;bottom:0 !important}
+@media (max-width:640px){
+  html body.filters-open #filterBar.v175:not([hidden]):not(#zz){padding:18px 16px 0 !important}
+  ${F} .horizon-lab:not(#zz){padding:0 0 2px 2px !important}
+  ${F} .v175-row:not(#zz),${F} #v166StrRow:not(#zz),${F} #oddsRow:not(#zz),${F} #v133Stats:not(#zz),${F} #v133Mkts:not(#zz){margin:0 0 16px !important;row-gap:8px !important}
+  ${F} .odds-chips:not(#zz),${F} .v133-chips:not(#zz){margin:0 -16px !important;padding:0 16px !important}
+  ${F} .v136-done-row:not(#zz){margin:0 -16px !important;padding:12px 16px 14px !important}
+}`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
