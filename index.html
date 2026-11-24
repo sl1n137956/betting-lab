@@ -33256,6 +33256,124 @@ if (typeof v180LearnSec==='function'){ const b180 = v180LearnSec; v180LearnSec =
     try{ const pd = document.querySelector('#view .v150 [data-sec="v150-potd"] .v150-potd'); if (pd && pd.dataset.v183!=='1'){ pd.dataset.v183 = '1'; pd.insertAdjacentHTML('afterbegin', v183LearnText()); } }catch(e){}
     return r; };
 })();
+/* ===== v184: NFL wind unders are real Picks (Stanley said yes, Nov 24 9:32 AM PT) =====
+   From the Nov 24 backtest (NFL 2006-2026 DraftKings-era closing totals): outdoor game, forecast sustained wind of
+   15 mph or more around kickoff -> the game total Under. 459 bets, +9.8%, up in most seasons.
+   - Wind: Open-Meteo forecast (free, no key) at the stadium, average of the kickoff hour and the next two hours,
+     refreshed every hour for NFL games in the next 7 days. Domes, retractable roofs and covered stadiums are skipped.
+   - The Pick is the DraftKings total Under (never worse than -250), one Pick per game, pulled stays pulled.
+     Made by the publisher like every Pick, so everyone sees the same list.
+   - Logged rows get the wind and are tagged, graded on the DraftKings line like every other bet, and the record has
+     its own row in admin Model learning.
+   - POD: it goes through the normal v183 POD rules unchanged. ===== */
+APP_BUILD = 184;
+var V184 = {LS: 'bl_v184_wind', MIN: 15, wx: {}, at: 0, busy: false, st: null, made: 0, err: ''};
+try{ V184.wx = JSON.parse(localStorage.getItem(V184.LS) || '{}') || {}; }catch(e){ V184.wx = {}; }
+const V184_COVERED = /dome|sofi|allegiant|nrg|reliant|at&t stadium|lucas oil|mercedes-benz stadium|state farm stadium|ford field|superdome|u\.s\. bank stadium|caesars superdome/i;
+function v184Outdoor(g){
+  if (!g || g.league!=='nfl' || !g.venue) return false;
+  if (g.venue.indoor) return false;
+  if (V184_COVERED.test(String(g.venue.name||''))) return false;
+  return !!(g.venue.city || g.venue.name);
+}
+function v184Save(){ try{ const cut = Date.now() - 10*86400000; for (const k in V184.wx) if (!(+V184.wx[k].st > cut)) delete V184.wx[k]; localStorage.setItem(V184.LS, JSON.stringify(V184.wx)); }catch(e){} }
+async function v184Refresh(force){
+  if (V184.busy) return; V184.busy = true;
+  try{
+    const now = Date.now();
+    const list = ((typeof games!=='undefined' && games) || []).filter(g=>g && g.league==='nfl' && g.state==='pre' && g.start && +g.start - now < 7*86400000 && +g.start > now - 3600000);
+    for (const g of list){
+      const k = String(g.eventId||''); if (!k) continue; const c = V184.wx[k];
+      if (!v184Outdoor(g)){ V184.wx[k] = {st: +g.start, cov: 1, venue: String((g.venue && g.venue.name)||'').slice(0,60), t: now}; continue; }
+      if (!force && c && !c.cov && now - c.t < (c.err ? 20*60000 : 60*60000)) continue;
+      try{ const w = await fetchWeather(g); V184.wx[k] = {st: +g.start, mph: w.wind!=null ? Math.round(w.wind*10)/10 : null, gust: w.gust!=null ? Math.round(w.gust) : null, place: String(w.place||'').slice(0,60), venue: String(g.venue.name||'').slice(0,60), t: now}; }
+      catch(e){ V184.wx[k] = Object.assign({}, c||{}, {st: +g.start, t: now, err: String(e && e.message || e).slice(0,80)}); }
+    }
+    V184.at = now; v184Save();
+  }catch(e){ V184.err = String(e && e.message || e); }
+  finally{ V184.busy = false; }
+  try{ if (v184Promote() && typeof softRender==='function') softRender(); }catch(e){}
+}
+setTimeout(()=>v184Refresh(), 20000); setInterval(()=>v184Refresh(), 10*60000);
+function v184Wind(ev){ const c = V184.wx[String(ev||'')]; return c && !c.cov && c.mph!=null ? +c.mph : null; }
+
+/* the Pick */
+function v184Promote(){
+  try{ if (typeof v165Active==='function' && v165Active() && !(typeof v165IsPub==='function' && v165IsPub())) return 0; }catch(e){}
+  let n = 0;
+  for (const g of ((typeof games!=='undefined' && games) || [])){
+    if (!g || g.league!=='nfl' || g.state!=='pre' || !g.analysis || !g.verdicts || !v184Outdoor(g)) continue;
+    const w = v184Wind(g.eventId); if (w==null || w < V184.MIN) continue;
+    const A = g.analysis.total; const sd = A && A.sides && A.sides.under; if (!sd || !sd.best || sd.best.price==null || +sd.best.price < -250) continue;
+    if (sd.best.book && !/draftkings/i.test(String(sd.best.book))) { /* the board line is DraftKings; other books are display only */ }
+    const play = g.verdicts.total; if (!play || play.verdict==='started') continue;
+    try{ if (typeof isFinalPulled==='function' && isFinalPulled(play.id)) continue; }catch(e){}
+    if ((plays||[]).some(p=>p && p.g===g && p!==play && p.verdict==='good')) continue;     // one Pick per game
+    if (play.side!=='under'){ play.side = 'under'; play.sd = sd; play.label = sideLabel(g, 'total', 'under', sd.point); if (sd.nv!=null) play.est = sd.nv; }
+    if (play.verdict!=='good'){ play.verdict = 'good'; play._v0 = 'good'; n++; }
+    play._v184 = w;
+    const c = V184.wx[String(g.eventId)] || {}; const where = c.place ? c.place.split(',')[0] : (g.venue.city || 'the stadium');
+    const txt = `Wind game: ${Math.round(w)} mph winds forecast at kickoff in ${where}. Deep shots and kicks get tough in this, drives stall, and games played in wind like this have cashed the Under for years. We're on the Under.`;
+    play.reasons = (play.reasons || []).filter(r=>!/^Wind game:/.test(r)); play.reasons.unshift(txt);
+  }
+  V184.made = n; return n;
+}
+(function(){
+  if (typeof evaluateAll!=='function') return; const base = evaluateAll;
+  evaluateAll = function(){ const r = base.apply(this, arguments); try{ v184Promote(); }catch(e){ console.warn('v184 promote', e); } return r; };
+})();
+
+/* logging: NFL total rows carry the wind; Under rows at 15+ mph outdoors are tagged */
+(function(){
+  if (typeof mlogCompact!=='function') return; const base = mlogCompact;
+  mlogCompact = function(r){ const out = base.apply(this, arguments);
+    try{ if (out && out[1] && out[1].b==='games'){ const o = out[1];
+      if (o.l==='nfl' && o.mk==='total'){ const w = v184Wind(o.ev); if (w!=null){ o.wd = w; if (o.sd==='under' && w >= V184.MIN && !o.ang) o.ang = 'nfl_wind'; } } } }catch(e){}
+    return out; };
+})();
+function v184Tally(){
+  const T = {w: 0, l: 0, p: 0, open: 0, pf: 0, n: 0, roi: null};
+  if (typeof MLOG==='undefined' || !MLOG.raw) return T;
+  const best = new Map();
+  for (const [d, m] of MLOG.raw){ for (const o of m.values()){
+    if (!o || o.b!=='games' || o.l!=='nfl' || o.mk!=='total' || o.sd!=='under' || o.s!=='sb' || (o.bk && !/draftkings/i.test(o.bk))) continue;
+    const k = String(o.ev); const c = best.get(k); const sc = x => [x.res && x.res!=='ungradeable' ? 1 : 0, x.lkd ? 1 : 0, +x.at || 0];
+    if (!c){ best.set(k, o); continue; } const s1 = sc(o), s2 = sc(c);
+    if (s1[0] > s2[0] || (s1[0]===s2[0] && (s1[1] > s2[1] || (s1[1]===s2[1] && s1[2] > s2[2])))) best.set(k, o); } }
+  for (const o of best.values()){ if (o.ang!=='nfl_wind') continue; const pr = v180Px(o);
+    if (o.res==='win' && pr!=null){ T.w++; T.pf += v180Profit(pr); } else if (o.res==='loss'){ T.l++; T.pf -= 1; } else if (o.res==='push') T.p++; else if (!o.res) T.open++; }
+  T.n = T.w + T.l; T.roi = T.n ? T.pf / T.n : null; T.pf = Math.round(T.pf*100)/100; return T;
+}
+
+/* admin Model learning: its own row */
+function v184LearnHTML(){
+  const T = v184Tally(); V184.st = T;
+  const roi = T.roi==null ? '—' : (T.roi >= 0 ? '+' : '') + (T.roi*100).toFixed(1) + '%';
+  const now = Date.now(); const up = [];
+  for (const g of ((typeof games!=='undefined' && games) || [])){ if (!g || g.league!=='nfl' || !g.start || +g.start < now - 3600000 || +g.start - now > 7*86400000) continue;
+    const c = V184.wx[String(g.eventId)]; if (!c) continue; const nm = esc(`${g.away && (g.away.abbr||g.away.name) || ''} @ ${g.home && (g.home.abbr||g.home.name) || ''}`);
+    if (c.cov) continue; if (c.mph==null) continue;
+    up.push(`<span class="v184-g${c.mph >= V184.MIN ? ' v184-hot' : ''}">${nm} · ${Math.round(c.mph)} mph</span>`); }
+  return `<div class="hint">Outdoor NFL games with 15+ mph winds forecast at kickoff: the Under at DraftKings is a Pick. Tested on 20 seasons: 459 bets, +9.8%. Domes and retractable roofs are skipped. Graded on the DraftKings line like every Pick.</div>
+<div class="v180-row"><div class="v180-name">NFL wind unders (15+ mph)</div><div class="v180-st"><span>${T.w}-${T.l}${T.p ? '-' + T.p : ''}</span><span class="${T.roi>0 ? 'v180-pos' : T.roi<0 ? 'v180-neg' : ''}">${roi}</span><b class="v180-on">In Picks</b></div>${T.open ? `<div class="hint">${T.open} waiting to be graded</div>` : ''}</div>
+${up.length ? `<div class="v184-wk"><div class="hint">This week's outdoor games (forecast wind):</div><div class="v184-list">${up.join('')}</div></div>` : ''}`;
+}
+function v184LearnSec(){
+  const wrap = document.querySelector('#view .v150'); if (!wrap) return;
+  let s = wrap.querySelector('.v184-wind');
+  if (!s){ s = document.createElement('section'); s.className = 'v98-sec v150-sec v180-ang v184-wind'; s.innerHTML = '<h3 class="v98-h">🌬️ NFL wind unders</h3><div class="v184-body"></div>';
+    const a = wrap.querySelector('.v180-ang:not(.v184-wind)') || wrap.querySelector('[data-sec="v150-potd"]'); if (a) a.after(s); else wrap.prepend(s); }
+  const b = s.querySelector('.v184-body'); const h = v184LearnHTML(); if (b.innerHTML !== h) b.innerHTML = h;
+}
+(function(){
+  if (typeof v150Learn==='function'){ const base = v150Learn; v150Learn = function(){ const r = base.apply(this, arguments); try{ v184LearnSec(); }catch(e){} return r; }; }
+  const st = document.createElement('style');
+  st.textContent = `.v184-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.v184-g{font-size:12px;padding:4px 9px;border-radius:999px;background:rgba(96,165,250,.10);border:1px solid rgba(96,165,250,.22);color:#cbd5e1;white-space:nowrap}
+.v184-g.v184-hot{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4);color:#bbf7d0;font-weight:600}`;
+  document.head.appendChild(st);
+})();
+window.v184Status = () => ({build: APP_BUILD, wind: V184.wx, made: V184.made, at: V184.at, record: v184Tally()});
 </script>
 </body>
 </html>
