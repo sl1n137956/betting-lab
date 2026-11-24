@@ -32224,6 +32224,57 @@ function v173Fit(){
 setInterval(v173Fit, 500); window.addEventListener('resize', ()=>setTimeout(v173Fit, 50));
 try{ new MutationObserver(()=>{ clearTimeout(window.__v173f); window.__v173f = setTimeout(v173Fit, 30); }).observe(document.documentElement, {childList:true, subtree:true}); }catch(e){}
 window.v173Status = () => ({build: APP_BUILD, games: Object.keys(V173.ev).length, pin: V173.n.pin, an: V173.n.an, err: V173.err, sharpChecks: V173.used, ageS: {pin: Math.round((Date.now()-V173.at.pin)/1000), an: Math.round((Date.now()-V173.at.an)/1000)}});
+/* ================= v174 =================
+   1) Pick popup (desktop, 900px+): Matchup / Blowout risk and Injuries, lineups & news sit side by side, half width each,
+      same height. Phones keep them stacked. If only one of the two exists it stays full width.
+   2) Settings → Pick log sync: simpler wording for the explanation, the status line and Resync. */
+APP_BUILD = 174;
+function v174Pair(){
+  try{
+    for (const grid of document.querySelectorAll('#v166Modal .v166-grid')){
+      const ds = [...grid.children].filter(d=>d.tagName==='DETAILS');
+      const sum = d => ((d.querySelector(':scope > summary')||{}).textContent||'');
+      const mu = ds.find(d=>/Matchup|Blowout/i.test(sum(d)));
+      const inj = ds.find(d=>/Injur/i.test(sum(d)));
+      const both = !!(mu && inj);
+      ds.forEach(d=>{ const want = both && (d===mu ? 'v174-l' : d===inj ? 'v174-r' : ''); d.classList.toggle('v174-l', want==='v174-l'); d.classList.toggle('v174-r', want==='v174-r'); d.classList.toggle('v174-full', both && !want); });
+      grid.classList.toggle('v174-pair', both);
+    }
+  }catch(e){}
+}
+(function(){
+  if (typeof v166FillBody==='function'){ const b = v166FillBody; v166FillBody = function(){ const r = b.apply(this, arguments); v174Pair(); return r; }; }
+  if (typeof v170FillFromCard==='function'){ const b2 = v170FillFromCard; v170FillFromCard = function(){ const r = b2.apply(this, arguments); v174Pair(); return r; }; }
+  try{ new MutationObserver(()=>{ clearTimeout(window.__v174p); window.__v174p = setTimeout(v174Pair, 20); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}
+})();
+
+function v174SyncText(){
+  try{
+    const c = document.getElementById('v145Sync'); if (!c || c.dataset.v174) return;
+    const ex = c.querySelector('.v173-ex'); if (!ex) return;
+    ex.textContent = 'Your device saves a copy of every bet the model has graded, so Results opens instantly. It quietly grabs only the newest changes in the background.';
+    const hints = [...c.querySelectorAll('.hint')].filter(h=>h!==ex);
+    const st = hints.find(h=>/Last sync/.test(h.textContent));
+    if (st){ const m = st.textContent.match(/Last sync (.+?) · (\d+) days?/); st.textContent = m ? `Last updated ${m[1]} · ${m[2]} day${m[2]==='1'?'':'s'} saved on this device.` : st.textContent; }
+    const rh = hints.find(h=>/Resync re-downloads/.test(h.textContent));
+    if (rh) rh.textContent = 'If Results numbers ever look wrong or missing, tap Resync. It throws out the saved copy and downloads a fresh one from the server. It takes a few seconds and doesn\'t change any picks or results.';
+    c.dataset.v174 = '1';
+  }catch(e){}
+}
+setInterval(v174SyncText, 600);
+document.addEventListener('click', ()=>setTimeout(v174SyncText, 500), true);
+
+(function(){
+  const st = document.createElement('style'); st.id = 'v174css';
+  st.textContent = `@media (min-width:900px){
+  #v166Modal .v166-grid.v174-pair{display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;align-items:stretch}
+  #v166Modal .v166-grid.v174-pair > details.v174-l{grid-column:1 !important;order:1}
+  #v166Modal .v166-grid.v174-pair > details.v174-r{grid-column:2 !important;order:2}
+  #v166Modal .v166-grid.v174-pair > details.v174-full{grid-column:1/-1 !important;order:3}
+  #v166Modal .v166-grid.v174-pair > details.court-dd.v170-flat{order:0}
+}`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
