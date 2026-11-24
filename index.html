@@ -32658,6 +32658,104 @@ ${F} .v175-sports:not(#zz){padding-bottom:22px !important;margin-bottom:22px !im
 }`;
   document.head.appendChild(st);
 })();
+/* ===== v179: hands-off updates. The always-on publisher reloads itself into each new version
+   (checks every 5 min, waits for any upload or lease write to finish, keeps the lease, never loops).
+   Everyone else: a hidden or idle tab reloads quietly; an active tab gets a small "New version" pill. ===== */
+APP_BUILD = 179;
+const V179 = window.V179 = {K: 'bl_v179_upd', AFTER: 'bl_v179_after', reloading: false};
+function v179Rec(){ try{ return JSON.parse(localStorage.getItem(V179.K) || 'null') || {}; }catch(e){ return {}; } }
+function v179SetRec(r){ try{ localStorage.setItem(V179.K, JSON.stringify(r)); }catch(e){} }
+function v179Busy(){
+  try{
+    if (typeof MLOG!=='undefined' && MLOG && (MLOG.busy || MLOG.pushing)) return true;
+    if (typeof V168!=='undefined' && V168 && V168.inflight) return true;
+    if (typeof SYNC2!=='undefined' && SYNC2 && SYNC2.pushing) return true;
+  }catch(e){}
+  return false;
+}
+function v179Pinned(){ try{ return typeof v168Pinned==='function' && v168Pinned(); }catch(e){ return false; } }
+
+/* one reload per new build; if the reload did not change the build, wait 30 min, 1 h, 2 h ... (max 6 h, 5 tries) */
+function v179Allowed(target){
+  const r = v179Rec();
+  if (r.target !== target || !r.tries) return true;
+  if (r.tries >= 5) return false;
+  const wait = Math.min(30*60000 * Math.pow(2, r.tries - 1), 6*3600000);
+  return Date.now() - (r.at || 0) > wait;
+}
+async function v179Reload(target){
+  if (V179.reloading) return; V179.reloading = true;
+  try{ if (typeof sync2Flush==='function') await sync2Flush(); }catch(e){}
+  try{ if (typeof mlogPush==='function' && mlogOn()) await mlogPush(); }catch(e){}
+  try{ if (typeof ushPush==='function' && mlogOn()) await ushPush(true); }catch(e){}
+  try{ if (typeof MLOG!=='undefined' && MLOG.at && typeof v145Save==='function') await v145Save(true); }catch(e){}
+  for (let i = 0; i < 20 && v179Busy(); i++) await new Promise(res=>setTimeout(res, 1500));   // let a write in flight finish
+  try{ const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) await Promise.race([reg.update(), new Promise(res=>setTimeout(res, 4000))]); }catch(e){}
+  const r = v179Rec(); v179SetRec({target, tries: (r.target===target ? (r.tries||0) : 0) + 1, at: Date.now(), from: APP_BUILD});
+  try{ sessionStorage.setItem(V179.AFTER, String(Date.now())); }catch(e){}
+  try{ if (typeof V154!=='undefined') V154.leader = false; }catch(e){}   // keep the lease through the reload (no release on pagehide)
+  location.reload();
+}
+updMaybeReload = async function(){
+  const target = UPD.pending; if (!target || target <= APP_BUILD || V179.reloading) return;
+  if (!v179Allowed(target)) return;
+  const typing = document.activeElement && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (typing) return;
+  if (v179Busy()) return;                                   // try again on the next minute tick
+  const hidden = document.visibilityState === 'hidden';
+  const idle = Date.now() - UPD.lastInput > 3*60000;
+  if (v179Pinned() || hidden || idle) return v179Reload(target);
+  v179Pill(target);
+};
+
+/* the small pill for someone actively using the app */
+function v179Pill(target){
+  if (document.getElementById('v179Pill')) return;
+  const b = document.createElement('div'); b.id = 'v179Pill'; b.setAttribute('role', 'button');
+  b.innerHTML = '<span class="v179-dot"></span>New version · <b>Tap to refresh</b><span class="v179-x" aria-label="Dismiss">✕</span>';
+  b.addEventListener('click', e=>{ if (e.target.classList.contains('v179-x')){ b.remove(); return; } b.textContent = 'Updating…'; v179Reload(target); });
+  document.body.appendChild(b);
+}
+
+/* checks: every 5 min on the publisher or a hidden tab (a tiny no-cache read of the version file) */
+setInterval(()=>{ try{ if (v179Pinned() || document.visibilityState==='hidden') updCheck(); }catch(e){} }, 5*60000);
+
+/* after an update reload: renew the lease right away, and clear the try counter once the build moved */
+(function(){
+  const r = v179Rec(); if (r.target && APP_BUILD >= r.target) v179SetRec({});
+  let after = 0; try{ after = +sessionStorage.getItem(V179.AFTER) || 0; sessionStorage.removeItem(V179.AFTER); }catch(e){}
+  V179.afterReload = !!after;
+  if (!after) return;
+  let n = 0; const t = setInterval(()=>{
+    n++; try{ if (typeof v154Admin==='function' && v154Admin()){ clearInterval(t); v154Lease(); return; } }catch(e){}
+    if (n > 90) clearInterval(t);
+  }, 2000);
+})();
+
+/* tell the relay which build the publisher runs, so its status shows it */
+(function(){
+  const f = window.fetch;
+  window.fetch = function(u, o){
+    try{
+      if (o && o.method === 'POST' && typeof u === 'string' && typeof PUB_BASE !== 'undefined' && u === PUB_BASE + '/lease' && typeof o.body === 'string'){
+        const b = JSON.parse(o.body); b.b = APP_BUILD; o = Object.assign({}, o, {body: JSON.stringify(b)});
+      }
+    }catch(e){}
+    return f.call(this, u, o);
+  };
+})();
+
+(function(){
+  const st = document.createElement('style');
+  st.textContent = `#v179Pill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:9999;
+display:flex;align-items:center;gap:8px;padding:8px 10px 8px 14px;border-radius:999px;background:rgba(15,32,64,.94);border:1px solid rgba(96,165,250,.45);
+color:#dbeafe;font-size:13px;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.35);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#v179Pill b{color:#93c5fd;font-weight:700}
+#v179Pill .v179-dot{width:7px;height:7px;border-radius:50%;background:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.2)}
+#v179Pill .v179-x{margin-left:4px;padding:0 6px;color:#94a3b8;font-size:12px}`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
