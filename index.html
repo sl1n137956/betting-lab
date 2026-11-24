@@ -32275,6 +32275,87 @@ document.addEventListener('click', ()=>setTimeout(v174SyncText, 500), true);
 }`;
   document.head.appendChild(st);
 })();
+/* ================= v175: Filters panel redesign =================
+   Compact auto-width chips everywhere (same size, same text), a label column on desktop (stacked on phone),
+   sports with picks first and empty sports dimmed (all still shown), Reset moved to the footer as a text button
+   next to Done, Strength no longer stretched, Odds ranges small and muted, Stats/Odds/Markets scroll sideways on phones. */
+APP_BUILD = 175;
+function v175Filters(){
+  try{
+    const fb = document.getElementById('filterBar'); if (!fb) return;
+    fb.classList.add('v175');
+    const sc = document.getElementById('sportChips');
+    if (sc){
+      let row = sc.parentElement && sc.parentElement.classList.contains('v175-row') ? sc.parentElement : null;
+      if (!row){ row = document.createElement('div'); row.className = 'v175-row v175-sports'; const lab = document.createElement('span'); lab.className = 'mut horizon-lab v175-lab'; lab.textContent = 'Sports';
+        sc.before(row); row.appendChild(lab); row.appendChild(sc); }
+      for (const c of sc.querySelectorAll('.chip[data-sport]')){
+        const sp = c.getAttribute('data-sport');
+        if (sp === 'reset'){ c.classList.add('v175-hide'); continue; }
+        const n = parseInt(((c.querySelector('.n')||{}).textContent||'').replace(/\D/g,''), 10);
+        const zero = sp !== 'all' && !(n > 0);
+        c.classList.toggle('v175-zero', zero);
+        const ord = sp === 'all' ? '-1' : zero ? '1' : '0';
+        if (c.style.order !== ord) c.style.order = ord;
+      }
+    }
+    const done = document.getElementById('v136Done');
+    if (done && done.parentElement && !document.getElementById('v175Reset')){
+      const b = document.createElement('button'); b.type = 'button'; b.id = 'v175Reset'; b.className = 'v175-reset'; b.textContent = 'Reset filters';
+      b.addEventListener('click', ev=>{ ev.preventDefault(); const r = document.querySelector('#sportChips .chip[data-sport="reset"]'); if (r) r.click(); setTimeout(v175Filters, 60); });
+      done.parentElement.insertBefore(b, done);
+    }
+  }catch(e){}
+}
+setInterval(v175Filters, 700);
+document.addEventListener('click', ()=>setTimeout(v175Filters, 30), true);
+let _v175q = false;
+try{ new MutationObserver(()=>{ if (_v175q) return; _v175q = true; queueMicrotask(()=>{ _v175q = false; v175Filters(); }); }).observe(document.body, {childList:true, subtree:true}); }catch(e){}   // runs before paint, so no flash
+
+(function(){
+  const F = 'html body #filterBar.v175';
+  const css = `
+${F} .v175-hide:not(#zz),#filterBar #sportChips .chip[data-sport="reset"]:not(#zz){display:none !important}
+${F} > *:not(#zz){flex-shrink:0 !important}
+${F} .v175-row:not(#zz),${F} #sortRow:not(#zz),${F} #v166StrRow:not(#zz),${F} #oddsRow:not(#zz),${F} #v133Stats:not(#zz),${F} #v133Mkts:not(#zz){
+  display:grid !important;grid-template-columns:104px minmax(0,1fr) !important;align-items:start !important;gap:0 12px !important;margin:0 0 12px !important;padding:0 !important;min-height:0 !important;border:0 !important;background:none !important}
+${F} .horizon-lab:not(#zz){grid-column:1 !important;font-size:11.5px !important;font-weight:700 !important;letter-spacing:.06em !important;text-transform:uppercase !important;color:var(--mut,#8aa0bf) !important;margin:0 !important;padding:9px 0 0 2px !important;line-height:1.2 !important;width:auto !important;align-self:start !important}
+${F} #sportChips:not(#zz),${F} .seg:not(#zz),${F} #v166StrChips:not(#zz),${F} .odds-chips:not(#zz),${F} .v133-chips:not(#zz){
+  grid-column:2 !important;display:flex !important;flex-wrap:wrap !important;gap:6px !important;grid-template-columns:none !important;width:auto !important;min-width:0 !important;margin:0 !important;padding:0 !important;border:0 !important;background:none !important;overflow:visible !important}
+${F} .chip:not(#zz),${F} .seg label:not(#zz){flex:none !important;width:auto !important;min-width:0 !important;height:34px !important;min-height:34px !important;padding:0 13px !important;font-size:12.5px !important;font-weight:600 !important;gap:5px !important;flex-direction:row !important;white-space:nowrap !important;border-radius:999px !important;line-height:1 !important}
+${F} .chip .n:not(#zz){font-size:11.5px !important;opacity:.75;font-weight:600}
+${F} .odds-chips .chip .odds-rng:not(#zz){font-size:10.5px !important;font-weight:500 !important;color:var(--mut,#8aa0bf) !important;opacity:.85 !important;line-height:1 !important}
+${F} .chip.v175-zero:not(#zz):not(.on){opacity:.45}
+${F} .chip.v175-zero.on:not(#zz){opacity:.6}
+${F} .v140-more:not(#zz){margin:2px 0 6px !important;border-top:1px solid rgba(120,160,225,.14) !important;padding-top:6px !important}
+${F} .v140-more > summary:not(#zz){min-height:40px !important}
+${F} .v140-more-body:not(#zz){padding:6px 0 0 !important}
+${F} .v140-more-body > *:last-child:not(#zz){margin-bottom:4px !important}
+${F} .v136-done-row:not(#zz){justify-content:space-between !important;align-items:center !important;gap:12px !important;margin-top:0 !important;border-top:1px solid rgba(120,160,225,.14);background:#102033 !important}
+${F} .v175-reset{background:none;border:0;color:#8fb4ff;font:600 13px/1 inherit;font-family:inherit;padding:12px 4px;cursor:pointer;min-height:44px}
+${F} .v175-reset:hover{color:#bcd3ff;text-decoration:underline}
+${F} #v136Done:not(#zz){background:linear-gradient(180deg,#3b82f6,#2563eb) !important;border:1px solid rgba(147,197,253,.5) !important;color:#fff !important;min-width:110px;height:44px}
+${F} .chip:not(#zz),${F} .seg label:not(#zz){background:rgba(255,255,255,.035) !important;border:1px solid rgba(120,160,225,.22) !important;color:#a9bddb !important;box-shadow:none !important;transition:background .15s,border-color .15s,color .15s}
+${F} .chip:not(#zz):hover,${F} .seg label:not(#zz):hover{border-color:rgba(147,197,253,.45) !important;color:#dbe7ff !important}
+${F} .chip.on:not(#zz),${F} .seg label.on:not(#zz){background:linear-gradient(180deg,rgba(59,130,246,.34),rgba(37,99,235,.24)) !important;border-color:rgba(96,165,250,.75) !important;color:#eef4ff !important;box-shadow:0 0 0 1px rgba(59,130,246,.18),0 4px 12px -6px rgba(37,99,235,.7) !important}
+${F} .chip.on .n:not(#zz){color:#bfdbfe !important;opacity:1}
+${F} .v175-sports .horizon-lab::before{content:'🏟️ '}
+${F} #sortRow .horizon-lab::before{content:'↕️ '}
+${F} #v166StrRow .horizon-lab::before{content:'💪 '}
+${F} #oddsRow .horizon-lab::before{content:'🎯 '}
+${F} #v133Stats .horizon-lab::before{content:'📊 '}
+${F} #v133Mkts .horizon-lab::before{content:'🧾 '}
+${F} .horizon-lab::before{letter-spacing:0;font-size:12px}
+${F}:not(#zz){background:linear-gradient(180deg,#11243b,#0e1d31) !important;border-color:rgba(96,165,250,.22) !important}
+@media (max-width:640px){
+  ${F} .v175-row:not(#zz),${F} #sortRow:not(#zz),${F} #v166StrRow:not(#zz),${F} #oddsRow:not(#zz),${F} #v133Stats:not(#zz),${F} #v133Mkts:not(#zz){grid-template-columns:minmax(0,1fr) !important;gap:6px 0 !important}
+  ${F} .horizon-lab:not(#zz){padding:0 0 0 2px !important}
+  ${F} #sportChips:not(#zz),${F} .seg:not(#zz),${F} #v166StrChips:not(#zz),${F} .odds-chips:not(#zz),${F} .v133-chips:not(#zz){grid-column:1 !important}
+  ${F} .odds-chips:not(#zz),${F} .v133-chips:not(#zz){flex-wrap:nowrap !important;overflow-x:auto !important;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin:0 -14px !important;padding:0 14px !important;scroll-padding:0 14px}
+  ${F} .odds-chips::-webkit-scrollbar,${F} .v133-chips::-webkit-scrollbar{display:none}
+}`;
+  const st = document.createElement('style'); st.id = 'v175css'; st.textContent = css; document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
