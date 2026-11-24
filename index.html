@@ -32988,6 +32988,46 @@ window.v180Status = () => ({build: APP_BUILD, ang: V180.st, prom: V180.prom, pod
     return base.call(this, list, board);
   };
 })();
+/* ===== v181: Picks list section titles. "⭐ POD" above the gold card, a clear gap, then "🎯 Picks" above the
+   regular picks (same style). No POD: only the Picks title. The old single "Picks · N plays" header is hidden
+   because the titles replace it (its count element stays in the page for the nav badge). ===== */
+APP_BUILD = 181;
+function v181Titles(){
+  try{
+    const on = typeof ui!=='undefined' && ui.tab==='good'; const H = document.documentElement; if (H.classList.contains('v181-pk') !== on) H.classList.toggle('v181-pk', on);
+    if (!on) return;
+    const panes = document.querySelector('#view .v142-panes'); if (!panes) return;
+    const pod = panes.querySelector(':scope > .v142-pane[data-pane="potd"]'), picks = panes.querySelector(':scope > .v142-pane[data-pane="picks"]');
+    const put = (pane, cls, emo, txt, n) => {
+      if (!pane) return; let t = pane.querySelector(':scope > .v181-title');
+      if (!t){ t = document.createElement('div'); t.className = 'v181-title ' + cls; t.innerHTML = `<span class="v181-emo" aria-hidden="true">${emo}</span><span class="v181-txt">${txt}</span><span class="v181-n"></span>`; pane.prepend(t); }
+      else if (pane.firstElementChild !== t) pane.prepend(t);
+      const s = n==null ? '' : (n + (n===1 ? ' play' : ' plays')); const ne = t.querySelector('.v181-n'); if (ne.textContent !== s) ne.textContent = s;
+    };
+    const nPod = pod ? pod.querySelectorAll('.card[data-pid]:not([hidden])').length : 0;
+    const nPk = picks ? picks.querySelectorAll('.card[data-pid]:not([hidden])').length : 0;
+    put(pod, 'v181-pod', '⭐', 'POD', null);
+    put(picks, 'v181-picks', '🎯', 'Picks', nPk);
+    if (pod){ const has = nPod > 0; if (pod.classList.contains('v181-on') !== has) pod.classList.toggle('v181-on', has); }
+    document.documentElement.classList.add('v181');
+  }catch(e){}
+}
+(function(){
+  const v = document.getElementById('view'); let q = 0;
+  if (v) new MutationObserver(()=>{ if (q) return; q = requestAnimationFrame(()=>{ q = 0; v181Titles(); }); }).observe(v, {childList: true, subtree: true});
+  setInterval(v181Titles, 1500);
+  const st = document.createElement('style');
+  st.textContent = `.v142-panes .v181-title{display:flex;align-items:center;gap:8px;margin:2px 2px 10px;font-size:17px;font-weight:800;letter-spacing:.2px;color:#e6efff;line-height:1.2;white-space:nowrap}
+.v142-panes .v181-title .v181-emo{font-size:17px;line-height:1}
+.v142-panes .v181-title .v181-n{margin-left:2px;font-size:13px;font-weight:600;color:#8ea6c8}
+.v142-panes .v181-title.v181-pod .v181-txt{color:#f5c451}
+.v142-panes > .v142-pane[data-pane="potd"]:not(.v181-on) > .v181-title{display:none}
+.v142-panes > .v142-pane[data-pane="potd"].v181-on{margin-bottom:28px!important}
+html.v181 #v145Tiers{display:none!important}
+html.v181-pk #v145Head{display:none!important}
+@media (max-width:640px){.v142-panes .v181-title{font-size:16px;margin-bottom:9px}.v142-panes > .v142-pane[data-pane="potd"].v181-on{margin-bottom:24px!important}}`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
