@@ -33028,6 +33028,95 @@ html.v181-pk #v145Head{display:none!important}
 @media (max-width:640px){.v142-panes .v181-title{font-size:16px;margin-bottom:9px}.v142-panes > .v142-pane[data-pane="potd"].v181-on{margin-bottom:24px!important}}`;
   document.head.appendChild(st);
 })();
+/* ===== v182: tailed bets belong to one exact pick =====
+   Bug: a tailed prop was keyed by game + stat + side only ("401909315|pr|under"), so every player with the same
+   stat and side in that game matched it. Tailing Hugo Gonzalez Under 9.5 Pts+Reb made Jayson Tatum Under 34.5 Pts+Reb
+   (same game, same stat, same side) show "Tailed · $10 @ -124", and the Tailed/Pending list could open whichever
+   player matched first, with that player's current call (Avoid). The same short key also made the Picks list keep
+   only one card per game + stat + side, hiding other players' Picks.
+   Fix: a prop bet's key includes the player and line (prop:event:player:stat:side:line), matching is exact, the
+   Picks list dedupes props by their own id, and a pending tailed bet always shows the call it had when tailed
+   (stored on the bet; older board tails count as Picks) in the Picks list, never moved to Watch/Avoid. ===== */
+APP_BUILD = 182;
+function v182PropKeyOfBet(b){
+  const L = b && b.link; if (!L || L.kind!=='prop' || !L.ev || !L.pid) return '';
+  const stat = L.stat || L.mk; if (!stat || !L.side || L.point==null) return '';
+  return `prop:${L.ev}:${L.pid}:${stat}:${L.side}:${L.point}`;
+}
+(function(){
+  const base = betPlayKey;
+  betPlayKey = function(b){ const k = v182PropKeyOfBet(b); return k || base.apply(this, arguments); };
+  const isProp = p => !!(p && (p.isProp || p.playerName || p.playerId));
+  const bfp = betsForPlay;
+  betsForPlay = function(p){
+    if (!isProp(p)) return bfp.apply(this, arguments);
+    if (typeof bets==='undefined' || !bets) return [];
+    return bets.filter(b=>{ if (!b) return false; const k = betPlayKey(b); if (k && p.id && k===p.id) return true;
+      if (v182PropKeyOfBet(b)) return false;                          // keyed bets match only their exact pick
+      try{ const I = propBetInfo(b); return !!(I && propMatchesInfo(p, I)); }catch(e){ return false; } });
+  };
+  // the Picks list keeps one card per pick, not one per game + stat + side
+  if (typeof v125Key==='function'){ const vk = v125Key; v125Key = function(x){ if (isProp(x)) return x && x.id ? 'prop|' + x.id : ''; return vk.apply(this, arguments); }; }
+})();
+
+/* the call a bet had when it was tailed */
+function v182Snap(b){
+  if (!b) return null;
+  if (b.snap) return b.snap;
+  if ((b.src==='prop' || b.src==='game') && b.tailLock) return {v: 'good'};        // tailed from a Picks card
+  return null;
+}
+(function(){
+  const sb = saveBets;
+  saveBets = function(){
+    try{ const now = Date.now();
+      for (const b of (bets||[])){ if (!b || b.snap || !(now - (+b.created||0) < 120000) || !(b.src==='prop' || b.src==='game')) continue;
+        const it = typeof v122PlayForBet==='function' ? v122PlayForBet(b) : null; if (!it) continue;
+        const kind = b.src==='prop' ? 'props' : 'games';
+        b.snap = {v: it.verdict==='started' ? 'good' : (it.verdict || 'good'), potd: (typeof v131IsPotd==='function' && v131IsPotd(kind, it)) ? 1 : 0, at: now}; } }catch(e){}
+    return sb.apply(this, arguments);
+  };
+  const fix = (list, shown, isProp) => {
+    const good = (shown||[]).filter(x=>x && x.verdict==='good');
+    return {good, out: list};
+  };
+  if (typeof tailedPropsToKeep==='function'){ const base = tailedPropsToKeep;
+    tailedPropsToKeep = function(shown){
+      const good = (shown||[]).filter(x=>x && x.verdict==='good');
+      const out = base.call(this, good) || [];
+      return out.map(x=>{ try{ const b = primaryLoggedBet(x); const s = v182Snap(b); if (s && s.v && x.verdict!=='started' && x.verdict!==s.v){
+        const y = Object.assign({}, x, {verdict: s.v, _v182: 1}); if (x.C) y.C = Object.assign({}, x.C, {J: s.v==='good' ? 'BET' : s.v==='watch' ? 'MAYBE LATER' : 'SKIP'}); return y; } }catch(e){} return x; });
+    };
+  }
+  if (typeof tailedPlaysToKeep==='function'){ const base = tailedPlaysToKeep;
+    tailedPlaysToKeep = function(shown){
+      const good = (shown||[]).filter(x=>x && x.verdict==='good');
+      const out = base.call(this, good) || [];
+      return out.map(x=>{ try{ const b = primaryLoggedBet(x); const s = v182Snap(b); if (s && s.v && x.verdict!=='started' && x.verdict!==s.v) return Object.assign({}, x, {verdict: s.v, _v182: 1}); }catch(e){} return x; });
+    };
+  }
+  if (typeof v122PlayForBet==='function'){ const base = v122PlayForBet;
+    v122PlayForBet = function(b){ const p = base.apply(this, arguments);
+      try{ const s = v182Snap(b); if (p && s && s.v && (!b.result || b.result==='pending') && p.verdict!=='started' && p.verdict!==s.v) return Object.assign({}, p, {verdict: s.v}); }catch(e){}
+      return p; };
+  }
+})();
+
+/* POD settle time: right after a reload the board is briefly half-evaluated, which let the publisher claim and drop
+   three game PODs within a second at 2:50 AM (each one firing a POD alert). A pick must now stay a candidate for
+   2 minutes, on a page that has been up 3 minutes, before it can become Play of the Day. */
+var V182 = {t0: Date.now(), seen: {}};
+(function(){
+  if (typeof v180Cands!=='function') return;
+  const base = v180Cands;
+  v180Cands = function(){
+    const list = base.apply(this, arguments) || []; const now = Date.now(); const live = {};
+    for (const o of list){ const id = o.b + '|' + o.k; live[id] = 1; if (!V182.seen[id]) V182.seen[id] = now; }
+    for (const id in V182.seen) if (!live[id]) delete V182.seen[id];
+    if (now - V182.t0 < 180000) return list.filter(o=>{ try{ const D = v131Store().days[o.d]; return !!(D && D[o.b] && D[o.b][o.k] && !D[o.b][o.k].drop); }catch(e){ return false; } });
+    return list.filter(o=>{ try{ const D = v131Store().days[o.d]; if (D && D[o.b] && D[o.b][o.k] && !D[o.b][o.k].drop) return true; }catch(e){} return now - V182.seen[o.b + '|' + o.k] >= 120000; });
+  };
+})();
 </script>
 </body>
 </html>
