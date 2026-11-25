@@ -42297,6 +42297,568 @@ document.addEventListener('keydown', e => {
 `;
   document.head.appendChild(st);
 })();
+/* ===== v203: Real Parlay Model
+   - De-biased leg probabilities (shrink raw model excess toward market fair + damp 54%+ optimism)
+   - Real DraftKings parlay decimal pricing; blocks SGPs from Model Picks (DK SGP repricing unknown)
+   - Empirical slate-dependence adjustment (same-league unders / same-direction slate clustering)
+   - +5.0% EV bar for Model Pick parlays, sized smaller (0.50u for 2-leg, 0.25u for 3+ legs)
+   - Honest UI: per-leg de-biased chances, DK vs Fair odds, EV%, plain-English 'why', Model Pick vs Not recommended
+   (Stanley, Nov 25 2026) ===== */
+APP_BUILD = 203;
+
+var V203 = window.V203 = {
+  EV_MIN: 0.05,        // +5.0% EV bar required to call a ticket a Model Pick
+  SHRINK_K: 0.50,      // shrink raw model edge 50% back toward no-vig market fair
+  DAMP_CUT: 0.54,      // above 54%, damp overconfidence (55-57% calls hit ~54% in log)
+  DAMP_SLOPE: 0.78,
+  RHO_SAME_LG_UNDER: 0.92,
+  RHO_SAME_LG_DIR: 0.97
+};
+
+function v203Imp(a){
+  a = +a;
+  if (!isFinite(a) || Math.abs(a) < 100) return null;
+  return a > 0 ? 100 / (a + 100) : (-a) / (-a + 100);
+}
+
+function v203LegFair(raw){
+  if (!raw) return null;
+  const isProp = !!(raw.isProp || (raw.kind && raw.playerName));
+  if (!isProp){
+    if (raw.sd && raw.sd.nv != null && isFinite(+raw.sd.nv)) return +raw.sd.nv;
+    try{
+      if (raw.g && raw.g.quotes && raw.g.quotes[raw.mk]){
+        const Q = raw.g.quotes[raw.mk];
+        const opp = raw.mk === 'total' ? (raw.side === 'over' ? 'under' : 'over') : (raw.side === 'home' ? 'away' : 'home');
+        const pt = raw.sd && raw.sd.point;
+        const findDk = s => (Q[s] || []).find(q => /draftkings/i.test(q.bk || q.book || '') && (raw.mk === 'ml' || q.point === pt));
+        const q1 = findDk(raw.side), q2 = findDk(opp);
+        if (q1 && q2){
+          const i1 = v203Imp(q1.price), i2 = v203Imp(q2.price);
+          if (i1 && i2 && (i1 + i2) >= 0.97 && (i1 + i2) <= 1.25) return i1 / (i1 + i2);
+        }
+      }
+    }catch(e){}
+    const dk = v202LegDkPrice(raw);
+    const id = v203Imp(dk);
+    return id != null ? Math.max(0.02, Math.min(0.98, id / 1.045)) : null;
+  }
+  try{
+    if (raw._v160 && raw._v160.fo != null) return raw.side === 'under' ? (1 - raw._v160.fo) : raw._v160.fo;
+    if (raw.est && raw.est.v160 && raw.est.v160.fo != null) return raw.side === 'under' ? (1 - raw.est.v160.fo) : raw.est.v160.fo;
+    if (typeof V160 !== 'undefined' && V160.fair && raw.g && raw.playerId){
+      const c = V160.fair.get(`${raw.g.eventId || ''}|${raw.playerId}|${raw.kind}|${raw.line}`);
+      if (c && c.f != null) return raw.side === 'under' ? (1 - c.f) : c.f;
+    }
+    if (raw.overPrice != null && raw.underPrice != null && typeof v160FairOver === 'function'){
+      const fo = v160FairOver(raw.overPrice, raw.underPrice);
+      if (fo != null) return raw.side === 'under' ? (1 - fo) : fo;
+    }
+  }catch(e){}
+  const dk = v202LegDkPrice(raw);
+  const id = v203Imp(dk);
+  return id != null ? Math.max(0.02, Math.min(0.98, id / 1.045)) : null;
+}
+
+function v203DebiasProb(rawP, fairP){
+  if (rawP == null || !isFinite(rawP) || fairP == null || !isFinite(fairP)) return null;
+  let p = fairP + V203.SHRINK_K * (rawP - fairP);
+  if (p > V203.DAMP_CUT) p = V203.DAMP_CUT + (p - V203.DAMP_CUT) * V203.DAMP_SLOPE;
+  return Math.max(0.05, Math.min(0.88, p));
+}
+
+function v203DependenceFactor(legs){
+  if (!legs || legs.length < 2) return {factor:1, notes:[]};
+  let f = 1;
+  let underPairs = 0, dirPairs = 0;
+  for (let i = 0; i < legs.length; i++){
+    for (let j = i + 1; j < legs.length; j++){
+      const a = legs[i], b = legs[j];
+      if ((a.league || '') !== (b.league || '') || !a.league) continue;
+      if (a.side === 'under' && b.side === 'under'){
+        f *= V203.RHO_SAME_LG_UNDER;
+        underPairs++;
+      } else if (a.isProp === b.isProp && a.side === b.side){
+        f *= V203.RHO_SAME_LG_DIR;
+        dirPairs++;
+      }
+    }
+  }
+  f = Math.max(0.65, Math.min(1, f));
+  const notes = [];
+  if (underPairs) notes.push(`${underPairs} same-league under pair${underPairs > 1 ? 's' : ''} (pace/blowout clustering)`);
+  if (dirPairs) notes.push(`${dirPairs} same-league slate-direction pair${dirPairs > 1 ? 's' : ''}`);
+  return {factor: f, notes};
+}
+
+function v203TicketReason(t){
+  if (t.sgp){
+    return 'DraftKings reprices same-game parlays lower than multiplying leg odds. Since live SGP pricing is unavailable, EV is unverified — not recommended.';
+  }
+  const negLegs = t.legs.filter(l => l.legEdge <= 0);
+  if (negLegs.length){
+    return `${negLegs.length === 1 ? negLegs[0].shortDesc + ' does' : negLegs.length + ' legs do'} not hold a positive edge over DK odds after de-biasing — better left out.`;
+  }
+  const dkStr = v202FmtAm(t.am), fairStr = v202FmtAm(t.fairAm);
+  const depNote = t.depNotes && t.depNotes.length ? ` Adjusted ${Math.round((1 - t.depFactor) * 100)}% down for ${t.depNotes.join(' & ')}.` : '';
+  if (t.isModelPick){
+    return `All ${t.n} legs beat DK odds after shrinking toward fair; combined DK ${dkStr} beats fair ${fairStr} (+${(t.ev * 100).toFixed(1)}% EV).${depNote} Sized smaller at ${t.recUnits}u.`;
+  }
+  if (t.ev > 0){
+    return `Small +${(t.ev * 100).toFixed(1)}% edge (DK ${dkStr} vs fair ${fairStr}), below the +${(V203.EV_MIN * 100).toFixed(0)}% Model Pick bar.${depNote} Straight Picks offer stronger risk-adjusted value.`;
+  }
+  return `Compounded DK vig${t.depNotes && t.depNotes.length ? ' + slate dependence' : ''} puts DK ${dkStr} behind fair ${fairStr} (${(t.ev * 100).toFixed(1)}% EV) — not recommended.`;
+}
+
+/* Override v202ParlayLegs, v202CalcTicket, v202BuildParlays */
+v202ParlayLegs = function(){
+  const now = Date.now();
+  const seen = new Set();
+  const out = [];
+  const podKeys = new Set();
+  try{
+    if (typeof v131Store === 'function' && typeof v131Day === 'function'){
+      const st = v131Store(); const td = v131Day(now); const D = st && st.days && st.days[td];
+      if (D) for (const b of ['games','props']) for (const k in (D[b] || {})) if (D[b][k] && !D[b][k].drop) podKeys.add(k);
+    }
+  }catch(e){}
+
+  const add = (raw, isProp) => {
+    if (!raw || raw.verdict !== 'good' || !raw.id) return;
+    if (seen.has(raw.id)) return;
+    const g = raw.g;
+    if (!g || (g.state && g.state !== 'pre')) return;
+    const startMs = g.start ? +new Date(g.start) : 0;
+    if (!(startMs > now && startMs < now + 36 * 3600000)) return;
+    const pk = isProp ? raw.id : (typeof playResultKey === 'function' ? playResultKey(raw) : raw.id);
+    if (typeof isFinalPulled === 'function' && (isFinalPulled(raw.id) || isFinalPulled(pk))) return;
+    const dkPrice = v202LegDkPrice(raw);
+    if (dkPrice == null) return;
+    const dec = typeof amToDec === 'function' ? amToDec(dkPrice) : (dkPrice > 0 ? 1 + dkPrice/100 : 1 + 100/(-dkPrice));
+    if (!dec || dec <= 1.02) return;
+    const rawP = typeof parlayLegProb === 'function' ? parlayLegProb(raw) : raw.p;
+    if (rawP == null || !isFinite(rawP) || rawP <= 0.05 || rawP >= 0.95) return;
+    const fairP = v203LegFair(raw);
+    if (fairP == null) return;
+    const p = v203DebiasProb(rawP, fairP);
+    if (p == null) return;
+    const impDk = v203Imp(dkPrice);
+    if (impDk == null) return;
+    const legEdge = p - impDk;
+    seen.add(raw.id);
+    const ev = typeof parlayEventId === 'function' ? parlayEventId(raw) : (g.eventId || g.id);
+    const gm = `${(g.away && (g.away.short || g.away.abbr || g.away.name)) || 'Away'} @ ${(g.home && (g.home.short || g.home.abbr || g.home.name)) || 'Home'}`;
+    out.push(Object.assign({}, raw, {
+      isProp, dkPrice, price: dkPrice, dec,
+      rawP, fairP, p, impDk, legEdge,
+      ev: String(ev || ''), gm, startMs,
+      isPod: podKeys.has(pk) || podKeys.has(raw.id),
+      isLocked: !!(raw.locked || (startMs - now <= 30 * 60000)),
+      shortDesc: v202LegShortDesc(Object.assign({}, raw, {isProp}))
+    }));
+  };
+
+  for (const p of ((typeof plays !== 'undefined' && Array.isArray(plays)) ? plays : [])) add(p, false);
+  for (const p of ((typeof props !== 'undefined' && Array.isArray(props)) ? props : [])) add(p, true);
+  out.sort((a, b) => (b.legEdge - a.legEdge) || ((b.isPod ? 1 : 0) - (a.isPod ? 1 : 0)) || (b.p - a.p));
+  return out;
+};
+
+v202CalcTicket = function(legs){
+  if (!legs || legs.length < 2) return null;
+  let dec = 1, pInd = 1, sgp = false;
+  for (let i = 0; i < legs.length; i++){
+    dec *= legs[i].dec;
+    pInd *= legs[i].p;
+    for (let j = i + 1; j < legs.length; j++){
+      const c = v202SameGameCheck(legs[i], legs[j]);
+      if (!c.ok) return null;
+      if (c.sgp) sgp = true;
+    }
+  }
+  const dep = v203DependenceFactor(legs);
+  const p = Math.max(0.005, Math.min(0.95, pInd * dep.factor));
+  const am = typeof decToAm === 'function' ? decToAm(dec) : (dec >= 2 ? Math.round((dec - 1) * 100) : Math.round(-100 / (dec - 1)));
+  if (am == null || !isFinite(am)) return null;
+  const fairDec = 1 / p;
+  const fairAm = typeof decToAm === 'function' ? decToAm(fairDec) : (fairDec >= 2 ? Math.round((fairDec - 1) * 100) : Math.round(-100 / (fairDec - 1)));
+  const implied = 1 / dec;
+  const ev = p * dec - 1;
+  const edge = p - implied;
+  const allPosLegs = legs.every(l => l.legEdge > 0);
+  const isModelPick = !sgp && allPosLegs && ev >= V203.EV_MIN - 1e-9;
+  const recUnits = legs.length === 2 ? 0.5 : 0.25;
+  const sports = [...new Set(legs.map(l => l.league || (l.g && l.g.league)).filter(Boolean))];
+  const mix = legs.every(l => l.isProp) ? 'props' : legs.every(l => !l.isProp) ? 'games' : 'mixed';
+  const start = Math.min(...legs.map(l => l.startMs || Infinity));
+  const id = 'v203p:' + legs.map(l => l.id).sort().join('+');
+  const t = {
+    id, isParlay:true, n:legs.length, legs:legs.slice(),
+    dec, am, price:am, fairDec, fairAm,
+    pInd, p, implied, edge, ev, sgp,
+    depFactor: dep.factor, depNotes: dep.notes,
+    allPosLegs, isModelPick, recUnits,
+    sports, mix, league:sports[0], start
+  };
+  t.why = v203TicketReason(t);
+  return t;
+};
+
+v202BuildParlays = function(legs){
+  legs = legs || v202ParlayLegs();
+  // Only build Model Pick candidates from positive de-biased edge legs, and NO SGPs (SGP DK pricing unknown)
+  const posLegs = legs.filter(l => l.legEdge > 0);
+  if (posLegs.length < 2) return [];
+  const cands = new Map();
+  const addCombo = arr => {
+    const t = v202CalcTicket(arr);
+    if (t && t.isModelPick && !cands.has(t.id)) cands.set(t.id, t);
+  };
+  const noSg = (a, b) => { const c = v202SameGameCheck(a, b); return c.ok && !c.sgp; };
+
+  const p2 = posLegs.slice(0, 14);
+  for (let i = 0; i < p2.length; i++){
+    for (let j = i + 1; j < p2.length; j++){
+      if (noSg(p2[i], p2[j])) addCombo([p2[i], p2[j]]);
+    }
+  }
+  const p3 = posLegs.slice(0, 11);
+  for (let i = 0; i < p3.length; i++){
+    for (let j = i + 1; j < p3.length; j++){
+      if (!noSg(p3[i], p3[j])) continue;
+      for (let k = j + 1; k < p3.length; k++){
+        if (noSg(p3[i], p3[k]) && noSg(p3[j], p3[k])) addCombo([p3[i], p3[j], p3[k]]);
+      }
+    }
+  }
+  const p4 = posLegs.slice(0, 9);
+  for (let i = 0; i < p4.length; i++){
+    for (let j = i + 1; j < p4.length; j++){
+      if (!noSg(p4[i], p4[j])) continue;
+      for (let k = j + 1; k < p4.length; k++){
+        if (!noSg(p4[i], p4[k]) || !noSg(p4[j], p4[k])) continue;
+        for (let m = k + 1; m < p4.length; m++){
+          if (noSg(p4[i], p4[m]) && noSg(p4[j], p4[m]) && noSg(p4[k], p4[m])) addCombo([p4[i], p4[j], p4[k], p4[m]]);
+        }
+      }
+    }
+  }
+  for (let startIdx = 0; startIdx < Math.min(4, posLegs.length); startIdx++){
+    const chain = [posLegs[startIdx]];
+    for (let j = 0; j < posLegs.length; j++){
+      if (j === startIdx) continue;
+      if (chain.every(x => noSg(x, posLegs[j]))){
+        chain.push(posLegs[j]);
+        if (chain.length >= 5) addCombo(chain);
+      }
+    }
+  }
+  const all = [...cands.values()].sort((a, b) => (b.ev - a.ev) || (b.p - a.p));
+  const out = [], usedN = {};
+  for (const t of all){
+    const cap = t.n === 2 ? 4 : t.n === 3 ? 3 : t.n === 4 ? 2 : 1;
+    if ((usedN[t.n] || 0) >= cap) continue;
+    usedN[t.n] = (usedN[t.n] || 0) + 1;
+    out.push(t);
+    if (out.length >= 12) break;
+  }
+  return out;
+};
+
+/* ---------- Override parlaylog sizing & grading to match 0.25u - 0.50u Model Pick stakes ---------- */
+v202LogLockedParlays = function(tickets){
+  const L = v202PLogLoad(); const now = Date.now();
+  const byN = new Map();
+  for (const t of (tickets || [])){
+    if (!t || !t.isModelPick || !t.legs || t.legs.length < 2) continue;
+    const mins = (t.start - now) / 60000;
+    if (mins > 30 || mins < 0) continue;
+    if (t.legs.some(l => l.dkPrice < V202_FLOOR || l.dkPrice > V202_MAXP)) continue;
+    if (!byN.has(t.n)) byN.set(t.n, t);
+  }
+  for (const t of byN.values()){
+    if (L.rows[t.id]) continue;
+    L.rows[t.id] = {
+      id: t.id, n: t.n, am: Math.round(t.am), dec: Math.round(t.dec * 10000) / 10000,
+      fairAm: Math.round(t.fairAm), ev: Math.round(t.ev * 10000) / 10000,
+      uStake: t.recUnits || 0.5,
+      p: Math.round(t.p * 10000) / 10000, t: t.start, at: now, legs: t.legs.map(v202PackLeg)
+    };
+  }
+};
+
+v202PLogRecord = function(){
+  const L = v202PLogLoad();
+  let w = 0, l = 0, p = 0, u = 0, open = 0;
+  for (const id in L.rows){
+    const r = L.rows[id]; if (!r) continue;
+    if (!r.res){ open++; continue; }
+    if (r.res === 'ungradeable' || r.res === 'void') continue;
+    const st = r.uStake != null ? +r.uStake : 1;
+    if (r.res === 'win'){
+      w++;
+      u += (r.u != null ? +r.u : (r.dec ? (r.dec - 1) * st : st));
+    } else if (r.res === 'loss'){
+      l++;
+      u -= (r.u != null ? Math.abs(+r.u) : st);
+    } else if (r.res === 'push') p++;
+  }
+  return {w, l, p, u: Math.round(u * 100) / 100, open};
+};
+
+v202GradeParlays = async function(){
+  const L = v202PLogLoad(); const now = Date.now(); let ch = 0;
+  const due = Object.values(L.rows).filter(r => r && !r.res && Array.isArray(r.legs) && r.legs.length >= 2 && r.t < now - 3 * 3600000);
+  for (const r of due.slice(0, 30)){
+    let hasLoss = false, missing = false;
+    const wonDecs = [];
+    for (const lg of r.legs){
+      if (lg.pr == null || lg.pr < V202_FLOOR || lg.pr > V202_MAXP){ r.res = 'void'; ch++; hasLoss = false; missing = false; break; }
+      if (lg.b === 'props' && typeof v189RowStandaloneBad === 'function' && v189RowStandaloneBad({b:'props', s:'sb', k:lg.kind, sd:lg.side, pt:lg.pt, pr:lg.pr})){
+        r.res = 'void'; ch++; hasLoss = false; missing = false; break;
+      }
+      if (lg.t > now - 2.5 * 3600000){ missing = true; continue; }
+      let gr = null;
+      try{
+        if (lg.b === 'games' && typeof uniFinFor === 'function' && typeof uniGradeGameRow === 'function'){
+          const fin = await uniFinFor(lg.lg, lg.ev, lg.t);
+          if (fin){ if (fin.canceled) gr = {res:'void'}; else if (fin.done) gr = uniGradeGameRow({l:lg.lg, mk:lg.mk, side:lg.side, pt:lg.pt}, fin); }
+        } else if (lg.b === 'props' && typeof uniBoxFor === 'function' && typeof uniGradePropRow === 'function'){
+          const bx = await uniBoxFor(lg.lg, lg.ev);
+          if (bx) gr = uniGradePropRow({l:lg.lg, kind:lg.kind, pid:lg.pid, pn:lg.pn, side:lg.side, pt:+lg.pt}, bx);
+        }
+      }catch(e){}
+      if (!gr || !gr.res){ missing = true; continue; }
+      if (gr.res === 'loss'){ hasLoss = true; break; }
+      if (gr.res === 'win'){ wonDecs.push(typeof amToDec === 'function' ? amToDec(lg.pr) : (lg.pr > 0 ? 1 + lg.pr/100 : 1 + 100/(-lg.pr))); }
+    }
+    if (r.res === 'void') continue;
+    const st = r.uStake != null ? +r.uStake : 1;
+    if (hasLoss){ r.res = 'loss'; r.u = -st; ch++; }
+    else if (!missing){
+      if (!wonDecs.length){ r.res = 'void'; r.u = 0; }
+      else { const d = wonDecs.reduce((a, x) => a * x, 1); r.res = 'win'; r.u = Math.round((d - 1) * st * 1000) / 1000; }
+      ch++;
+    } else if (r.t < now - 4 * 86400000){
+      r.res = 'ungradeable'; ch++;
+    }
+  }
+  return ch;
+};
+
+/* ---------- Override Parlays UI (Per-leg de-biased %, DK vs Fair odds, EV%, Why, Model Pick vs Not recommended) ---------- */
+function v203EvBadgeHTML(t){
+  if (t.sgp) return `<span class="v203-ev bad">SGP odds unknown</span>`;
+  const pct = (t.ev * 100).toFixed(1);
+  const sign = t.ev > 0 ? '+' : t.ev < 0 ? '−' : '';
+  const cls = t.isModelPick ? 'good' : (t.ev > 0 ? 'warn' : 'bad');
+  return `<span class="v203-ev ${cls}">${sign}${Math.abs(+pct).toFixed(1)}% EV</span>`;
+}
+
+function v203StatusBadgeHTML(t){
+  return t.isModelPick
+    ? `<span class="v203-status pick">MODEL PICK · ${t.recUnits}u</span>`
+    : `<span class="v203-status skip">NOT RECOMMENDED</span>`;
+}
+
+v202ParlayCardHTML = function(t){
+  const tailed = v202ParlayIsTailed(t.id);
+  const sports = (t.sports || []).map(s => (LMAP[s] && LMAP[s].label) || s.toUpperCase()).join(' · ') || 'PARLAY';
+  const when = isFinite(t.start) && t.start !== Infinity ? (typeof fmtTime === 'function' ? fmtTime(new Date(t.start)) : '') : '';
+  const pct = Math.round(t.p * 100);
+  const ring = typeof v185Ring === 'function' ? v185Ring(t.p, 'Hit') : `<b>${pct}%</b>`;
+  const unit = (+S.unit > 0 && isFinite(+S.unit)) ? +S.unit : 25;
+  const stakeDol = (t.recUnits * unit).toFixed(2).replace(/\.00$/, '');
+  const rows = t.legs.map(l => {
+    const ic = l.isProp && typeof playerPfpHTML === 'function'
+      ? playerPfpHTML(l)
+      : (l.g && typeof teamLogoHTML === 'function' ? teamLogoHTML(l.g[l.side === 'away' ? 'away' : 'home'], 'player-pfp v202-tl') : '');
+    const legEdgeTxt = `${l.legEdge >= 0 ? '+' : '−'}${Math.abs(l.legEdge * 100).toFixed(1)}%`;
+    return `<div class="v202-leg">
+      <div class="v202-leg-l">${ic}<div class="v202-leg-txt"><div class="v202-leg-name">${esc(l.shortDesc)}</div><div class="v202-leg-sub">${esc((LMAP[l.league] && LMAP[l.league].label) || String(l.league || '').toUpperCase())} · ${esc(l.gm)}</div></div></div>
+      <div class="v202-leg-r"><span class="v202-leg-pr">${v202FmtAm(l.dkPrice)}</span><span class="v202-leg-p" title="De-biased win chance (edge ${legEdgeTxt})">${Math.round(l.p * 100)}%</span></div>
+    </div>`;
+  }).join('');
+  return `<div class="card v202-pcard v203-pcard${tailed ? ' logged' : ''}" data-v202-pid="${esc(t.id)}">
+    <div class="chead"><span><span class="lg">${esc(sports)}</span> <span class="pill pl-n">${t.n}-LEG</span> ${v203StatusBadgeHTML(t)}</span><span>${esc(when)}</span></div>
+    <div class="prop-head v202-phead">
+      <div class="prop-who">
+        <div class="prop-name v202-podds">DK ${v202FmtAm(t.am)} <span class="v202-pdec">(${v202FmtDec(t.dec)})</span> ${v203EvBadgeHTML(t)}</div>
+        <div class="prop-meta"><span>Fair <b>${v202FmtAm(t.fairAm)}</b> (${v202FmtDec(t.fairDec)}) · ${pct}% true win chance</span></div>
+      </div>
+      <div class="verdict-slot v185-slot">${ring}</div>
+    </div>
+    <div class="v202-legs">${rows}</div>
+    <div class="v203-why"><b>Why:</b> ${esc(t.why)}</div>
+    <div class="cfoot"><span class="cfoot-meta"><span class="pill">Size: ${t.recUnits}u ($${stakeDol})</span></span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${tailed ? ' is-tailed' : ''}" data-v202-ptail="${esc(t.id)}">${tailed ? 'Tailed' : 'Tail'}</button></span></div>
+  </div>`;
+};
+
+v202BuilderHTML = function(legs){
+  const legMap = new Map(legs.map(l => [l.id, l]));
+  V202.selIds = V202.selIds.filter(id => legMap.has(id));
+  const sel = V202.selIds.map(id => legMap.get(id));
+  const t = sel.length >= 2 ? v202CalcTicket(sel) : null;
+
+  const list = legs.map(l => {
+    const on = V202.selIds.includes(l.id);
+    let blk = null, sgp = false;
+    if (!on && sel.length){
+      for (const s of sel){
+        const c = v202SameGameCheck(s, l);
+        if (!c.ok){ blk = c.why; break; }
+        if (c.sgp) sgp = true;
+      }
+    }
+    const cls = `v202-pick-opt${on ? ' on' : ''}${blk ? ' blk' : ''}`;
+    const tag = blk ? `<span class="v202-opt-blk">${esc(blk)}</span>` : (sgp ? `<span class="v203-sgp-warn">SGP</span>` : (l.isPod ? `<span class="v202-pod">POD</span>` : ''));
+    const edgeNote = l.legEdge <= 0 ? `<span class="v203-neg-leg">−edge</span>` : '';
+    return `<button type="button" class="${cls}" data-v202-leg="${esc(l.id)}" ${blk ? 'disabled' : ''} aria-pressed="${on}">
+      <span class="v202-chk" aria-hidden="true">${on ? '✓' : ''}</span>
+      <span class="v202-opt-m"><span class="v202-opt-n">${esc(l.shortDesc)} ${tag} ${edgeNote}</span><span class="v202-opt-s">${esc((LMAP[l.league] && LMAP[l.league].label) || '')} · ${esc(l.gm)}</span></span>
+      <span class="v202-opt-r"><b>${v202FmtAm(l.dkPrice)}</b><small>${Math.round(l.p * 100)}%</small></span>
+    </button>`;
+  }).join('');
+
+  let sum = '';
+  if (sel.length === 0){
+    sum = `<div class="v202-bsum empty">Tap any 2 or more Picks below to test a parlay against the model.</div>`;
+  } else if (sel.length === 1){
+    sum = `<div class="v202-bsum empty"><b>1 leg selected</b> (${esc(sel[0].shortDesc)} · ${v202FmtAm(sel[0].dkPrice)} · ${Math.round(sel[0].p * 100)}% chance). Pick at least 1 more leg.</div>`;
+  } else if (t){
+    const pct = Math.round(t.p * 100);
+    const ring = typeof v185Ring === 'function' ? v185Ring(t.p, 'Hit') : `<b>${pct}%</b>`;
+    const priceRow = t.sgp
+      ? `DK SGP price unknown · Fair (no corr) ~${v202FmtAm(t.fairAm)}`
+      : `DK <b>${v202FmtAm(t.am)}</b> (${v202FmtDec(t.dec)}) vs Fair <b>${v202FmtAm(t.fairAm)}</b> (${v202FmtDec(t.fairDec)})`;
+    sum = `<div class="v202-bsum live v203-bsum ${t.isModelPick ? 'is-pick' : 'is-skip'}">
+      <div class="v202-bsum-l">
+        <div class="v203-bsum-top">${v203StatusBadgeHTML(t)} ${v203EvBadgeHTML(t)}</div>
+        <div class="v202-bsum-t">${t.n}-leg parlay · ${priceRow}</div>
+        <div class="v202-bsum-s">True win chance <b>${pct}%</b>${t.depFactor < 0.999 ? ` <span class="mut">(×${t.depFactor.toFixed(2)} slate dependence)</span>` : ''}</div>
+        <div class="v203-why compact"><b>Why:</b> ${esc(t.why)}</div>
+      </div>
+      <div class="v202-bsum-r">${ring}<div class="v202-bsum-acts"><button type="button" class="btn primary sm" data-v202-btail="1">Tail</button><button type="button" class="btn sm" data-v202-bclr="1">Clear</button></div></div>
+    </div>`;
+  }
+
+  return `<div class="card v202-builder">
+    <div class="v202-bhead"><div><h3>Build a parlay</h3><div class="hint">Uses de-biased win chances and DK parlay odds (+${(V203.EV_MIN*100).toFixed(0)}% EV bar for Model Picks).</div></div>${legs.length >= 2 ? `<button type="button" class="btn sm" data-v202-ball="1">Best EV</button>` : ''}</div>
+    ${sum}
+    <div class="v202-opt-list">${list || '<div class="hint">No eligible Picks legs right now.</div>'}</div>
+  </div>`;
+};
+
+v202TailParlay = function(t){
+  if (!t || !t.legs || t.legs.length < 2) return;
+  const sports = (t.sports || []).map(s => (LMAP[s] && LMAP[s].label) || s).filter(Boolean);
+  const mins = (t.start - Date.now()) / 60000;
+  const unit = (+S.unit > 0 && isFinite(+S.unit)) ? +S.unit : 25;
+  const recU = t.isModelPick ? t.recUnits : 0.25;
+  const pf = {
+    tailLock: mins <= 30 ? 'locked' : 'early',
+    src: 'parlay',
+    date: typeof isoDate === 'function' ? isoDate(new Date(t.start)) : '',
+    sport: sports.length === 1 ? sports[0] : 'Other',
+    market: 'Parlay',
+    pick: `${t.n}-leg parlay: ${t.legs.map(l => l.shortDesc).join(' + ')}`,
+    oddsType: 'american',
+    odds: String(Math.round(t.am) > 0 ? '+' + Math.round(t.am) : Math.round(t.am)),
+    stake: Math.round(recU * unit * 100) / 100,
+    recU,
+    playKey: t.id,
+    legs: t.legs.map(l => typeof parlayLegSaveMeta === 'function' ? parlayLegSaveMeta(l) : v202PackLeg(l))
+  };
+  v202OpenTailModal(pf);
+};
+
+v202RenderParlays = function(){
+  const v = document.getElementById('view'); if (!v) return;
+  if (!V202.pLogAt && typeof v198Fetch === 'function') v198Fetch(true);
+  const legs = v202ParlayLegs();
+  const allTickets = v202BuildParlays(legs);
+  window.__v202Parlays = allTickets;
+  const sizes = ['all', '2', '3', '4', '5+'];
+  if (!sizes.includes(V202.sizeFilter)) V202.sizeFilter = 'all';
+  const shown = allTickets.filter(t => {
+    if (V202.sizeFilter === 'all') return true;
+    if (V202.sizeFilter === '5+') return t.n >= 5;
+    return String(t.n) === V202.sizeFilter;
+  });
+  const seg = typeof v198SegHTML === 'function' ? v198SegHTML() : '';
+  const pills = sizes.map(s => {
+    const cnt = s === 'all' ? allTickets.length : allTickets.filter(t => s === '5+' ? t.n >= 5 : String(t.n) === s).length;
+    return `<button type="button" class="v202-sz${V202.sizeFilter === s ? ' on' : ''}" data-v202-sz="${s}">${s === 'all' ? 'All sizes' : s + (s === '5+' ? ' legs' : '-leg')} <span>${cnt}</span></button>`;
+  }).join('');
+  const emptyMsg = legs.length < 2
+    ? 'Need at least 2 current Picks to build a parlay.'
+    : (allTickets.length === 0
+      ? `No Parlay Picks today — 0 non-SGP combos cleared the +${(V203.EV_MIN * 100).toFixed(0)}% EV bar after shrinking win chances toward fair and accounting for DraftKings' vig. Straight Picks stay better value.`
+      : 'No Model Pick parlays match this leg count.');
+  const grid = shown.length
+    ? `<div class="grid v202-pgrid">${shown.map(v202ParlayCardHTML).join('')}</div>`
+    : `<div class="empty-state">${emptyMsg}</div>`;
+  const html = `<div class="v202-pwrap">${seg}${v202ParlayRecBarHTML()}${v202BuilderHTML(legs)}<div class="v202-shead"><h3>Model Pick parlays</h3><div class="v202-szrow" role="group" aria-label="Leg count filter">${pills}</div></div>${grid}</div>`;
+  const y = window.scrollY;
+  v.innerHTML = html;
+  if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  try{ if (typeof syncTabChrome === 'function') syncTabChrome(); }catch(e){}
+};
+
+/* Override Best EV button so it finds highest-EV non-SGP combo rather than blindly chaining everything */
+document.addEventListener('click', e => {
+  const b = e.target && e.target.closest && e.target.closest('[data-v202-ball]');
+  if (!b) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const legs = v202ParlayLegs().filter(l => l.legEdge > 0);
+  let best = null;
+  for (let i = 0; i < Math.min(12, legs.length); i++){
+    for (let j = i + 1; j < Math.min(12, legs.length); j++){
+      const c = v202SameGameCheck(legs[i], legs[j]);
+      if (!c.ok || c.sgp) continue;
+      const t = v202CalcTicket([legs[i], legs[j]]);
+      if (t && (!best || t.ev > best.ev)) best = t;
+    }
+  }
+  if (best){
+    // Try extending with a 3rd leg only if it improves EV
+    for (let k = 0; k < Math.min(12, legs.length); k++){
+      if (best.legs.some(x => { if (x.id === legs[k].id) return true; const c = v202SameGameCheck(x, legs[k]); return !c.ok || c.sgp; })) continue;
+      const t3 = v202CalcTicket(best.legs.concat([legs[k]]));
+      if (t3 && t3.ev > best.ev) best = t3;
+    }
+    V202.selIds = best.legs.map(x => x.id);
+  } else {
+    V202.selIds = [];
+  }
+  v202RenderParlays();
+}, true);
+
+/* ---------- Styles ---------- */
+(function(){
+  const st = document.createElement('style');
+  st.id = 'v203css';
+  st.textContent = `
+.v203-status{font-size:10.5px;font-weight:800;letter-spacing:.03em;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.v203-status.pick{background:rgba(34,197,94,.16);border:1px solid rgba(74,222,128,.45);color:#bbf7d0}
+.v203-status.skip{background:rgba(248,113,113,.13);border:1px solid rgba(248,113,113,.38);color:#fecaca}
+.v203-ev{display:inline-flex;align-items:center;font-size:11.5px;font-weight:750;border-radius:999px;padding:1px 8px;margin-left:4px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.v203-ev.good{background:rgba(34,197,94,.16);color:#4ade80;border:1px solid rgba(74,222,128,.35)}
+.v203-ev.warn{background:rgba(250,204,21,.13);color:#fde047;border:1px solid rgba(250,204,21,.32)}
+.v203-ev.bad{background:rgba(248,113,113,.13);color:#fca5a5;border:1px solid rgba(248,113,113,.32)}
+.v203-why{font-size:12.5px;line-height:1.4;color:#cbd5e1;background:rgba(15,23,42,.45);border:1px solid rgba(148,163,184,.16);border-radius:10px;padding:7px 10px;margin:0 0 10px}
+.v203-why.compact{margin:6px 0 0;background:rgba(15,23,42,.35)}
+.v203-why b{color:#e2e8f0}
+.v203-bsum-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.v203-bsum.is-pick{border-color:rgba(74,222,128,.42);background:rgba(22,163,74,.10)}
+.v203-bsum.is-skip{border-color:rgba(248,113,113,.32);background:rgba(220,38,38,.07)}
+.v203-sgp-warn{font-size:10.5px;font-weight:750;border-radius:999px;padding:1px 7px;background:rgba(250,204,21,.14);border:1px solid rgba(250,204,21,.35);color:#fde047;white-space:nowrap}
+.v203-pcard .cfoot{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center!important;justify-content:space-between!important;gap:8px;width:100%}
+.v203-pcard .cfoot-acts{flex:0 0 auto!important;margin-left:auto}
+.v203-neg-leg{font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 6px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:#fca5a5;white-space:nowrap}
+`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
