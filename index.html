@@ -38729,16 +38729,32 @@ function v197BannerHTML(){
   if (!F) return '';
   const bits = [];
   const pp = F.pp || {};
-  const parts = ['nba', 'nhl', 'nfl'].map(k => pp[k]).filter(Boolean);
-  const stalePp = parts.filter(x => x.stale || (x.ageMin != null && x.ageMin > 20));
-  const ages = parts.map(x => x.ageMin).filter(x => x != null);
-  const newest = ages.length ? Math.min.apply(null, ages) : null;
-  const n = parts.reduce((a, x) => a + (+x.n || 0), 0);
-  if (stalePp.length){
-    if (n && newest != null && newest < 999){
-      bits.push('PrizePicks lines are ' + newest + ' minute' + (newest === 1 ? '' : 's') + ' old. The lab is using the last board that loaded.');
+  const names = {nba: 'NBA', nhl: 'NHL', nfl: 'NFL'};
+  const down = [];
+  const old = [];
+  let worst = null;
+  for (const k of ['nba', 'nhl', 'nfl']){
+    const x = pp[k];
+    if (!x) continue;
+    const age = x.ageMin;
+    const aged = age != null && age > 20;
+    const empty = !x.n && (x.stale || (x.err && x.err !== 'no data yet'));
+    if (empty){ down.push(names[k]); continue; }
+    if (x.stale || aged){
+      old.push(names[k]);
+      if (age != null && (worst == null || age > worst)) worst = age;
+    }
+  }
+  if (down.length === 3 || (down.length && !old.length && down.length === Object.keys(pp).length)){
+    bits.push('PrizePicks lines are not loading right now.');
+  } else if (down.length || old.length){
+    const who = down.concat(old).join(', ');
+    if (worst != null){
+      bits.push('PrizePicks ' + who + ' lines are ' + worst + ' minute' + (worst === 1 ? '' : 's') + ' old. The lab is using the last board that loaded.');
+    } else if (down.length){
+      bits.push('PrizePicks ' + down.join(', ') + ' lines are not loading right now.');
     } else {
-      bits.push('PrizePicks lines are not loading right now.');
+      bits.push('PrizePicks ' + who + ' lines are stale. The lab is using the last board that loaded.');
     }
   }
   const ud = F.ud;
