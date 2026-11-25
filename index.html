@@ -35694,6 +35694,697 @@ window.v193Status = () => {
   const teams = [...document.querySelectorAll('#v166Modal .v193-team, .v193-team')];
   return {build: APP_BUILD, teams: teams.length, headers: teams.map(t=>(t.querySelector('.v193-th span')||{}).textContent||''), empty: teams.filter(t=>t.querySelector('.v193-none')).length};
 };
+/* ===== v194: Verdict <-> Picks single source of truth, exact combo stat parsing,
+   first-initial matching, plain Safer ticket wording, and calibrated bet strength ===== */
+APP_BUILD = 194;
+
+/* ---------- 1) Exact stat parsing (longest-first, combo plurals & operators, photo-safe) ---------- */
+const V194_STAT_WORDS = [
+  [/\b(?:pra|p\s*[+\/&]\s*r\s*[+\/&]\s*a|pts?\s*[+\/&]\s*rebs?\s*[+\/&]\s*asts?|points?\s*(?:[+\/&]|and)?\s*rebounds?\s*(?:[+\/&]|and)?\s*assists?)\b/i, 'pra'],
+  [/\b(?:pr|p\s*[+\/&]\s*r|pts?\s*[+\/&]\s*rebs?|points?\s*(?:[+\/&]|and)?\s*rebounds?)\b/i, 'pr'],
+  [/\b(?:pa|p\s*[+\/&]\s*a|pts?\s*[+\/&]\s*asts?|points?\s*(?:[+\/&]|and)?\s*assists?)\b/i, 'pa'],
+  [/\b(?:ra|r\s*[+\/&]\s*a|rebs?\s*[+\/&]\s*asts?|rebounds?\s*(?:[+\/&]|and)?\s*assists?)\b/i, 'ra'],
+  [/\b(pass(ing)?\s*yds|pass(ing)?\s*yards)\b/i, 'pass_yds'],
+  [/\b(rush(ing)?\s*yds|rush(ing)?\s*yards)\b/i, 'rush_yds'],
+  [/\b(rec(eiving)?\s*yds|receiving\s*yards)\b/i, 'rec_yds'],
+  [/\b(sog|shots on goal|shots)\b/i, 'sog'],
+  [/\b(3pm|3pt|3pts|3s|threes|three pointers made|three pointers|3 pointers made|3 pointers|3-pointers made|3-pointers|treys)\b/i, '3pm'],
+  [/\b(pts|points|point|pt)\b/i, 'pts'],
+  [/\b(reb|rebs|rebounds|boards|rebound)\b/i, 'reb'],
+  [/\b(ast|asts|assists|dimes|assist)\b/i, 'ast']
+];
+
+function v194StripStats(s){
+  let out = ' ' + String(s || '') + ' ';
+  for (const [re] of V194_STAT_WORDS){
+    out = out.replace(new RegExp(re.source, 'gi'), ' ');
+  }
+  return out.replace(/\b(made|milestones?|player props?|props?|touchdowns?|strikeouts?|hits)\b/gi, ' ');
+}
+
+parseLeg = function(raw){
+  const L = {raw:String(raw||'').trim(), kind:null, odds:null, dir:null, line:null, incl:false, stat:null, nameText:'', notes:[]};
+  let s = ' ' + L.raw.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim() + ' ';
+  const om = s.match(/(?:^|\s|@)([+-]\d{3,4})\s*$/) || s.match(/\(([+-]\d{3,4})\)/) || s.match(/\bodds\s*([+-]?\d{3,4})\b/);
+  if (om){ const v = parseAm(om[1]); if (v != null && Math.abs(v) >= 100){ L.odds = v; s = s.replace(om[0], ' '); } }
+  s = s.replace(/\b(nba|nfl|nhl|mlb|wnba|ncaab|ncaaf|cbb|cfb)\b/g, ' ');
+  let m;
+  if (/\bteam total\b/.test(s)){
+    s = s.replace(/\bteam total\b/, ' ').replace(/\b(points|pts|runs|goals)\b/g, ' ');
+    L.kind = 'teamtotal';
+    if ((m = s.match(/\b(?:o|over|u|under)\s*(\d{1,3}(?:\.\d)?)\b/))){ L.dir = /^u/.test(m[0].trim()) ? 'under' : 'over'; L.line = +m[1]; s = s.replace(m[0], ' '); }
+    else if ((m = s.match(/(\d{1,3}(?:\.\d)?)/))){ L.dir = 'over'; L.line = +m[1]; s = s.replace(m[0], ' '); }
+    L.nameText = s.replace(/\b(the|vs|v|at|@|line|game|tonight|bet)\b/g, ' ').replace(/[^a-z0-9.\- ]/g, ' ').replace(/\s+/g, ' ').trim();
+    return L;
+  }
+  const gameTot = /\b(game |match )?total (points|pts|runs|goals)\b|\b(points|pts|runs|goals) total\b|\bgame total\b/.test(s);
+  if (gameTot) s = s.replace(/\b(game |match )?total (points|pts|runs|goals)\b|\b(points|pts|runs|goals) total\b|\bgame total\b/, ' total ');
+  if (!gameTot){
+    for (const [re, st] of V194_STAT_WORDS){
+      if (re.test(s)){ L.stat = st; s = s.replace(re, ' '); break; }
+    }
+  }
+  if (L.stat){
+    L.kind = 'prop';
+    if ((m = s.match(/(\d+(?:\.\d)?)\s*\+/))){ L.dir = 'over'; L.line = +m[1]; L.incl = true; s = s.replace(m[0], ' '); }
+    else if ((m = s.match(/\b(?:o|over|ov)\s*(\d+(?:\.\d)?)/))){ L.dir = 'over'; L.line = +m[1]; L.incl = false; s = s.replace(m[0], ' '); }
+    else if ((m = s.match(/\b(?:u|under|un)\s*(\d+(?:\.\d)?)/))){ L.dir = 'under'; L.line = +m[1]; s = s.replace(m[0], ' '); }
+    else if ((m = s.match(/(\d+(?:\.\d)?)/))){ L.dir = 'over'; L.line = +m[1]; L.incl = Number.isInteger(+m[1]); s = s.replace(m[0], ' '); }
+  } else if ((m = s.match(/\b(?:o|over|u|under)\s*(\d{1,3}(?:\.\d)?)\b/))){
+    L.kind = 'total'; L.dir = /^u/.test(m[0].trim()) ? 'under' : 'over'; L.line = +m[1]; s = s.replace(m[0], ' ').replace(/\b(game )?total\b/, ' ');
+  } else if (/\b(ml|moneyline|money line|to win|win|outright)\b/.test(s)){
+    L.kind = 'ml'; s = s.replace(/\b(ml|moneyline|money line|to win|win|outright)\b/g, ' ');
+  } else if ((m = s.match(/(?:^|\s)([+-]\d{1,2}(?:\.\d)?|pk|pick'?em|pick)(?=\s|$)/))){
+    L.kind = 'spread'; L.line = /pk|pick/.test(m[1]) ? 0 : +m[1]; s = s.replace(m[0], ' ');
+  } else {
+    L.kind = 'ml'; L.assumedMl = true;
+  }
+  L.nameText = s.replace(/\b(the|vs|v|at|@|alt|alternate|spread|line|to|score|game|tonight|bet)\b/g, ' ').replace(/[^a-z0-9.\- ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return L;
+};
+
+/* ---------- Photo slip stat & player fixes (L. Ball Under 23.5 Pts+Reb ≠ Ball State) ---------- */
+if (typeof slipStat === 'function'){
+  slipStat = function(s){
+    const low = ' ' + String(s || '').toLowerCase() + ' ';
+    for (const [re, st] of V194_STAT_WORDS){
+      const m = low.match(re);
+      if (m) return {st, word: m[0].trim()};
+    }
+    return null;
+  };
+}
+if (typeof slipTeam === 'function'){
+  slipTeam = function(s){
+    if (typeof teamCandidates !== 'function') return null;
+    if (/^\s*[A-Z]\.\s+[A-Z][a-zA-Z'.-]+\s*$/.test(String(s || ''))) return null;
+    let t = v194StripStats(s);
+    t = t.replace(/[+\-−–]\s?\d+(\.\d+)?/g, ' ').replace(/\d+(\.\d+)?\s?[¢c%]?/g, ' ');
+    if (typeof SLIP_WORDS !== 'undefined') t = t.replace(SLIP_WORDS, ' ');
+    t = t.replace(/[^A-Za-z.&' ]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (t.length < 2) return null;
+    const c = teamCandidates(t); const top = c[0];
+    if (!top) return null;
+    if (top.fuzzy ? top.base < 4.6 : top.base < 6) return null;
+    return {name: top.g[top.side].name, short: top.g[top.side].short, g: top.g, side: top.side, txt: t};
+  };
+}
+if (typeof slipPlayerName === 'function'){
+  slipPlayerName = function(s){
+    let t = v194StripStats(s);
+    t = t.replace(/[+\-−–]\s?\d+(\.\d+)?/g, ' ').replace(/\b\d+(\.\d+)?\+?/g, ' ');
+    if (typeof SLIP_WORDS !== 'undefined') t = t.replace(SLIP_WORDS, ' ');
+    t = t.replace(/[-–—:|•·+\/&]/g, ' ').replace(/\s+/g, ' ').trim();
+    const m = t.match(/\b([A-Z][a-zA-Z'.]+(?:-[A-Z][a-zA-Z']+)?|[A-Z]\.)(\s+[A-Z][a-zA-Z'.-]+){1,2}\b/);
+    if (!m) return null;
+    const cand = m[0].trim();
+    const looksInitial = /^[A-Z]\.\s+[A-Z]/.test(cand);
+    const hasPropHint = !!(slipStat(s) || /\b(over|under|o|u)\s*\d|\d+\+/i.test(String(s || '')));
+    if (!looksInitial && !hasPropHint && slipTeam(cand)) return null;
+    return cand;
+  };
+}
+
+/* ---------- 2) First-initial player matching & live-board preference ---------- */
+nameScore = function(q, name){
+  const a = norm(q), b = norm(name);
+  if (!a || !b) return 0;
+  if (a === b) return 10;
+  const bt = b.split(' ').filter(Boolean), at = a.split(' ').filter(Boolean);
+  if (b.includes(a) && a.length >= 4) return 8;
+  // First-initial + surname (e.g. "a mitchell" -> "Ajay Mitchell" = 9, "Davion Mitchell" = 2)
+  if (at.length >= 2 && at[0].length === 1){
+    const ini = at[0], rest = at.slice(1).filter(Boolean);
+    const restHit = rest.length && rest.every(t => bt.includes(t) || (t.length >= 4 && bt.some(w => w === t)));
+    if (restHit){
+      return (bt[0] && bt[0][0] === ini) ? 9 : 2;
+    }
+  }
+  if (at.length === 1 && bt.includes(a)) return a.length >= 4 ? 7 : 4;
+  const sh = at.filter(t => t.length >= 2 && bt.includes(t)).length;
+  if (sh && sh === at.length) return 7;
+  if (sh) return 3 + sh;
+  return 0;
+};
+
+playerCandidates = async function(text, leagueHint){
+  let q = norm(text);
+  const nick = (typeof NICK_PLAYERS !== 'undefined') && (NICK_PLAYERS[q] || NICK_PLAYERS[q.replace(/\s/g, '')]);
+  if (nick) q = norm(nick);
+  const out = [], seen = new Set();
+  const leagues = leagueHint ? [leagueHint] : ['nba', 'wnba', 'nhl', 'nfl'];
+  const pool = games.filter(g => g && leagues.includes(g.league) && (g.state !== 'post' || Date.now() - g.start < 18 * 3600000));
+  const teams = []; for (const g of pool) for (const side of ['home', 'away']) teams.push({g, side});
+  await Promise.all(teams.map(async t => { try{ t.list = await loadRoster(t.g.league, t.g[t.side].id); }catch(e){ t.list = []; } }));
+  const liveList = (typeof props !== 'undefined' && Array.isArray(props)) ? props : [];
+  for (const t of teams) for (const a of (t.list || [])){
+    const sc = nameScore(q, a.name);
+    if (sc >= 4 && !seen.has(a.id + t.g.id)){
+      seen.add(a.id + t.g.id);
+      const boardP = liveList.filter(p => p && String(p.playerId) === String(a.id) && (!p.g || String(p.g.eventId) === String(t.g.eventId)));
+      const onBoard = boardP.length > 0;
+      const hasGood = boardP.some(p => p.verdict === 'good');
+      const last = (a.name || '').trim().split(/\s+/).pop();
+      const lastHit = (q.split(/\s+/).length === 1 && last && nameScore(q, last) >= 7);
+      out.push({
+        a, g: t.g, side: t.side,
+        sc: sc + (t.g.state === 'pre' ? 0.3 : 0) - Math.max(0, (t.g.start - Date.now()) / 864e5) * 0.2 + (onBoard ? 2 : 0) + (hasGood ? 0.5 : 0) + (lastHit && onBoard ? 1 : 0)
+      });
+    }
+  }
+  if (!out.length){
+    try{
+      const r = await fetchJSON(`https://site.web.api.espn.com/apis/common/v3/search?query=${encodeURIComponent(q)}&limit=8&type=player`);
+      for (const it of ((r.data && r.data.items) || [])){
+        if (!leagues.includes(it.league)) continue;
+        const tid = it.teamRelationships && it.teamRelationships[0] && it.teamRelationships[0].id;
+        let tm = games.filter(g => g.league === it.league && (g.home.id === String(tid) || g.away.id === String(tid))).sort((a, b) => a.start - b.start)[0];
+        if (!tm && tid){
+          try{ const ng = await importNextGameForTeam(it.league, String(tid)); if (ng){ evaluateAll(); tm = ng; } }catch(e){}
+        }
+        const side = tm ? (tm.home.id === String(tid) ? 'home' : 'away') : null;
+        if (it.id && !seen.has(it.id + (tm ? tm.id : ''))){
+          seen.add(it.id + (tm ? tm.id : ''));
+          out.push({a: {id: String(it.id), name: it.displayName, pos: ''}, g: tm || null, side, teamId: tid ? String(tid) : null, sc: nameScore(q, it.displayName) + (tm ? 1 : 0)});
+        }
+      }
+    }catch(e){}
+  }
+  return out.sort((a, b) => b.sc - a.sc);
+};
+
+/* ---------- 3) Picks Strength Calibration (props + games, preserves v189 & evalGame gates) ---------- */
+function v194CalibratePropConf(pl, feat){
+  const f = (pl && pl.feat) || feat || {};
+  const pSide = pl ? pl.p : null;
+  const impV = pl ? pl.implied : null;
+  const edgeV = (pSide != null && impV != null) ? (pSide - impV) : null;
+  const samp = Math.min(1, ((f.n || 0) / 12) * 0.5 + ((f.l10n || 0) / 10) * 0.5);
+  let cal = 35 + samp * 15;
+  if (edgeV != null){
+    cal += Math.max(0, edgeV) * 500 + Math.max(0, (pSide || 0.5) - 0.54) * 100;
+  } else if (pSide != null){
+    cal += Math.max(0, pSide - 0.50) * 160;
+  }
+  return Math.round(Math.max(30, Math.min(90, cal)) * 10) / 10;
+}
+
+(function(){
+  if (typeof buildPropPlay === 'function'){
+    const baseBuild = buildPropPlay;
+    buildPropPlay = function(raw, side, feat, est){
+      const pl = baseBuild.apply(this, arguments);
+      try{
+        if (pl && pl.j && pl.j.conf){
+          const cv = v194CalibratePropConf(pl, feat);
+          pl.j.conf.v = cv;
+          pl.j.conf.str = cv;
+          pl.j.conf.label = cv >= 70 ? 'High' : cv >= 50 ? 'Med' : 'Low';
+        }
+      }catch(e){}
+      return pl;
+    };
+  }
+  if (typeof evaluateAll === 'function'){
+    const baseEvalAll = evaluateAll;
+    evaluateAll = function(){
+      const r = baseEvalAll.apply(this, arguments);
+      try{
+        for (const p of ((typeof plays !== 'undefined' && plays) || [])){
+          if (!p || !p.j || !p.j.conf) continue;
+          const e = p._v160e != null ? p._v160e : (p.C && p.C.P && p.C.P.edge != null ? p.C.P.edge : null);
+          const pr = p.est != null ? p.est : (p.C && p.C.E && p.C.E.final != null ? p.C.E.final : null);
+          if (e != null || pr != null){
+            const comp = p.j.conf.v != null ? +p.j.conf.v : 70;
+            const rawStr = 42 + Math.min(18, comp * 0.18) + Math.max(0, e || 0) * 420 + Math.max(0, (pr || 0.5) - 0.54) * 90;
+            p.j.conf.str = Math.round(Math.max(30, Math.min(comp, rawStr)) * 10) / 10;
+          }
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  if (typeof betStrengthPillHTML === 'function'){
+    const basePill = betStrengthPillHTML;
+    betStrengthPillHTML = function(conf, verdict){
+      if (conf && conf.str != null && conf.str !== conf.v){
+        const c2 = Object.assign({}, conf, {v: conf.str});
+        const html = basePill.call(this, c2, verdict);
+        if (conf.v != null) return html.replace(/Data completeness \d+ of 100/, `Data completeness ${Math.round(conf.v)} of 100`);
+        return html;
+      }
+      return basePill.apply(this, arguments);
+    };
+  }
+  if (typeof recommendedUnits === 'function'){
+    const baseRU = recommendedUnits;
+    recommendedUnits = function(item, kind){
+      if (item && item.j && item.j.conf && item.j.conf.str != null && item.j.conf.str !== item.j.conf.v){
+        const shim = Object.assign({}, item, {j: Object.assign({}, item.j, {conf: Object.assign({}, item.j.conf, {v: item.j.conf.str})})});
+        return baseRU.call(this, shim, kind);
+      }
+      return baseRU.apply(this, arguments);
+    };
+  }
+  if (typeof playCourtroomHTML === 'function'){
+    const basePC = playCourtroomHTML;
+    playCourtroomHTML = function(p, C){
+      let html = basePC.apply(this, arguments);
+      try{
+        if (p && p.j && p.j.conf && p.j.conf.str != null && typeof confDots === 'function'){
+          const oldDots = confDots(p.j.conf.v, (C && C.J) || p.verdict);
+          const newDots = confDots(p.j.conf.str, (C && C.J) || p.verdict);
+          if (oldDots && newDots && oldDots !== newDots) html = html.replace(oldDots, newDots);
+        }
+      }catch(e){}
+      return html;
+    };
+  }
+})();
+
+/* ---------- 4) Single source of truth: Verdict <-> Picks (props & games) ---------- */
+function v194KindFromStat(st){ return st === '3pm' ? 'threes' : st === 'ra' ? 'ar' : st; }
+
+function v194MatchLiveProp(leg){
+  if (!leg || !leg.player || !leg.L || leg.L.kind !== 'prop') return null;
+  const list = (typeof props !== 'undefined' && Array.isArray(props)) ? props : [];
+  if (!list.length) return null;
+  const kind = v194KindFromStat(leg.L.stat);
+  const effLine = (leg.L.incl && leg.L.dir !== 'under') ? (leg.L.line - 0.5) : leg.L.line;
+  const wantSide = leg.L.dir === 'under' ? 'under' : 'over';
+  const samePlayer = p => {
+    if (!p || p.kind !== kind || Math.abs(+p.line - +effLine) >= 1e-9) return false;
+    if (leg.g && p.g && String(p.g.eventId) !== String(leg.g.eventId)) return false;
+    return String(p.playerId) === String(leg.player.id) || nameScore(leg.player.name, p.playerName || '') >= 8;
+  };
+  const exactSide = list.find(p => samePlayer(p) && p.side === wantSide);
+  if (exactSide) return {card: exactSide, sameSide: true};
+  const oppSide = list.find(p => samePlayer(p));
+  return oppSide ? {card: oppSide, sameSide: false} : null;
+}
+
+function v194BuildRawForLeg(leg, mkt, boardCard){
+  const g = leg.g;
+  const kind = v194KindFromStat(leg.L.stat);
+  const effLine = (leg.L.incl && leg.L.dir !== 'under') ? (leg.L.line - 0.5) : leg.L.line;
+  const srcRaw = (boardCard && boardCard.raw) || boardCard || null;
+  const bp = (mkt && mkt.bookPrices) || (srcRaw && srcRaw.bookPrices) || undefined;
+  let overPrice = (mkt && mkt.overPrice != null) ? +mkt.overPrice : (srcRaw && srcRaw.overPrice != null ? +srcRaw.overPrice : (mkt && mkt.bestOver ? +mkt.bestOver.price : null));
+  let underPrice = (mkt && mkt.underPrice != null) ? +mkt.underPrice : (srcRaw && srcRaw.underPrice != null ? +srcRaw.underPrice : (mkt && mkt.bestUnder ? +mkt.bestUnder.price : null));
+  if (leg.L.odds != null){
+    if (leg.L.dir === 'under') underPrice = leg.L.odds;
+    else overPrice = leg.L.odds;
+  }
+  const raw = {
+    eventId: g ? g.eventId : (srcRaw && srcRaw.eventId),
+    league: g ? g.league : (srcRaw && srcRaw.league) || 'nba',
+    g,
+    playerId: String(leg.player.id),
+    playerName: leg.player.name,
+    headshot: (srcRaw && srcRaw.headshot) || (g ? headshotUrl(g.league, leg.player.id) : ''),
+    pos: leg.player.pos || (srcRaw && srcRaw.pos) || '',
+    team: g ? g[leg.side] : (srcRaw && srcRaw.team),
+    opp: g ? g[leg.side === 'home' ? 'away' : 'home'] : (srcRaw && srcRaw.opp),
+    home: g ? (leg.side === 'home') : !!(srcRaw && srcRaw.home),
+    kind,
+    line: effLine,
+    overPrice,
+    underPrice,
+    source: (srcRaw && srcRaw.source) || (leg.bookName ? ('Book / ' + leg.bookName) : (leg.userOdds != null ? 'Your typed odds' : 'ESPN game log research')),
+    sourceNote: boardCard ? 'Matched to a live priced line on the Props board.' : 'Researched from the player’s real ESPN game log.',
+    bookPrices: bp,
+    books: (srcRaw && srcRaw.books) || undefined,
+    oa: !!(srcRaw && srcRaw.oa),
+    rows: leg._propRows || (srcRaw && srcRaw.rows) || null
+  };
+  if (raw.overPrice != null && raw.underPrice != null && typeof v160FairPut === 'function' && typeof v160Key === 'function' && raw.eventId){
+    v160FairPut(v160Key(raw.eventId, raw.playerId, raw.kind, raw.line), raw.overPrice, raw.underPrice);
+  }
+  return raw;
+}
+
+function v194EvalWithV160(raw, side, leg){
+  const feat = raw.rows ? propFeatures(raw.rows, raw.kind, raw.line, raw.g, raw.home) : {n:0, line:raw.line, l10n:0, l5n:0};
+  const run = () => {
+    const est = raw.rows ? estimateProp(feat) : {pOver: (leg && leg.p != null ? (side === 'under' ? 1 - leg.p : leg.p) : null), notes:[]};
+    if (est && est.pOver == null && leg && leg.p != null) est.pOver = side === 'under' ? 1 - leg.p : leg.p;
+    let play; VERDICT_NO_RANGE++;
+    try{ play = buildPropPlay(raw, side, feat, est); } finally { VERDICT_NO_RANGE--; }
+    return {feat, est, play};
+  };
+  if (typeof v160With === 'function' && typeof v160CtxFromRaw === 'function'){
+    return v160With(v160CtxFromRaw(raw), run);
+  }
+  return run();
+}
+
+function v194EnrichBoardCardFromRows(p, rows){
+  if (!p || !rows || !rows.length) return p;
+  if (p.raw && p.raw.rows && p.p != null && p.j && p.j.conf && p.j.conf.str != null) return p;
+  try{
+    const wasVerdict = p.verdict;
+    const wasShared = p._v165 === 'on' || p._v165 === 'off';
+    const wasPod = !!(p._v183 || (typeof v131IsPotd === 'function' && v131IsPotd('props', p)));
+    const raw = Object.assign({}, p.raw || p, {rows});
+    if (p.raw) p.raw.rows = rows;
+    if (raw.overPrice != null && raw.underPrice != null && typeof v160FairPut === 'function' && typeof v160Key === 'function' && raw.eventId){
+      v160FairPut(v160Key(raw.eventId, raw.playerId, raw.kind, raw.line), raw.overPrice, raw.underPrice);
+    }
+    const {play} = v194EvalWithV160(raw, p.side, null);
+    if (play){
+      // Preserve shared-board (v165) or POD-lock (v183) verdict if already locked as Picks/POD
+      if ((wasShared || wasPod) && wasVerdict === 'good'){
+        play.verdict = 'good';
+        if (play.C) play.C.J = 'BET';
+        if (p._v165) play._v165 = p._v165;
+      } else if (wasShared && wasVerdict !== 'good' && play.verdict === 'good'){
+        play.verdict = wasVerdict;
+        if (play.C) play.C.J = wasVerdict === 'watch' ? 'MAYBE LATER' : 'SKIP';
+        play._v165 = p._v165;
+      }
+      if (p._v160 && !play._v160) play._v160 = p._v160;
+      if (p._v183 && !play._v183) play._v183 = p._v183;
+      Object.assign(p, play, {raw});
+    }
+  }catch(e){}
+  return p;
+}
+
+function v194SyncLegFromCard(leg, pl){
+  if (!leg || !pl) return null;
+  const LEG_MAP = {good:'BET', watch:'WATCHLIST', avoid:'PASS', none:'PASS'};
+  if (!LEG_MAP[pl.verdict]) return null;
+  leg._card = pl;
+  if (leg._v0 == null){ leg._v0 = leg.verdict; leg._why0 = leg.why; leg._p0 = leg.p; }
+  const v = LEG_MAP[pl.verdict];
+  leg.verdict = v;
+  if (pl.p != null && isFinite(pl.p)) leg.p = pl.p;
+  if (pl.price != null) leg.price = pl.price;
+  if (pl.implied != null) leg.implied = pl.implied;
+  else if (leg.price != null) leg.implied = imp(leg.price);
+  if (pl.edge != null) leg.edge = pl.edge;
+  else if (leg.p != null && leg.implied != null) leg.edge = leg.p - leg.implied;
+  if (pl.j && pl.j.conf){
+    leg.conf = pl.j.conf.str != null ? pl.j.conf.str : pl.j.conf.v;
+  }
+  if (pl.bookName) leg.bookName = pl.bookName;
+  if (pl.noBook) leg.noBook = true;
+  if (pl.C){
+    if (Array.isArray(pl.C.win) && pl.C.win.length) leg.yes = pl.C.win.map(x => typeof x === 'string' ? x : (x.txt || ''));
+    if (Array.isArray(pl.C.lose) && pl.C.lose.length) leg.no = pl.C.lose.map(x => typeof x === 'string' ? x : (x.txt || ''));
+    if (pl.C.sentence) leg.plainWhy = pl.C.sentence;
+  }
+  leg.why = v === leg._v0 ? (leg._why0 || leg.plainWhy || leg.why) : (leg.plainWhy || (v === 'BET' ? 'The full verdict below says Bet' : v === 'WATCHLIST' ? 'The full verdict below says Watch' : 'The full verdict below says Avoid'));
+  return pl;
+}
+
+/* Wrap propLegAnalysis to pass real over/under prices into v160 model and match live board Picks */
+(function(){
+  if (typeof propLegAnalysis === 'function'){
+    const basePropLegAnalysis = propLegAnalysis;
+    propLegAnalysis = async function(leg){
+      await basePropLegAnalysis.apply(this, arguments);
+      if (!leg || !leg.player || !leg.L || leg.L.kind !== 'prop') return;
+      if (leg.out || leg.final) return;
+      const m = v194MatchLiveProp(leg);
+      const customOddsDiff = (leg.L.odds != null && m && m.card && m.card.price != null && Math.abs(imp(leg.L.odds) - imp(m.card.price)) >= 0.005);
+      if (m && m.sameSide && !customOddsDiff){
+        const p = v194EnrichBoardCardFromRows(m.card, leg._propRows);
+        leg.liveMatched = p;
+        leg._syncedFromBoard = true;
+        v194SyncLegFromCard(leg, p);
+        return;
+      }
+      // Opposite side, custom odds, or unlisted prop: run through exact v160 model (never v13 fallback)
+      const mkt = leg.g ? await propMarket(leg.g, leg.L, leg.player.name) : null;
+      const validMkt = (mkt && !mkt.err) ? mkt : null;
+      const raw = v194BuildRawForLeg(leg, validMkt, m ? m.card : null);
+      if (raw.rows && raw.rows.length){
+        const side = leg.L.dir === 'under' ? 'under' : 'over';
+        const {play} = v194EvalWithV160(raw, side, leg);
+        if (play){
+          leg._v160Play = play;
+          leg._syncedFromBoard = true;
+          v194SyncLegFromCard(leg, play);
+        }
+      }
+    };
+  }
+})();
+
+/* Override playFromPropLeg so it checks live props first and otherwise uses v160With */
+playFromPropLeg = function(leg){
+  if (!leg || !leg.player || !leg.g || !leg.L || leg.L.kind !== 'prop') return null;
+  const m = v194MatchLiveProp(leg);
+  const customOddsDiff = (leg.L.odds != null && m && m.card && m.card.price != null && Math.abs(imp(leg.L.odds) - imp(m.card.price)) >= 0.005);
+  if (m && m.sameSide && !customOddsDiff){
+    return v194EnrichBoardCardFromRows(m.card, leg._propRows);
+  }
+  if (leg._v160Play && !customOddsDiff) return leg._v160Play;
+  const raw = v194BuildRawForLeg(leg, null, m ? m.card : leg.liveMatched);
+  if (raw.overPrice == null && leg.L.dir !== 'under') raw.overPrice = leg.price || leg.bookPrice || leg.userOdds || null;
+  if (raw.underPrice == null && leg.L.dir === 'under') raw.underPrice = leg.price || leg.bookPrice || leg.userOdds || null;
+  const side = leg.L.dir === 'under' ? 'under' : 'over';
+  const {play} = v194EvalWithV160(raw, side, leg);
+  if (play){
+    if (leg.price != null) play.price = leg.price;
+    if (leg.p != null && play.p == null) play.p = leg.p;
+    if (leg.bookName) play.bookName = leg.bookName;
+    if (leg.noBook) play.noBook = true;
+  }
+  return play;
+};
+
+/* Override judgeLeg so board-synced / v160-synced props keep exact Picks verdict & clean plain text */
+(function(){
+  if (typeof judgeLeg === 'function'){
+    const baseJudgeLeg = judgeLeg;
+    judgeLeg = function(leg){
+      if (leg && leg._syncedFromBoard && !leg.err && !leg.final && !leg.out){
+        return; // already evaluated & synced identically to Picks
+      }
+      baseJudgeLeg.apply(this, arguments);
+      if (leg && !leg.err && !leg.final && !leg.out && leg.implied == null && leg.p != null){
+        // Drop fair-price talk when no book price is available
+        const est = typeof outOf10 === 'function' ? outOf10(leg.p) : Math.round(leg.p * 10);
+        leg.why = `Est. ${fmtPct(leg.p)}; no price found`;
+        leg.plainWhy = `We think this hits about ${est} of 10.`;
+      }
+    };
+  }
+})();
+
+/* Override legSyncCard so both props and games sync full strength/price/verdict/reasons */
+legSyncCard = function(leg){
+  if (!leg) return null;
+  leg._card = null;
+  if (leg.err || leg.final || leg.verdict === 'FINAL') return null;
+  let pl = null;
+  try{
+    pl = leg.player ? (typeof playFromPropLeg === 'function' ? playFromPropLeg(leg) : null) : playFromLeg(leg);
+  }catch(e){ pl = null; }
+  if (!pl) return null;
+  return v194SyncLegFromCard(leg, pl);
+};
+
+/* Wrap resolveLeg so:
+   - assumedStat checks live props at that line when no points line exists
+   - explicit 'points' with NO live points line at that line offers a one-tap chip if Picks has a combo Pick at that exact line */
+(function(){
+  if (typeof resolveLeg === 'function'){
+    const baseResolve = resolveLeg;
+    resolveLeg = async function(raw, override){
+      const leg = await baseResolve.apply(this, arguments);
+      try{
+        if (!leg || leg.err || !leg.player || !leg.L || leg.L.kind !== 'prop') return leg;
+        const lp = leg.liveProps || (typeof livePropsForPlayer === 'function' ? livePropsForPlayer(leg.player, leg.g) : []);
+        const effLine = (leg.L.incl && leg.L.dir !== 'under') ? (leg.L.line - 0.5) : leg.L.line;
+        const kind = v194KindFromStat(leg.L.stat);
+        const hasExactKind = lp.some(x => x.kind === kind && Math.abs(+x.line - +effLine) < 1e-9);
+        if (!hasExactKind && leg.L.stat === 'pts' && !override){
+          const atLine = lp.filter(x => Math.abs(+x.line - +effLine) < 1e-9);
+          const pickMatch = atLine.find(x => x.verdict === 'good') || (atLine.length === 1 ? atLine[0] : null);
+          if (pickMatch){
+            const st = propKindToStat(pickMatch.kind);
+            const statWord = (typeof PROP_KIND_LABEL !== 'undefined' && PROP_KIND_LABEL[pickMatch.kind]) || pickMatch.kind;
+            const dirWord = leg.L.dir === 'under' ? 'Under' : 'Over';
+            const swapTxt = `${leg.player.name} ${dirWord} ${pickMatch.line} ${statWord}${leg.L.odds != null ? ' ' + fmtAmRaw(leg.L.odds) : ''}`;
+            if (leg.L.assumedStat && st){
+              leg.L.stat = st;
+              leg.liveMatched = pickMatch;
+              leg.matchKey = 'lp:' + pickMatch.id;
+              leg.assumeNote = `No stat typed — matched live prop: ${leg.player.name} ${dirWord} ${pickMatch.line} ${statWord}`;
+              delete leg._syncedFromBoard; delete leg._v160Play; delete leg._card;
+              await propLegAnalysis(leg);
+            } else {
+              leg._altComboTip = {swapTxt, label: `${leg.player.name} ${dirWord} ${pickMatch.line} ${statWord}`, isPick: pickMatch.verdict === 'good'};
+            }
+          }
+        }
+      }catch(e){}
+      return leg;
+    };
+  }
+  if (typeof legAssistHTML === 'function'){
+    const baseAssist = legAssistHTML;
+    legAssistHTML = function(leg, i){
+      let html = baseAssist.apply(this, arguments);
+      try{
+        if (leg && leg._altComboTip){
+          const t = leg._altComboTip;
+          html += `<div class="pk-assume">🔎 ${t.isPick ? "DraftKings' live Pick at this number is" : 'Live line at this number is'} <b>${esc(t.label)}</b> — <button type="button" class="chip pk-dym" data-swap="${i}" data-swap-text="${esc(t.swapTxt)}">Check ${esc(t.label)}</button></div>`;
+        }
+      }catch(e){}
+      return html;
+    };
+  }
+  if (typeof runPicks === 'function'){
+    const baseRunPicks = runPicks;
+    runPicks = async function(){
+      try{
+        if (typeof v165Pull === 'function' && (typeof V165 === 'undefined' || !V165.sh)) await v165Pull();
+        if (typeof props !== 'undefined' && (!props || !props.length) && typeof loadLiveProps === 'function' && games && games.length){
+          await loadLiveProps();
+        }
+        if (typeof v165Apply === 'function') v165Apply();
+      }catch(e){}
+      return baseRunPicks.apply(this, arguments);
+    };
+  }
+})();
+
+/* ---------- 5) Plain English Safer ticket wording & drop fair-price talk ---------- */
+ticketJudgeText = function(legs, ranked, pAll, bookDec, safe, drop){
+  const live = ranked.filter(x => !x.l.final);
+  if (!live.length) return '';
+  const nm = l => legShortDesc(l);
+  const strong = live[live.length - 1].l, weak = live[0].l;
+  const parts = [];
+  if (live.length > 1) parts.push(`${nm(strong)} is the strongest leg and ${nm(weak)} the weakest.`);
+  else parts.push(`${nm(strong)} is the only live leg.`);
+  const wf = (weak.no || []).map(x => uiFactorText(x)).find(Boolean);
+  if (wf && live.length > 1 && weak.verdict !== 'BET') parts.push(`The weak link's main concern: ${uiLc(wf)}.`);
+  const nb = legs.filter(l => l.verdict === 'BET').length, ns = legs.filter(l => l.verdict === 'PASS').length;
+  const mix = nb
+    ? `${nb} of ${legs.length} legs ${nb === 1 ? 'is a Bet' : 'are Bets'}${ns ? ` and ${ns} ${ns === 1 ? 'is a Skip' : 'are Skips'}` : ''}.`
+    : `None of the ${legs.length} legs is a Bet${ns ? ` (${ns} ${ns === 1 ? 'is a Skip' : 'are Skips'})` : ''}.`;
+  parts.push(mix);
+  let concl;
+  if (pAll != null && pAll >= 0.40 && nb === legs.length) concl = 'The ticket is playable';
+  else if (nb === legs.length && legs.length > 2) concl = `All ${legs.length} legs are Bets on their own, but needing every one to land on one ticket is a long shot — play them as singles${safe && safe.length && drop && drop.length ? ' or trim to the safer ticket below' : ''}`;
+  else if (safe && safe.length && drop && drop.length) concl = 'Skip the full ticket; the safer version below is the better play';
+  else concl = legs.length > 2 ? `With ${legs.length} legs that all have to land and no strong case on most of them, skip the full ticket` : 'Skip the full ticket';
+  parts.push(concl + '.');
+  return parts.join(' ');
+};
+
+parlaySummary = function(){
+  if (!PK.legs || PK.legs.length < 2) return '';
+  const legs = PK.legs.filter(l => !l.err);
+  const live = legs.filter(l => l.p != null && !l.final);
+  const ranked = live.slice().sort((a, b) => a.p - b.p).map(l => ({l, i: PK.legs.indexOf(l)}));
+  const ticketRows = PK.legs.map((l, i) => ({l, i}));
+  const pAll = live.length === legs.length && live.length ? live.reduce((a, l) => a * l.p, 1) : null;
+  const priced = legs.length > 0 && legs.every(l => l.price != null);
+  const bookDec = priced ? legs.reduce((a, l) => a * amToDec(l.price), 1) : null;
+  const bookAm = bookDec ? (bookDec >= 2 ? (bookDec - 1) * 100 : -100 / (bookDec - 1)) : null;
+  const notes = [];
+  for (const a of legs) for (const b of legs){
+    if (a === b || a.L.kind !== 'prop' || !b.g || !a.g) continue;
+    if (a.g.id !== b.g.id || !(b.L.kind === 'ml' || b.L.kind === 'spread')) continue;
+    const pos = (a.L.dir !== 'under') === (b.side === a.side);
+    const pl = `${a.player.name} ${a.L.dir === 'under' ? 'under' : 'over'} and ${b.g[b.side].short} ${b.L.kind === 'ml' ? 'ML' : 'spread'}`;
+    notes.push(pos ? `${pl} are positively correlated (they tend to hit together), so the true chance is somewhat higher than the independent number, but books often pay less on same-game parlays for this.` : `${pl} pull in opposite directions (negative correlation), so the true chance is lower than the independent number.`);
+  }
+  for (let i = 0; i < legs.length; i++) for (let j = i + 1; j < legs.length; j++){
+    const a = legs[i], b = legs[j];
+    if (!a.g || !b.g || a.g.id !== b.g.id || a.L.kind === 'prop' || b.L.kind === 'prop') continue;
+    if (a.L.kind !== 'total' && b.L.kind !== 'total' && a.side !== b.side) notes.push(`${a.desc} and ${b.desc} are opposite sides of the same game: they work against each other.`);
+    else if (a.L.kind === 'total' && b.L.kind === 'total') notes.push(`${a.desc} and ${b.desc} are both totals in the same game (a middle or a hedge, not a normal parlay).`);
+  }
+  const safe = legs.filter(l => l.p != null && !l.final && l.verdict !== 'PASS' && l.p >= 0.55).sort((a, b) => b.p - a.p).slice(0, 3);
+  const pSafe = safe.length ? safe.reduce((a, l) => a * l.p, 1) : null;
+  const drop = legs.filter(l => !safe.includes(l) && !l.final);
+  const weakest = ranked[0];
+  const tkJudge = ticketJudgeText(legs, ranked, pAll, bookDec, safe, drop);
+  const safeTxt = safe.length === 1
+    ? `Safer ticket: stick to <b>${esc(legShortDesc(safe[0]))}</b> on its own (about ${fmtPct(pSafe)} to hit) and skip ${drop.map(l => esc(legShortDesc(l))).join(', ')}.`
+    : `Safer ticket: stick to <b>${safe.map(l => esc(legShortDesc(l))).join(' + ')}</b> (about ${fmtPct(pSafe)} for all ${safe.length} to hit) and skip ${drop.map(l => esc(legShortDesc(l))).join(', ')}.`;
+  return `<div class="pk-ticket"><h3>🎫 Ticket summary (${PK.legs.length} leg${PK.legs.length === 1 ? '' : 's'})</h3>
+    ${tkJudge ? `<div class="tk-judge"><span class="ct">The Judge says</span> <span class="c-sent">${esc(tkJudge)}</span></div>` : ''}
+    <div class="kpis">
+      <div class="kpi"><div class="k">All legs hit</div><div class="v">${pAll != null ? fmtPct(pAll) : '—'}</div>${uiChanceMini(pAll)}</div>
+      <div class="kpi"><div class="k">Payout from prices</div><div class="v">${bookAm != null ? fmtAm(bookAm) : '—'}</div></div>
+      <div class="kpi"><div class="k">Weakest leg</div><div class="v" style="font-size:15px">${weakest ? esc(legShortDesc(weakest.l)) + ' (' + fmtPct(weakest.l.p, 0) + ')' : '—'}</div></div>
+    </div>
+    ${pAll != null && bookAm != null ? `<div class="ui-ev ${pAll * bookDec >= 1 ? 'pos' : 'neg'}"><span class="ui-ev-k">Parlay EV</span><b>${fmtEdge(pAll * bookDec - 1)}</b><span class="mut">per $1 at the leg prices</span></div>` : `<div class="hint">${legs.some(l => l.final) ? 'Some legs are already final, so the full-ticket number is not shown.' : 'Missing a price on at least one leg: add odds after the leg (e.g. "Knicks ML -170") to see the payout.'}</div>`}
+    <ol class="why">${ticketRows.map(x => {
+      const l = x.l;
+      const name = esc(legShortDesc(l) || l.raw || ('Leg ' + (x.i + 1)));
+      const phtml = l.p != null ? `${uiChanceMini(l.p)}<b>${fmtPct(l.p, 0)}</b>` : '<b>—</b>';
+      const badge = l.err ? '<span class="mut">No match</span>' : (l._card && typeof verdictPill === 'function' ? verdictPill(l._card.verdict) : verdictBadge(l.verdict));
+      return `<li><span class="tk-row"><span class="tk-name"><b>${name}</b></span><span class="tk-p">${phtml}</span><span class="tk-badge">${badge}</span></span></li>`;
+    }).join('')}</ol>
+    ${safe.length && drop.length ? `<div class="banner">${safeTxt}</div>` : ''}
+    ${notes.length ? `<ul class="why">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+    <div class="cfoot" style="margin-top:10px"><span class="cfoot-meta">${unitPillHTML({verdict: (pAll != null && pAll >= 0.40 && legs.every(l => l.verdict !== 'PASS')) ? 'good' : (pAll != null && pAll >= 0.28 && !legs.some(l => l.verdict === 'PASS')) ? 'watch' : 'avoid', p: pAll, legs}, legs.length > 1 ? 'parlay' : 'game')}</span><span class="cfoot-acts"><button type="button" class="btn primary sm btn-tail" id="btnLogParlay">Tail whole ticket as parlay</button>${typeof openInBookHTML === 'function' ? openInBookHTML({legs, g: legs[0] && legs[0].g}, legs.length > 1 ? 'parlay' : 'game') : ''}</span></div>
+  </div>`;
+};
+
+/* ---------- 6) Cold-load Picks sync: match shared side immediately & enrich shared Picks first ---------- */
+(function(){
+  if (typeof v165Apply === 'function'){
+    const baseV165Apply = v165Apply;
+    v165Apply = function(){
+      try{
+        if (typeof v165Active === 'function' && v165Active() && V165.sh && V165.sh.p && typeof props !== 'undefined' && Array.isArray(props)){
+          const s = V165.sh;
+          const pStem = s.pStem || new Set([...s.p].map(v165Stem));
+          for (let i = 0; i < props.length; i++){
+            const p = props[i];
+            if (!p || !p.id) continue;
+            if (p.raw && p.raw.rows) continue;
+            if (!v165Has(s.p, pStem, p.id)) continue;
+            const st = v165Stem(p.id);
+            const wantUnder = s.p.has(`${st}:under:${p.line}`);
+            const wantOver = s.p.has(`${st}:over:${p.line}`);
+            const wantSide = wantUnder ? 'under' : wantOver ? 'over' : null;
+            if (wantSide && p.side !== wantSide && typeof buildPropPlay === 'function'){
+              const raw = p.raw || p;
+              const {play} = v194EvalWithV160(raw, wantSide, null);
+              if (play){
+                play.raw = raw;
+                props[i] = play;
+              }
+            }
+          }
+        }
+      }catch(e){}
+      return baseV165Apply.apply(this, arguments);
+    };
+  }
+  if (typeof runPropEnrichment === 'function'){
+    const baseEnrich = runPropEnrichment;
+    runPropEnrichment = async function(){
+      try{
+        if (typeof props !== 'undefined' && Array.isArray(props) && props.length > 1 && typeof v165Active === 'function' && v165Active() && V165.sh){
+          const s = V165.sh;
+          const pStem = s.pStem || new Set([...s.p].map(v165Stem));
+          props.sort((a, b) => {
+            const sa = a && a.id && v165Has(s.p, pStem, a.id) ? 0 : (a && a.verdict === 'good' ? 1 : (a && a.verdict === 'watch' ? 2 : 3));
+            const sb = b && b.id && v165Has(s.p, pStem, b.id) ? 0 : (b && b.verdict === 'good' ? 1 : (b && b.verdict === 'watch' ? 2 : 3));
+            return sa - sb;
+          });
+        }
+      }catch(e){}
+      return baseEnrich.apply(this, arguments);
+    };
+  }
+  const st = document.createElement('style');
+  st.setAttribute('data-v194', '1');
+  st.textContent = `.pk-grid .card{content-visibility:visible!important;contain-intrinsic-size:auto!important}`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
