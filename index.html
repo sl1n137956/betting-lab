@@ -38703,6 +38703,89 @@ function v196AutofillRows(rows, meta){
     }
   };
 })();
+/* ===== v197: PrizePicks feed health + stale-board banner (Stanley, Nov 25 2026 t420u) ===== */
+APP_BUILD = 197;
+const V197 = {feeds: null, at: 0, busy: false};
+
+async function v197PollFeeds(force){
+  if (V197.busy) return;
+  if (!force && Date.now() - V197.at < 30000) return;
+  if (typeof PUB_BASE === 'undefined' || !PUB_BASE) return;
+  V197.busy = true;
+  try{
+    const r = await fetch(PUB_BASE + '/lease/status', {cache: 'no-store'});
+    const x = await r.json().catch(() => null);
+    if (x && x.feeds){
+      V197.feeds = x.feeds;
+      V197.at = Date.now();
+      if (typeof V187 !== 'undefined') V187.sig = '';
+    }
+  }catch(e){}
+  V197.busy = false;
+}
+
+function v197BannerHTML(){
+  const F = V197.feeds;
+  if (!F) return '';
+  const bits = [];
+  const pp = F.pp || {};
+  const parts = ['nba', 'nhl', 'nfl'].map(k => pp[k]).filter(Boolean);
+  const stalePp = parts.filter(x => x.stale || (x.ageMin != null && x.ageMin > 20));
+  const ages = parts.map(x => x.ageMin).filter(x => x != null);
+  const newest = ages.length ? Math.min.apply(null, ages) : null;
+  const n = parts.reduce((a, x) => a + (+x.n || 0), 0);
+  if (stalePp.length){
+    if (n && newest != null && newest < 999){
+      bits.push('PrizePicks lines are ' + newest + ' minute' + (newest === 1 ? '' : 's') + ' old. The lab is using the last board that loaded.');
+    } else {
+      bits.push('PrizePicks lines are not loading right now.');
+    }
+  }
+  const ud = F.ud;
+  // Only flag Underdog from a real publisher count, not the Worker's lightweight ping.
+  if (ud && !ud.ping && (ud.stale || (ud.ageMin != null && ud.ageMin > 20))){
+    if (ud.n && ud.ageMin != null && ud.ageMin < 999){
+      bits.push('Underdog lines are ' + ud.ageMin + ' minute' + (ud.ageMin === 1 ? '' : 's') + ' old.');
+    } else {
+      bits.push('Underdog lines are not loading right now.');
+    }
+  }
+  if (!bits.length) return '';
+  return '<p class="v187-sub v187-stl-banner">' + bits.map(esc).join(' ') + '</p>';
+}
+
+(function(){
+  if (typeof v187HTML === 'function'){
+    const base = v187HTML;
+    v187HTML = function(){ return v197BannerHTML() + base.apply(this, arguments); };
+  }
+  if (typeof v187Pull === 'function'){
+    const basePull = v187Pull;
+    v187Pull = async function(){
+      await basePull.apply(this, arguments);
+      try{
+        if (typeof v154Pub === 'function' && v154Pub() && typeof V168 !== 'undefined' && V168.tok && typeof PUB_BASE !== 'undefined'){
+          const udOk = Array.isArray(V187.ud) && V187.ud.length > 0;
+          fetch(PUB_BASE + '/x/health', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + V168.tok},
+            body: JSON.stringify({ud: {ok: udOk, n: (V187.ud || []).length, at: V187.udAt || Date.now(), err: udOk ? '' : (V187.err || '')}})
+          }).catch(() => {});
+        }
+      }catch(e){}
+    };
+  }
+  if (typeof v187Settings === 'function'){
+    const baseSet = v187Settings;
+    v187Settings = function(){
+      try{ if (typeof v154Admin === 'function' && v154Admin() && typeof ui !== 'undefined' && ui.tab === 'settings') v197PollFeeds(); }catch(e){}
+      return baseSet.apply(this, arguments);
+    };
+  }
+  const st = document.createElement('style');
+  st.textContent = '#setForm .v187-stl-banner{background:rgba(234,179,8,.12);color:#a16207;font-weight:600;border-radius:10px;padding:8px 10px;margin:0 0 10px}';
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
