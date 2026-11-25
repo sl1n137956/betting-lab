@@ -40950,6 +40950,1353 @@ setTimeout(function v201BootPurge(){
 
 window.v201PurgeAndRegrade = v201PurgeAndRegrade;
 window.V201 = V201;
+/* ===== v202:
+   - Parlays (any size, 2+ legs) replacing +EV / Sharp in Picks switch; SGP-safe rules, DK prices, -250 floor, v189 sanity
+   - Sportsbooks only everywhere: remove All books/Sportsbooks toggle on Results; strip prediction markets & exchanges
+     (Polymarket, Polymarket US, Kalshi, Novig, ProphetX, Crypto.com) from picks, filters, Settings, Tail form
+   - Simplify pick cards (plain picks like a Discord: no Open book / Not on my book / Other books / Bet-on clutter, keep small odds)
+   - Results: By sport & By market horizontal profit bar charts; Pending always shown; only Settled collapsible
+   - Results: Sharp & Parlays compact records tracked separately (excluded from Picks/POD/model totals)
+   - Tail a bet: removed everywhere except card Tail buttons + small 'Tail a bet' button at bottom right of Results calendar
+   (Stanley, Nov 25 2026) ===== */
+APP_BUILD = 202;
+
+var V202 = window.V202 = {
+  selIds: [],          // selected leg IDs in the custom parlay builder
+  sizeFilter: 'all',   // 'all' | '2' | '3' | '4' | '5+'
+  parlayLog: null,
+  pLogAt: 0,
+  pLogTry: false,
+  pLogBusy: false,
+  lastPubAt: 0,
+  tailOpen: false
+};
+const V202_PLOG_LS = 'bl_v202_parlaylog_v1';
+const V202_FLOOR = -250;
+const V202_MAXP = 2500;
+const V202_PM_EX = new Set(['polymarket','polymarket_us','kalshi','novig','prophetx','cryptocom']);
+
+/* ---------- 0) Sportsbooks only: remove prediction markets, exchanges & All books toggle ---------- */
+function v202SportsbooksOnly(){
+  try{
+    if (typeof S !== 'undefined' && S){
+      let ch = 0;
+      if (S.myBooks !== 'draftkings'){ S.myBooks = 'draftkings'; ch = 1; }
+      if (S.pmOn !== false){ S.pmOn = false; ch = 1; }
+      if (S.kalshiOn !== false){ S.kalshiOn = false; ch = 1; }
+      if (S.resSrc !== 'sb'){ S.resSrc = 'sb'; ch = 1; }
+      if (ch && typeof saveJSON === 'function' && typeof LS !== 'undefined'){
+        try{ saveJSON(LS.settings, S); }catch(e){}
+      }
+    }
+  }catch(e){}
+}
+v202SportsbooksOnly();
+setInterval(v202SportsbooksOnly, 5000);
+
+(function(){
+  // Force sportsbooks-only in book selection & Results
+  if (typeof selectedBooks === 'function'){
+    const base = selectedBooks;
+    selectedBooks = function(){
+      const list = (base.apply(this, arguments) || []).filter(b => !V202_PM_EX.has(String(b||'').toLowerCase()));
+      return list.length ? list : ['draftkings'];
+    };
+  }
+  if (typeof polymarketOnlyFilterActive === 'function') polymarketOnlyFilterActive = function(){ return false; };
+  if (typeof fetchPolymarket === 'function') fetchPolymarket = async function(){ return; };
+  if (typeof fetchKalshi === 'function') fetchKalshi = async function(){ return; };
+  if (typeof avLoad === 'function') avLoad = async function(){ return; };
+  if (typeof wantsKalshi === 'function') wantsKalshi = function(){ return false; };
+  if (typeof mergePolymarket === 'function') mergePolymarket = function(){}; 
+  if (typeof mergeKalshi === 'function') mergeKalshi = function(){};
+  if (typeof refBookText === 'function') refBookText = function(){ return 'Graded at DraftKings sportsbook'; };
+  try{ pmErr = null; kalshiErr = null; }catch(e){}
+
+  // Guard v170DaysPoll against synchronous finally recursion when V142.pub2 is null
+  if (typeof v170DaysPoll === 'function'){
+    v170DaysPoll = async function(force){
+      if (typeof v154Pub === 'function' && v154Pub()) return;
+      if (typeof V170R === 'undefined' || V170R.busy || (!force && Date.now() - V170R.at < 5*60000)) return;
+      V170R.busy = true; V170R.at = Date.now();
+      let fetched = false;
+      try{
+        if (!V142.pub2){ try{ const c = JSON.parse(localStorage.getItem(V145_PUB_COPY)||'null'); if (c && c.p){ V142.pub2 = c.p; V142.pub2At = c.at||0; } }catch(e){} }
+        const x = await v154Get('days2');
+        if (x && x.d){ V142.pub2 = {d:x.d||{}, m:x.m||{}}; V142.pub2At = +x.at||0; V170R.err = ''; try{ localStorage.setItem(V145_PUB_COPY, JSON.stringify({uid:'any', at:V142.pub2At, p:V142.pub2})); }catch(e){} }
+        fetched = true;
+      }catch(e){ V170R.err = String(e && e.message || e).slice(0, 80); V142.pubErr = V170R.err; }
+      finally{
+        V170R.busy = false; V142.pub2Got = true;
+        if (fetched){ try{ if (ui.tab==='tracker' && typeof v140View==='function' && v140View()==='model') v142RenderModel(); }catch(e){} }
+      }
+    };
+  }
+
+  // Results: always sportsbooks only (remove All books / Sportsbooks toggle)
+  if (typeof v163Src === 'function'){
+    v163Src = function(){ return (typeof V163R !== 'undefined' && V163R.src) ? V163R.src : 'sb'; };
+  }
+  if (typeof v142HeadHTML === 'function'){
+    const base = v142HeadHTML;
+    v142HeadHTML = function(){
+      let h = base.apply(this, arguments);
+      try{
+        const d = document.createElement('div');
+        d.innerHTML = h;
+        const s = d.querySelector('[data-v163-src]');
+        if (s){ const lab = s.closest('label'); if (lab) lab.remove(); else s.remove(); h = d.innerHTML; }
+      }catch(e){}
+      return h;
+    };
+  }
+
+  // Simplify cards: remove Open book, Not on my book, Other books bar, and book-ad clutter; keep small odds
+  openInBookHTML = function(){ return ''; };
+  nobBtnHTML = function(){ return ''; };
+  if (typeof v173RowHTML === 'function') v173RowHTML = function(){ return ''; };
+  if (typeof recPriceHTML === 'function'){
+    recPriceHTML = function(p, bo){
+      const r = (bo && bo.rec) || (typeof recBookFor === 'function' ? recBookFor(p) : {none:true});
+      let am = !r.none && r.price != null ? r.price : (p && p.sd && p.sd.best && p.sd.best.price);
+      if (am == null){
+        const estP = (p && p.E && p.E.final) || (p && p.sd && p.sd.nv);
+        am = estP != null && typeof probToAm === 'function' ? probToAm(estP) : null;
+      }
+      return `<div class="price v202-px-sm">${am != null && isFinite(+am) ? fmtAm(Math.round(+am)) : '—'}</div>`;
+    };
+  }
+  if (typeof propCard === 'function'){
+    const base = propCard;
+    propCard = function(p){
+      let h = base.apply(this, arguments);
+      try{
+        const d = document.createElement('div');
+        d.innerHTML = h;
+        const mk = d.querySelector('.pick .mk');
+        if (mk){
+          const stat = (typeof PROP_KIND_LABEL !== 'undefined' && PROP_KIND_LABEL[p.kind]) || p.kind || 'Prop';
+          mk.textContent = stat;
+        }
+        const pr = d.querySelector('.pick .price');
+        if (pr){
+          pr.classList.add('v202-px-sm');
+          pr.querySelectorAll('small').forEach(s => s.remove());
+        }
+        if (pr && p && p.price != null && isFinite(+p.price) && !/no price/i.test(pr.textContent)) pr.textContent = fmtAm(Math.round(+p.price));
+        d.querySelectorAll('.beton').forEach(b => b.remove());
+        h = d.innerHTML;
+      }catch(e){}
+      return h;
+    };
+  }
+  if (typeof playCard === 'function'){
+    const base = playCard;
+    playCard = function(p){
+      let h = base.apply(this, arguments);
+      try{
+        const d = document.createElement('div');
+        d.innerHTML = h;
+        d.querySelectorAll('.beton, .v173-ob, .books').forEach(b => b.remove());
+        h = d.innerHTML;
+      }catch(e){}
+      return h;
+    };
+  }
+
+  // Strip prediction-market/exchange controls in Settings (even inside Advanced)
+  function v202TidySettings(){
+    try{
+      if (typeof ui === 'undefined' || ui.tab !== 'settings') return;
+      const form = document.getElementById('setForm'); if (!form) return;
+      form.querySelectorAll('select[name="pmOn"], select[name="kalshiOn"], input[name="kalshiRelay"]').forEach(el => {
+        const lab = el.closest('label'); if (lab) lab.style.display = 'none';
+      });
+      form.querySelectorAll('h3').forEach(h => {
+        if (/prediction markets/i.test(h.textContent)){
+          h.textContent = 'Strict checks';
+          const p = h.parentElement;
+          const hint = p && p.querySelector('.hint');
+          if (hint) hint.textContent = hint.textContent.replace(/\s*Polymarket's[^.]*\./i, '');
+        }
+      });
+    }catch(e){}
+  }
+  if (typeof renderSettings === 'function'){
+    const base = renderSettings;
+    renderSettings = function(){ const r = base.apply(this, arguments); v202TidySettings(); setTimeout(v202TidySettings, 0); return r; };
+  }
+  document.addEventListener('click', () => setTimeout(v202TidySettings, 0), true);
+
+  // Skip +EV prediction-market venue fetches on publisher (keep Sharp background running)
+  if (typeof v198LoadVenues === 'function') v198LoadVenues = async function(){ return; };
+  if (typeof v198BuildEvx === 'function') v198BuildEvx = function(){ return {at:Date.now(), rows:[], cov:{}}; };
+})();
+
+/* ---------- 1) Price & SGP-safe helpers for Parlays ---------- */
+function v202LegDkPrice(p){
+  if (!p) return null;
+  const isProp = !!(p.isProp || (p.kind && p.playerName));
+  let pr = null;
+  if (isProp){
+    const bp = p.bookPrices && p.bookPrices.draftkings;
+    if (bp && bp[p.side] != null && isFinite(+bp[p.side])) pr = +bp[p.side];
+    else if (!/odds api/i.test(String(p.source || '')) && !(typeof propSourceLabel==='function' && propSourceLabel(p)==='line') && p.price != null && isFinite(+p.price)){
+      pr = +p.price;
+    }
+    if (pr == null) return null;
+    if (typeof v189RowStandaloneBad === 'function' && v189RowStandaloneBad({b:'props', s:'sb', k:p.kind, sd:p.side, pt:p.line, pr})) return null;
+    if (!v202PropLadderOk(p, pr)) return null;
+  } else {
+    if (!p.g) return null;
+    if (typeof v198DkQ === 'function') pr = v198DkQ(p.g, p.mk, p.side, p.sd && p.sd.point);
+    if (pr == null){
+      const qs = (p.g.quotes && p.g.quotes[p.mk] && p.g.quotes[p.mk][p.side]) || [];
+      const q = qs.find(x => /draftkings/i.test(x.bk || x.book || '') && (p.mk === 'ml' || x.point === (p.sd && p.sd.point)));
+      if (q && q.price != null) pr = +q.price;
+    }
+    if (pr == null && p.sd && p.sd.best && /draftkings/i.test(String(p.sd.best.book || p.sd.best.bk || '')) && p.sd.best.price != null){
+      pr = +p.sd.best.price;
+    }
+  }
+  if (pr == null || !isFinite(pr) || Math.abs(pr) < 100) return null;
+  pr = Math.round(pr);
+  if (pr < V202_FLOOR || pr > V202_MAXP) return null;
+  return pr;
+}
+
+function v202PropLadderOk(p, pr){
+  try{
+    if (typeof V189 === 'undefined' || !V189.ladders) return true;
+    const ev = (p.g && (p.g.eventId || p.g.id)) || p.eventId || '';
+    const key = `${ev}|${p.playerId || ''}|${p.kind || ''}|${p.side || ''}`;
+    const snap = V189.ladders.get(key);
+    if (!snap || !Array.isArray(snap.pts) || !snap.pts.length) return true;
+    const impFn = typeof v189Imp === 'function' ? v189Imp : (a => a > 0 ? 100/(a+100) : (-a)/(-a+100));
+    const ip = impFn(pr);
+    if (ip == null) return false;
+    if (snap.m != null){
+      const mainPr = p.side === 'over' ? snap.mo : snap.mu;
+      const mip = mainPr != null ? impFn(mainPr) : null;
+      if (mip != null){
+        if (p.side === 'over'){
+          if (p.line < snap.m && ip < mip - 0.02) return false;
+          if (p.line > snap.m && ip > mip + 0.02) return false;
+        } else {
+          if (p.line < snap.m && ip > mip + 0.02) return false;
+          if (p.line > snap.m && ip < mip - 0.02) return false;
+        }
+      }
+    }
+    for (const [pt, spr] of snap.pts){
+      const sip = impFn(spr); if (sip == null) continue;
+      if (pt === p.line && Math.abs(sip - ip) > 0.08) return false;
+      if (p.side === 'over'){
+        if (pt < p.line && ip > sip + 0.025) return false;
+        if (pt > p.line && ip < sip - 0.025) return false;
+      } else {
+        if (pt < p.line && ip < sip - 0.025) return false;
+        if (pt > p.line && ip > sip + 0.025) return false;
+      }
+    }
+    return true;
+  }catch(e){ return true; }
+}
+
+function v202TeamKey(l){
+  if (!l) return '';
+  if (l.team && (l.team.id || l.team.abbr || l.team.short || l.team.name)) return String(l.team.id || l.team.abbr || l.team.short || l.team.name).toLowerCase();
+  if (l.home === true) return 'home';
+  if (l.home === false) return 'away';
+  if (l.side === 'home' || l.side === 'away') return l.side;
+  return '';
+}
+
+function v202SameGameCheck(a, b){
+  if (!a || !b) return {ok:false, why:'Invalid leg'};
+  if (a.id === b.id) return {ok:false, why:'Already selected'};
+  const evA = typeof parlayEventId === 'function' ? parlayEventId(a) : (a.ev || (a.g && (a.g.eventId || a.g.id)));
+  const evB = typeof parlayEventId === 'function' ? parlayEventId(b) : (b.ev || (b.g && (b.g.eventId || b.g.id)));
+  if (!evA || !evB || String(evA) !== String(evB)) return {ok:true, sgp:false};
+  const propA = !!(a.isProp || (a.kind && a.playerName));
+  const propB = !!(b.isProp || (b.kind && b.playerName));
+  if (!propA && !propB) return {ok:false, why:'Same-game lines cannot be combined'};
+  if (propA !== propB) return {ok:false, why:'Same-game line and player prop are correlated'};
+  if (typeof propPlayerMatch === 'function' && propPlayerMatch(a, b)) return {ok:false, why:'Same player in the same game'};
+  const tA = v202TeamKey(a), tB = v202TeamKey(b);
+  if (tA && tB && tA === tB) return {ok:false, why:'Teammate props in the same game are correlated'};
+  if (!tA || !tB) return {ok:false, why:'Same-game props (team unverified)'};
+  return {ok:true, sgp:true};
+}
+
+function v202LegShortDesc(l){
+  if (!l) return '';
+  const isProp = !!(l.isProp || (l.kind && l.playerName));
+  if (isProp){
+    const kl = (typeof PROP_KIND_LABEL !== 'undefined' && PROP_KIND_LABEL[l.kind]) || l.kind || '';
+    const sd = l.side === 'under' ? 'Under' : 'Over';
+    return `${l.playerName || 'Player'} ${sd} ${l.line} ${kl}`.replace(/\s+/g, ' ').trim();
+  }
+  if (l.label) return l.label;
+  if (l.g && typeof sideLabel === 'function') return sideLabel(l.g, l.mk, l.side, l.sd && l.sd.point);
+  return 'Pick';
+}
+
+function v202ParlayLegs(){
+  const now = Date.now();
+  const seen = new Set();
+  const out = [];
+  const podKeys = new Set();
+  try{
+    if (typeof v131Store === 'function' && typeof v131Day === 'function'){
+      const st = v131Store(); const td = v131Day(now); const D = st && st.days && st.days[td];
+      if (D){
+        for (const b of ['games','props']) for (const k in (D[b]||{})) if (D[b][k] && !D[b][k].drop) podKeys.add(k);
+      }
+    }
+  }catch(e){}
+
+  const add = (raw, isProp) => {
+    if (!raw || raw.verdict !== 'good' || !raw.id) return;
+    if (seen.has(raw.id)) return;
+    const g = raw.g;
+    if (!g || (g.state && g.state !== 'pre')) return;
+    const startMs = g.start ? +new Date(g.start) : 0;
+    if (!(startMs > now && startMs < now + 36 * 3600000)) return;
+    const pk = isProp ? raw.id : (typeof playResultKey === 'function' ? playResultKey(raw) : raw.id);
+    if (typeof isFinalPulled === 'function' && (isFinalPulled(raw.id) || isFinalPulled(pk))) return;
+    const dkPrice = v202LegDkPrice(raw);
+    if (dkPrice == null) return;
+    const dec = typeof amToDec === 'function' ? amToDec(dkPrice) : (dkPrice > 0 ? 1 + dkPrice/100 : 1 + 100/(-dkPrice));
+    if (!dec || dec <= 1.02) return;
+    const p = typeof parlayLegProb === 'function' ? parlayLegProb(raw) : raw.p;
+    if (p == null || !isFinite(p) || p <= 0.05 || p >= 0.95) return;
+    seen.add(raw.id);
+    const ev = typeof parlayEventId === 'function' ? parlayEventId(raw) : (g.eventId || g.id);
+    const gm = `${(g.away && (g.away.short || g.away.abbr || g.away.name)) || 'Away'} @ ${(g.home && (g.home.short || g.home.abbr || g.home.name)) || 'Home'}`;
+    out.push(Object.assign({}, raw, {
+      isProp,
+      dkPrice,
+      price: dkPrice,
+      dec,
+      p,
+      ev: String(ev || ''),
+      gm,
+      startMs,
+      isPod: podKeys.has(pk) || podKeys.has(raw.id),
+      isLocked: !!(raw.locked || (startMs - now <= 30 * 60000)),
+      shortDesc: v202LegShortDesc(Object.assign({}, raw, {isProp}))
+    }));
+  };
+
+  for (const p of ((typeof plays !== 'undefined' && Array.isArray(plays)) ? plays : [])) add(p, false);
+  for (const p of ((typeof props !== 'undefined' && Array.isArray(props)) ? props : [])) add(p, true);
+  out.sort((a, b) => ((b.isPod ? 1 : 0) - (a.isPod ? 1 : 0)) || (b.p - a.p) || ((b.edge || 0) - (a.edge || 0)));
+  return out;
+}
+
+function v202CalcTicket(legs){
+  if (!legs || legs.length < 2) return null;
+  let dec = 1, p = 1, sgp = false;
+  for (let i = 0; i < legs.length; i++){
+    dec *= legs[i].dec;
+    p *= legs[i].p;
+    for (let j = i + 1; j < legs.length; j++){
+      const c = v202SameGameCheck(legs[i], legs[j]);
+      if (!c.ok) return null;
+      if (c.sgp) sgp = true;
+    }
+  }
+  const am = typeof decToAm === 'function' ? decToAm(dec) : (dec >= 2 ? Math.round((dec - 1) * 100) : Math.round(-100 / (dec - 1)));
+  if (am == null || !isFinite(am)) return null;
+  const implied = 1 / dec;
+  const edge = p - implied;
+  const sports = [...new Set(legs.map(l => l.league || (l.g && l.g.league)).filter(Boolean))];
+  const mix = legs.every(l => l.isProp) ? 'props' : legs.every(l => !l.isProp) ? 'games' : 'mixed';
+  const start = Math.min(...legs.map(l => l.startMs || Infinity));
+  const id = 'v202p:' + legs.map(l => l.id).sort().join('+');
+  return { id, isParlay:true, n:legs.length, legs:legs.slice(), dec, am, price:am, p, implied, edge, sgp, sports, mix, league:sports[0], start };
+}
+
+function v202BuildParlays(legs){
+  legs = legs || v202ParlayLegs();
+  if (legs.length < 2) return [];
+  const cands = new Map();
+  const addCombo = arr => {
+    const t = v202CalcTicket(arr);
+    if (t && !cands.has(t.id)) cands.set(t.id, t);
+  };
+  const p2 = legs.slice(0, 14);
+  for (let i = 0; i < p2.length; i++){
+    for (let j = i + 1; j < p2.length; j++){
+      if (!v202SameGameCheck(p2[i], p2[j]).ok) continue;
+      addCombo([p2[i], p2[j]]);
+    }
+  }
+  const p3 = legs.slice(0, 11);
+  for (let i = 0; i < p3.length; i++){
+    for (let j = i + 1; j < p3.length; j++){
+      if (!v202SameGameCheck(p3[i], p3[j]).ok) continue;
+      for (let k = j + 1; k < p3.length; k++){
+        if (!v202SameGameCheck(p3[i], p3[k]).ok || !v202SameGameCheck(p3[j], p3[k]).ok) continue;
+        addCombo([p3[i], p3[j], p3[k]]);
+      }
+    }
+  }
+  const p4 = legs.slice(0, 9);
+  for (let i = 0; i < p4.length; i++){
+    for (let j = i + 1; j < p4.length; j++){
+      if (!v202SameGameCheck(p4[i], p4[j]).ok) continue;
+      for (let k = j + 1; k < p4.length; k++){
+        if (!v202SameGameCheck(p4[i], p4[k]).ok || !v202SameGameCheck(p4[j], p4[k]).ok) continue;
+        for (let m = k + 1; m < p4.length; m++){
+          if (!v202SameGameCheck(p4[i], p4[m]).ok || !v202SameGameCheck(p4[j], p4[m]).ok || !v202SameGameCheck(p4[k], p4[m]).ok) continue;
+          addCombo([p4[i], p4[j], p4[k], p4[m]]);
+        }
+      }
+    }
+  }
+  for (let startIdx = 0; startIdx < Math.min(4, legs.length); startIdx++){
+    const chain = [legs[startIdx]];
+    for (let j = 0; j < legs.length; j++){
+      if (j === startIdx) continue;
+      if (chain.every(x => v202SameGameCheck(x, legs[j]).ok)){
+        chain.push(legs[j]);
+        if (chain.length >= 5) addCombo(chain);
+      }
+    }
+  }
+  const all = [...cands.values()].sort((a, b) => (b.edge - a.edge) || (b.p - a.p));
+  const out = [], usedN = {};
+  for (const t of all){
+    const cap = t.n === 2 ? 6 : t.n === 3 ? 5 : t.n === 4 ? 4 : 2;
+    if ((usedN[t.n] || 0) >= cap) continue;
+    usedN[t.n] = (usedN[t.n] || 0) + 1;
+    out.push(t);
+    if (out.length >= 24) break;
+  }
+  return out;
+}
+
+/* ---------- 2) Background Parlay Log & Grading ---------- */
+function v202PLogLoad(){
+  if (!V202.parlayLog){
+    try{ V202.parlayLog = JSON.parse(localStorage.getItem(V202_PLOG_LS) || 'null'); }catch(e){}
+    if (!V202.parlayLog || !V202.parlayLog.rows) V202.parlayLog = {rows:{}};
+  }
+  return V202.parlayLog;
+}
+function v202PLogSave(){ try{ localStorage.setItem(V202_PLOG_LS, JSON.stringify(v202PLogLoad())); }catch(e){} }
+function v202PLogMerge(remote){
+  const L = v202PLogLoad(); if (!remote || !remote.rows) return;
+  for (const id in remote.rows){
+    const a = L.rows[id], b = remote.rows[id];
+    if (!a) L.rows[id] = b;
+    else if (b.res && !a.res) L.rows[id] = Object.assign({}, a, {res:b.res, u:b.u});
+  }
+}
+function v202PLogRecord(){
+  const L = v202PLogLoad();
+  let w = 0, l = 0, p = 0, u = 0, open = 0;
+  for (const id in L.rows){
+    const r = L.rows[id];
+    if (!r) continue;
+    if (!r.res){ open++; continue; }
+    if (r.res === 'ungradeable' || r.res === 'void') continue;
+    if (r.res === 'win'){ w++; u += (r.u != null ? +r.u : (r.dec ? r.dec - 1 : (typeof profitOn==='function' ? profitOn(r.am, 1) : 1))); }
+    else if (r.res === 'loss'){ l++; u -= 1; }
+    else if (r.res === 'push') p++;
+  }
+  return {w, l, p, u: Math.round(u * 100) / 100, open};
+}
+function v202PackLeg(l){
+  return {
+    id: l.id, ev: l.ev, lg: l.league || (l.g && l.g.league) || '', b: l.isProp ? 'props' : 'games',
+    mk: l.isProp ? '' : l.mk, kind: l.isProp ? l.kind : '', pid: l.isProp ? (l.playerId || '') : '',
+    pn: l.isProp ? (l.playerName || '') : '', side: l.side, pt: l.isProp ? +l.line : (l.sd && l.sd.point != null ? +l.sd.point : null),
+    pr: l.dkPrice, p: Math.round(l.p * 10000) / 10000, t: l.startMs, desc: l.shortDesc
+  };
+}
+function v202LogLockedParlays(tickets){
+  const L = v202PLogLoad(); const now = Date.now();
+  const byN = new Map();
+  for (const t of tickets){
+    if (!t || t.edge < 0 || !t.legs || t.legs.length < 2) continue;
+    const mins = (t.start - now) / 60000;
+    if (mins > 30 || mins < 0) continue;
+    if (t.legs.some(l => l.dkPrice < V202_FLOOR || l.dkPrice > V202_MAXP)) continue;
+    if (!byN.has(t.n)) byN.set(t.n, t);
+  }
+  for (const t of byN.values()){
+    if (L.rows[t.id]) continue;
+    L.rows[t.id] = {
+      id: t.id, n: t.n, am: Math.round(t.am), dec: Math.round(t.dec * 10000) / 10000,
+      p: Math.round(t.p * 10000) / 10000, t: t.start, at: now, legs: t.legs.map(v202PackLeg)
+    };
+  }
+}
+async function v202GradeParlays(){
+  const L = v202PLogLoad(); const now = Date.now(); let ch = 0;
+  const due = Object.values(L.rows).filter(r => r && !r.res && Array.isArray(r.legs) && r.legs.length >= 2 && r.t < now - 3 * 3600000);
+  for (const r of due.slice(0, 30)){
+    let hasLoss = false, missing = false;
+    const wonDecs = [];
+    for (const lg of r.legs){
+      if (lg.pr == null || lg.pr < V202_FLOOR || lg.pr > V202_MAXP){ r.res = 'void'; ch++; hasLoss = false; missing = false; break; }
+      if (lg.b === 'props' && typeof v189RowStandaloneBad === 'function' && v189RowStandaloneBad({b:'props', s:'sb', k:lg.kind, sd:lg.side, pt:lg.pt, pr:lg.pr})){
+        r.res = 'void'; ch++; hasLoss = false; missing = false; break;
+      }
+      if (lg.t > now - 2.5 * 3600000){ missing = true; continue; }
+      let gr = null;
+      try{
+        if (lg.b === 'games' && typeof uniFinFor === 'function' && typeof uniGradeGameRow === 'function'){
+          const fin = await uniFinFor(lg.lg, lg.ev, lg.t);
+          if (fin){ if (fin.canceled) gr = {res:'void'}; else if (fin.done) gr = uniGradeGameRow({l:lg.lg, mk:lg.mk, side:lg.side, pt:lg.pt}, fin); }
+        } else if (lg.b === 'props' && typeof uniBoxFor === 'function' && typeof uniGradePropRow === 'function'){
+          const bx = await uniBoxFor(lg.lg, lg.ev);
+          if (bx) gr = uniGradePropRow({l:lg.lg, kind:lg.kind, pid:lg.pid, pn:lg.pn, side:lg.side, pt:+lg.pt}, bx);
+        }
+      }catch(e){}
+      if (!gr || !gr.res){ missing = true; continue; }
+      if (gr.res === 'loss'){ hasLoss = true; break; }
+      if (gr.res === 'win'){ wonDecs.push(typeof amToDec === 'function' ? amToDec(lg.pr) : (lg.pr > 0 ? 1 + lg.pr/100 : 1 + 100/(-lg.pr))); }
+    }
+    if (r.res === 'void') continue;
+    if (hasLoss){ r.res = 'loss'; r.u = -1; ch++; }
+    else if (!missing){
+      if (!wonDecs.length){ r.res = 'void'; r.u = 0; }
+      else { const d = wonDecs.reduce((a, x) => a * x, 1); r.res = 'win'; r.u = Math.round((d - 1) * 1000) / 1000; }
+      ch++;
+    } else if (r.t < now - 4 * 86400000){
+      r.res = 'ungradeable'; ch++;
+    }
+  }
+  return ch;
+}
+
+/* ---------- 3) Replace Picks|+EV|Sharp switch with Picks|Parlays; keep Sharp background running ---------- */
+(function(){
+  if (typeof v198SegHTML === 'function'){
+    v198SegHTML = function(){
+      const t = (typeof ui !== 'undefined' && ui.tab) || 'good';
+      const legs = v202ParlayLegs();
+      const cnt = v202BuildParlays(legs).length;
+      const onPicks = t === 'good' || t === 'watch' || t === 'avoid';
+      const onPar = t === 'parlays';
+      return `<div class="v198-seg v202-seg" id="v198Seg" role="tablist" aria-label="Picks or Parlays">`
+        + `<button type="button" role="tab" class="v198-sb${onPicks ? ' on' : ''}" data-v202-tab="good" aria-selected="${onPicks}">Picks</button>`
+        + `<button type="button" role="tab" class="v198-sb${onPar ? ' on' : ''}" data-v202-tab="parlays" aria-selected="${onPar}">Parlays<span class="v198-sn">${cnt}</span></button>`
+        + `</div>`;
+    };
+  }
+  if (typeof setTab === 'function'){
+    const base = setTab;
+    setTab = function(t, opts){
+      if (t === 'evx' || t === 'sharp') t = 'good';
+      return base.call(this, t, opts);
+    };
+  }
+  if (typeof v198Repaint === 'function'){
+    v198Repaint = function(){
+      try{
+        if (typeof ui !== 'undefined' && ui.tab === 'parlays') v202RenderParlays();
+        else if (typeof ui !== 'undefined' && ui.tab === 'tracker') v202UpdateRecordsDOM();
+        else if (typeof v198EnsureSeg === 'function') v198EnsureSeg();
+      }catch(e){}
+    };
+  }
+  if (typeof v198Fetch === 'function'){
+    const base = v198Fetch;
+    v198Fetch = async function(logs){
+      await base.apply(this, arguments);
+      try{
+        if (logs && Date.now() - V202.pLogAt > 5 * 60000 && typeof v154Get === 'function'){
+          V202.pLogAt = Date.now();
+          const p = await v154Get('parlaylog').catch(() => null);
+          if (p && p.rows){ V202.parlayLog = p; v202PLogSave(); v202UpdateRecordsDOM(); }
+        }
+      }catch(e){}
+    };
+  }
+  if (typeof v198Tick === 'function'){
+    v198Tick = function(){
+      try{
+        if (typeof v198Pub === 'function' && v198Pub()){
+          if (typeof v198Publisher === 'function') v198Publisher();
+          v202ParlayPub();
+        } else {
+          const on = typeof ui !== 'undefined' && (ui.tab === 'tracker' || ui.tab === 'parlays');
+          if (on || (typeof V198 !== 'undefined' && Date.now() - V198.getAt > 5 * 60000)){
+            if (typeof v198Fetch === 'function') v198Fetch(on);
+          }
+        }
+      }catch(e){}
+    };
+  }
+  if (typeof v198Publisher === 'function'){
+    const base = v198Publisher;
+    v198Publisher = async function(){
+      const r = await base.apply(this, arguments);
+      try{ await v202ParlayPub(); }catch(e){}
+      return r;
+    };
+  }
+  if (typeof updateFilterChrome === 'function'){
+    const base = updateFilterChrome;
+    updateFilterChrome = function(){
+      const r = base.apply(this, arguments);
+      try{
+        if (typeof ui !== 'undefined' && ui.tab === 'parlays'){
+          const tools = document.getElementById('headTools'); if (tools) tools.hidden = true;
+          const fb = document.getElementById('filterBar'); if (fb) fb.hidden = true;
+          const kb = document.getElementById('kindsBar'); if (kb){ kb.hidden = true; kb.classList.remove('show'); }
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  const r0 = render;
+  render = function(){
+    if (typeof ui !== 'undefined' && (ui.tab === 'evx' || ui.tab === 'sharp')) ui.tab = 'good';
+    if (typeof ui !== 'undefined' && ui.tab === 'parlays'){
+      try{ renderChips(); }catch(e){}
+      try{ if (typeof updateFilterChrome === 'function') updateFilterChrome(); }catch(e){}
+      v202RenderParlays();
+      return;
+    }
+    return r0.apply(this, arguments);
+  };
+  if (typeof softRender === 'function'){
+    const s0 = softRender;
+    softRender = function(){
+      if (typeof ui !== 'undefined' && ui.tab === 'parlays'){ v202RenderParlays(); return; }
+      return s0.apply(this, arguments);
+    };
+  }
+  if (typeof syncTabChrome === 'function'){
+    const c0 = syncTabChrome;
+    syncTabChrome = function(){
+      const r = c0.apply(this, arguments);
+      try{
+        if (typeof ui !== 'undefined' && ui.tab === 'parlays'){
+          document.querySelectorAll('#bottomNav button[data-tab="good"], #tabs button[data-tab="good"]').forEach(b => b.classList.add('on'));
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  setTimeout(()=>{ try{ if (typeof v198Tick === 'function') v198Tick(); }catch(e){} }, 5000);
+  setInterval(()=>{
+    try{
+      if (typeof v198Pub === 'function' && v198Pub()){ v202ParlayPub(); return; }
+      if (typeof ui !== 'undefined' && (ui.tab === 'tracker' || ui.tab === 'parlays') && typeof v198Fetch === 'function'){
+        v198Fetch(true);
+      }
+    }catch(e){}
+  }, 30000);
+})();
+
+async function v202ParlayPub(){
+  if (V202.pLogBusy) return;
+  V202.pLogBusy = true;
+  try{
+    if (!V202.pLogTry && typeof v154Get === 'function'){
+      try{ const r = await v154Get('parlaylog'); v202PLogMerge(r); V202.pLogTry = true; }catch(e){ return; }
+    }
+    const now = Date.now();
+    if (now - V202.lastPubAt < 110000) return;
+    V202.lastPubAt = now;
+    const tickets = v202BuildParlays();
+    v202LogLockedParlays(tickets);
+    await v202GradeParlays();
+    const L = v202PLogLoad();
+    const cut = now - 60 * 86400000;
+    for (const id in L.rows) if ((L.rows[id].t || 0) < cut) delete L.rows[id];
+    v202PLogSave();
+    if (typeof v154Put === 'function') await v154Put('parlaylog', Object.assign({at: now}, L));
+    V202.pLogAt = now;
+  }catch(e){}
+  finally{ V202.pLogBusy = false; }
+}
+
+/* ---------- 4) Parlays View (Custom Builder + Suggested Any-Size Tickets) ---------- */
+function v202FmtAm(a){ a = Math.round(+a); return !isFinite(a) ? '—' : (a > 0 ? '+' + a : '−' + Math.abs(a)); }
+function v202FmtDec(d){ return (!d || !isFinite(d)) ? '—' : d.toFixed(2) + 'x'; }
+
+function v202ParlayIsTailed(id){
+  return ((typeof bets !== 'undefined' && Array.isArray(bets)) ? bets : []).some(b => {
+    if (!b || (b.result && b.result !== 'pending')) return false;
+    return b.playKey === id || (b.link && b.link.id === id);
+  });
+}
+
+function v202ParlayCardHTML(t){
+  const tailed = v202ParlayIsTailed(t.id);
+  const sports = (t.sports || []).map(s => (LMAP[s] && LMAP[s].label) || s.toUpperCase()).join(' · ') || 'PARLAY';
+  const when = isFinite(t.start) && t.start !== Infinity ? (typeof fmtTime === 'function' ? fmtTime(new Date(t.start)) : '') : '';
+  const pct = Math.round(t.p * 100);
+  const ring = typeof v185Ring === 'function' ? v185Ring(t.p, 'Hit') : `<b>${pct}%</b>`;
+  const rows = t.legs.map(l => {
+    const ic = l.isProp && typeof playerPfpHTML === 'function'
+      ? playerPfpHTML(l)
+      : (l.g && typeof teamLogoHTML === 'function' ? teamLogoHTML(l.g[l.side === 'away' ? 'away' : 'home'], 'player-pfp v202-tl') : '');
+    return `<div class="v202-leg">
+      <div class="v202-leg-l">${ic}<div class="v202-leg-txt"><div class="v202-leg-name">${esc(l.shortDesc)}</div><div class="v202-leg-sub">${esc((LMAP[l.league] && LMAP[l.league].label) || String(l.league || '').toUpperCase())} · ${esc(l.gm)}</div></div></div>
+      <div class="v202-leg-r"><span class="v202-leg-pr">${v202FmtAm(l.dkPrice)}</span><span class="v202-leg-p">${Math.round(l.p * 100)}%</span></div>
+    </div>`;
+  }).join('');
+  return `<div class="card v202-pcard${tailed ? ' logged' : ''}" data-v202-pid="${esc(t.id)}">
+    <div class="chead"><span><span class="lg">${esc(sports)}</span> <span class="pill pl-n">${t.n}-LEG PARLAY</span>${t.sgp ? ' <span class="v202-sgp">SGP</span>' : ''}</span><span>${esc(when)}</span></div>
+    <div class="prop-head v202-phead">
+      <div class="prop-who"><div class="prop-name v202-podds">${v202FmtAm(t.am)} <span class="v202-pdec">(${v202FmtDec(t.dec)})</span></div><div class="prop-meta"><span>Combined odds · ${pct}% model win chance</span></div></div>
+      <div class="verdict-slot v185-slot">${ring}</div>
+    </div>
+    <div class="v202-legs">${rows}</div>
+    <div class="cfoot"><span class="cfoot-meta"><span class="mut">Win chance is the product of all ${t.n} legs</span></span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail${tailed ? ' is-tailed' : ''}" data-v202-ptail="${esc(t.id)}">${tailed ? 'Tailed' : 'Tail'}</button></span></div>
+  </div>`;
+}
+
+function v202BuilderHTML(legs){
+  const legMap = new Map(legs.map(l => [l.id, l]));
+  V202.selIds = V202.selIds.filter(id => legMap.has(id));
+  const sel = V202.selIds.map(id => legMap.get(id));
+  const t = sel.length >= 2 ? v202CalcTicket(sel) : null;
+
+  const list = legs.map(l => {
+    const on = V202.selIds.includes(l.id);
+    let blk = null, sgp = false;
+    if (!on && sel.length){
+      for (const s of sel){
+        const c = v202SameGameCheck(s, l);
+        if (!c.ok){ blk = c.why; break; }
+        if (c.sgp) sgp = true;
+      }
+    }
+    const cls = `v202-pick-opt${on ? ' on' : ''}${blk ? ' blk' : ''}`;
+    const tag = blk ? `<span class="v202-opt-blk">${esc(blk)}</span>` : (sgp ? `<span class="v202-sgp">SGP</span>` : (l.isPod ? `<span class="v202-pod">POD</span>` : ''));
+    return `<button type="button" class="${cls}" data-v202-leg="${esc(l.id)}" ${blk ? 'disabled' : ''} aria-pressed="${on}">
+      <span class="v202-chk" aria-hidden="true">${on ? '✓' : ''}</span>
+      <span class="v202-opt-m"><span class="v202-opt-n">${esc(l.shortDesc)} ${tag}</span><span class="v202-opt-s">${esc((LMAP[l.league] && LMAP[l.league].label) || '')} · ${esc(l.gm)}</span></span>
+      <span class="v202-opt-r"><b>${v202FmtAm(l.dkPrice)}</b><small>${Math.round(l.p * 100)}%</small></span>
+    </button>`;
+  }).join('');
+
+  let sum = '';
+  if (sel.length === 0){
+    sum = `<div class="v202-bsum empty">Tap any 2 or more Picks below to build a parlay.</div>`;
+  } else if (sel.length === 1){
+    sum = `<div class="v202-bsum empty"><b>1 leg selected</b> (${esc(sel[0].shortDesc)} · ${v202FmtAm(sel[0].dkPrice)}). Pick at least 1 more leg.</div>`;
+  } else if (t){
+    const pct = Math.round(t.p * 100);
+    const ring = typeof v185Ring === 'function' ? v185Ring(t.p, 'Hit') : `<b>${pct}%</b>`;
+    sum = `<div class="v202-bsum live">
+      <div class="v202-bsum-l">
+        <div class="v202-bsum-t">${t.n}-leg parlay · <b>${v202FmtAm(t.am)}</b> <span class="v202-pdec">(${v202FmtDec(t.dec)})</span>${t.sgp ? ' <span class="v202-sgp">SGP</span>' : ''}</div>
+        <div class="v202-bsum-s">Model win chance <b>${pct}%</b></div>
+      </div>
+      <div class="v202-bsum-r">${ring}<div class="v202-bsum-acts"><button type="button" class="btn primary sm" data-v202-btail="1">Tail</button><button type="button" class="btn sm" data-v202-bclr="1">Clear</button></div></div>
+    </div>`;
+  }
+
+  return `<div class="card v202-builder">
+    <div class="v202-bhead"><div><h3>Build a parlay</h3><div class="hint">Any size (2+ legs) from today's Picks.</div></div>${legs.length >= 2 ? `<button type="button" class="btn sm" data-v202-ball="1">Max ticket</button>` : ''}</div>
+    ${sum}
+    <div class="v202-opt-list">${list || '<div class="hint">No eligible Picks legs right now.</div>'}</div>
+  </div>`;
+}
+
+function v202ParlayRecBarHTML(){
+  const R = v202PLogRecord();
+  const unit = typeof v192Unit === 'function' ? v192Unit() : ((+S.unit > 0) ? +S.unit : 25);
+  const dol = R.u * unit;
+  const cls = R.u > 0.005 ? 'pos' : R.u < -0.005 ? 'neg' : '';
+  const has = (R.w + R.l + R.p) > 0;
+  const uTxt = `${R.u > 0 ? '+' : R.u < 0 ? '−' : ''}${Math.abs(R.u).toFixed(2)}u`;
+  const dTxt = `${dol > 0 ? '+' : dol < 0 ? '−' : ''}$${Math.abs(dol).toFixed(2)}`;
+  return `<div class="v202-prec"><span><b>Parlays record</b> <span class="mut">(tracked separately)</span></span><span>${has ? `<b>${R.w}-${R.l}${R.p ? '-' + R.p : ''}</b> · <b class="${cls}">${uTxt}</b> · <b class="${cls}">${dTxt}</b>` : `<span class="mut">No graded parlays yet</span>`}${R.open ? ` <span class="mut">(${R.open} open)</span>` : ''}</span></div>`;
+}
+
+function v202RenderParlays(){
+  const v = document.getElementById('view'); if (!v) return;
+  if (!V202.pLogAt && typeof v198Fetch === 'function') v198Fetch(true);
+  const legs = v202ParlayLegs();
+  const allTickets = v202BuildParlays(legs);
+  window.__v202Parlays = allTickets;
+  const sizes = ['all', '2', '3', '4', '5+'];
+  if (!sizes.includes(V202.sizeFilter)) V202.sizeFilter = 'all';
+  const shown = allTickets.filter(t => {
+    if (V202.sizeFilter === 'all') return true;
+    if (V202.sizeFilter === '5+') return t.n >= 5;
+    return String(t.n) === V202.sizeFilter;
+  });
+  const seg = typeof v198SegHTML === 'function' ? v198SegHTML() : '';
+  const pills = sizes.map(s => {
+    const cnt = s === 'all' ? allTickets.length : allTickets.filter(t => s === '5+' ? t.n >= 5 : String(t.n) === s).length;
+    return `<button type="button" class="v202-sz${V202.sizeFilter === s ? ' on' : ''}" data-v202-sz="${s}">${s === 'all' ? 'All sizes' : s + (s === '5+' ? ' legs' : '-leg')} <span>${cnt}</span></button>`;
+  }).join('');
+  const grid = shown.length
+    ? `<div class="grid v202-pgrid">${shown.map(v202ParlayCardHTML).join('')}</div>`
+    : `<div class="empty-state">${legs.length < 2 ? 'Need at least 2 current Picks to build a parlay.' : 'No parlays match this leg count.'}</div>`;
+  const html = `<div class="v202-pwrap">${seg}${v202ParlayRecBarHTML()}${v202BuilderHTML(legs)}<div class="v202-shead"><h3>Suggested parlays</h3><div class="v202-szrow" role="group" aria-label="Leg count filter">${pills}</div></div>${grid}</div>`;
+  const y = window.scrollY;
+  v.innerHTML = html;
+  if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  try{ if (typeof syncTabChrome === 'function') syncTabChrome(); }catch(e){}
+}
+
+function v202TailParlay(t){
+  if (!t || !t.legs || t.legs.length < 2) return;
+  const sports = (t.sports || []).map(s => (LMAP[s] && LMAP[s].label) || s).filter(Boolean);
+  const mins = (t.start - Date.now()) / 60000;
+  const pf = {
+    tailLock: mins <= 30 ? 'locked' : 'early',
+    src: 'parlay',
+    date: typeof isoDate === 'function' ? isoDate(new Date(t.start)) : '',
+    sport: sports.length === 1 ? sports[0] : 'Other',
+    market: 'Parlay',
+    pick: `${t.n}-leg parlay: ${t.legs.map(l => l.shortDesc).join(' + ')}`,
+    oddsType: 'american',
+    odds: String(Math.round(t.am) > 0 ? '+' + Math.round(t.am) : Math.round(t.am)),
+    stake: +S.unit || 25,
+    playKey: t.id,
+    legs: t.legs.map(l => typeof parlayLegSaveMeta === 'function' ? parlayLegSaveMeta(l) : v202PackLeg(l))
+  };
+  v202OpenTailModal(pf);
+}
+
+/* ---------- 5) Results: Sharp & Parlays compact records ---------- */
+function v202SignalRecord(kind){
+  if (kind === 'parlay') return v202PLogRecord();
+  const L = typeof V198 !== 'undefined' ? V198.sharpLog : null;
+  if (!L || !L.rows) return null;
+  let w = 0, l = 0, p = 0, u = 0, open = 0;
+  for (const id in L.rows){
+    const r = L.rows[id]; if (!r) continue;
+    if (!r.res){ open++; continue; }
+    if (r.res === 'ungradeable' || r.res === 'void') continue;
+    if (r.res === 'win'){ w++; u += (typeof profitOn === 'function' ? profitOn(r.pr, 1) : (r.pr > 0 ? r.pr/100 : 100/(-r.pr))); }
+    else if (r.res === 'loss'){ l++; u -= 1; }
+    else if (r.res === 'push') p++;
+  }
+  return {w, l, p, u: Math.round(u * 100) / 100, open};
+}
+
+function v202RecordRowHTML(label, sub, R){
+  const unit = typeof v192Unit === 'function' ? v192Unit() : ((+S.unit > 0) ? +S.unit : 25);
+  let rec = '—', uTxt = '—', dTxt = '—', cls = '';
+  if (R == null){
+    rec = 'Loading…';
+  } else if (!(R.w + R.l + R.p)){
+    rec = R.open ? `0-0 (${R.open} open)` : '0-0';
+    uTxt = '0.00u'; dTxt = '$0';
+  } else {
+    rec = `${R.w}-${R.l}${R.p ? '-' + R.p : ''}${R.open ? ` · ${R.open} open` : ''}`;
+    const dol = R.u * unit;
+    cls = R.u > 0.005 ? 'pos' : R.u < -0.005 ? 'neg' : '';
+    uTxt = `${R.u > 0 ? '+' : R.u < 0 ? '−' : ''}${Math.abs(R.u).toFixed(2)}u`;
+    dTxt = `${dol > 0 ? '+' : dol < 0 ? '−' : ''}$${Math.abs(dol).toFixed(2)}`;
+  }
+  return `<div class="v202-rec-row">
+    <div class="v202-rec-l"><b>${esc(label)}</b><span>${esc(sub)}</span></div>
+    <div class="v202-rec-r"><span class="v202-rec-wl">${esc(rec)}</span><b class="v202-rec-u ${cls}">${esc(uTxt)}</b><span class="v202-rec-d ${cls}">${esc(dTxt)}</span></div>
+  </div>`;
+}
+
+function v202RecordsCardHTML(){
+  const sh = v202SignalRecord('sharp');
+  const pa = v202SignalRecord('parlay');
+  return `<div class="card v202-recs" id="v202Recs">
+    <div class="v202-recs-h"><h3>Tracked separately</h3><span class="hint">Excluded from Picks, POD &amp; model totals</span></div>
+    <div class="v202-recs-list">
+      ${v202RecordRowHTML('Sharp', 'Locked 30m before start', sh)}
+      ${v202RecordRowHTML('Parlays', '2+ legs · sportsbook lines', pa)}
+    </div>
+  </div>`;
+}
+
+function v202UpdateRecordsDOM(){
+  try{
+    if (typeof ui === 'undefined' || ui.tab !== 'tracker') return;
+    const el = document.getElementById('v202Recs');
+    if (el){ const tmp = document.createElement('div'); tmp.innerHTML = v202RecordsCardHTML(); el.replaceWith(tmp.firstElementChild); }
+  }catch(e){}
+}
+
+/* ---------- 6) Results: Horizontal Profit Bar Charts for By Sport & By Market ---------- */
+function v202BarChartCardHTML(title, obj){
+  const unit = (+S.unit > 0 && isFinite(+S.unit)) ? +S.unit : 25;
+  const entries = Object.entries(obj || {})
+    .map(([k, x]) => ({ k, w: x.w||0, l: x.l||0, p: x.p||0, u: Math.round(((x.net || 0) / unit) * 100) / 100 }))
+    .filter(e => (e.w + e.l + e.p) > 0)
+    .sort((a, b) => (b.u - a.u) || ((b.w + b.l) - (a.w + a.l)));
+  const maxU = entries.reduce((m, e) => Math.max(m, Math.abs(e.u)), 0) || 1;
+  const rows = entries.length ? entries.map(e => {
+    const pct = Math.max(4, Math.min(100, Math.round((Math.abs(e.u) / maxU) * 100)));
+    const cls = e.u > 0.005 ? 'pos' : e.u < -0.005 ? 'neg' : 'even';
+    const uTxt = `${e.u > 0 ? '+' : e.u < 0 ? '−' : ''}${Math.abs(e.u).toFixed(2)}u`;
+    const wl = `${e.w}-${e.l}${e.p ? '-' + e.p : ''}`;
+    return `<div class="v202-bar-row">
+      <div class="v202-bar-lab"><span class="v202-bar-name" title="${esc(e.k)}">${esc(e.k)}</span><span class="v202-bar-wl">${wl}</span></div>
+      <div class="v202-bar-trk" role="img" aria-label="${esc(e.k)}: ${wl}, ${uTxt}"><div class="v202-bar-fill ${cls}" style="width:${pct}%"></div></div>
+      <div class="v202-bar-u ${cls}">${uTxt}</div>
+    </div>`;
+  }).join('') : `<div class="mut v202-bar-empty">No settled bets yet.</div>`;
+  return `<div class="panel v202-barchart"><h3>${esc(title)}</h3><div class="v202-bars">${rows}</div></div>`;
+}
+
+/* ---------- 7) Tail a bet Modal (sportsbook odds only, no Polymarket ¢) ---------- */
+function v202EnsureTailModal(){
+  let m = document.getElementById('v202TailModal');
+  if (!m){
+    m = document.createElement('div');
+    m.id = 'v202TailModal';
+    m.className = 'v202-tmod';
+    m.hidden = true;
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.setAttribute('aria-label', 'Tail a bet');
+    m.innerHTML = `<div class="v202-tmod-bd" data-v202-tclose="1"></div><div class="v202-tmod-box"><button type="button" class="v202-tmod-x" data-v202-tclose="1" aria-label="Close">×</button><div class="v202-tmod-slot"></div></div>`;
+    document.body.appendChild(m);
+  }
+  return m;
+}
+function v202CloseTailModal(){
+  const m = document.getElementById('v202TailModal');
+  if (m){ m.classList.remove('open'); m.hidden = true; const sl = m.querySelector('.v202-tmod-slot'); if (sl) sl.innerHTML = ''; }
+  V202.tailOpen = false;
+  try{ document.body.style.overflow = ''; }catch(e){}
+}
+function v202BuildTailFormHTML(pf){
+  pf = pf || {};
+  const unit = +S.unit || 25;
+  const prePick = pf.pick || '';
+  const ot = pf.oddsType === 'multiplier' ? 'multiplier' : 'american';
+  return `<div class="log-card v202-modal-log">
+    <h3>📝 Tail a bet</h3>
+    <form id="betForm" class="log-simple" autocomplete="off">
+      <div class="log-bet"><span>Bet</span><input name="pick" value="${esc(prePick)}" placeholder="e.g. Rockets ML, Lakers/Celtics Over 225.5" required></div>
+      <div class="log-row">
+        <label class="odds-field">Odds
+          <div class="seg odds-type" id="oddsTypeSeg">${[['american','American'],['multiplier','Payout ×']].map(([v,l])=>`<label class="${ot===v?'on':''}"><input type="radio" name="oddsType" value="${v}" ${ot===v?'checked':''} hidden>${l}</label>`).join('')}</div>
+          <input name="odds" id="betOdds" value="${esc(pf.odds||'')}" placeholder="${(typeof ODDS_PLACEHOLDER!=='undefined'&&ODDS_PLACEHOLDER[ot])||'-150'}" inputmode="${ot==='american'?'text':'decimal'}" required>
+          <span class="hint" id="oddsPreview"></span>
+        </label>
+        <label>Stake ($)
+          <input name="stake" id="betStake" type="number" step="0.01" min="0" value="${esc(pf.stake!=null?pf.stake:S.unit)}" required>
+          <div class="stake-chips" id="stakeChips">
+            ${[10,25,50].map(n=>`<span class="chip ${+((pf.stake!=null?pf.stake:S.unit))===n?'on':''}" data-stake="${n}">$${n}</span>`).join('')}
+            ${[0.5,1,1.5,2].map(m=>`<span class="chip ${+((pf.stake!=null?pf.stake:S.unit))===unit*m?'on':''}" data-stake="${unit*m}">${m}u</span>`).join('')}
+          </div>
+        </label>
+      </div>
+      <div class="log-actions">
+        <button class="btn primary" type="submit">Add bet</button>
+        <button type="button" class="more-link" id="btnLogMore">${trackerUI.more?'Less':'More'}</button>
+      </div>
+      <div class="log-more ${trackerUI.more?'open':''}" id="logMore">
+        <label>Date<input name="date" type="date" value="${esc(pf.date||isoDate(new Date()))}" required></label>
+        <label>Sport<select name="sport">${LEAGUES.map(L=>`<option ${pf.sport===L.label?'selected':''}>${L.label}</option>`).join('')}<option ${pf.sport==='Other'?'selected':''}>Other</option></select></label>
+        <label>Market<select name="market">${['Moneyline','Spread','Total','Prop','Parlay','Other'].map(m=>`<option ${pf.market===m?'selected':''}>${m}</option>`).join('')}</select></label>
+        <label>Result<select name="result">${['pending','win','loss','push','void'].map(r=>`<option value="${r}">${resultLabel(r)}</option>`).join('')}</select></label>
+      </div>
+    </form>
+  </div>`;
+}
+function v202BindTailForm(box, pf){
+  const bf = box.querySelector('#betForm'); if (!bf) return;
+  if (pf && (pf.link || pf.legs || pf.playKey)){
+    pendingLink = {recU:pf.recU!=null?pf.recU:null, link:pf.link||null, legs:pf.legs||null, playKey:pf.playKey||null, tailLock:pf.tailLock||null, src:pf.src||null};
+  } else if (!pf || (!pf.pick && !pf.odds)) {
+    pendingLink = null;
+  }
+  const currentOddsType = () => { const el = bf.querySelector('input[name="oddsType"]:checked'); return (el && el.value) || 'american'; };
+  const refreshOddsPreview = () => {
+    const prev = bf.querySelector('#oddsPreview'); if (!prev) return;
+    const typ = currentOddsType();
+    const entered = (bf.querySelector('#betOdds') && bf.querySelector('#betOdds').value) || '';
+    const stake = (bf.querySelector('#betStake') && bf.querySelector('#betStake').value) || S.unit;
+    prev.textContent = typeof oddsPreviewLine==='function' ? (oddsPreviewLine(typ, entered, stake, null) || '') : '';
+  };
+  const syncStakeChips = () => {
+    const val = +((bf.querySelector('#betStake') && bf.querySelector('#betStake').value) || 0);
+    bf.querySelectorAll('#stakeChips [data-stake]').forEach(c => c.classList.toggle('on', Math.abs(+c.dataset.stake - val) < 1e-9));
+  };
+  const typeSeg = bf.querySelector('#oddsTypeSeg');
+  let lastType = currentOddsType();
+  if (typeSeg) typeSeg.querySelectorAll('input').forEach(i => i.onchange = () => {
+    typeSeg.querySelectorAll('label').forEach(l => l.classList.toggle('on', l.contains(i)));
+    const inp = bf.querySelector('#betOdds');
+    if (inp && inp.value.trim() && typeof enteredToAmerican === 'function' && typeof americanToEntered === 'function'){
+      const am = enteredToAmerican(lastType, inp.value, null);
+      const conv = am!=null ? americanToEntered(i.value, am, null) : null;
+      if (conv!=null) inp.value = conv;
+    }
+    if (inp){ inp.placeholder = (typeof ODDS_PLACEHOLDER!=='undefined'&&ODDS_PLACEHOLDER[i.value]) || '-150'; inp.setAttribute('inputmode', i.value==='american'?'text':'decimal'); }
+    lastType = i.value;
+    refreshOddsPreview();
+  });
+  const oddsInp = bf.querySelector('#betOdds'), stakeInp = bf.querySelector('#betStake');
+  if (oddsInp) oddsInp.addEventListener('input', refreshOddsPreview);
+  if (stakeInp) stakeInp.addEventListener('input', () => { refreshOddsPreview(); syncStakeChips(); });
+  bf.querySelectorAll('#stakeChips [data-stake]').forEach(c => c.onclick = () => { if (stakeInp){ stakeInp.value = c.dataset.stake; refreshOddsPreview(); syncStakeChips(); } });
+  const moreBtn = bf.querySelector('#btnLogMore'), moreBox = bf.querySelector('#logMore');
+  if (moreBtn && moreBox) moreBtn.onclick = () => { trackerUI.more = !trackerUI.more; moreBox.classList.toggle('open', trackerUI.more); moreBtn.textContent = trackerUI.more ? 'Less' : 'More'; };
+  refreshOddsPreview();
+  bf.onsubmit = e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    const typ = f.get('oddsType') || 'american';
+    const entered = String(f.get('odds') || '').trim();
+    let o = null, mult = null;
+    if (typ === 'multiplier'){
+      mult = parseMultiplier(entered); if (mult==null){ toast('Payout must be more than 1x, e.g. 2.5x'); return; }
+      o = decToAmerican(mult); if (o==null){ toast('Payout is out of range'); return; }
+    } else {
+      o = parseAm(entered); if (o==null){ toast('Odds must be American, e.g. -150 or +120'); return; }
+    }
+    const nb = {
+      id: 'b' + Date.now() + Math.random().toString(36).slice(2, 6),
+      created: Date.now(), updatedAt: Date.now(),
+      date: f.get('date') || isoDate(new Date()),
+      sport: f.get('sport') || 'Other',
+      market: f.get('market') || 'Other',
+      pick: String(f.get('pick') || '').trim(),
+      odds: o, stake: +f.get('stake'), result: f.get('result') || 'pending',
+      oddsType: typ, oddsEntered: entered
+    };
+    if (mult!=null) nb.oddsMult = mult;
+    if (pendingLink){
+      if (pendingLink.link){ nb.link = {...pendingLink.link, price:o}; nb.playKey = pendingLink.playKey || pendingLink.link.id || pendingLink.link.playKey || `${pendingLink.link.ev||''}|${pendingLink.link.mk||''}|${pendingLink.link.side||''}`; }
+      if (pendingLink.playKey && !nb.playKey) nb.playKey = pendingLink.playKey;
+      if (pendingLink.legs) nb.legs = pendingLink.legs;
+      if (pendingLink.tailLock) nb.tailLock = pendingLink.tailLock;
+      if (pendingLink.src) nb.src = pendingLink.src;
+      if (pendingLink.recU!=null) nb.recU = pendingLink.recU;
+      pendingLink = null;
+    }
+    const un = (+S.unit) || 25;
+    nb.units = Math.round((+nb.stake || 0) / un * 100) / 100;
+    bets.push(nb);
+    if (typeof tailDraftClear === 'function') tailDraftClear();
+    saveBets();
+    v202CloseTailModal();
+    toast('Bet logged');
+    if (ui.tab === 'tracker') renderTracker();
+    else if (ui.tab === 'parlays') v202RenderParlays();
+  };
+}
+function v202OpenTailModal(pf, existingCard){
+  const m = v202EnsureTailModal();
+  const slot = m.querySelector('.v202-tmod-slot');
+  slot.innerHTML = '';
+  if (existingCard){
+    // strip Polymarket option if existingCard came from 05_tracker.js
+    const pmOpt = existingCard.querySelector('#oddsTypeSeg input[value="polymarket"]');
+    if (pmOpt){ const lab = pmOpt.closest('label'); if (lab) lab.remove(); }
+    slot.appendChild(existingCard);
+    existingCard.classList.add('v202-modal-log');
+    const bf = existingCard.querySelector('#betForm');
+    if (bf){
+      const baseSub = bf.onsubmit;
+      bf.onsubmit = function(e){
+        const beforeLen = bets.length;
+        if (baseSub) baseSub.call(this, e);
+        if (bets.length > beforeLen) v202CloseTailModal();
+      };
+    }
+  } else {
+    slot.innerHTML = v202BuildTailFormHTML(pf);
+    v202BindTailForm(slot, pf);
+  }
+  m.hidden = false;
+  V202.tailOpen = true;
+  requestAnimationFrame(() => m.classList.add('open'));
+  try{ document.body.style.overflow = 'hidden'; }catch(e){}
+}
+
+/* ---------- 8) Results UI overrides ---------- */
+(function(){
+  if (typeof v142CalCard === 'function'){
+    const base = v142CalCard;
+    v142CalCard = function(){
+      let h = base.apply(this, arguments);
+      try{
+        h = h.replace(
+          /(<div class="hint v142-tap">[\s\S]*?<\/div>)/,
+          '<div class="v202-cal-foot">$1<button type="button" class="btn sm v202-cal-tail" id="v202CalTail">Tail a bet</button></div>'
+        );
+      }catch(e){}
+      return h;
+    };
+  }
+  if (typeof v142RenderModel === 'function'){
+    const base = v142RenderModel;
+    v142RenderModel = function(){
+      const r = base.apply(this, arguments);
+      try{
+        const view = document.getElementById('view');
+        if (view && !view.querySelector('#v202Recs')) view.insertAdjacentHTML('beforeend', v202RecordsCardHTML());
+        if (typeof v198Fetch === 'function') v198Fetch(true);
+      }catch(e){}
+      return r;
+    };
+    v140RenderModel = function(){ return v142RenderModel(); };
+  }
+  if (typeof renderTracker === 'function'){
+    const base = renderTracker;
+    renderTracker = function(pf){
+      const isExplicitTail = !!(pf && !pf._keep && Object.keys(pf).some(k => pf[k] != null && pf[k] !== '' && k !== '_keep'));
+      const out = base.apply(this, arguments);
+      try{
+        if (typeof v140View === 'function' && v140View() === 'model') return out;
+        const view = document.getElementById('view');
+        if (!view) return out;
+
+        const logCard = view.querySelector('.log-card');
+        if (logCard){
+          if (isExplicitTail) v202OpenTailModal(pf, logCard);
+          else logCard.remove();
+        } else if (isExplicitTail) {
+          v202OpenTailModal(pf);
+        }
+
+        const mstats = view.querySelector('details.v140-stats');
+        if (mstats){
+          const sub = mstats.querySelector('.trk-sub');
+          if (sub) mstats.replaceWith(sub);
+          else mstats.remove();
+        }
+
+        const st = typeof trackerStats === 'function' ? trackerStats() : {bySport:{}, byMkt:{}};
+        const spDet = view.querySelector('details.trk-dd[data-trk="sport"]');
+        if (spDet){
+          const wrap = document.createElement('div');
+          wrap.className = 'grid v202-charts-grid';
+          wrap.innerHTML = v202BarChartCardHTML('By sport', st.bySport) + v202BarChartCardHTML('By market', st.byMkt);
+          spDet.replaceWith(wrap);
+        }
+
+        const pendDet = view.querySelector('#allBets');
+        if (pendDet){
+          const body = pendDet.querySelector('.trk-allbets-body');
+          const sum = pendDet.querySelector('summary');
+          const title = sum ? sum.innerHTML : '🕒 Pending bets';
+          const sec = document.createElement('section');
+          sec.className = 'card v202-pending';
+          sec.id = 'allBets';
+          sec.innerHTML = `<div class="v202-pend-h"><h3>${title}</h3></div><div class="trk-allbets-body">${body ? body.innerHTML : ''}</div>`;
+          const emp = sec.querySelector('.bet-empty');
+          if (emp && /Tail one above/i.test(emp.textContent)) emp.textContent = 'No pending bets right now.';
+          pendDet.replaceWith(sec);
+        }
+
+        if (!view.querySelector('#v202Recs')) view.insertAdjacentHTML('beforeend', v202RecordsCardHTML());
+        if (typeof v198Fetch === 'function') v198Fetch(true);
+      }catch(e){ console.warn('v202 tracker', e); }
+      return out;
+    };
+  }
+})();
+
+/* ---------- 9) Click handlers ---------- */
+document.addEventListener('click', e => {
+  const t = e.target; if (!t || !t.closest) return;
+  const seg = t.closest('[data-v202-tab]');
+  if (seg){
+    e.preventDefault();
+    const tab = seg.getAttribute('data-v202-tab');
+    if (tab === 'good') setTab('good', {board: ui.board || 'games'});
+    else setTab('parlays');
+    window.scrollTo({top: 0});
+    render();
+    return;
+  }
+  const legBtn = t.closest('[data-v202-leg]');
+  if (legBtn && !legBtn.disabled){
+    const id = legBtn.getAttribute('data-v202-leg');
+    const idx = V202.selIds.indexOf(id);
+    if (idx >= 0) V202.selIds.splice(idx, 1);
+    else V202.selIds.push(id);
+    v202RenderParlays();
+    return;
+  }
+  const sz = t.closest('[data-v202-sz]');
+  if (sz){
+    V202.sizeFilter = sz.getAttribute('data-v202-sz');
+    v202RenderParlays();
+    return;
+  }
+  if (t.closest('[data-v202-bclr]')){
+    V202.selIds = [];
+    v202RenderParlays();
+    return;
+  }
+  if (t.closest('[data-v202-ball]')){
+    const legs = v202ParlayLegs();
+    const chain = [];
+    for (const l of legs){
+      if (chain.every(x => v202SameGameCheck(x, l).ok)) chain.push(l);
+    }
+    V202.selIds = chain.map(x => x.id);
+    v202RenderParlays();
+    return;
+  }
+  if (t.closest('[data-v202-btail]')){
+    const legs = v202ParlayLegs();
+    const map = new Map(legs.map(l => [l.id, l]));
+    const sel = V202.selIds.map(id => map.get(id)).filter(Boolean);
+    const ticket = v202CalcTicket(sel);
+    if (ticket) v202TailParlay(ticket);
+    return;
+  }
+  const pt = t.closest('[data-v202-ptail]');
+  if (pt){
+    e.preventDefault(); e.stopPropagation();
+    const pid = pt.getAttribute('data-v202-ptail');
+    const ticket = (window.__v202Parlays || []).find(x => x.id === pid);
+    if (ticket) v202TailParlay(ticket);
+    return;
+  }
+  if (t.closest('#v202CalTail')){
+    e.preventDefault();
+    v202OpenTailModal({});
+    return;
+  }
+  if (t.closest('[data-v202-tclose]')){
+    e.preventDefault();
+    v202CloseTailModal();
+    return;
+  }
+}, true);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && V202.tailOpen) v202CloseTailModal();
+});
+
+/* ---------- 10) Styles (blue theme, no dashed borders, compact & mobile-clean) ---------- */
+(function(){
+  const st = document.createElement('style');
+  st.id = 'v202css';
+  st.textContent = `
+.v202-seg{grid-template-columns:1fr 1fr !important}
+/* De-emphasize book/price clutter on pick cards; keep small odds for grading */
+.card .beton,.card .v173-ob,.card .btn-book,.card .btn-nob{display:none !important}
+.card .pick .price.v202-px-sm{font-size:13px !important;font-weight:650 !important;color:#94a3b8 !important;background:rgba(59,130,246,.08);border:1px solid rgba(96,165,250,.22);border-radius:999px;padding:3px 9px;line-height:1.25;align-self:center;white-space:nowrap}
+.card .pick .price.v202-px-sm small{display:none !important}
+
+/* Parlays */
+.v202-pwrap{display:flex;flex-direction:column;gap:12px;min-width:0}
+.v202-prec{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:14px;background:rgba(59,122,235,.09);border:1px solid rgba(59,130,246,.24);font-size:13px}
+.v202-prec .pos{color:var(--good)} .v202-prec .neg{color:var(--avoid)}
+.v202-builder{padding:14px;border-radius:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.v202-bhead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.v202-bhead h3{margin:0;font-size:16px}
+.v202-bhead .hint{margin-top:2px}
+.v202-bsum{border-radius:14px;padding:10px 12px;background:rgba(59,122,235,.10);border:1px solid rgba(96,165,250,.28);font-size:13px}
+.v202-bsum.live{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.v202-bsum-l{min-width:0;flex:1 1 180px}
+.v202-bsum-t{font-size:15px;font-weight:700;color:#eff6ff}
+.v202-bsum-s{margin-top:3px;color:#cbd5e1;font-size:12.5px}
+.v202-bsum-r{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.v202-bsum-acts{display:flex;gap:6px}
+.v202-opt-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;padding-right:2px}
+.v202-pick-opt{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border-radius:12px;border:1px solid rgba(148,163,184,.18);background:rgba(255,255,255,.025);color:#e2e8f0;cursor:pointer;min-width:0;transition:border-color .15s,background .15s}
+.v202-pick-opt.on{border-color:rgba(96,165,250,.65);background:rgba(37,99,235,.18)}
+.v202-pick-opt.blk{opacity:.52;cursor:not-allowed}
+.v202-chk{width:20px;height:20px;flex:0 0 20px;border-radius:6px;border:1px solid rgba(96,165,250,.45);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#eff6ff;background:rgba(15,23,42,.55)}
+.v202-pick-opt.on .v202-chk{background:#2563eb;border-color:#60a5fa}
+.v202-opt-m{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.v202-opt-n{font-size:13.5px;font-weight:650;color:#f1f5f9;display:flex;align-items:center;gap:6px;flex-wrap:wrap;word-break:normal}
+.v202-opt-s{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v202-opt-r{flex:0 0 auto;text-align:right;display:flex;flex-direction:column;font-variant-numeric:tabular-nums;white-space:nowrap}
+.v202-opt-r b{font-size:13px;color:#cbd5e1} .v202-opt-r small{font-size:11px;color:var(--mut)}
+.v202-opt-blk{font-size:10.5px;font-weight:600;color:#fca5a5;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);border-radius:999px;padding:1px 7px}
+.v202-pod,.v202-sgp{font-size:10.5px;font-weight:750;border-radius:999px;padding:1px 7px;white-space:nowrap}
+.v202-pod{background:rgba(59,130,246,.22);border:1px solid rgba(96,165,250,.45);color:#bfdbfe}
+.v202-sgp{background:rgba(74,222,128,.14);border:1px solid rgba(74,222,128,.35);color:#bbf7d0}
+.v202-shead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:2px}
+.v202-shead h3{margin:0;font-size:16px}
+.v202-szrow{display:flex;gap:6px;flex-wrap:wrap}
+.v202-sz{border-radius:999px;padding:5px 11px;font-size:12px;font-weight:650;border:1px solid rgba(148,163,184,.24);background:rgba(255,255,255,.03);color:#cbd5e1;cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.v202-sz span{opacity:.75;font-size:11px}
+.v202-sz.on{background:rgba(37,99,235,.22);border-color:rgba(96,165,250,.55);color:#eff6ff}
+.v202-pcard{min-width:0;content-visibility:visible !important}
+.v202-pcard .cfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap}
+.v202-pcard .cfoot-meta{font-size:12px;min-width:0}
+.v202-phead{margin-bottom:8px}
+.v202-podds{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+.v202-pdec{font-size:13px;font-weight:600;color:var(--mut)}
+.v202-legs{display:flex;flex-direction:column;gap:6px;margin:6px 0 10px}
+.v202-leg{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.025);border:1px solid rgba(148,163,184,.14);min-width:0}
+.v202-leg-l{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto}
+.v202-tl{width:28px !important;height:28px !important;flex:0 0 28px}
+.v202-leg-txt{min-width:0}
+.v202-leg-name{font-size:13px;font-weight:650;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v202-leg-sub{font-size:11px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v202-leg-r{display:flex;align-items:center;gap:8px;flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+.v202-leg-pr{font-size:12px;font-weight:650;color:#94a3b8}
+.v202-leg-p{font-size:11.5px;color:var(--mut);min-width:30px;text-align:right}
+
+/* Results: calendar bottom-right Tail button */
+.v202-cal-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;flex-wrap:wrap}
+.v202-cal-foot .v142-tap{margin:0 !important;flex:1 1 160px;min-width:0}
+.v202-cal-tail{flex:0 0 auto;white-space:nowrap;border-color:rgba(96,165,250,.5) !important;background:rgba(37,99,235,.18) !important;color:#dbeafe !important}
+
+/* Results: By sport & By market horizontal profit bar charts */
+.v202-charts-grid{display:grid;grid-template-columns:1fr;gap:12px;margin:12px 0}
+@media (min-width:768px){ .v202-charts-grid{grid-template-columns:1fr 1fr} }
+.v202-barchart{margin:0 !important;padding:14px}
+.v202-barchart h3{margin:0 0 10px;font-size:15px}
+.v202-bars{display:flex;flex-direction:column;gap:9px}
+.v202-bar-row{display:grid;grid-template-columns:minmax(90px,112px) minmax(0,1fr) auto;align-items:center;gap:10px;min-width:0}
+.v202-bar-lab{display:flex;align-items:baseline;justify-content:space-between;gap:6px;min-width:0}
+.v202-bar-name{font-size:13px;font-weight:650;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.v202-bar-wl{font-size:11.5px;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto}
+.v202-bar-trk{height:10px;border-radius:999px;background:rgba(59,130,246,.10);border:1px solid rgba(59,130,246,.22);overflow:hidden;min-width:24px}
+.v202-bar-fill{height:100%;border-radius:999px}
+.v202-bar-fill.pos{background:linear-gradient(90deg,#16a34a,#4ade80)}
+.v202-bar-fill.neg{background:linear-gradient(90deg,#dc2626,#f87171)}
+.v202-bar-fill.even{background:#64748b}
+.v202-bar-u{font-size:12.5px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;min-width:52px}
+.v202-bar-u.pos{color:#4ade80} .v202-bar-u.neg{color:#f87171} .v202-bar-u.even{color:var(--mut)}
+.v202-bar-empty{font-size:13px}
+
+/* Results: Pending always open */
+.v202-pending{padding:14px;margin:12px 0}
+.v202-pend-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.v202-pend-h h3{margin:0;font-size:15.5px}
+
+/* Results: Sharp & Parlays compact records */
+.v202-recs{padding:14px;margin-top:12px}
+.v202-recs-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.v202-recs-h h3{margin:0;font-size:15px}
+.v202-recs-list{display:flex;flex-direction:column}
+.v202-rec-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid rgba(148,163,184,.14);min-width:0}
+.v202-rec-row:first-child{border-top:0;padding-top:2px}
+.v202-rec-row:last-child{padding-bottom:2px}
+.v202-rec-l{display:flex;flex-direction:column;gap:1px;min-width:0}
+.v202-rec-l b{font-size:13.5px;color:#eff6ff}
+.v202-rec-l span{font-size:11.5px;color:var(--mut)}
+.v202-rec-r{display:flex;align-items:baseline;gap:8px;flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13px}
+.v202-rec-wl{color:#cbd5e1;font-weight:650}
+.v202-rec-u.pos,.v202-rec-d.pos{color:#4ade80}
+.v202-rec-u.neg,.v202-rec-d.neg{color:#f87171}
+.v202-rec-d{font-size:12px;opacity:.9}
+
+/* Tail a bet modal */
+.v202-tmod{position:fixed;inset:0;z-index:1200;display:flex;align-items:flex-end;justify-content:center;padding:12px}
+@media (min-width:640px){ .v202-tmod{align-items:center} }
+.v202-tmod[hidden]{display:none !important}
+.v202-tmod-bd{position:absolute;inset:0;background:rgba(2,6,23,.72);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.v202-tmod-box{position:relative;z-index:1;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;border-radius:22px}
+.v202-tmod-x{position:absolute;top:12px;right:12px;z-index:2;width:32px;height:32px;border-radius:999px;border:1px solid rgba(148,163,184,.3);background:rgba(15,23,42,.85);color:#e2e8f0;font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.v202-modal-log{margin:0 !important}
+@media (max-width:380px){
+  .v202-bar-row{grid-template-columns:84px minmax(0,1fr) auto;gap:7px}
+  .v202-rec-r{gap:6px;font-size:12.5px}
+}
+`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
