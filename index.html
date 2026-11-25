@@ -36385,6 +36385,1330 @@ parlaySummary = function(){
   st.textContent = `.pk-grid .card{content-visibility:visible!important;contain-intrinsic-size:auto!important}`;
   document.head.appendChild(st);
 })();
+/* ===== v195: DFS Screenshot Reader (PrizePicks, Underdog, Sleeper, Betr, Dabble, ParlayPlay, Chalkboard)
+   + Multi-column OCR spatial layout + button color/badge detection + DK/Pinnacle pricing + Fantasy Score + DFS entry breakeven ===== */
+APP_BUILD = 195;
+
+/* ---------- 1) Extend stat labels, gamelog fields, and statVal/logStat ---------- */
+try{
+  if (typeof STAT_LABEL !== 'undefined'){
+    Object.assign(STAT_LABEL, {
+      stl:'steals', blk:'blocks', tov:'turnovers', blks_stls:'blks+stls',
+      saves:'saves', goals:'goals',
+      rec:'receptions', pass_td:'pass TDs', rush_td:'rush TDs', rec_td:'rec TDs',
+      pass_att:'pass attempts', pass_cmp:'completions', rush_att:'rush attempts', int:'interceptions',
+      pass_rush_yds:'pass+rush yards', rush_rec_yds:'rush+rec yards',
+      fantasy:'fantasy score', hitter_fantasy:'hitter fantasy score', pitcher_fantasy:'pitcher fantasy score',
+      hits:'hits', strikeouts:'strikeouts', total_bases:'total bases', hr:'home runs', rbi:'RBIs', runs:'runs', hrr:'hits+runs+RBIs', outs:'pitching outs'
+    });
+  }
+  if (typeof PROP_KIND_LABEL !== 'undefined'){
+    Object.assign(PROP_KIND_LABEL, {
+      blks_stls:'Blks+Stls', pass_rush_yds:'Pass+Rush Yds', rush_rec_yds:'Rush+Rec Yds',
+      pass_att:'Pass Att', pass_cmp:'Completions', rush_att:'Rush Att', int:'INT',
+      fantasy:'Fantasy Score', hitter_fantasy:'Hitter Fantasy Score', pitcher_fantasy:'Pitcher Fantasy Score',
+      hits:'Hits', strikeouts:'Strikeouts', total_bases:'Total Bases', hr:'Home Runs', rbi:'RBIs', runs:'Runs', hrr:'Hits+Runs+RBIs', outs:'Pitching Outs'
+    });
+  }
+}catch(e){}
+
+/* Extend loadGamelog so NBA/WNBA gamelogs also include stl, blk, tov, and NHL/NFL include common DFS stats */
+(function(){
+  if (typeof loadGamelog === 'function'){
+    loadGamelog = async function(league, id){
+      const c = glCache[id];
+      if (c && Date.now() - c.t < 30 * 60000 && c.data && c.data.v195) return c.data;
+      const r = await fetchJSON(`https://site.web.api.espn.com/apis/common/v3/sports/${LMAP[league].path}/athletes/${id}/gamelog`, 20000);
+      if (!r.ok || !r.data) throw new Error('game log HTTP ' + r.status);
+      const j = r.data, names = j.names || [];
+      const ix = (...cands) => {
+        for (const cand of cands){
+          const i = names.findIndex(n => String(n || '').toLowerCase() === cand);
+          if (i >= 0) return i;
+        }
+        return -1;
+      };
+      const I = {
+        min: ix('minutes', 'min', 'toi', 'timeonice'),
+        pts: ix('points', 'pts'),
+        reb: ix('totalrebounds', 'rebounds', 'reb'),
+        ast: ix('assists', 'ast'),
+        threes: ix('threepointfieldgoalsmade-threepointfieldgoalsattempted', '3pm', 'fg3m'),
+        stl: ix('steals', 'stl'),
+        blk: ix('blocks', 'blk'),
+        tov: ix('turnovers', 'tov', 'to'),
+        sog: ix('shotsongoal', 'sog', 'shots'),
+        saves: ix('saves', 'sv'),
+        goals: ix('goals', 'g'),
+        pass_yds: ix('passingyards', 'passyds'),
+        rush_yds: ix('rushingyards', 'rushyds'),
+        rec_yds: ix('receivingyards', 'recyds'),
+        rec: ix('receptions', 'rec'),
+        pass_att: ix('passingattempts', 'passatt'),
+        pass_cmp: ix('completions', 'cmp'),
+        rush_att: ix('rushingattempts', 'rushatt'),
+        int: ix('interceptions', 'int')
+      };
+      const rows = [];
+      for (const st of (j.seasonTypes || [])){
+        if (/pre.?season/i.test(st.displayName || '')) continue;
+        for (const cat of (st.categories || [])) for (const e of (cat.events || [])){
+          const meta = (j.events || {})[e.eventId] || {}; const s = e.stats || [];
+          const gv = idx => idx >= 0 ? parseFloat(String(s[idx]).split('-')[0]) : null;
+          const row = {
+            eventId: String(e.eventId),
+            date: new Date(meta.gameDate || 0),
+            opp: (meta.opponent && meta.opponent.abbreviation) || '',
+            atVs: meta.atVs || '',
+            min: gv(I.min), pts: gv(I.pts), reb: gv(I.reb), ast: gv(I.ast),
+            '3pm': gv(I.threes), stl: gv(I.stl), blk: gv(I.blk), tov: gv(I.tov),
+            sog: gv(I.sog), saves: gv(I.saves), goals: gv(I.goals),
+            pass_yds: gv(I.pass_yds), rush_yds: gv(I.rush_yds), rec_yds: gv(I.rec_yds), rec: gv(I.rec),
+            pass_att: gv(I.pass_att), pass_cmp: gv(I.pass_cmp), rush_att: gv(I.rush_att), int: gv(I.int)
+          };
+          rows.push(row);
+        }
+      }
+      rows.sort((a, b) => b.date - a.date);
+      const data = {rows, season: (j.filters || []).find(f => f.name === 'season')?.value || '', v195: 1};
+      glCache[id] = {t: Date.now(), data};
+      return data;
+    };
+  }
+  if (typeof logStat === 'function'){
+    const baseLogStat = logStat;
+    logStat = function(row, kind){
+      if (!row) return null;
+      const n = k => row[k] == null || !isFinite(+row[k]) ? null : +row[k];
+      if (kind === 'blks_stls'){ const b = n('blk'), s = n('stl'); return (b == null || s == null) ? null : b + s; }
+      if (kind === 'pass_rush_yds'){ const p = n('pass_yds'), r = n('rush_yds'); return (p == null || r == null) ? null : p + r; }
+      if (kind === 'rush_rec_yds'){ const r = n('rush_yds'), rc = n('rec_yds'); return (r == null || rc == null) ? null : r + rc; }
+      if (kind === 'fantasy'){
+        const pts = n('pts'), reb = n('reb'), ast = n('ast');
+        if (pts != null && reb != null && ast != null){
+          const stl = n('stl') || 0, blk = n('blk') || 0, tov = n('tov') || 0;
+          return pts + 1.2 * reb + 1.5 * ast + 3 * blk + 3 * stl - tov;
+        }
+        return null;
+      }
+      if (kind === 'hitter_fantasy' || kind === 'pitcher_fantasy') return null;
+      return baseLogStat.apply(this, arguments);
+    };
+  }
+})();
+
+function v195StatVal(r, st){
+  if (!r) return null;
+  if (st === 'blks_stls') return (r.blk != null && r.stl != null) ? (r.blk + r.stl) : null;
+  if (st === 'pass_rush_yds') return (r.pass_yds != null && r.rush_yds != null) ? (r.pass_yds + r.rush_yds) : null;
+  if (st === 'rush_rec_yds') return (r.rush_yds != null && r.rec_yds != null) ? (r.rush_yds + r.rec_yds) : null;
+  if (st === 'fantasy') return (typeof logStat === 'function') ? logStat(r, 'fantasy') : null;
+  if (st === 'hitter_fantasy' || st === 'pitcher_fantasy') return null;
+  return statVal(r, st);
+}
+
+/* ---------- 2) Expanded stat regexes (DFS + sportsbook, longest-first) ---------- */
+const V195_STAT_WORDS = [
+  [/\bhitter\s+fantasy\s+(?:score|pts|points)\b/i, 'hitter_fantasy'],
+  [/\bpitcher\s+fantasy\s+(?:score|pts|points)\b/i, 'pitcher_fantasy'],
+  [/\b(?:fantasy\s+(?:score|pts|points)|fpts)\b/i, 'fantasy'],
+  [/\b(?:pra|p\s*[+\/&]\s*r\s*[+\/&]\s*a|pts?\s*[+\/&]\s*rebs?\s*[+\/&]\s*asts?|points?\s*(?:[+\/&]|and)?\s*rebounds?\s*(?:[+\/&]|and)?\s*assists?)\b/i, 'pra'],
+  [/\b(?:pr|p\s*[+\/&]\s*r|pts?\s*[+\/&]\s*rebs?|points?\s*(?:[+\/&]|and)?\s*rebounds?)\b/i, 'pr'],
+  [/\b(?:pa|p\s*[+\/&]\s*a|pts?\s*[+\/&]\s*asts?|points?\s*(?:[+\/&]|and)?\s*assists?)\b/i, 'pa'],
+  [/\b(?:ra|r\s*[+\/&]\s*a|rebs?\s*[+\/&]\s*asts?|rebounds?\s*(?:[+\/&]|and)?\s*assists?)\b/i, 'ra'],
+  [/\b(?:blks?\s*[+\/&]\s*stls?|blocks?\s*(?:[+\/&]|and)?\s*steals?|stocks)\b/i, 'blks_stls'],
+  [/\b(?:pass(?:ing)?\s*[+\/&]\s*rush(?:ing)?\s*(?:yds|yards))\b/i, 'pass_rush_yds'],
+  [/\b(?:rush(?:ing)?\s*[+\/&]\s*rec(?:eiving)?\s*(?:yds|yards))\b/i, 'rush_rec_yds'],
+  [/\b(?:hits?\s*[+\/&]\s*runs?\s*[+\/&]\s*rbis?)\b/i, 'hrr'],
+  [/\b(?:3\s*-?\s*pt\s*(?:made|fgm)?|3pm|3pt|3pts|3s|threes|three\s*-?\s*pointers?\s*(?:made)?|3\s*-?\s*pointers?\s*(?:made)?|treys)\b/i, '3pm'],
+  [/\b(?:shots?\s+on\s+goal|sog|shots)\b/i, 'sog'],
+  [/\b(?:goalie\s+saves?|saves)\b/i, 'saves'],
+  [/\b(?:goals?)\b/i, 'goals'],
+  [/\b(?:pass(?:ing)?\s*(?:yds|yards))\b/i, 'pass_yds'],
+  [/\b(?:rush(?:ing)?\s*(?:yds|yards))\b/i, 'rush_yds'],
+  [/\b(?:rec(?:eiving)?\s*(?:yds|yards))\b/i, 'rec_yds'],
+  [/\b(?:pass(?:ing)?\s*tds?)\b/i, 'pass_td'],
+  [/\b(?:rush(?:ing)?\s*tds?)\b/i, 'rush_td'],
+  [/\b(?:rec(?:eiving)?\s*tds?)\b/i, 'rec_td'],
+  [/\b(?:pass(?:ing)?\s*att(?:empts?)?)\b/i, 'pass_att'],
+  [/\b(?:pass(?:ing)?\s*comp(?:letions?)?|completions?)\b/i, 'pass_cmp'],
+  [/\b(?:rush(?:ing)?\s*att(?:empts?)?)\b/i, 'rush_att'],
+  [/\b(?:receptions?)\b/i, 'rec'],
+  [/\b(?:interceptions?|ints?)\b/i, 'int'],
+  [/\b(?:pitcher\s+strikeouts?|strikeouts?)\b/i, 'strikeouts'],
+  [/\b(?:total\s+bases)\b/i, 'total_bases'],
+  [/\b(?:home\s+runs?|hrs?)\b/i, 'hr'],
+  [/\b(?:rbis?)\b/i, 'rbi'],
+  [/\b(?:pitching\s+outs|outs)\b/i, 'outs'],
+  [/\b(?:blocked\s+shots?|blocks?|blks?)\b/i, 'blk'],
+  [/\b(?:steals?|stls?)\b/i, 'stl'],
+  [/\b(?:turnovers?|tovs?)\b/i, 'tov'],
+  [/\b(?:pts|points|point|pt)\b/i, 'pts'],
+  [/\b(?:reb|rebs|rebounds|boards|rebound)\b/i, 'reb'],
+  [/\b(?:ast|asts|assists|dimes|assist)\b/i, 'ast'],
+  [/\b(?:hits)\b/i, 'hits']
+];
+
+function v195MatchStat(s){
+  const low = ' ' + String(s || '').toLowerCase().replace(/[–—]/g, '-') + ' ';
+  for (const [re, st] of V195_STAT_WORDS){
+    const m = low.match(re);
+    if (m) return {st, word: m[0].trim()};
+  }
+  return null;
+}
+
+function v195StripStats(s){
+  let out = ' ' + String(s || '') + ' ';
+  for (const [re] of V195_STAT_WORDS){
+    out = out.replace(new RegExp(re.source, 'gi'), ' ');
+  }
+  return out.replace(/\b(made|milestones?|player props?|props?|touchdowns?|score|total)\b/gi, ' ');
+}
+
+/* Upgrade parseLeg + slipStat to use V195_STAT_WORDS (handles DFS stats + More/Higher/Less/Lower too) */
+(function(){
+  const baseParseLeg = parseLeg;
+  parseLeg = function(raw){
+    const L = {raw: String(raw || '').trim(), kind: null, odds: null, dir: null, line: null, incl: false, stat: null, nameText: '', notes: []};
+    let s = ' ' + L.raw.toLowerCase().replace(/[’']/g, "'").replace(/\bmore\b|\bhigher\b/g, 'over').replace(/\bless\b|\blower\b/g, 'under').replace(/\s+/g, ' ').trim() + ' ';
+    const om = s.match(/(?:^|\s|@)([+-]\d{3,4})\s*$/) || s.match(/\(([+-]\d{3,4})\)/) || s.match(/\bodds\s*([+-]?\d{3,4})\b/);
+    if (om){ const v = parseAm(om[1]); if (v != null && Math.abs(v) >= 100){ L.odds = v; s = s.replace(om[0], ' '); } }
+    s = s.replace(/\b(nba|nfl|nhl|mlb|wnba|ncaab|ncaaf|cbb|cfb)\b/g, ' ');
+    let m;
+    if (/\bteam total\b/.test(s)) return baseParseLeg.call(this, raw);
+    const gameTot = /\b(game |match )?total (points|pts|runs|goals)\b|\b(points|pts|runs|goals) total\b|\bgame total\b/.test(s);
+    if (gameTot) s = s.replace(/\b(game |match )?total (points|pts|runs|goals)\b|\b(points|pts|runs|goals) total\b|\bgame total\b/, ' total ');
+    if (!gameTot){
+      for (const [re, st] of V195_STAT_WORDS){
+        if (re.test(s)){ L.stat = st; s = s.replace(re, ' '); break; }
+      }
+    }
+    if (L.stat){
+      L.kind = 'prop';
+      if ((m = s.match(/(\d+(?:\.\d)?)\s*\+/))){ L.dir = 'over'; L.line = +m[1]; L.incl = true; s = s.replace(m[0], ' '); }
+      else if ((m = s.match(/\b(?:o|over|ov)\s*(\d+(?:\.\d)?)/))){ L.dir = 'over'; L.line = +m[1]; L.incl = false; s = s.replace(m[0], ' '); }
+      else if ((m = s.match(/\b(?:u|under|un)\s*(\d+(?:\.\d)?)/))){ L.dir = 'under'; L.line = +m[1]; s = s.replace(m[0], ' '); }
+      else if ((m = s.match(/(\d+(?:\.\d)?)/))){ L.dir = 'over'; L.line = +m[1]; L.incl = Number.isInteger(+m[1]); s = s.replace(m[0], ' '); }
+    } else {
+      return baseParseLeg.call(this, raw);
+    }
+    L.nameText = s.replace(/\b(the|vs|v|at|@|alt|alternate|spread|line|to|score|game|tonight|bet)\b/g, ' ').replace(/[^a-z0-9.\- ]/g, ' ').replace(/\s+/g, ' ').trim();
+    return L;
+  };
+  if (typeof slipStat === 'function'){
+    slipStat = function(s){ return v195MatchStat(s); };
+  }
+})();
+
+/* ---------- 3) Enhanced image prep + pill-crop OCR + color sampling + 2D spatial OCR reconstruction ---------- */
+photoCanvas = async function(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('That file is not an image I can open'));
+      i.src = url;
+    });
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) throw new Error('empty image');
+    // Keep crisp native resolution on 2x phone screenshots (>=750px); only upscale small crops
+    const scale = w < 750 ? Math.min(2, 1100 / w) : w > 2200 ? 2200 / w : 1;
+    w = Math.round(w * scale); h = Math.round(h * scale);
+
+    // Full-color canvas for pill detection, active-button detection, and goblin/demon badge color checks
+    const cc = document.createElement('canvas');
+    cc.width = w; cc.height = h;
+    const cx = cc.getContext('2d', {willReadFrequently: true});
+    cx.drawImage(img, 0, 0, w, h);
+    PHOTO._colorCanvas = cc;
+    PHOTO._scale = scale;
+
+    // Thumbnail
+    const t = document.createElement('canvas');
+    const tw = 220, th = Math.max(1, Math.round(220 * h / w));
+    t.width = tw; t.height = th;
+    t.getContext('2d').drawImage(img, 0, 0, tw, th);
+    PHOTO.thumb = t.toDataURL('image/jpeg', 0.72);
+
+    // Clean grayscale luminance canvas (no clipping/channel distortion so card text & lines stay sharp)
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d', {willReadFrequently: true});
+    x.drawImage(cc, 0, 0);
+    const d = x.getImageData(0, 0, w, h), px = d.data;
+    const N = w * h;
+    const lum = new Float32Array(N);
+    let sum = 0;
+    for (let i = 0, k = 0; i < px.length; i += 4, k++){
+      lum[k] = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+      sum += lum[k];
+    }
+    const inv = (sum / N) < 128;
+    PHOTO._darkMode = inv;
+    for (let i = 0, k = 0; i < px.length; i += 4, k++){
+      const v = inv ? 255 - lum[k] : lum[k];
+      px[i] = px[i + 1] = px[i + 2] = v;
+    }
+    x.putImageData(d, 0, 0);
+    return c;
+  } finally { URL.revokeObjectURL(url); }
+};
+
+/* Detect colored/opposite-polarity DFS pill buttons & boxes, normalize each locally, and OCR with PSM 7 */
+async function v195RecognizePills(worker, cc, darkMode){
+  if (!cc || !worker) return [];
+  const w = cc.width, h = cc.height, N = w * h;
+  const src = cc.getContext('2d', {willReadFrequently: true}).getImageData(0, 0, w, h).data;
+  const lum = new Float32Array(N), sat = new Float32Array(N);
+  for (let i = 0, k = 0; i < src.length; i += 4, k++){
+    const r = src[i], g = src[i + 1], b = src[i + 2];
+    lum[k] = 0.299 * r + 0.587 * g + 0.114 * b;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    sat[k] = mx > 0 ? (mx - mn) / mx : 0;
+  }
+  const hist = new Int32Array(32);
+  for (let k = 0; k < N; k += 4) hist[Math.min(31, lum[k] >> 3)]++;
+  let bestBin = 0;
+  for (let b0 = 1; b0 < 32; b0++) if (hist[b0] > hist[bestBin]) bestBin = b0;
+  const bgEst = bestBin * 8 + 4;
+
+  const isPillPx = new Uint8Array(N);
+  for (let k = 0; k < N; k++){
+    if ((sat[k] > 0.35 && lum[k] > 40) || (!darkMode && bgEst > 180 && lum[k] < 65)) isPillPx[k] = 1;
+  }
+  const boxes = [];
+  for (let y = 0; y < h; y += 2){
+    let x0 = -1, lastOk = -1;
+    for (let x = 0; x <= w; x++){
+      const ok = x < w && isPillPx[y * w + x];
+      if (ok){ if (x0 < 0) x0 = x; lastOk = x; }
+      else if (x0 >= 0 && (x === w || x - lastOk > 22)){
+        const len = lastOk - x0 + 1;
+        if (len >= 55 && len < w * 0.72){
+          const m = boxes.find(bx => !bx.done && y - bx.y1 <= 8 && Math.abs(bx.x0 - x0) < 30 && Math.abs(bx.x1 - (lastOk + 1)) < 30);
+          if (m){ m.x0 = Math.min(m.x0, x0); m.x1 = Math.max(m.x1, lastOk + 1); m.y1 = y; }
+          else boxes.push({x0, x1: lastOk + 1, y0: y, y1: y, done: false});
+        }
+        x0 = -1;
+      }
+    }
+    for (const bx of boxes) if (y - bx.y1 > 8) bx.done = true;
+  }
+  const pills = boxes.filter(bx => (bx.y1 - bx.y0) >= 22 && (bx.y1 - bx.y0) <= 110 && (bx.x1 - bx.x0) >= 55).slice(0, 32);
+  if (!pills.length) return [];
+
+  const out = [];
+  await worker.setParameters({tessedit_pageseg_mode: '7'});
+  try{
+    for (const bx of pills){
+      const px0 = bx.x0 + 4, py0 = bx.y0 + 3;
+      const pw = Math.max(10, (bx.x1 - bx.x0) - 8), ph = Math.max(10, (bx.y1 - bx.y0) - 6);
+      let bgL = 0, bgN = 0, minL = 255, maxL = 0, satSum = 0, fillN = 0, totN = 0;
+      for (let yy = py0; yy < py0 + ph; yy++){
+        for (let xx = px0; xx < px0 + pw; xx++){
+          const k = yy * w + xx, l = lum[k];
+          if (isPillPx[k]) fillN++;
+          totN++;
+          if (yy < py0 + 3 || yy > py0 + ph - 4 || xx < px0 + 3 || xx > px0 + pw - 4){
+            bgL += l; satSum += sat[k]; bgN++;
+          }
+          if (l < minL) minL = l;
+          if (l > maxL) maxL = l;
+        }
+      }
+      if (maxL - minL < 35) continue; // skip empty decorative boxes
+      const fillFrac = totN ? fillN / totN : 0;
+      const pillBg = bgN ? bgL / bgN : 128;
+      const pillSat = bgN ? satSum / bgN : 0;
+      // Reject bare dark numbers on light bg ("35.5") or bare colored text ("37.5X"): a real pill has >=48% pill-colored interior & consistent border
+      if (fillFrac < 0.48) continue;
+      if (!darkMode && pillSat < 0.25 && pillBg > 85) continue;
+      const brightInk = (maxL - pillBg) > (pillBg - minL);
+      const up = 2;
+      const pc = document.createElement('canvas'); pc.width = (pw + 16) * up; pc.height = (ph + 16) * up;
+      const px = pc.getContext('2d'); px.fillStyle = '#fff'; px.fillRect(0, 0, pc.width, pc.height);
+      const tc = document.createElement('canvas'); tc.width = pw; tc.height = ph;
+      const tx = tc.getContext('2d'), td = tx.createImageData(pw, ph), tdp = td.data;
+      for (let yy = 0; yy < ph; yy++){
+        for (let xx = 0; xx < pw; xx++){
+          const l = lum[(py0 + yy) * w + (px0 + xx)];
+          const v = brightInk
+            ? 255 - Math.max(0, (l - pillBg) / Math.max(25, maxL - pillBg) * 255)
+            : 255 - Math.max(0, (pillBg - l) / Math.max(25, pillBg - minL) * 255);
+          const ti = (yy * pw + xx) * 4;
+          tdp[ti] = tdp[ti + 1] = tdp[ti + 2] = v; tdp[ti + 3] = 255;
+        }
+      }
+      tx.putImageData(td, 0, 0);
+      px.drawImage(tc, 8 * up, 8 * up, pw * up, ph * up);
+      const res = (await worker.recognize(pc)).data;
+      const txt = String(res && res.text || '').replace(/\s+/g, ' ').trim();
+      if (txt && /[a-z0-9]/i.test(txt)){
+        out.push({
+          x0: bx.x0, y0: bx.y0, x1: bx.x1, y1: bx.y1,
+          cx: (bx.x0 + bx.x1) / 2, cy: (bx.y0 + bx.y1) / 2,
+          h: Math.max(14, (bx.y1 - bx.y0) * 0.45),
+          text: txt,
+          conf: +(res && res.confidence || 75),
+          isActive: pillSat > 0.25 || (!darkMode && pillBg < 70)
+        });
+      }
+    }
+  } finally {
+    await worker.setParameters({tessedit_pageseg_mode: '11'});
+  }
+  return out;
+}
+
+function v195SampleBox(cc, bx){
+  if (!cc || !bx) return null;
+  const x = cc.getContext('2d', {willReadFrequently: true});
+  const x0 = Math.max(0, Math.floor(bx.x0)), y0 = Math.max(0, Math.floor(bx.y0));
+  const x1 = Math.min(cc.width, Math.ceil(bx.x1)), y1 = Math.min(cc.height, Math.ceil(bx.y1));
+  const w = x1 - x0, h = y1 - y0;
+  if (w <= 1 || h <= 1) return null;
+  const d = x.getImageData(x0, y0, w, h).data;
+  let lum = 0, sat = 0, gEx = 0, rEx = 0, n = 0;
+  let brightSatPx = 0, brightGreenPx = 0, brightRedPx = 0;
+  for (let i = 0; i < d.length; i += 4){
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const l = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const s = mx > 0 ? (mx - mn) / mx : 0;
+    lum += l; sat += s;
+    gEx += Math.max(0, g - Math.max(r, b)) / 255;
+    rEx += Math.max(0, r - Math.max(g, b)) / 255;
+    if (s > 0.35 && mx > 90) brightSatPx++;
+    if (g > 130 && g - r > 45 && g - b > 30) brightGreenPx++;
+    if (r > 155 && r - g > 48 && r - b > 48) brightRedPx++;
+    n++;
+  }
+  return n ? {
+    lum: lum / n, sat: sat / n, gEx: gEx / n, rEx: rEx / n,
+    brightFrac: brightSatPx / n, greenFrac: brightGreenPx / n, redFrac: brightRedPx / n
+  } : null;
+}
+
+/* Reconstruct reading-order card blocks from Tesseract words + pill OCR (supports 1-col rows and 2/3-col DFS grids) */
+function v195SpatialLines(data, cc, pillResults){
+  let words = (data && Array.isArray(data.words) ? data.words : [])
+    .filter(w => w && w.text && w.bbox && String(w.text).trim().length > 0)
+    .map(w => ({
+      t: String(w.text).trim(),
+      c: +w.confidence || 0,
+      x0: +w.bbox.x0, y0: +w.bbox.y0, x1: +w.bbox.x1, y1: +w.bbox.y1,
+      cx: (+w.bbox.x0 + +w.bbox.x1) / 2,
+      cy: (+w.bbox.y0 + +w.bbox.y1) / 2,
+      h: Math.max(6, +w.bbox.y1 - +w.bbox.y0),
+      _fromPill: false, _pillActive: false
+    }))
+    .filter(w => w.c >= 12 || /^([+\-\d.]+|x)$/i.test(w.t));
+
+  // Merge high-precision pill OCR results in place of overlapping garbled words
+  if (Array.isArray(pillResults) && pillResults.length){
+    for (const pr of pillResults){
+      const tokens = pr.text.replace(/^[|\[\]()]+|[|\[\]()]+$/g, '').trim().split(/\s+/).filter(Boolean);
+      if (!tokens.length) continue;
+      // Only replace words if pill OCR read actual DFS tokens (More/Less/Higher/Lower/numbers/stats)
+      const isUseful = tokens.some(t => /^(more|less|higher|lower|over|under)$/i.test(t) || /\d+(?:\.\d)?/.test(t));
+      if (!isUseful) continue;
+      words = words.filter(w => !(w.cx >= pr.x0 - 4 && w.cx <= pr.x1 + 4 && w.cy >= pr.y0 - 4 && w.cy <= pr.y1 + 4));
+      const span = Math.max(20, (pr.x1 - pr.x0) - 12);
+      const step = span / tokens.length;
+      for (let ti = 0; ti < tokens.length; ti++){
+        const x0 = pr.x0 + 6 + ti * step, x1 = x0 + step * 0.9;
+        words.push({
+          t: tokens[ti], c: pr.conf || 85,
+          x0, y0: pr.y0 + 4, x1, y1: pr.y1 - 4,
+          cx: (x0 + x1) / 2, cy: pr.cy, h: pr.h,
+          _fromPill: true, _pillActive: !!pr.isActive
+        });
+      }
+    }
+  }
+  if (!words.length) return String(data && data.text || '').split(/\n+/);
+
+  // Fix common OCR artifacts on Demon/Goblin circled badges touching numbers (e.g., "®4.5" -> "4.5", "045" -> "4.5")
+  for (const w of words){
+    w.t = w.t.replace(/^[®©@]+(?=\d)/, '');
+    if (/^0(\d)(\d)$/.test(w.t)) w.t = w.t.replace(/^0(\d)(\d)$/, '$1.$2');
+  }
+
+  const W = cc ? cc.width : Math.max(...words.map(w => w.x1));
+  const H = cc ? cc.height : Math.max(...words.map(w => w.y1));
+  const hs = words.map(w => w.h).sort((a, b) => a - b);
+  const medH = hs[Math.floor(hs.length / 2)] || 18;
+
+  // Detect true 2-col or 3-col card grids (never split 1-column horizontal cards that have names on left & lines/buttons on right)
+  const dirWords = words.filter(w => /^(more|less|higher|lower|over|under)$/i.test(w.t));
+  const numWords = words.filter(w => /^\d{1,3}(?:\.\d)?$/.test(w.t));
+  let cols = [{x0: 0, x1: W + 1}];
+  if (dirWords.length >= 2){
+    const sortedY = dirWords.slice().sort((a, b) => a.cy - b.cy);
+    let sameRowSpread = 0;
+    for (let i = 0; i < sortedY.length; i++){
+      for (let j = i + 1; j < sortedY.length; j++){
+        if (Math.abs(sortedY[i].cy - sortedY[j].cy) < medH * 2.5 && Math.abs(sortedY[i].cx - sortedY[j].cx) > W * 0.30){
+          sameRowSpread++;
+        }
+      }
+    }
+    const testSplit = (sx) => {
+      const cross = words.filter(w => w.x0 < sx - 4 && w.x1 > sx + 4 && w.x1 - w.x0 < W * 0.45).length;
+      const leftN = words.filter(w => w.x1 <= sx).length;
+      const rightN = words.filter(w => w.x0 >= sx).length;
+      const leftDir = dirWords.filter(w => w.cx < sx).length;
+      const rightDir = dirWords.filter(w => w.cx >= sx).length;
+      const leftNum = numWords.filter(w => w.cx < sx).length;
+      const rightNum = numWords.filter(w => w.cx >= sx).length;
+      const validSide = (leftDir >= 1 || leftNum >= 2) && (rightDir >= 1 || rightNum >= 2);
+      return {cross, leftN, rightN, validSide, score: Math.min(leftN, rightN) - cross * 8};
+    };
+    let best2 = null;
+    for (let frac = 0.42; frac <= 0.58; frac += 0.02){
+      const res = testSplit(W * frac);
+      if (res.validSide && (!best2 || res.score > best2.score)) best2 = Object.assign({sx: W * frac}, res);
+    }
+    const l3 = testSplit(W * 0.333), r3 = testSplit(W * 0.666);
+    const midDir = dirWords.filter(w => w.cx >= W * 0.333 && w.cx < W * 0.666).length;
+    const has3 = l3.validSide && r3.validSide && midDir >= 1 && l3.cross <= 2 && r3.cross <= 2 && l3.leftN >= 6 && r3.rightN >= 6 &&
+      words.filter(w => w.x0 >= W * 0.333 && w.x1 <= W * 0.666).length >= 6;
+
+    if (has3){
+      cols = [{x0: 0, x1: W * 0.333}, {x0: W * 0.333, x1: W * 0.666}, {x0: W * 0.666, x1: W + 1}];
+    } else if (best2 && best2.cross <= 3 && best2.leftN >= 6 && best2.rightN >= 6 && sameRowSpread >= 1){
+      cols = [{x0: 0, x1: best2.sx}, {x0: best2.sx, x1: W + 1}];
+    }
+  }
+
+  const buildLines = (subset) => {
+    const sorted = subset.slice().sort((a, b) => a.cy - b.cy || a.x0 - b.x0);
+    const rows = [];
+    for (const w of sorted){
+      let row = rows.find(r => Math.abs(r.cy - w.cy) <= Math.max(medH * 0.65, Math.min(r.h, w.h) * 0.72));
+      if (!row){
+        row = {cy: w.cy, y0: w.y0, y1: w.y1, h: w.h, words: []};
+        rows.push(row);
+      }
+      row.words.push(w);
+      row.y0 = Math.min(row.y0, w.y0);
+      row.y1 = Math.max(row.y1, w.y1);
+      row.cy = (row.y0 + row.y1) / 2;
+    }
+    rows.sort((a, b) => a.cy - b.cy);
+    for (const r of rows) r.words.sort((a, b) => a.x0 - b.x0);
+    return rows;
+  };
+
+  const bgSample = cc ? v195SampleBox(cc, {x0: 2, y0: Math.floor(H * 0.12), x1: Math.min(30, W), y1: Math.floor(H * 0.16)}) : null;
+  const bgLum = bgSample ? bgSample.lum : (PHOTO._darkMode ? 0.10 : 0.96);
+
+  const annotateRow = (r) => {
+    let txt = r.words.map(w => w.t).join(' ');
+    const btns = r.words.filter(w => /^(more|less|higher|lower)$/i.test(w.t));
+    if (btns.length >= 2){
+      const hi = btns.find(w => /^(more|higher)$/i.test(w.t));
+      const lo = btns.find(w => /^(less|lower)$/i.test(w.t));
+      if (hi && lo){
+        if (hi._pillActive !== lo._pillActive){
+          txt += hi._pillActive ? ' [PICK:OVER]' : ' [PICK:UNDER]';
+        } else if (cc){
+          const pad = b => ({x0: b.x0 - b.h * 0.8, y0: b.y0 - b.h * 0.55, x1: b.x1 + b.h * 0.8, y1: b.y1 + b.h * 0.55});
+          const sHi = v195SampleBox(cc, pad(hi));
+          const sLo = v195SampleBox(cc, pad(lo));
+          if (sHi && sLo){
+            const activeScore = s => (s.sat * 1.4 + Math.abs(s.lum - bgLum) * 1.1 + s.brightFrac * 1.3);
+            const d = activeScore(sHi) - activeScore(sLo);
+            if (Math.abs(d) >= 0.10) txt += d > 0 ? ' [PICK:OVER]' : ' [PICK:UNDER]';
+            else txt += ' [BOARD:BOTH]';
+          }
+        }
+      }
+    }
+    // Check for isolated Goblin (green) or Demon (red) icon right next to a bare line number (never inside a colored pill)
+    if (cc && !r.words.some(w => w._fromPill)){
+      const numW = r.words.find(w => /^\d{1,3}(?:\.\d)?$/.test(w.t) && !w._fromPill);
+      if (numW){
+        const leftBadge = v195SampleBox(cc, {x0: Math.max(0, numW.x0 - numW.h * 1.6), y0: numW.y0 - 2, x1: Math.min(W, numW.x0 + numW.h * 1.15), y1: numW.y1 + 2});
+        const aboveNum = v195SampleBox(cc, {x0: numW.x0, y0: Math.max(0, numW.y0 - numW.h * 0.9), x1: numW.x1, y1: Math.max(1, numW.y0 - 2)});
+        const notColoredBg = !aboveNum || aboveNum.brightFrac < 0.25;
+        if (leftBadge && notColoredBg){
+          if (leftBadge.greenFrac > 0.04 && leftBadge.gEx > leftBadge.rEx * 1.4) txt += ' [FLAG:GOBLIN]';
+          else if (leftBadge.redFrac > 0.04 && leftBadge.rEx > leftBadge.gEx * 1.4) txt += ' [FLAG:DEMON]';
+        }
+      }
+    }
+    return txt;
+  };
+
+  if (cols.length === 1){
+    const rows = buildLines(words);
+    const out = [];
+    for (let i = 0; i < rows.length; i++){
+      const cur = rows[i], nxt = rows[i + 1];
+      const lineTxt = annotateRow(cur);
+      if (cc && cur.words.length === 1 && nxt && nxt.words.length === 1 && Math.abs(cur.words[0].cx - nxt.words[0].cx) < W * 0.15 && (nxt.y0 - cur.y1) < medH * 2.5){
+        const a = cur.words[0], b = nxt.words[0];
+        if ((/^(more|higher)$/i.test(a.t) && /^(less|lower)$/i.test(b.t)) || (/^(less|lower)$/i.test(a.t) && /^(more|higher)$/i.test(b.t))){
+          if (a._pillActive !== b._pillActive){
+            const picked = a._pillActive ? a.t : b.t;
+            out.push(/^(more|higher)$/i.test(picked) ? '[PICK:OVER]' : '[PICK:UNDER]');
+            i++; continue;
+          }
+          const pad = w => ({x0: w.x0 - w.h * 0.8, y0: w.y0 - w.h * 0.45, x1: w.x1 + w.h * 0.8, y1: w.y1 + w.h * 0.45});
+          const sA = v195SampleBox(cc, pad(a)), sB = v195SampleBox(cc, pad(b));
+          if (sA && sB){
+            const activeScore = s => (s.sat * 1.4 + Math.abs(s.lum - bgLum) * 1.1 + s.brightFrac * 1.3);
+            const d = activeScore(sA) - activeScore(sB);
+            if (Math.abs(d) >= 0.10){
+              const picked = d > 0 ? a.t : b.t;
+              out.push(/^(more|higher)$/i.test(picked) ? '[PICK:OVER]' : '[PICK:UNDER]');
+              i++; continue;
+            }
+          }
+        }
+      }
+      out.push(lineTxt);
+    }
+    return out;
+  }
+
+  // Multi-column grid: keep top header lines, then read each column top-to-bottom with card break markers
+  const splitX = cols[0].x1;
+  const rowsAll = buildLines(words);
+  const firstDualRow = rowsAll.find(r => r.words.some(w => w.cx < splitX) && r.words.some(w => w.cx >= splitX) && r.y0 > medH * 2.2);
+  const headerTopY = firstDualRow ? (firstDualRow.y0 - 4) : (Math.min(...words.filter(w => /^(more|less|higher|lower)$/i.test(w.t)).map(w => w.y0)) - medH * 5);
+  const headerWords = words.filter(w => w.y0 < headerTopY);
+  const bodyWords = words.filter(w => w.y0 >= headerTopY);
+  const out = buildLines(headerWords).map(annotateRow);
+  for (const col of cols){
+    const cw = bodyWords.filter(w => w.cx >= col.x0 && w.cx < col.x1);
+    const colRows = buildLines(cw);
+    out.push('---CARD---');
+    for (let i = 0; i < colRows.length; i++){
+      if (i > 0 && (colRows[i].y0 - colRows[i - 1].y1) > medH * 1.65) out.push('---CARD---');
+      const txt = annotateRow(colRows[i]);
+      out.push(txt);
+      if (/\[PICK:(OVER|UNDER)\]|\[BOARD:BOTH\]|\b(more|less|higher|lower)\b/i.test(txt)){
+        const prev = colRows[i - 1] ? colRows[i - 1].words.map(w => w.t).join(' ') : '';
+        if (/\d/.test(txt) || /\d/.test(prev)) out.push('---CARD---');
+      }
+    }
+  }
+  return out;
+}
+
+/* ---------- 4) DFS + Sportsbook Slip Parser (PrizePicks, Underdog, Sleeper, Betr, Dabble, ParlayPlay, Chalkboard) ---------- */
+function v195DetectDfsMeta(text){
+  const s = String(text || '');
+  let platform = '';
+  if (/prizepicks/i.test(s)) platform = 'PrizePicks';
+  else if (/underdog/i.test(s)) platform = 'Underdog';
+  else if (/sleeper/i.test(s)) platform = 'Sleeper';
+  else if (/\bbetr\b/i.test(s)) platform = 'Betr';
+  else if (/\bdabble\b/i.test(s)) platform = 'Dabble';
+  else if (/parlay\s*play/i.test(s)) platform = 'ParlayPlay';
+  else if (/chalkboard/i.test(s)) platform = 'Chalkboard';
+  else if (/power play|flex play|\bgoblin\b|\bdemon\b/i.test(s)) platform = 'PrizePicks';
+  else if (/\bchampions\b|\bpick'?em\b|\bhigher\b|\blower\b|\bscorcher\b/i.test(s)) platform = 'Underdog';
+  else if (/\b\d-pick\b/i.test(s)) platform = 'PrizePicks';
+
+  const hasDfsSignals = !!(platform || /\b(more|less|higher|lower)\b/i.test(s) || /\[PICK:(OVER|UNDER)\]/i.test(s) || /\[BOARD:BOTH\]/i.test(s));
+  if (!hasDfsSignals) return null;
+  if (!platform){
+    if (/\b(higher|lower)\b/i.test(s)) platform = 'Underdog';
+    else platform = 'PrizePicks';
+  }
+  let entryMode = '';
+  if (/power\s*play|\bpower\b/i.test(s)) entryMode = 'Power';
+  else if (/flex\s*play|\bflex\b/i.test(s)) entryMode = 'Flex';
+  else if (/champions/i.test(s)) entryMode = 'Champions';
+  else if (/standard/i.test(s)) entryMode = 'Standard';
+  else if (/insured/i.test(s)) entryMode = 'Insured';
+  else if (/all[- ]?in/i.test(s)) entryMode = 'All-In';
+  else if (/dynamic/i.test(s)) entryMode = 'Dynamic';
+  else if (/perfect/i.test(s)) entryMode = 'Perfect';
+  else if (/hedge/i.test(s)) entryMode = 'Hedge';
+  else if (/\[BOARD:BOTH\]/i.test(s) && !/\[PICK:(OVER|UNDER)\]/i.test(s)) entryMode = 'Board';
+
+  const pm = s.match(/\b([2-8])\s*[- ]?\s*(?:pick|man|leg|player)s?\b/i);
+  const pickCount = pm ? +pm[1] : null;
+  const xm = s.match(/\b(\d{1,3}(?:\.\d{1,2})?)\s*x\b/i);
+  let payout = xm && +xm[1] >= 1.5 && +xm[1] <= 500 ? +xm[1] : null;
+  if (!payout && entryMode && pickCount && typeof V187_PAY !== 'undefined'){
+    const k = platform === 'Underdog' ? (entryMode === 'Flex' ? 'ud_flex' : 'ud_std') : (entryMode === 'Flex' ? 'pp_flex' : 'pp_power');
+    const row = (V187_PAY[k] || {})[pickCount];
+    if (row && row[pickCount]) payout = row[pickCount];
+  }
+  return {platform, entryMode, pickCount, payout};
+}
+
+function v195CleanDfsPlayer(rawLine){
+  let s = String(rawLine || '')
+    .replace(/\[(?:PICK|BOARD|FLAG):[^\]]+\]/g, ' ')
+    .replace(/\b(more|less|higher|lower|over|under|goblin|demon|scorcher|boost|promo|discount|popular)\b/gi, ' ')
+    .replace(/\b\d{1,2}:\d{2}\s*(?:am|pm)?\b/gi, ' ')
+    .replace(/\b(today|tomorrow|mon|tue|wed|thu|fri|sat|sun)\b/gi, ' ')
+    .replace(/\b[A-Z]{2,4}\s*(?:vs\.?|at|@)\s*[A-Z]{2,4}\b/gi, ' ')
+    .replace(/\b(?:vs\.?|at|@)\s*[A-Z]{2,4}\b/g, ' ')
+    .replace(/\s*[-–·•]\s*(?:PG|SG|SF|PF|C|G|F|G-F|F-G|F-C|C-F|QB|RB|WR|TE|K|DST|LW|RW|D|GK|SP|RP|OF|IF|1B|2B|3B|SS|DH)\b/gi, ' ')
+    .replace(/\b[A-Z]{2,4}\s*[-–·•]\s*(?:PG|SG|SF|PF|C|G|F|G-F|F-G|F-C|C-F|QB|RB|WR|TE|K|LW|RW|D|GK)\b/g, ' ')
+    .replace(/\b\d+(?:\.\d+)?\s*x\b/gi, ' ');
+  s = v195StripStats(s);
+  s = s.replace(/[+\-−–]?\b\d+(?:\.\d+)?\+?/g, ' ').replace(/[^A-Za-z.'\- ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const m = s.match(/\b([A-Z][a-zA-Z'.-]+(?:-[A-Z][a-zA-Z'.-]+)?|[A-Z]\.)(\s+[A-Z][a-zA-Z'.-]+){1,2}\b/);
+  if (m) return m[0].trim();
+  // Also allow all-caps OCR names like "RUDY GOBERT" or "BAM ADEBAYO" (never 2-3 letter team codes like "OKC MIN")
+  const m2 = s.match(/\b([A-Z]{2,}(?:-[A-Z]{2,})?)(\s+[A-Z]{2,}){1,2}\b/);
+  if (m2){
+    const parts = m2[0].trim().split(/\s+/);
+    const hasLongWord = parts.some(w => w.length >= 4);
+    if (hasLongWord && !/^(NBA|NHL|NFL|MLB|WNBA|POWER|FLEX|MORE|LESS|HIGHER|LOWER|TODAY|ENTRY|PICK|PAYOUT|GOBLIN|DEMON|ALL-IN|CHAMPIONS)$/.test(m2[0])){
+      return parts.map(w => w[0] + w.slice(1).toLowerCase()).join(' ');
+    }
+  }
+  return null;
+}
+
+function v195FuzzyRosterFix(name){
+  if (!name || typeof props === 'undefined' && typeof rosterCache === 'undefined') return name;
+  const q = norm(name);
+  if (!q) return name;
+  const candidates = new Set();
+  for (const p of ((typeof props !== 'undefined' && props) || [])) if (p && p.playerName) candidates.add(p.playerName);
+  for (const k in ((typeof rosterCache !== 'undefined' && rosterCache) || {})){
+    for (const a of ((rosterCache[k] && rosterCache[k].list) || [])) if (a && a.name) candidates.add(a.name);
+  }
+  let best = null, bestSc = 0;
+  for (const c of candidates){
+    if (typeof nameScore === 'function' && nameScore(q, c) >= 8) return c;
+    if (typeof fuzzyNameSim === 'function'){
+      const sim = fuzzyNameSim(q, norm(c));
+      if (sim > bestSc){ bestSc = sim; best = c; }
+    }
+  }
+  return (best && bestSc >= 0.80) ? best : name;
+}
+
+function v195ParseDfsLines(lines, conf, meta){
+  const stake = typeof slipStake === 'function' ? slipStake(lines) : '';
+  const HEADER_JUNK = /^(prizepicks|underdog|sleeper|betr|dabble|parlay\s*play|chalkboard|power\s*play|flex\s*play|champions|standard|insured|all[- ]?in|dynamic|perfect|hedge|lineup|my entries|open|entry|submit|place entry|to win|payout|entry fee|wager|stake|cancel|edit|\d-pick.*|.*\b\d-pick\b.*|\$[\d.,]+|\d+(?:\.\d+)?\s*x)$/i;
+  const legs = [];
+  let cur = null;
+  const fresh = () => {
+    cur = {player: null, team: null, opp: null, stat: null, line: null, dir: null, flag: null, mult: null, unselected: false, src: []};
+    legs.push(cur);
+    return cur;
+  };
+
+  let _pendingFirstName = '';
+  for (const raw0 of lines){
+    if (raw0 === '---CARD---'){ cur = null; _pendingFirstName = ''; continue; }
+    const raw = raw0.trim();
+    if (!raw || HEADER_JUNK.test(raw.replace(/\[[^\]]+\]/g, '').trim())) continue;
+    if (/\b(entry|wager|stake|to win|payout|potential)\b/i.test(raw) && /\$/.test(raw)) continue;
+    if (/^\d+(?:\.\d+)?\s*x$/i.test(raw.replace(/\[[^\]]+\]/g, '').trim())) continue;
+
+    const pickTag = raw.match(/\[PICK:(OVER|UNDER)\]/i);
+    const boardBoth = /\[BOARD:BOTH\]/i.test(raw);
+    const flagTag = raw.match(/\[FLAG:(GOBLIN|DEMON)\]/i);
+    const clean = raw.replace(/\[(?:PICK|BOARD|FLAG):[^\]]+\]/g, ' ').replace(/\s+/g, ' ').trim();
+
+    const multM = clean.match(/\b(\d(?:\.\d{1,2})?)\s*x\b/i);
+    const multVal = multM && +multM[1] >= 0.4 && +multM[1] <= 5 ? +multM[1] : null;
+    const isGobText = /\bgoblin\b/i.test(clean);
+    const isDemText = /\bdemon\b|\bscorcher\b/i.test(clean);
+
+    // Strip payout multiplier before looking for stat line number
+    const noMult = multM ? clean.replace(multM[0], ' ') : clean;
+    const stat = v195MatchStat(noMult);
+    const hasBothSidesOnLine = (/\b(more|higher|over)\b/i.test(noMult) && /\b(less|lower|under)\b/i.test(noMult));
+    const dirLineM = (!hasBothSidesOnLine && !pickTag && !boardBoth)
+      ? (noMult.match(/\b(more|higher|over|less|lower|under)\s*(?:than\s*)?(\d{1,3}(?:\.\d)?)\b/i)
+        || noMult.match(/\b(\d{1,3}(?:\.\d)?)\s*(more|higher|over|less|lower|under)\b/i))
+      : null;
+    const plainNumM = !dirLineM ? noMult.replace(/\b\d{1,2}:\d{2}\s*(?:am|pm)?\b/gi, ' ').match(/(?:^|\s)(\d{1,3}(?:\.\d)?)(?=\s|$)/) : null;
+    const dirWordM = noMult.match(/\b(more|higher|over|less|lower|under)\b/i);
+    const arrowOver = /[↑▲⬆]/.test(clean), arrowUnder = /[↓▼⬇]/.test(clean);
+    const teamPosM = clean.match(/\b([A-Z]{2,4})\s*[-–·•]\s*(?:PG|SG|SF|PF|C|G|F|G-F|F-G|F-C|C-F|QB|RB|WR|TE|K|LW|RW|D|GK)\b/);
+    const vsM = clean.match(/\b(?:vs\.?|at|@)\s*([A-Z]{2,4})\b/i);
+
+    let player = v195CleanDfsPlayer(clean);
+    if (!player){
+      const singleWord = clean.replace(/\d+(?:\.\d)?/g, ' ').replace(/[^A-Za-z'.\- ]/g, ' ').trim();
+      if (/^[A-Z][a-zA-Z'.-]{1,18}$/.test(singleWord) && !/^(More|Less|Higher|Lower|Power|Flex|Standard|Fantasy|Points|Rebounds|Assists|Today|Tomorrow|Entry|Lineup|Payout|Board|Goblin|Demon|Scorcher|Champions|All|In|Standard|Insured|Dynamic|Perfect|Hedge|Under|Over|Made|Score|Total|Picks|Pick|Am|Pm|AM|PM|Et|Pt|Ct|Mt|ET|PT|CT|MT)$/i.test(singleWord)){
+        if (_pendingFirstName){
+          player = _pendingFirstName + ' ' + singleWord;
+          _pendingFirstName = '';
+        } else {
+          _pendingFirstName = singleWord;
+        }
+      } else if (!/^\d/.test(clean)){
+        _pendingFirstName = '';
+      }
+    } else {
+      _pendingFirstName = '';
+    }
+    if (player && (/^(More|Less|Higher|Lower|Power|Flex|Standard|Fantasy|Points|Rebounds|Assists|Today|Tomorrow)$/i.test(player) || /\b(board|play|champions|prizepicks|underdog|sleeper|betr|dabble|parlayplay|chalkboard|entry|payout|to win)\b/i.test(player))) player = null;
+
+    // Start new card if a new player appears and current leg already has a player (or already has line+stat)
+    if (player && (!cur || cur.player || (cur.line != null && cur.stat))) fresh();
+    else if (!cur && (stat || dirLineM || plainNumM || pickTag || dirWordM)) fresh();
+    else if (cur && stat && cur.stat && cur.line != null) fresh();
+    if (!cur) continue;
+
+    cur.src.push(clean);
+    if (player && !cur.player) cur.player = v195FuzzyRosterFix(player);
+    if (teamPosM && !cur.team) cur.team = teamPosM[1];
+    if (vsM && !cur.opp) cur.opp = vsM[1].toUpperCase();
+    if (stat && !cur.stat) cur.stat = stat;
+    if (dirLineM){
+      const isDirFirst = /^(more|higher|over|less|lower|under)$/i.test(dirLineM[1]);
+      const dStr = isDirFirst ? dirLineM[1] : dirLineM[2];
+      const nVal = +(isDirFirst ? dirLineM[2] : dirLineM[1]);
+      if (!cur.dir) cur.dir = /^(less|lower|under)$/i.test(dStr) ? 'under' : 'over';
+      if (cur.line == null) cur.line = nVal;
+    } else if (plainNumM && cur.line == null && +plainNumM[1] < 600){
+      cur.line = +plainNumM[1];
+    }
+    if (pickTag){ cur.dir = pickTag[1].toUpperCase() === 'UNDER' ? 'under' : 'over'; cur.unselected = false; }
+    else if (boardBoth && !cur.dir){ cur.unselected = true; }
+    else if (dirWordM && !boardBoth && !cur.dir){
+      // Only take text word if the line doesn't contain BOTH Less and More
+      const hasOverWord = /\b(more|higher|over)\b/i.test(noMult);
+      const hasUnderWord = /\b(less|lower|under)\b/i.test(noMult);
+      if (hasOverWord !== hasUnderWord) cur.dir = hasUnderWord ? 'under' : 'over';
+      else if (hasOverWord && hasUnderWord) cur.unselected = true;
+    } else if (!cur.dir && (arrowOver !== arrowUnder)){
+      cur.dir = arrowUnder ? 'under' : 'over';
+    }
+    if (flagTag && !cur.flag) cur.flag = flagTag[1].toLowerCase();
+    else if (isGobText && !cur.flag) cur.flag = 'goblin';
+    else if (isDemText && !cur.flag) cur.flag = 'demon';
+    if (multVal != null && cur.mult == null) cur.mult = multVal;
+  }
+
+  const rows = [];
+  for (const L of legs){
+    if (!L.player && !L.stat && L.line == null) continue;
+    const dir = L.dir || 'over';
+    const statLabel = L.stat ? ((typeof STAT_LABEL !== 'undefined' && STAT_LABEL[L.stat.st]) || L.stat.word) : '';
+    let txt = '', why = '';
+    if (L.player && L.stat && L.line != null){
+      txt = `${L.player} ${dir === 'under' ? 'Under' : 'Over'} ${L.line} ${statLabel}`;
+    } else if (L.player && L.line != null && !L.stat){
+      why = 'found player and line, but missing the stat type';
+    } else if (L.player && L.stat && L.line == null){
+      why = 'found player and stat, but missing the line number';
+    } else if (L.player){
+      why = 'found player, but missing the stat and line';
+    } else {
+      why = 'missing player name';
+    }
+    rows.push({
+      text: txt,
+      odds: '',
+      ok: !!txt,
+      why,
+      read: L.src.join(' · '),
+      dfs: true,
+      dfsFlag: L.flag || (meta && meta.platform === 'Underdog' && L.mult && L.mult > 1.15 ? 'demon' : meta && meta.platform === 'Underdog' && L.mult && L.mult < 0.90 ? 'goblin' : null),
+      dfsMult: L.mult,
+      dfsUnselected: !L.dir && !!L.unselected,
+      team: L.team,
+      opp: L.opp,
+      statKey: L.stat ? L.stat.st : null,
+      line: L.line,
+      side: L.dir || null
+    });
+  }
+  const okRows = rows.filter(r => r.ok);
+  let fail = '';
+  if (conf != null && conf < 38) fail = 'The screenshot is too blurry or small to read reliably';
+  else if (!okRows.length) fail = rows.length ? 'Found pieces of picks, but missing player, stat, or line' : 'No DFS picks found in this screenshot';
+  return {rows, stake, fail, isParlay: rows.length > 1, lines, dfs: meta};
+}
+
+/* Wrap slipParse + photoHandle so DFS screenshots use spatial reconstruction + DFS parser, while sportsbook slips stay intact */
+(function(){
+  const baseSlipParse = typeof slipParse === 'function' ? slipParse : null;
+  slipParse = function(text, conf){
+    const rawLines = Array.isArray(text) ? text : String(text || '').replace(/[−–—]/g, '-').split(/\n+/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const joined = rawLines.join('\n');
+    const dfsMeta = v195DetectDfsMeta(joined);
+    if (dfsMeta){
+      const r = v195ParseDfsLines(rawLines, conf, dfsMeta);
+      if (r.rows.some(x => x.ok) || !baseSlipParse) return r;
+    }
+    return baseSlipParse ? baseSlipParse.call(this, joined, conf) : {rows: [], stake: '', fail: 'No text', isParlay: false, lines: rawLines};
+  };
+
+  photoHandle = async function(file){
+    if (!file) return;
+    if (!/^image\//.test(file.type || '') && !/\.(png|jpe?g|webp|heic|gif|bmp)$/i.test(file.name || '')){ toast('Pick an image file'); return; }
+    Object.assign(PHOTO, {busy:true, stage:'loading', pct:0, text:'', conf:null, rows:[], stake:'', fail:'', thumb:'', ran:false, dfs:null, _colorCanvas:null});
+    PK.dfsMeta = null; PK.dfsLegMeta = null;
+    renderPicks();
+    try{
+      const canvas = await photoCanvas(file);
+      const w = await ocrWorker();
+      await w.setParameters({tessedit_pageseg_mode: '11'});
+      let data = null, pillResults = [];
+      try{
+        data = (await w.recognize(canvas)).data;
+        pillResults = await v195RecognizePills(w, PHOTO._colorCanvas, PHOTO._darkMode);
+      } finally {
+        await w.setParameters({tessedit_pageseg_mode: '3'});
+      }
+      const flatText = String(data && data.text || '').trim();
+      PHOTO.conf = data && isFinite(+data.confidence) ? +data.confidence : null;
+      const spatial = v195SpatialLines(data, PHOTO._colorCanvas, pillResults);
+      const spatialText = spatial.filter(x => x !== '---CARD---').join('\n').trim();
+      PHOTO.text = spatialText || flatText;
+      const r = slipParse(spatial.length ? spatial : flatText, PHOTO.conf);
+      PHOTO.rows = r.rows.length ? r.rows : [{text:'', odds:'', ok:false, why:'nothing readable', read:''}];
+      PHOTO.stake = r.stake;
+      PHOTO.fail = r.fail;
+      PHOTO.dfs = r.dfs || null;
+      if (!PHOTO.text) PHOTO.fail = 'No readable text in this image';
+    }catch(e){
+      PHOTO.fail = String(e && e.message || e);
+      PHOTO.rows = [{text:'', odds:'', ok:false, why:'could not read the image', read:''}];
+    }
+    PHOTO.busy = false;
+    if (PHOTO.fail){ renderPicks(); return; }
+    PK.photoStake = parseFloat(PHOTO.stake) > 0 ? +parseFloat(PHOTO.stake) : null;
+    v195AttachPhotoMeta();
+    PK.text = photoRowsToText();
+    PK.photoText = PK.text;
+    PHOTO.ran = true;
+    renderPicks();
+    runPicks();
+  };
+})();
+
+function v195AttachPhotoMeta(){
+  PK.dfsMeta = (PHOTO && PHOTO.dfs) ? PHOTO.dfs : null;
+  PK.dfsLegMeta = {};
+  for (const r of (PHOTO.rows || [])){
+    if (!r || !r.text) continue;
+    const key = String(r.text).trim().toLowerCase();
+    PK.dfsLegMeta[key] = {
+      dfs: !!r.dfs,
+      dfsFlag: r.dfsFlag || null,
+      dfsMult: r.dfsMult || null,
+      dfsUnselected: !!r.dfsUnselected,
+      team: r.team || null,
+      opp: r.opp || null
+    };
+  }
+}
+
+/* Upgrade photoPanelHTML + photoBind to display DFS entry badge, Goblin/Demon/Unselected chips, and Over/Under flip */
+(function(){
+  if (typeof photoPanelHTML === 'function'){
+    const basePanel = photoPanelHTML;
+    photoPanelHTML = function(){
+      let html = basePanel.apply(this, arguments);
+      if (!html || PHOTO.busy) return html;
+      try{
+        const w = document.createElement('div');
+        w.innerHTML = html;
+        const okBox = w.querySelector('.ph-ok');
+        if (okBox && PHOTO.dfs){
+          const d = PHOTO.dfs;
+          const parts = [d.platform, d.entryMode ? `${d.pickCount || PHOTO.rows.filter(r=>r.ok).length}-Pick ${d.entryMode}` : `${PHOTO.rows.filter(r=>r.ok).length}-Pick`];
+          if (d.payout) parts.push(`${d.payout}x`);
+          okBox.insertAdjacentHTML('afterbegin', `<div style="margin-bottom:6px"><span class="badge b-good">${esc(parts.join(' · '))}</span></div>`);
+        }
+        w.querySelectorAll('.ph-leg').forEach((rowEl, i) => {
+          const r = PHOTO.rows[i];
+          if (!r) return;
+          const badges = [];
+          if (r.dfsFlag === 'goblin') badges.push('<span class="badge b-watch">Goblin (non-standard)</span>');
+          if (r.dfsFlag === 'demon') badges.push('<span class="badge b-avoid">Demon (non-standard)</span>');
+          if (r.dfsMult) badges.push(`<span class="badge b-none">${esc(String(r.dfsMult))}x</span>`);
+          if (r.dfsUnselected) badges.push('<span class="badge b-watch">Side not highlighted — tap Flip</span>');
+          if (r.dfs && r.ok) badges.push(`<button type="button" class="chip pk-dym" data-ph-flip="${i}" title="Switch Over/Under">Flip More/Less</button>`);
+          if (badges.length) rowEl.insertAdjacentHTML('beforeend', `<div class="ph-flags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;width:100%">${badges.join('')}</div>`);
+        });
+        return w.innerHTML;
+      }catch(e){ return html; }
+    };
+  }
+  if (typeof photoRun === 'function'){
+    const basePhotoRun = photoRun;
+    photoRun = function(){
+      photoSyncInputs();
+      v195AttachPhotoMeta();
+      return basePhotoRun.apply(this, arguments);
+    };
+  }
+  if (typeof photoBind === 'function'){
+    /* v195 clear dfsMeta */
+  const _origPhotoRun = typeof photoRun === 'function' ? photoRun : null;
+  if (_origPhotoRun){
+    photoRun = function(){ v195AttachPhotoMeta(); return _origPhotoRun.apply(this, arguments); };
+  }
+  document.addEventListener('click', (ev) => {
+    const id = ev && ev.target && ev.target.id;
+    if (id === 'btnPkClear' || id === 'phClear'){
+      PK.dfsMeta = null; PK.dfsLegMeta = null;
+      if (PHOTO) PHOTO.dfs = null;
+    }
+  }, true);
+  const baseBind = photoBind;
+    photoBind = function(v){
+      baseBind.apply(this, arguments);
+      v.querySelectorAll('[data-ph-flip]').forEach(b => b.onclick = () => {
+        photoSyncInputs();
+        const r = PHOTO.rows[+b.dataset.phFlip];
+        if (!r || !r.text) return;
+        if (/\bUnder\b/i.test(r.text)) r.text = r.text.replace(/\bUnder\b/i, 'Over');
+        else if (/\bOver\b/i.test(r.text)) r.text = r.text.replace(/\bOver\b/i, 'Under');
+        r.dfsUnselected = false;
+        v195AttachPhotoMeta();
+        renderPicks();
+      });
+    };
+  }
+})();
+
+/* ---------- 5) DK + Pinnacle nearest-line pricing, Goblin/Demon live check, Fantasy Score ---------- */
+async function v195EnsurePinAndPp(leagues){
+  if (typeof V187 === 'undefined' || typeof v187Fetch !== 'function' || typeof PUB_BASE === 'undefined') return;
+  const now = Date.now();
+  const tasks = [];
+  for (const lg of leagues){
+    const L = V187_LG[lg];
+    if (!L) continue;
+    if (now - (V187.pinAt[lg] || 0) > 5 * 60000){
+      tasks.push(v187Fetch(PUB_BASE + '/x/pinp/' + L.pin).then(d => { V187.pin[lg] = d; V187.pinAt[lg] = now; }).catch(() => {}));
+    }
+    if (now - (V187.ppAt[lg] || 0) > 5 * 60000){
+      tasks.push(v187Fetch(PUB_BASE + '/x/pp/' + L.pp).then(d => { V187.pp[lg] = d; V187.ppAt[lg] = now; }).catch(() => {}));
+    }
+  }
+  if (tasks.length) await Promise.all(tasks);
+}
+
+function v195CheckLivePpFlag(leg){
+  if (!leg || !leg.player || !leg.L || typeof V187 === 'undefined') return null;
+  const lg = (leg.g && leg.g.league) || 'nba';
+  const rows = V187.pp && V187.pp[lg];
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const kind = v194KindFromStat(leg.L.stat);
+  const mapPP = (V187_PPK && V187_PPK[lg]) || {};
+  const qName = norm(leg.player.name);
+  for (const x of rows){
+    const xk = mapPP[x.st] || String(x.st || '').toLowerCase();
+    if (xk !== kind && !(kind === 'threes' && xk === 'threes')) continue;
+    if (Math.abs(+x.l - +leg.L.line) >= 1e-9) continue;
+    if (nameScore(qName, x.n || '') >= 8){
+      if (x.ot === 'goblin' || x.ot === 'demon') return x.ot;
+      return 'standard';
+    }
+  }
+  return null;
+}
+
+function v195PriceFromBooks(leg){
+  if (!leg || !leg.player || !leg.L || typeof v187BookIndex !== 'function' || typeof v187Price !== 'function') return null;
+  const lg = (leg.g && leg.g.league) || 'nba';
+  const kind = v194KindFromStat(leg.L.stat);
+  const I = v187BookIndex();
+  const start = leg.g ? +new Date(leg.g.start) : 0;
+  const pr = v187Price(I, lg, leg.player.name, kind, +leg.L.line, start);
+  if (!pr) return null;
+  const pSide = leg.L.dir === 'under' ? (1 - pr.pO) : pr.pO;
+  const srcName = pr.dk && pr.pin ? 'DraftKings & Pinnacle' : pr.dk ? 'DraftKings' : 'Pinnacle';
+  const sameLine = !pr.est;
+  return {pSide, pOver: pr.pO, sameLine, bookLine: pr.bookLine, srcName, dk: pr.dk, pin: pr.pin};
+}
+
+function v195FantasyEstimate(leg, rows){
+  const {player, g, L} = leg;
+  const lg = (g && g.league) || 'nba';
+  if (lg !== 'nba' && lg !== 'wnba'){
+    return {unrated: true, reason: `${STAT_LABEL[L.stat] || 'Fantasy Score'} has no sportsbook line or reliable component rating for ${lg.toUpperCase()} — shown as Unrated.`};
+  }
+  // Compute ESPN game-log NBA Fantasy Score series (pts + 1.2*reb + 1.5*ast + 3*blk + 3*stl - tov)
+  const fVals = (rows || []).filter(r => r.min != null && r.min > 0 && r.pts != null && r.reb != null && r.ast != null && (!g || r.eventId !== String(g.eventId)))
+    .map(r => r.pts + 1.2 * r.reb + 1.5 * r.ast + 3 * (r.blk || 0) + 3 * (r.stl || 0) - (r.tov || 0));
+  if (fVals.length < 5){
+    return {unrated: true, reason: 'Fantasy Score has no sportsbook line and too few game logs to estimate reliably — shown as Unrated.'};
+  }
+  const sdv = Math.sqrt(fVals.reduce((a, v) => a + (v - fVals.reduce((x, y) => x + y, 0) / fVals.length) ** 2, 0) / fVals.length) || 6;
+  const avgN = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const l10Avg = avgN(fVals.slice(0, 10)), sznAvg = avgN(fVals);
+  let meanProj = 0.55 * l10Avg + 0.45 * sznAvg;
+  // Anchor with live DK / Pinnacle component lines if available (pts, reb, ast)
+  let usedComps = [];
+  if (typeof v187BookIndex === 'function' && typeof v187Price === 'function'){
+    const I = v187BookIndex();
+    const start = g ? +new Date(g.start) : 0;
+    const compMean = (kind, fallbackAvg) => {
+      const E = v187BookFind(I, lg, player.name, kind, start);
+      const src = E.find(e => e.src === 'dk') || E.find(e => e.src === 'pin');
+      if (!src || !src.lines.length) return null;
+      const mid = src.lines[0];
+      const nv = v187Nv(mid.o, mid.u);
+      return nv != null ? mid.l + (nv - 0.5) * 2.5 : mid.l;
+    };
+    const pLine = compMean('pts'), rLine = compMean('reb'), aLine = compMean('ast');
+    if (pLine != null && rLine != null && aLine != null){
+      const cleanRows = (rows || []).filter(r => r.min != null && r.min > 0 && (!g || r.eventId !== String(g.eventId)));
+      const avgOf = k => { const xs = cleanRows.slice(0, 15).map(r => r[k]).filter(x => x != null); return xs.length ? avgN(xs) : 0; };
+      meanProj = pLine + 1.2 * rLine + 1.5 * aLine + 3 * avgOf('blk') + 3 * avgOf('stl') - avgOf('tov');
+      usedComps = [`Pts ${pLine.toFixed(1)}`, `Reb ${rLine.toFixed(1)}`, `Ast ${aLine.toFixed(1)}`];
+    }
+  }
+  const pNormOver = 1 - (typeof Phi === 'function' ? Phi((L.line - meanProj) / sdv) : 0.5);
+  const hitRateOver = fVals.slice(0, 15).filter(v => v > L.line).length / Math.min(15, fVals.length);
+  const pOver = clamp(0.70 * pNormOver + 0.30 * hitRateOver, 0.15, 0.85);
+  const pSide = L.dir === 'under' ? 1 - pOver : pOver;
+  return {unrated: false, pSide, meanProj, sdv, usedComps, n: fVals.length};
+}
+
+/* Hook propLegAnalysis + resolveLeg + judgeLeg + runPicks + legCard + parlaySummary for DFS legs */
+(function(){
+  const baseRunPicks = runPicks;
+  runPicks = async function(){
+    try{
+      const lgs = new Set(['nba']);
+      for (const g of ((typeof games !== 'undefined' && games) || [])){
+        if (g && ['nba', 'nhl', 'nfl'].includes(g.league)) lgs.add(g.league);
+      }
+      await v195EnsurePinAndPp([...lgs]);
+    }catch(e){}
+    return baseRunPicks.apply(this, arguments);
+  };
+
+  if (typeof resolveLeg === 'function'){
+    const baseResolveLeg = resolveLeg;
+    resolveLeg = async function(raw){
+      const leg = await baseResolveLeg.apply(this, arguments);
+      if (leg && leg.err && leg.L && ['fantasy', 'hitter_fantasy', 'pitcher_fantasy'].includes(leg.L.stat)){
+        leg.err = null;
+        leg.market = 'DFS Fantasy';
+        leg.desc = leg.raw;
+        leg.verdict = 'UNRATED';
+        leg.p = null;
+        leg.plainWhy = `${STAT_LABEL[leg.L.stat] || 'Fantasy Score'} has no sportsbook equivalent or active slate match — shown as Unrated.`;
+        leg.why = leg.plainWhy;
+        leg.no = [leg.plainWhy];
+        leg._syncedFromBoard = true;
+      }
+      return leg;
+    };
+  }
+
+  const basePropLegAnalysis = propLegAnalysis;
+  propLegAnalysis = async function(leg){
+    // Attach DFS meta if this leg came from a DFS screenshot
+    if (leg && PK && PK.dfsLegMeta){
+      const m = PK.dfsLegMeta[String(leg.raw || '').trim().toLowerCase()];
+      if (m){
+        leg.dfs = m.dfs;
+        if (m.dfsFlag && !leg.dfsFlag) leg.dfsFlag = m.dfsFlag;
+        if (m.dfsMult && !leg.dfsMult) leg.dfsMult = m.dfsMult;
+        if (m.dfsUnselected) leg.dfsUnselected = true;
+      }
+    }
+    // Special path for Fantasy Score
+    if (leg && leg.L && ['fantasy', 'hitter_fantasy', 'pitcher_fantasy'].includes(leg.L.stat)){
+      leg.market = 'DFS Fantasy';
+      leg.desc = `${leg.player.name} ${leg.L.dir === 'under' ? 'under' : 'over'} ${leg.L.line} ${STAT_LABEL[leg.L.stat] || 'fantasy score'}`;
+      if (leg.g) statusFlags(leg.g, leg);
+      let gl = null;
+      try{ gl = await loadGamelog(leg.g ? leg.g.league : 'nba', leg.player.id); }catch(e){}
+      const est = v195FantasyEstimate(leg, gl ? gl.rows : []);
+      if (est.unrated){
+        leg.p = null;
+        leg.verdict = 'UNRATED';
+        leg.why = est.reason;
+        leg.plainWhy = est.reason;
+        leg.no.push(est.reason);
+        leg.formula = 'Fantasy score: unrated (no sportsbook equivalent)';
+        leg._syncedFromBoard = true;
+        return;
+      }
+      leg.p = est.pSide;
+      leg.implied = 0.5421; // DFS 6-pick standard breakeven reference
+      leg.edge = leg.p - leg.implied;
+      leg.n = est.n;
+      leg.conf = est.usedComps.length ? 55 : 42;
+      leg.yes.push(est.usedComps.length
+        ? `Estimated from live sportsbook component lines (${est.usedComps.join(', ')}) + game logs (projected ${est.meanProj.toFixed(1)} vs ${leg.L.line})`
+        : `Estimated from last ${est.n} game logs (projected ${est.meanProj.toFixed(1)} vs ${leg.L.line})`);
+      leg.no.push('Fantasy Score has no direct DraftKings line — treat as a rough estimate');
+      leg.verdict = leg.p >= 0.56 ? 'BET' : leg.p >= 0.51 ? 'WATCHLIST' : 'PASS';
+      leg.plainWhy = `Fantasy Score has no direct sportsbook line; component estimate gives this about ${Math.round(leg.p * 100)}%.`;
+      leg.why = leg.plainWhy;
+      leg.formula = `Fantasy proj ${est.meanProj.toFixed(1)} (±${est.sdv.toFixed(1)}) vs ${leg.L.line} → ${fmtPct(leg.p)}`;
+      leg._syncedFromBoard = true;
+      return;
+    }
+
+    // Standard stat: run v194 basePropLegAnalysis first (which checks exact DK Picks board + v160 model)
+    await basePropLegAnalysis.apply(this, arguments);
+    if (!leg || leg.err || leg.final || leg.out) return;
+
+    // Check Goblin/Demon status on live PrizePicks feed if not already flagged
+    try{
+      const ppOt = v195CheckLivePpFlag(leg);
+      if ((ppOt === 'goblin' || ppOt === 'demon') && !leg.dfsFlag) leg.dfsFlag = ppOt;
+    }catch(e){}
+
+    // If no exact DraftKings line was matched (`!leg.liveMatched` or `leg.price == null`), check nearest DK line or Pinnacle!
+    if (!leg.liveMatched){
+      const bp = v195PriceFromBooks(leg);
+      if (bp){
+        leg.p = bp.pSide;
+        leg.conf = bp.sameLine ? 58 : 48;
+        leg._dfsBookRef = bp;
+        const diffNote = bp.sameLine
+          ? `DraftKings doesn't carry this exact market — priced off ${bp.srcName} at ${bp.bookLine}.`
+          : `DraftKings doesn't have ${leg.L.line} — priced off ${bp.srcName}'s ${bp.bookLine} line (different line).`;
+        leg.lineNote = diffNote;
+        leg.info.unshift(diffNote);
+        if (leg.L.odds == null){
+          const be = (PK.dfsMeta && PK.dfsMeta.platform === 'Underdog') ? 0.5529 : 0.5421;
+          leg.implied = leg.dfs || (PK && PK.dfsMeta) ? be : 0.5238;
+          leg.edge = leg.p - leg.implied;
+          leg.verdict = (leg.p >= 0.56 && leg.edge > 0.015) ? 'BET' : (leg.p >= 0.51) ? 'WATCHLIST' : 'PASS';
+          leg.plainWhy = diffNote + ` Fair chance is about ${Math.round(leg.p * 100)}%.`;
+          leg.why = leg.plainWhy;
+          leg._syncedFromBoard = true;
+        }
+      }
+    }
+    if (leg.dfsFlag === 'goblin' || leg.dfsFlag === 'demon'){
+      const flagTxt = leg.dfsFlag === 'goblin'
+        ? 'Non-standard Goblin line (lowered number with reduced payout).'
+        : 'Non-standard Demon line (bumped number with boosted payout).';
+      if (!leg.no.some(x => String(x && (x.t || x.txt || x)).includes('Non-standard'))) leg.no.unshift(flagTxt);
+    }
+  };
+
+  if (typeof legAssistHTML === 'function'){
+    const baseAssist = legAssistHTML;
+    legAssistHTML = function(leg, i){
+      let html = baseAssist.apply(this, arguments);
+      if (!leg) return html;
+      const bits = [];
+      if (leg.dfsFlag === 'goblin') bits.push('<span class="badge b-watch">Non-standard line · Goblin</span>');
+      else if (leg.dfsFlag === 'demon') bits.push('<span class="badge b-avoid">Non-standard line · Demon</span>');
+      if (leg.dfsMult) bits.push(`<span class="badge b-none">Multiplier ${esc(String(leg.dfsMult))}x</span>`);
+      if (leg.dfsUnselected) bits.push('<span class="badge b-watch">Card button wasn’t highlighted — verify Over/Under</span>');
+      if (leg.lineNote) bits.push(`<span class="badge b-none">${esc(leg.lineNote)}</span>`);
+      if (bits.length) html = `<div class="pk-assume" style="display:flex;flex-wrap:wrap;gap:6px">${bits.join('')}</div>` + html;
+      return html;
+    };
+  }
+
+  if (typeof verdictBadge === 'function'){
+    const baseVB = verdictBadge;
+    verdictBadge = function(v){
+      if (v === 'UNRATED') return '<span class="badge b-none">UNRATED</span>';
+      return baseVB.apply(this, arguments);
+    };
+  }
+
+  /* DFS Entry Summary in parlaySummary (shows N-pick hit chance & payout breakeven in plain English, no price talk) */
+  const baseParlaySummary = parlaySummary;
+  parlaySummary = function(){
+    if (!PK.legs || PK.legs.length < 2) return '';
+    const isDfs = !!(PK.dfsMeta || PK.legs.some(l => l && (l.dfs || l.dfsFlag || (l.L && ['fantasy', 'hitter_fantasy', 'pitcher_fantasy'].includes(l.L.stat)))));
+    if (!isDfs) return baseParlaySummary.apply(this, arguments);
+
+    const meta = PK.dfsMeta || {platform: 'DFS Entry', entryMode: 'Entry', pickCount: PK.legs.length, payout: null};
+    const legs = PK.legs.filter(l => !l.err);
+    const rated = legs.filter(l => l.p != null && l.verdict !== 'UNRATED' && !l.final);
+    const unratedN = legs.filter(l => l.verdict === 'UNRATED').length;
+    const nTotal = meta.pickCount || legs.length;
+    const pAll = (rated.length === legs.length && rated.length > 0) ? rated.reduce((a, l) => a * l.p, 1) : (rated.length ? rated.reduce((a, l) => a * l.p, 1) : null);
+
+    // Exact Poisson-binomial distribution for Flex payouts
+    const probs = rated.map(l => l.p);
+    const dist = (ps) => {
+      let dp = [1];
+      for (const p of ps){
+        const nxt = new Array(dp.length + 1).fill(0);
+        for (let k = 0; k < dp.length; k++){
+          nxt[k] += dp[k] * (1 - p);
+          nxt[k + 1] += dp[k] * p;
+        }
+        dp = nxt;
+      }
+      return dp;
+    };
+
+    const payKey = meta.platform === 'Underdog' ? (meta.entryMode === 'Flex' ? 'ud_flex' : 'ud_std') : (meta.entryMode === 'Flex' ? 'pp_flex' : 'pp_power');
+    const payRow = (typeof V187_PAY !== 'undefined' && V187_PAY[payKey] && V187_PAY[payKey][probs.length]) ? V187_PAY[payKey][probs.length] : null;
+    const topMult = meta.payout || (payRow && payRow[probs.length]) || null;
+
+    let beText = '—', beatsWord = '', evSentence = '';
+    if (probs.length >= 2 && probs.length === legs.length){
+      if (meta.entryMode === 'Flex' && payRow){
+        const dp = dist(probs);
+        let expMult = 0;
+        for (const kStr in payRow) expMult += (dp[+kStr] || 0) * payRow[kStr];
+        const roiPct = (expMult - 1) * 100;
+        const beats = expMult >= 1;
+        beText = '1.00x return';
+        beatsWord = beats ? `Yes (+${roiPct.toFixed(0)}%)` : `No (${roiPct.toFixed(0)}%)`;
+        evSentence = beats
+          ? `With these win chances, this ${probs.length}-pick Flex entry averages ${expMult.toFixed(2)}x back (+${roiPct.toFixed(0)}% above breakeven).`
+          : `With these win chances, this ${probs.length}-pick Flex entry averages ${expMult.toFixed(2)}x back (${roiPct.toFixed(0)}% below breakeven).`;
+      } else if (topMult){
+        const beAll = 1 / topMult;
+        const beats = pAll != null && pAll >= beAll;
+        beText = fmtPct(beAll);
+        beatsWord = pAll == null ? '—' : (beats ? 'Yes' : 'No');
+        evSentence = beats
+          ? `All ${probs.length} legs hitting is about ${fmtPct(pAll)} — that beats the ${fmtPct(beAll)} needed to break even at ${topMult}x.`
+          : `All ${probs.length} legs hitting is about ${fmtPct(pAll)} — short of the ${fmtPct(beAll)} needed to break even at ${topMult}x.`;
+      }
+    } else if (unratedN){
+      evSentence = `${unratedN} leg${unratedN === 1 ? ' is' : 's are'} Unrated (Fantasy Score), so the full entry breakeven can't be scored completely.`;
+    }
+
+    const ranked = rated.slice().sort((a, b) => a.p - b.p);
+    const weakest = ranked[0];
+    const safe = rated.filter(l => l.verdict !== 'PASS' && l.p >= 0.55).sort((a, b) => b.p - a.p).slice(0, 3);
+    const drop = legs.filter(l => !safe.includes(l) && !l.final);
+    const pSafe = safe.length ? safe.reduce((a, l) => a * l.p, 1) : null;
+    const safeTxt = safe.length && drop.length
+      ? (safe.length === 1
+          ? `Safer ticket: stick to <b>${esc(legShortDesc(safe[0]))}</b> on its own (about ${fmtPct(pSafe)} to hit) and skip ${drop.map(l => esc(legShortDesc(l))).join(', ')}.`
+          : `Safer ticket: stick to <b>${safe.map(l => esc(legShortDesc(l))).join(' + ')}</b> (about ${fmtPct(pSafe)} for all ${safe.length} to hit) and skip ${drop.map(l => esc(legShortDesc(l))).join(', ')}.`)
+      : '';
+    const hasGobDem = legs.some(l => l.dfsFlag === 'goblin' || l.dfsFlag === 'demon' || l.dfsMult);
+    const title = [meta.platform, meta.entryMode ? `${nTotal}-Pick ${meta.entryMode}` : `${nTotal}-Pick`, topMult ? `${topMult}x` : ''].filter(Boolean).join(' · ');
+
+    return `<div class="pk-ticket"><h3>🎫 ${esc(title)}</h3>
+      ${evSentence ? `<div class="tk-judge"><span class="ct">The Judge says</span> <span class="c-sent">${esc(evSentence)}</span></div>` : ''}
+      <div class="kpis">
+        <div class="kpi"><div class="k">All ${probs.length} rated hit</div><div class="v">${pAll != null ? fmtPct(pAll) : '—'}</div>${uiChanceMini(pAll)}</div>
+        <div class="kpi"><div class="k">Breakeven needed</div><div class="v">${esc(beText)}</div></div>
+        <div class="kpi"><div class="k">Beats breakeven?</div><div class="v">${esc(beatsWord || '—')}</div></div>
+        <div class="kpi"><div class="k">Weakest leg</div><div class="v" style="font-size:15px">${weakest ? esc(legShortDesc(weakest)) + ' (' + fmtPct(weakest.p, 0) + ')' : '—'}</div></div>
+      </div>
+      <ol class="why">${PK.legs.map((l, i) => {
+        const name = esc(legShortDesc(l) || l.raw || ('Leg ' + (i + 1)));
+        const phtml = l.p != null ? `${uiChanceMini(l.p)}<b>${fmtPct(l.p, 0)}</b>` : '<b>—</b>';
+        const badge = l.err ? '<span class="mut">No match</span>' : (l._card && typeof verdictPill === 'function' ? verdictPill(l._card.verdict) : verdictBadge(l.verdict));
+        const flagTag = l.dfsFlag === 'goblin' ? ' <span class="mut">(Goblin)</span>' : l.dfsFlag === 'demon' ? ' <span class="mut">(Demon)</span>' : l.dfsMult ? ` <span class="mut">(${l.dfsMult}x)</span>` : '';
+        return `<li><span class="tk-row"><span class="tk-name"><b>${name}</b>${flagTag}</span><span class="tk-p">${phtml}</span><span class="tk-badge">${badge}</span></span></li>`;
+      }).join('')}</ol>
+      ${safeTxt ? `<div class="banner">${safeTxt}</div>` : ''}
+      ${hasGobDem ? '<div class="hint" style="margin-top:8px">Includes non-standard Goblin/Demon or custom multiplier lines, which change the payout multiplier from standard picks.</div>' : ''}
+    </div>`;
+  };
+})();
 </script>
 </body>
 </html>
