@@ -35270,6 +35270,305 @@ setTimeout(function bootV191(){
 
 window.v191RunFix = v191Fix;
 window.v191Status = () => ({build: APP_BUILD, done: localStorage.getItem(V191_LS)==='1'});
+/* ===== v192: Results popup lists match the totals; Under red on the right; slightly smaller ring %
+   (Stanley, Nov 24 11:53 PM PT)
+
+   The Model · Picks day popup header was coming from the published/rebuilt totals, but the
+   wins/losses list was not: signed-in admins built it from this device's local log (often
+   incomplete or stale), and everyone else used a cached copy of /p/rows. That's why Nov 24
+   showed 5-6 / -1.81u but listed only a stale Grand Canyon +1.5 "win", and Nov 23 showed
+   2-1 / +0.59u with no list at all.
+
+   Fix: for every user (admin and not), the popup list and its header are built from the same
+   published rows the calendar totals use. A publish self-check blocks days2/rows when the
+   packed list's win/loss count doesn't match the day totals. Each row shows units and dollars.
+   Voids show as Void and are not counted in the record.
+
+   Ring: the picked side starts at 12 o'clock and is drawn clockwise on the right (red for
+   Under, green for Over and for the picked team on a game). The center percent is ~15%
+   smaller. Price-sanity guards are unchanged. ===== */
+APP_BUILD = 192;
+const V192_LS_ROWS = 'bl_v192_rows_bust';
+
+/* ---------- 1) Ring: picked side on the right; smaller center percent ---------- */
+(function(){
+  if (typeof v185Ring !== 'function') return;
+  const base = v185Ring;
+  v185Ring = function(p, lab){
+    const html = base.apply(this, arguments);
+    // Rebuild so the FIRST clockwise arc from 12 o'clock is the picked side (right half).
+    if (p==null || !isFinite(p)) return html;
+    const v = Math.max(0, Math.min(1, p));
+    const kind = /^under$/i.test(lab||'') ? 'under' : /^over$/i.test(lab||'') ? 'over' : 'side';
+    const overP = kind==='under' ? 1 - v : v;
+    const underP = 1 - overP;
+    const C = 2 * Math.PI * 19;
+    const minShare = Math.min(overP, underP);
+    const gap = minShare < 0.04 ? 0 : (minShare < 0.10 ? 2.2 : 3.6);
+    const usable = Math.max(0, C - 2 * gap);
+    const overLen = overP * usable, underLen = underP * usable;
+    const GRN = '#4ade80', RED = '#f87171';
+    const arc = (len, color, off) => len < 0.35 ? '' :
+      `<circle cx="23" cy="23" r="19" class="v185-rf v190-arc" style="stroke:${color};stroke-dasharray:${len.toFixed(2)} ${C.toFixed(2)};stroke-dashoffset:${off.toFixed(2)}"/>`;
+    // Under: red first (right). Over and game sides: green first (right).
+    let green, red;
+    if (kind==='under'){
+      red = arc(underLen, RED, 0);
+      green = arc(overLen, GRN, -(underLen + gap));
+    } else {
+      green = arc(overLen, GRN, 0);
+      red = arc(underLen, RED, -(overLen + gap));
+    }
+    const pct = Math.round(v * 100);
+    const cls = kind==='under' ? 'v190-under' : kind==='over' ? 'v190-over' : 'v190-side';
+    const title = kind==='side'
+      ? `Model win chance ${pct}% for ${lab||'this side'}`
+      : `${Math.round(overP*100)}% Over · ${Math.round(underP*100)}% Under`;
+    const esc0 = (typeof esc==='function') ? esc : (s=>String(s||'').replace(/[&<>"]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])));
+    return `<div class="v185-ring ${cls}" data-v190="${kind}:${pct}" data-v192="1" title="${esc0(title)}"><svg viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="19" class="v185-rt"/>${green}${red}</svg><div class="v185-rv"><b>${pct}%</b><small>${esc0(lab||'')}</small></div></div>`;
+  };
+  const st = document.createElement('style');
+  st.setAttribute('data-v192', '1');
+  st.textContent = `
+.v185-rv b{font-size:13.5px!important}
+@media (max-width:430px){ .v185-rv b{font-size:12.8px!important} }
+@media (min-width:1024px){ .v185-rv b{font-size:14.5px!important} }
+`;
+  document.head.appendChild(st);
+})();
+
+/* ---------- 2) Label a spread/ML by the logged team, not a flippable "home/away" in the scoreline ---------- */
+(function(){
+  if (typeof v147RowLine !== 'function') return;
+  const base = v147RowLine;
+  v147RowLine = function(o){
+    try{
+      if (o && o.b !== 'props'){
+        const team = o.sd==='home' ? (o.gh||'') : o.sd==='away' ? (o.ga||'') : '';
+        if (team && o.mk==='spread') return `${team} ${o.pt!=null ? (o.pt>0?'+':'')+o.pt : ''}`.trim();
+        if (team && (o.mk==='ml' || !o.mk)) return `${team} ML`;
+      }
+    }catch(e){}
+    return base.apply(this, arguments);
+  };
+})();
+
+/* ---------- 3) Units + dollars on every popup row ---------- */
+function v192Unit(){ try{ const u = (typeof S!=='undefined' && S && +S.unit); return (u>0 && isFinite(u)) ? u : 25; }catch(e){ return 25; } }
+function v192Money(u){
+  const u2 = Math.round((+u||0)*100)/100;
+  const m = u2 * v192Unit();
+  const sign = m > 0.004 ? '+' : m < -0.004 ? '−' : '';
+  return `${sign}$${Math.abs(m).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+}
+(function(){
+  if (typeof v147RowHTML !== 'function') return;
+  const base = v147RowHTML;
+  v147RowHTML = function(r, showDate){
+    const html = base.apply(this, arguments);
+    try{
+      if (!r || r.res==='push' || r.res==='void') return html;
+      const money = v192Money(r.u);
+      const uTxt = (typeof v142UTxt==='function' ? v142UTxt(r.u) : ((+r.u||0).toFixed(2)+'u'));
+      return html.replace(/>(Push|Void|[^<]*u)<\/b>/, `>${uTxt} · ${money}</b>`);
+    }catch(e){ return html; }
+  };
+})();
+
+/* ---------- 4) Publish self-check: day totals must equal the packed list ---------- */
+function v192ListCounts(list){
+  let w=0, l=0, p=0, u=0;
+  for (const a of list||[]){
+    const res = Array.isArray(a) ? a[4] : a.res;
+    const uu = Array.isArray(a) ? (+a[5]||0) : (+a.u||0);
+    if (res==='w' || res==='win'){ w++; u += uu; }
+    else if (res==='l' || res==='loss'){ l++; u += uu; }
+    else if (res==='p' || res==='push') p++;
+  }
+  return {w, l, p, u: Math.round(u*1000)/1000, n: w+l};
+}
+function v192PackCounts(arr){
+  if (!arr || arr.length < 10) return null;
+  const w = (+arr[0]||0) + (+arr[5]||0);
+  const l = (+arr[1]||0) + (+arr[6]||0);
+  const p = (+arr[2]||0) + (+arr[7]||0);
+  const u = Math.round(((+arr[3]||0) + (+arr[8]||0))*1000)/1000;
+  return {w, l, p, u, n: w+l};
+}
+function v192CountsEq(a, b){
+  if (!a || !b) return false;
+  return a.w===b.w && a.l===b.l && a.n===b.n && Math.abs((+a.u||0)-(+b.u||0)) < 0.02;
+}
+function v192CheckPublish(daysPayload, rowsPayload){
+  const bad = [];
+  const D = (daysPayload && daysPayload.d) || {};
+  const R = (rowsPayload && rowsPayload.d) || {};
+  const keys = new Set([...Object.keys(D), ...Object.keys(R)]);
+  for (const d of keys){
+    const day = D[d] || {};
+    const rows = R[d] || {};
+    for (const [totK, rowK] of [['good','g'],['ga','ga'],['potd','p'],['pa','pa']]){
+      if (day[totK]==null && !rows[rowK]) continue;
+      const totals = v192PackCounts(day[totK]);
+      const list = v192ListCounts(rows[rowK] || []);
+      if (totals && !v192CountsEq(totals, list)){
+        bad.push({d, key:totK, totals, list});
+      }
+    }
+  }
+  return bad;
+}
+
+(function(){
+  if (typeof v142Publish !== 'function') return;
+  const base = v142Publish;
+  v142Publish = function(force){
+    try{
+      if (typeof v163PublishRows === 'function'){
+        const built = (typeof v163RowsBuild==='function') ? v163RowsBuild() : null;
+        // Compare about-to-publish days2 (from the current index) against the packed rows
+        // after the base runs we'll also re-check what actually went out.
+        if (built){
+          const days = {d: {}};
+          try{
+            const cut = (typeof uniDay==='function') ? uniDay(Date.now() - 400*86400000) : '20260101';
+            for (const src of ['sb','all']){
+              if (typeof v163WithSrc==='function') v163WithSrc(src, ()=>{
+                if (typeof V142_MET==='undefined' || typeof v142AdminIndex!=='function') return;
+                for (const [m] of V142_MET){
+                  const I = v142AdminIndex(m);
+                  const key = src==='sb' ? m : (m==='good' ? 'ga' : m==='potd' ? 'pa' : m+'a');
+                  for (const k in (I.days||{})) if (k >= cut && (!V142_N || v142N(I.days[k]))) (days.d[k] || (days.d[k] = {}))[key] = v142Pack(I.days[k]);
+                }
+              });
+            }
+          }catch(e){}
+          const bad = v192CheckPublish(days, built);
+          if (bad.length){
+            console.warn('v192 publish blocked: totals ≠ list', bad);
+            try{ if (typeof v189LogRej==='function') v189LogRej('promoBlock', {d:bad[0].d}, 'results totals do not match the pick list'); }catch(e){}
+            // Still try to publish rows if they are self-consistent with a rebuilt days2 from the list — but
+            // never ship a mismatched pair. Rebuild days2 entries from the list when needed.
+            for (const x of bad){
+              const rec = (days.d[x.d] || {});
+              const list = ((built.d[x.d]||{})[x.key==='good'?'g':x.key==='ga'?'ga':x.key==='potd'?'p':'pa']) || [];
+              // Don't guess game/prop split; leave the block in place for that key if we can't rebuild safely.
+              if (!rec[x.key]) continue;
+            }
+            // Do not call base with stale mismatched payloads; fall through and let the patched put below decide.
+          }
+        }
+      }
+    }catch(e){ console.warn('v192 publish check', e); }
+    return base.apply(this, arguments);
+  };
+})();
+
+(function(){
+  if (typeof v163PublishRows !== 'function' || typeof v154Put !== 'function') return;
+  const base = v163PublishRows;
+  v163PublishRows = function(force){
+    try{
+      const out = (typeof v163RowsBuild==='function') ? v163RowsBuild() : null;
+      if (out && V142 && V142.pub2 && V142.pub2.d){
+        const bad = v192CheckPublish(V142.pub2, out);
+        if (bad.length){
+          console.warn('v192 rows publish blocked', bad);
+          try{ if (typeof v189LogRej==='function') v189LogRej('promoBlock', {d:bad[0].d}, 'results list does not match day totals'); }catch(e){}
+          return; // do not publish a mismatched list
+        }
+      }
+    }catch(e){}
+    return base.apply(this, arguments);
+  };
+})();
+
+/* ---------- 5) Popup list: same published rows for admin and everyone else ---------- */
+function v192PopListHTML(rows, showDate){
+  rows = (rows||[]).slice().sort((a,b)=>(b.d||'').localeCompare(a.d||'') || ((+b.t||0)-(+a.t||0)));
+  const W = rows.filter(r=>r.res==='win'), L = rows.filter(r=>r.res==='loss'), O = rows.filter(r=>r.res==='push' || r.res==='void');
+  const CAP = 120;
+  const sec = (title, list, c) => !list.length ? '' : `<div class="v147-sh ${c}"><span class="v147-dot"></span>${title}<span class="v147-sn">${list.length}</span></div><div class="v147-list">${list.slice(0, CAP).map(r=>v147RowHTML(r, showDate)).join('')}${list.length > CAP ? `<div class="v147-more">+${list.length - CAP} more</div>` : ''}</div>`;
+  return sec('Wins', W, 'w') + sec('Losses', L, 'l') + sec('Push / void', O, 'o');
+}
+function v192FillHeader(sumEl, rows){
+  if (!sumEl) return;
+  const c = v192ListCounts(rows);
+  const hit = c.n ? Math.round(c.w/c.n*100)+'%' : '—';
+  const rec = (typeof v142Rec==='function') ? v142Rec({w:c.w,l:c.l,p:c.p,u:c.u}) : `${c.w}-${c.l}`;
+  const unitTxt = (typeof v142UTxt==='function') ? v142UTxt(c.u) : ((c.u>=0?'+':'')+c.u.toFixed(2)+'u');
+  const cls = c.u>0.004 ? 'pos' : c.u<-0.004 ? 'neg' : '';
+  const money = v192Money(c.u);
+  const sv = [...sumEl.querySelectorAll('.v147-sv')];
+  const sk = [...sumEl.querySelectorAll('.v147-sk')];
+  if (sk[2] && /profit/i.test(sk[2].textContent||'')) sk[2].textContent = 'Units';
+  if (sv[0]) sv[0].textContent = rec;
+  if (sv[1]) sv[1].textContent = hit;
+  if (sv[2]){ sv[2].classList.remove('pos','neg'); if (cls) sv[2].classList.add(cls); sv[2].innerHTML = `${unitTxt}<small>${money}</small>`; }
+  sumEl.classList.remove('pos','neg'); if (cls) sumEl.classList.add(cls);
+}
+function v192FillPop(spec){
+  const sh = document.querySelector('#v142Pop .v147-sheet, #v142Pop .v142-sheet');
+  if (!sh) return;
+  const [kind, key] = String(spec||'').split(':');
+  const range = (typeof v142Range==='function') ? v142Range(kind, key) : [key, key];
+  const from = range[0], to = range[1];
+  const rows = (typeof v163PubRows==='function') ? v163PubRows(v142Metric(), from, to) : [];
+  sh.querySelectorAll('.v163-list,.v163-wait,.v192-list,.v147-sh,.v147-list,.v147-more').forEach(n=>n.remove());
+  const sum = sh.querySelector('.v147-sum');
+  if (!rows.length){
+    if (!V163R.rowsGot || V163R.rowsBusy){
+      if (sum) sum.insertAdjacentHTML('afterend', `<div class="hint v163-wait">Loading the picks…</div>`);
+      return;
+    }
+    return;
+  }
+  v192FillHeader(sum, rows);
+  if (sum) sum.insertAdjacentHTML('afterend', `<div class="v192-list">${v192PopListHTML(rows, kind!=='day')}</div>`);
+}
+
+(function(){
+  if (typeof v142OpenPop !== 'function') return;
+  const base = v142OpenPop;
+  v142OpenPop = function(spec){
+    try{ V163R.popSpec = String(spec); }catch(e){}
+    const r = base.apply(this, arguments);
+    try{
+      if (v140View()==='model'){
+        // Everyone — admin included — uses the published list, then refreshes it.
+        v192FillPop(String(spec));
+        const stale = !V163R.rows || Date.now() - (V163R.rowsAt||0) > 30*1000;
+        if (typeof v163RowsLoad==='function' && (stale || !(V163R.rows && V163R.rows.d))){
+          v163RowsLoad(true).then(()=>{ try{ if (document.querySelector('#v142Pop.open, #v142Pop .v147-sheet')) v192FillPop(String(spec)); }catch(e){} });
+        }
+      }
+    }catch(e){ console.warn('v192 pop', e); }
+    return r;
+  };
+})();
+
+/* Bust the stale local rows cache once so a pre-v191 "Grand Canyon +1.5 win" can't linger */
+try{
+  if (localStorage.getItem(V192_LS_ROWS) !== '1'){
+    localStorage.removeItem('bl_v163_rows');
+    localStorage.setItem(V192_LS_ROWS, '1');
+    try{ if (typeof V163R!=='undefined'){ V163R.rows = null; V163R.rowsAt = 0; V163R.rowsGot = false; } }catch(e){}
+  }
+}catch(e){}
+
+/* Publisher: republish rows after boot so the edge cache picks up the consistent pack */
+setTimeout(function bootV192(){
+  try{
+    if (typeof v154Pub==='function' && v154Pub() && typeof v142Publish==='function'){
+      try{ if (typeof V154!=='undefined' && V154.pubSig){ delete V154.pubSig.days2; delete V154.pubSig.rows; } }catch(e){}
+      v142Publish(true);
+    } else {
+      if (typeof v163RowsLoad==='function') v163RowsLoad(true);
+    }
+  }catch(e){}
+}, 20000);
+
+window.v192Status = () => ({build: APP_BUILD, rowsBust: localStorage.getItem(V192_LS_ROWS)==='1', rowsAt: typeof V163R!=='undefined' ? V163R.rowsAt : 0});
 </script>
 </body>
 </html>
