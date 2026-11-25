@@ -40728,6 +40728,228 @@ window.v200Status = () => ({
 window.v200LockPass = v200LockPass;
 window.v200PurgeAndRegrade = v200PurgeAndRegrade;
 window.v200StampSharpClv = v200StampSharpClv;
+/* ================= v201: finish the fake-line purge + restore Action Network public % =================
+   1) v200PurgeAndRegrade missed most of the 20 fake rebound-Over rows because it skipped a day's
+      Firestore shards whenever MLOG.raw already had any rows for that day (a partial in-memory log),
+      then set bl_v200_purged_v1 so it never retried. This build always reloads every shard for every
+      day, adds a known-id safety net, and uses a new complete flag.
+   2) Action Network public % never arrived on Sharp cards because v173Json used cache:'no-store',
+      which makes the browser preflight; AN answers that OPTIONS with 403. We fetch AN through the
+      publisher relay (no preflight) and fall back to a simple GET. Dates use Pacific time, same as v200.
+*/
+APP_BUILD = 201;
+const V201_LS_PURGE = 'bl_v201_purged_v1';
+const V201 = {counts:{purge:0, anOk:0, anFail:0}, lastPurge:null, anErr:''};
+const V201_KNOWN_BAD = [
+  'prop:401910027:5104157:reb:over:6.5',
+  'prop:401910024:6585:reb:over:1.5',
+  'prop:401910027:5104157:reb:over:5.5',
+  'prop:401910027:5104157:reb:over:4.5',
+  'prop:401910027:5104157:reb:over:1.5',
+  'prop:401910028:4397424:reb:over:1.5',
+  'prop:401910027:5061589:reb:over:4.5',
+  'prop:401910034:4017837:reb:over:1.5',
+  'prop:401910035:4397424:reb:over:1.5',
+  'prop:401910034:3136195:reb:over:1.5',
+  'prop:401910034:3136195:reb:over:2.5',
+  'prop:401910034:3136195:reb:over:4.5',
+  'prop:401910034:3136195:reb:over:5.5',
+  'prop:401910034:3062679:reb:over:4.5',
+  'prop:401910035:5175737:reb:over:2.5',
+  'prop:401910035:4397886:reb:over:4.5',
+  'prop:401910035:4065648:reb:over:4.5',
+  'prop:401910035:4397424:reb:over:4.5',
+  'prop:401910032:3112335:reb:over:2.5',
+  'prop:401910045:3155942:reb:over:1.5'
+];
+
+/* Pacific calendar date for Action Network scoreboard requests (UTC VPS would otherwise roll at 4 PM PT). */
+if (typeof v173Ymd === 'function'){
+  v173Ymd = function(t){
+    try{
+      if (typeof v200PtYmd === 'function') return v200PtYmd(new Date(t));
+    }catch(e){}
+    const d = new Date(t);
+    const parts = new Intl.DateTimeFormat('en-US', {timeZone:'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit'}).formatToParts(d);
+    const p = {}; for (const z of parts) p[z.type] = z.value;
+    return (p.year||'') + (p.month||'') + (p.day||'');
+  };
+}
+
+async function v201AnJson(url){
+  let slug = '', date = '', books = '';
+  try{
+    const u = new URL(url, 'https://api.actionnetwork.com');
+    const m = u.pathname.match(/\/scoreboard\/([a-z0-9]+)$/i);
+    slug = (m && m[1] || '').toLowerCase();
+    date = u.searchParams.get('date') || '';
+    books = u.searchParams.get('bookIds') || '';
+  }catch(e){}
+  const base = (typeof PUB_BASE !== 'undefined' && PUB_BASE) ? String(PUB_BASE) : '';
+  if (/^https?:/.test(base) && slug && /^\d{8}$/.test(date)){
+    try{
+      const r = await fetch(base + '/x/an/' + encodeURIComponent(slug) + '?date=' + encodeURIComponent(date) + (books ? '&bookIds=' + encodeURIComponent(books) : ''), {credentials:'omit'});
+      if (r.ok){ V201.counts.anOk++; V201.anErr = ''; return await r.json(); }
+      V201.anErr = 'relay ' + r.status;
+    }catch(e){ V201.anErr = 'relay ' + String(e && e.message || e).slice(0, 40); }
+  }
+  // Direct fallback: a simple GET. cache:'no-store' forces a CORS preflight; AN answers OPTIONS with 403.
+  try{
+    const sep = url.indexOf('?') >= 0 ? '&' : '?';
+    const r = await fetch(url + sep + '_=' + Date.now(), {credentials:'omit'});
+    if (!r.ok) throw new Error('http ' + r.status);
+    V201.counts.anOk++; V201.anErr = '';
+    return await r.json();
+  }catch(e){
+    V201.counts.anFail++;
+    V201.anErr = String(e && e.message || e).slice(0, 60);
+    throw e;
+  }
+}
+if (typeof v173Json === 'function'){
+  const _v173Json = v173Json;
+  v173Json = async function(url, headers){
+    if (typeof url === 'string' && /api\.actionnetwork\.com\/web\/v2\/scoreboard\//.test(url)) return v201AnJson(url);
+    return _v173Json.apply(this, arguments);
+  };
+}
+
+async function v201LoadAllDays(){
+  const db = mlogFS();
+  const today = mlogDay(Date.now());
+  const startDay = (typeof V131 !== 'undefined' && V131.first) ? V131.first : '20261119';
+  let daysLoaded = 0;
+  for (let d = startDay; d <= today; d = v131DayAdd(d, 1)){
+    try{
+      const qs = await db.collection('modelLog').where('d', '==', d).get();
+      let m = MLOG.raw.get(d); if (!m){ m = new Map(); MLOG.raw.set(d, m); }
+      qs.forEach(doc => { const x = doc.data(); if (x && x.r) for (const id in x.r) if (x.r[id]) m.set(id, x.r[id]); });
+      daysLoaded++;
+    }catch(e){}
+  }
+  return daysLoaded;
+}
+
+async function v201PurgeAndRegrade(force){
+  if (V201.purging) return null;
+  if (!force && localStorage.getItem(V201_LS_PURGE) === '1') return {skipped:true};
+  if (typeof mlogOn !== 'function' || !mlogOn()) return null;
+  if (!force && (typeof v154Pub !== 'function' || !v154Pub())) return null;
+  if (typeof MLOG === 'undefined' || !MLOG.raw || !MLOG.at) return null;
+  V201.purging = true;
+  const stats = {daysLoaded:0, purgedRows:0, unitsVoided:0, shardsWritten:0, stillGraded:0};
+  try{
+    stats.daysLoaded = await v201LoadAllDays();
+    if (typeof v163Rebucket === 'function') v163Rebucket();
+    const allEntries = [];
+    for (const [, m] of MLOG.raw) if (m) for (const [id, o] of m) if (o) allEntries.push([id, o]);
+    const badAll = (typeof v189BuildBadSet === 'function') ? v189BuildBadSet(allEntries) : new Set();
+    for (const id of V201_KNOWN_BAD) badAll.add(id);
+    const byDoc = new Map();
+    for (const [d, m] of MLOG.raw){
+      if (!m || !m.size) continue;
+      for (const [id, o] of m){
+        if (!badAll.has(id) && !(o && (o.bad === 'v200' || o.bad === 'v201' || o.bad === 'v189'))) continue;
+        const wasGraded = (o.res === 'win' || o.res === 'loss');
+        const dirty = (o.bad !== 'v201' && o.bad !== 'v200' && o.bad !== 'v189') || o.res !== 'void' || o.v === 'good' || o.sv === 'good';
+        if (wasGraded){
+          const px = typeof v200Px === 'function' ? v200Px(o) : (o.lpr != null ? +o.lpr : +o.pr);
+          if (o.res === 'win' && px != null && isFinite(px)) stats.unitsVoided += (px > 0 ? px / 100 : 100 / Math.abs(px));
+          else if (o.res === 'loss') stats.unitsVoided -= 1;
+        }
+        o.bad = o.bad === 'v189' ? 'v189' : (o.bad === 'v200' ? 'v200' : 'v201');
+        if (o.res && o.res !== 'void') o.res = 'void';
+        if (o.v === 'good' || o.v === 'watch') o.v = 'avoid';
+        if (o.sv === 'good' || o.sv === 'watch') o.sv = 'avoid';
+        if (o.lv === 'good' || o.lv === 'watch') o.lv = 'avoid';
+        if (o.res === 'win' || o.res === 'loss') stats.stillGraded++;
+        if (dirty){
+          stats.purgedRows++;
+          const dk = mlogDocId(id, o);
+          let doc = byDoc.get(dk); if (!doc){ doc = {d: mlogDay(o.t), b: o.b, r: {}}; byDoc.set(dk, doc); }
+          const cleanCopy = Object.assign({}, o); delete cleanCopy._v200bad; delete cleanCopy._v189bad;
+          doc.r[id] = cleanCopy;
+          if (MLOG.up && typeof mlogRank === 'function') MLOG.up.set(id, mlogRank(cleanCopy));
+        }
+      }
+    }
+    stats.unitsVoided = Math.round(stats.unitsVoided * 100) / 100;
+    const db = mlogFS();
+    for (const [dk, body] of byDoc){
+      try{ await db.collection('modelLog').doc(dk).set(Object.assign({}, body, {u: Date.now()}), {merge: true}); stats.shardsWritten++; }catch(e){}
+    }
+    try{
+      if (typeof V145 !== 'undefined') V145.stat = {};
+      if (typeof V131 !== 'undefined'){ V131.rows.clear(); V131.seg = {demote:{}, promote:{}}; V131.segLog = []; }
+      for (const [d, s] of [...MLOG.sums]) if (s && !s.v201) MLOG.sums.set(d, Object.assign({}, s, {final:false, dd:0, v189:0, v200:0, v201:0}));
+      if (typeof mlogWriteFinalSums === 'function') await mlogWriteFinalSums();
+    }catch(e){}
+    try{
+      if (typeof LEARN !== 'undefined' && LEARN.props){
+        LEARN.props.cur = 1;
+        LEARN.props.versions = (LEARN.props.versions || []).slice(0, 1);
+        LEARN.props.sportStats = {};
+        LEARN.props.autoOff = {};
+        LEARN.props.log = [{at: Date.now(), txt: 'Rebuilt Props learner on the clean log after voiding the remaining fake rebound lines.'}];
+        if (typeof boardS === 'function' && boardS('props')) boardS('props').sMinWin = 0.60;
+        if (typeof learnSave === 'function') learnSave();
+        if (typeof UNI_LEARN !== 'undefined'){ UNI_LEARN.props = []; UNI_LEARN.at = 0; }
+        if (typeof uniLoadLearn === 'function') await uniLoadLearn(true);
+        if (typeof propsLearnRetune === 'function') await propsLearnRetune({force: true});
+      }
+    }catch(e){}
+    try{ if (typeof v131Fit === 'function') v131Fit(); }catch(e){}
+    try{
+      if (typeof V154 !== 'undefined' && V154.pubSig){
+        delete V154.pubSig.days2; delete V154.pubSig.rows; delete V154.pubSig.learn; delete V154.pubSig.potd; delete V154.pubSig.audit;
+      }
+      if (typeof v142Publish === 'function') v142Publish(true);
+      if (typeof v189PublishLearn === 'function') await v189PublishLearn();
+      if (typeof v189PublishAudit === 'function') await v189PublishAudit();
+    }catch(e){}
+    if (stats.stillGraded === 0){
+      localStorage.setItem(V201_LS_PURGE, '1');
+      V201.purged = true;
+    }
+    V201.counts.purge += stats.purgedRows;
+    V201.lastPurge = Object.assign({at: Date.now()}, stats);
+    return stats;
+  }finally{ V201.purging = false; }
+}
+
+setTimeout(function v201BootPurge(){
+  try{
+    if (typeof mlogOn === 'function' && mlogOn() && typeof MLOG !== 'undefined' && MLOG.at && typeof v154Pub === 'function' && v154Pub()){
+      v201PurgeAndRegrade(false).catch(()=>{});
+    } else if (localStorage.getItem(V201_LS_PURGE) !== '1'){
+      setTimeout(v201BootPurge, 15000);
+    }
+  }catch(e){}
+}, 16000);
+
+(function(){
+  if (typeof v189PublishAudit !== 'function' || typeof v154Put !== 'function') return;
+  v189PublishAudit = async function(){
+    try{
+      if (typeof v154Pub !== 'function' || !v154Pub()) return false;
+      if (typeof V189 !== 'undefined') V189.lastAuditAt = Date.now();
+      const early = (typeof V200 !== 'undefined' && V200.earlyLocks) ? V200.earlyLocks : [];
+      return await v154Put('audit', {
+        at: Date.now(), v: 201,
+        counts: typeof V189 !== 'undefined' ? V189.counts : {},
+        v200: typeof V200 !== 'undefined' ? V200.counts : {},
+        earlyLockCount: early.length,
+        earlyLocks: early.slice(0, 20),
+        blocked: typeof V189 !== 'undefined' ? V189.blocked.slice(0, 40) : [],
+        rejLog: typeof V189 !== 'undefined' ? V189.rejLog.slice(0, 50) : [],
+        v201: {counts: V201.counts, lastPurge: V201.lastPurge, anErr: V201.anErr, purged: !!V201.purged}
+      });
+    }catch(e){ return false; }
+  };
+})();
+
+window.v201PurgeAndRegrade = v201PurgeAndRegrade;
+window.V201 = V201;
 </script>
 </body>
 </html>
