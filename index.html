@@ -39576,7 +39576,7 @@ function v198Tail(id, kind){
    one side per team or Over/Under, labeled with the real Action Network public %. If the money
    split is missing or does not add up, only the bets bar is shown; no numbers are invented.
    A "Sharp side" tag appears when the line moved against the public or Pinnacle steamed; a
-   "Smart money" tag appears when the money share is 10+ points above the bet share on our side.
+   "Big-money lean" tag appears when the money share is 10+ points above the bet share on our side.
    A short capper line sums it up, and a compact open → now track is drawn when we have both
    numbers. The rest of +EV and Picks is unchanged. ===== */
 APP_BUILD = 199;
@@ -39699,7 +39699,7 @@ function v199MoveHTML(r){
 function v199TagsHTML(r){
   const tags = [];
   if (v199IsSharpTag(r)) tags.push('<span class="v199-tag sharp">Sharp side</span>');
-  if (v199IsSmart(r)) tags.push('<span class="v199-tag smart">Smart money</span>');
+  if (v199IsSmart(r)) tags.push('<span class="v199-tag smart">Big-money lean</span>');
   if (r.lk) tags.push('<span class="v199-tag lock">Locked</span>');
   else if (r.t) tags.push(`<span class="v199-tag lock">Locks ${esc(new Date(r.t - (typeof V198_LOCK_MIN==='number'?V198_LOCK_MIN:30)*60000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}))}</span>`);
   return tags.length ? `<div class="v199-tags">${tags.join('')}</div>` : '';
@@ -39760,6 +39760,974 @@ function v199CardHTML(r){
 `;
   document.head.appendChild(st);
 })();
+/* ===== v200: T-30 lock re-check, 45m early-lock audit, widened alt-line guard & purge, Sharp CLV (Stanley, Nov 25 2026) =====
+   1) Timezone fix: ymd() always uses America/Los_Angeles so UTC servers never roll over to tomorrow at 4 PM PT
+      and drop the evening slate before its T-30 lock window.
+   2) T-30 lock re-check: Web Worker 60s heartbeat + v200LockPass() explicitly re-fetches DraftKings prices from ESPN
+      (bypassing propBoardCache and unrelated feedBackoff), loads missing player logs, re-runs board + model verdicts,
+      logs lock price/verdict/timing (lpr, lv, lmn, lat), drops cooled Picks at lock (POD never cools into Avoid),
+      fixes mlogInjectOpen() not to fabricate locks, fixes mlogPush() so lock updates always upload, and flags any lock
+      captured > 45 min before start.
+   3) Widened alt-line guard: covers ALL lines and ALL stats (no <=3.5 or reb-only cap) across live feeds, grading,
+      historical log purge (v200PurgeAndRegrade), and propLearnRows (-250 floor + clean log), then rebuilds Props & POD learners.
+   4) Sharp CLV: logs bigLean / sharpSide tags and DraftKings close + CLV on SL.rows (sharplog). ===== */
+APP_BUILD = 200;
+
+const V200_LS_PURGE = 'bl_v200_purged_v1';
+const V200_LS_LOG = 'bl_v200_audit_v1';
+var V200 = {
+  busy: false, purging: false, purged: false, lastPass: 0, lastAt: 0,
+  counts: {lockPass:0, lockGames:0, lockProps:0, cooled:0, earlyLock:0, purge:0, ladFeedDrop:0},
+  earlyLocks: [], lockLog: [], upSig: new Map(), worker: null
+};
+try{
+  const saved = JSON.parse(localStorage.getItem(V200_LS_LOG) || 'null');
+  if (saved && typeof saved === 'object'){
+    if (saved.counts) Object.assign(V200.counts, saved.counts);
+    if (Array.isArray(saved.earlyLocks)) V200.earlyLocks = saved.earlyLocks.slice(0, 60);
+    if (Array.isArray(saved.lockLog)) V200.lockLog = saved.lockLog.slice(0, 60);
+  }
+}catch(e){}
+function v200Save(){
+  try{
+    localStorage.setItem(V200_LS_LOG, JSON.stringify({
+      counts: V200.counts,
+      earlyLocks: V200.earlyLocks.slice(0, 60),
+      lockLog: V200.lockLog.slice(0, 60)
+    }));
+  }catch(e){}
+}
+
+/* ---------- 1) Pacific-Time ymd() fix (prevents 4 PM PT rollover bug on UTC machines) ---------- */
+const V200_PT_FMT = (()=>{ try{ return new Intl.DateTimeFormat('en-CA', {timeZone:'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit'}); }catch(e){ return null; } })();
+const v200YmdLocal = typeof ymd === 'function' ? ymd : (d => d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'));
+function v200PtYmd(x){
+  const d = (x instanceof Date) ? x : new Date(x != null ? +x : Date.now());
+  if (V200_PT_FMT && !isNaN(+d)){
+    try{
+      const p = {};
+      for (const z of V200_PT_FMT.formatToParts(d)) p[z.type] = z.value;
+      const out = (p.year||'') + (p.month||'') + (p.day||'');
+      if (/^\d{8}$/.test(out)) return out;
+    }catch(e){}
+  }
+  return v200YmdLocal(d);
+}
+ymd = v200PtYmd;
+
+/* ---------- 2) Widened Alt-Line Guard (ALL lines, ALL stats) ---------- */
+function v200Px(o){
+  const p = (o && o.lpr != null && isFinite(+o.lpr)) ? +o.lpr : (o && o.pr != null && isFinite(+o.pr) ? +o.pr : null);
+  return (p != null && isFinite(p)) ? p : null;
+}
+function v200Imp(px){
+  if (px == null || !isFinite(px) || px === 0 || Math.abs(px) < 100) return null;
+  return px > 0 ? 100 / (px + 100) : (-px) / (-px + 100);
+}
+function v200CheckStandalone(o){
+  if (!o) return 'missing';
+  const prices = [];
+  if (o.lpr != null && isFinite(+o.lpr)) prices.push(+o.lpr);
+  if (o.pr != null && isFinite(+o.pr) && (+o.pr !== +o.lpr)) prices.push(+o.pr);
+  if (!prices.length) return 'bad_odds';
+  for (const px of prices){
+    const isSb = (o.s == null || o.s === 'sb' || o.src === 'sb');
+    if (px === 0 || Math.abs(px) < 100 || (isSb && (px < -5000 || px > 10000))) return 'bad_odds';
+    if (o.b === 'props' && isSb){
+      const sd = String(o.sd || o.side || '').toLowerCase();
+      const pt = o.pt != null ? +o.pt : (o.line != null ? +o.line : null);
+      if (Array.isArray(o.lad) && o.lad.length >= 3 && pt != null){
+        const [mPt, mOv, mUn] = o.lad;
+        const ip = v200Imp(px);
+        if (sd === 'over' && mPt != null && mOv != null && ip != null){
+          const mip = v200Imp(mOv);
+          if (mip != null && pt < mPt && ip < mip - 0.02) return 'lad_snap_below';
+          if (mip != null && pt <= mPt - 1.5 && ip < Math.min(0.85, mip + 0.05)) return 'lad_snap_deep';
+          if (mip != null && pt > mPt && ip > mip + 0.02) return 'lad_snap_above';
+        }
+        if (sd === 'under' && mPt != null && mUn != null && ip != null){
+          const mip = v200Imp(mUn);
+          if (mip != null && pt < mPt && ip > mip + 0.02) return 'lad_snap_under_below';
+          if (mip != null && pt > mPt && ip < mip - 0.02) return 'lad_snap_under_above';
+        }
+      }
+    }
+  }
+  return '';
+}
+v189RowStandaloneBad = v200CheckStandalone;
+
+// Live feed & historical ladder monotonicity check across ALL lines and ALL stats
+function v200DetectBadLadderIds(entries, opts){
+  // entries: array of [id, obj], obj has ev, pid/pn, k/kind, sd/side, pt/line, pr, lpr, at
+  const live = !!(opts && opts.live);
+  const tol = (opts && opts.tol) || 0.02;
+  const bad = new Set();
+  const lad = new Map();
+  const ptsByEpk = new Map();
+  for (const [id, o] of entries){
+    if (!o) continue;
+    const isSb = (o.s == null || o.s === 'sb' || o.src === 'sb');
+    if (o.bad === 'v189' || o.bad === 'v200' || o._v189bad || o._v200bad){ bad.add(id); continue; }
+    const pt = o.pt != null ? +o.pt : (o.line != null ? +o.line : null);
+    const sd = String(o.sd || o.side || '').toLowerCase();
+    const k = o.k || o.kind || '';
+    const pid = o.pid || o.playerId || o.pn || o.playerName || '';
+    const ev = o.ev || o.eventId || '';
+    if (isSb && v200CheckStandalone({b:'props', s:'sb', k, sd, pt, pr: o.pr != null ? o.pr : o.price, lpr: o.lpr, lad: o.lad})){
+      bad.add(id); continue;
+    }
+    if (isSb && pt != null && isFinite(pt) && (sd === 'over' || sd === 'under')){
+      const epk = `${ev}|${pid}|${k}`;
+      let pm = ptsByEpk.get(epk); if (!pm){ pm = new Map(); ptsByEpk.set(epk, pm); }
+      let ss = pm.get(pt); if (!ss){ ss = new Set(); pm.set(pt, ss); }
+      ss.add(sd);
+      const lk = `${epk}|${sd}`;
+      if (!lad.has(lk)) lad.set(lk, []);
+      lad.get(lk).push([id, o, pt]);
+    }
+  }
+  for (const [lk, items] of lad){
+    items.sort((a, b) => a[2] - b[2]);
+    const [ev, pid, k, sd] = lk.split('|');
+    const pm = ptsByEpk.get(`${ev}|${pid}|${k}`);
+    let anchorPt = null, anchorImp = null;
+    if (pm){
+      for (const [pt, sds] of pm){
+        if (sds.has('over') && sds.has('under') && (anchorPt == null || pt > anchorPt)) anchorPt = pt;
+      }
+    }
+    let anchorAt = 0;
+    if (anchorPt != null){
+      let bestAt = -1;
+      for (const [idA, oA, ptA] of items){
+        if (ptA === anchorPt && ((+oA.at || 0) >= bestAt)){
+          const pxA = v200Px(oA); const impA = v200Imp(pxA);
+          if (impA != null){ anchorImp = impA; bestAt = (+oA.at || 0); anchorAt = (+oA.at || 0); }
+        }
+      }
+    }
+    const sgn = sd === 'over' ? 1 : -1;
+    if (anchorPt != null && anchorImp != null){
+      for (const [idA, oA, ptA] of items){
+        if (ptA === anchorPt) continue;
+        const effA = oA.lpr != null ? +oA.lpr : (oA.pr != null ? +oA.pr : +oA.price);
+        const impA = v200Imp(effA);
+        if (impA == null) continue;
+        const da = ptA < anchorPt ? sgn * (anchorImp - impA) : sgn * (impA - anchorImp);
+        const dtA = live ? 0 : Math.abs((+oA.at || 0) - anchorAt) / 60000;
+        if ((live && da > tol) || (!live && ((dtA <= 20 && da > tol) || da > 0.15))){
+          bad.add(idA);
+        }
+      }
+    }
+    for (let i = 0; i < items.length; i++){
+      const [idI, oI, ptI] = items[i];
+      const effI = oI.lpr != null ? +oI.lpr : (oI.pr != null ? +oI.pr : +oI.price);
+      const openI = oI.pr != null ? +oI.pr : (oI.price != null ? +oI.price : null);
+      const impI = v200Imp(effI), impI0 = v200Imp(openI);
+      if (impI == null && impI0 == null){ bad.add(idI); continue; }
+      for (let j = i + 1; j < items.length; j++){
+        const [idJ, oJ, ptJ] = items[j];
+        if (ptI === ptJ) continue;
+        const effJ = oJ.lpr != null ? +oJ.lpr : (oJ.pr != null ? +oJ.pr : +oJ.price);
+        const openJ = oJ.pr != null ? +oJ.pr : (oJ.price != null ? +oJ.price : null);
+        const impJ = v200Imp(effJ), impJ0 = v200Imp(openJ);
+        const d1 = (impI != null && impJ != null) ? sgn * (impJ - impI) : -1;
+        const d0 = (impI0 != null && impJ0 != null) ? sgn * (impJ0 - impI0) : -1;
+        const d = Math.max(d1, d0);
+        const dtMin = live ? 0 : Math.abs((+oJ.at || 0) - (+oI.at || 0)) / 60000;
+        // Same-snapshot (>0.02) or cross-timestamp extreme inversion (>0.15)
+        if ((live && d > tol) || (!live && ((dtMin <= 20 && d > tol) || d > 0.15))){
+          if (sd === 'over'){
+            if (anchorPt != null && ptI < anchorPt && ptJ >= anchorPt) bad.add(idI);
+            else if (anchorPt != null && ptI <= anchorPt && ptJ > anchorPt) bad.add(idJ);
+            else if (anchorPt != null && ptI > anchorPt && ptJ > ptI) bad.add(idJ);
+            else if ((openI != null && openI > -100 && openJ != null && openJ <= -200) || (effI != null && effI > -100 && effJ != null && effJ <= -200)){
+              bad.add(idI);
+            } else {
+              bad.add(idI);
+              if (anchorPt == null) bad.add(idJ);
+            }
+          } else {
+            if (anchorPt != null && ptI < anchorPt && ptJ >= anchorPt) bad.add(idI);
+            else if (anchorPt != null && ptI <= anchorPt && ptJ > anchorPt) bad.add(idJ);
+            else { bad.add(idI); bad.add(idJ); }
+          }
+        }
+      }
+    }
+  }
+  return bad;
+}
+
+v189BuildBadSet = function(entries){
+  const propEntries = [];
+  const bad = new Set();
+  for (const [id, o] of entries){
+    if (!o) continue;
+    if (o.bad === 'v189' || o.bad === 'v200' || o._v189bad || o._v200bad){ bad.add(id); continue; }
+    if (o.s === 'sb' && v200CheckStandalone(o)){ bad.add(id); continue; }
+    if (o.b === 'props' && o.s === 'sb') propEntries.push([id, o]);
+  }
+  for (const id of v200DetectBadLadderIds(propEntries, {live:false, tol:0.02})) bad.add(id);
+  return bad;
+};
+
+(function(){
+  // Filter corrupt alt ladders in live feeds (uniPairDk & pairEspnProps) across ALL lines & ALL stats
+  if (typeof uniPairDk === 'function'){
+    const base = uniPairDk;
+    uniPairDk = function(recs, gm){
+      const rows = base.apply(this, arguments) || [];
+      if (!rows.length) return rows;
+      const entries = rows.map((x, idx) => [String(idx), {
+        ev: gm && gm.ev, pid: x.pid, k: x.kind, sd: x.side, pt: x.line, pr: x.price, s: 'sb', b: 'props'
+      }]);
+      const bad = v200DetectBadLadderIds(entries, {live:true, tol:0.02});
+      if (!bad.size) return rows;
+      V200.counts.ladFeedDrop += bad.size;
+      return rows.filter((_, idx) => !bad.has(String(idx)));
+    };
+  }
+  if (typeof pairEspnProps === 'function'){
+    const base = pairEspnProps;
+    pairEspnProps = function(recs, g){
+      const rows = base.apply(this, arguments) || [];
+      if (!rows.length) return rows;
+      const entries = [];
+      for (let i = 0; i < rows.length; i++){
+        const r = rows[i]; if (!r) continue;
+        if (r.overPrice != null) entries.push([i + '|o', {ev: r.eventId || (g&&g.eventId), pid: r.playerId, k: r.kind, sd: 'over', pt: r.line, pr: r.overPrice, s:'sb', b:'props'}]);
+        if (r.underPrice != null) entries.push([i + '|u', {ev: r.eventId || (g&&g.eventId), pid: r.playerId, k: r.kind, sd: 'under', pt: r.line, pr: r.underPrice, s:'sb', b:'props'}]);
+      }
+      const bad = v200DetectBadLadderIds(entries, {live:true, tol:0.02});
+      if (!bad.size) return rows;
+      const out = [];
+      for (let i = 0; i < rows.length; i++){
+        const r = rows[i]; if (!r) continue;
+        const bo = bad.has(i + '|o'), bu = bad.has(i + '|u');
+        if (bo && bu){ V200.counts.ladFeedDrop++; continue; }
+        if (bo || bu){
+          const c = Object.assign({}, r);
+          if (bo) c.overPrice = null;
+          if (bu) c.underPrice = null;
+          if (c.overPrice == null && c.underPrice == null) continue;
+          V200.counts.ladFeedDrop++;
+          out.push(c);
+        } else out.push(r);
+      }
+      return out;
+    };
+  }
+  if (typeof v189CheckUniRow === 'function'){
+    const base = v189CheckUniRow;
+    v189CheckUniRow = function(r){
+      const w = base.apply(this, arguments);
+      if (w) return w;
+      if (!r || r.b !== 'props' || r.src !== 'sb') return '';
+      if (typeof UNI !== 'undefined'){
+        const sibs = [];
+        for (const x of UNI.values()){
+          if (x && x.b === 'props' && x.src === 'sb' && x.ev === r.ev && x.pid === r.pid && x.kind === r.kind && x.side === r.side){
+            sibs.push([x.i, {ev:x.ev, pid:x.pid, k:x.kind, sd:x.side, pt:x.pt, pr:x.price, lpr:x.lk&&x.lk.price!=null?x.lk.price:null, at:x.at, s:'sb', b:'props'}]);
+          }
+        }
+        const bad = v200DetectBadLadderIds(sibs, {live:false, tol:0.02});
+        if (bad.has(r.i)) return 'v200_ladder_violation';
+      }
+      return '';
+    };
+  }
+  // Enforce -250 floor and clean ladder on propLearnRows & uniLoadLearn so LEARN.props is never poisoned
+  if (typeof uniLoadLearn === 'function'){
+    const base = uniLoadLearn;
+    uniLoadLearn = async function(force){
+      const rows = await base.apply(this, arguments) || [];
+      const bad = v200DetectBadLadderIds(rows.map((x,i) => [String(i), {ev:x.eventId, pid:x.playerId, k:x.kind, sd:x.side, pt:x.line, pr:x.price, at:x.t, s:'sb', b:'props'}]), {live:false, tol:0.02});
+      const clean = rows.filter((x, i) => !bad.has(String(i)) && x.price != null && +x.price >= -250 && +x.price <= 2500);
+      if (typeof UNI_LEARN !== 'undefined') UNI_LEARN.props = clean;
+      return clean;
+    };
+  }
+  if (typeof propLearnRows === 'function'){
+    const base = propLearnRows;
+    propLearnRows = function(){
+      const rows = base.apply(this, arguments) || [];
+      const bad = v200DetectBadLadderIds(rows.map((x,i) => [String(i), {ev:x.eventId, pid:x.playerId, k:x.kind, sd:x.side, pt:x.line, pr:x.price, at:x.t, s:'sb', b:'props'}]), {live:false, tol:0.02});
+      return rows.filter((r, i) => !r.bad && !bad.has(String(i)) && r.price != null && +r.price >= -250 && +r.price <= 2500 && !v200CheckStandalone({b:'props', s:'sb', k:r.kind, sd:r.side, pt:r.line, pr:r.price}));
+    };
+  }
+})();
+
+/* ---------- 3) T-30 Lock Re-check, 45m Early-Lock Flag, & Upload Pipeline Fixes ---------- */
+// Stop mlogInjectOpen from fabricating fake locks out of mn <= 120 when o.lk / o.lkd wasn't set
+mlogInjectOpen = function(){
+  if (typeof UNI === 'undefined' || typeof UNI_ST === 'undefined' || !UNI_ST.ready) return 0;
+  const now = Date.now(); let n = 0;
+  for (const [d, m] of MLOG.raw){
+    for (const [id, o] of m){
+      if (o.res || !(o.t < now - 3*3600000) || o.t < now - 4*86400000 || UNI.has(id)) continue;
+      const wasLocked = !!(o.lk || o.lkd);
+      const row = {i:id, id, b:o.b, src:o.s, l:o.l, ev:o.ev, t:o.t, mk:o.mk, side:o.sd, pt:o.pt, kind:o.k, pid:o.pid, pn:o.pn, game:o.gm, book:o.bk, v:o.v, p:o.p, price:o.pr, shown:o.sh, u:o.u, mins:o.mn,
+        pk:o.v==='good' ? {price:o.pr, p:o.p, at:o.at} : undefined, fd:mlogDay(o.t||o.at), first:o.at||o.t, at:o.at||o.t, y:null, _cloud:1};
+      if (o.fr != null) row.fr = o.fr;
+      if (o.op != null) row.op = o.op;
+      if (o.un != null) row.un = o.un;
+      if (o.lad) row.lad = o.lad;
+      if (wasLocked) row.lk = {v:o.lv || o.v, sv:o.sv || o.lv, p:o.lp != null ? o.lp : o.p, price:o.lpr!=null ? o.lpr : o.pr, u:o.u, at:o.lat || o.at, lmn:o.lmn, L:o.lkd ? 1 : 0};
+      UNI.set(id, row);
+      n++;
+    }
+  }
+  return n;
+};
+
+function v200FlagEarlyLock(o, lmn){
+  try{
+    if (!o || !(lmn > 45)) return;
+    const id = o.id || o.i || '';
+    if (V200.earlyLocks.some(x => x.id === id)) return;
+    V200.counts.earlyLock++;
+    V200.earlyLocks.unshift({
+      id, b: o.b, l: o.l, gm: o.gm || o.game || '', pn: o.pn || '', mk: o.mk || '', k: o.k || o.kind || '',
+      pt: o.pt, lmn: Math.round(lmn), pr: o.pr, lpr: o.lpr, at: Date.now()
+    });
+    V200.earlyLocks = V200.earlyLocks.slice(0, 60);
+    v200Save();
+    if (typeof v189LogRej === 'function') v189LogRej('earlyLock', {id, l:o.l, kind:o.k||o.mk, line:o.pt, price:o.lpr!=null?o.lpr:o.pr}, `Lock captured ${Math.round(lmn)}m before start (>45m)`);
+  }catch(e){}
+}
+
+// Wrap mlogCompact so lock price (lpr), lock verdict (lv), lock timing (lmn, lat), and >45m early-lock flag are always emitted
+(function(){
+  if (typeof mlogCompact !== 'function') return;
+  const base = mlogCompact;
+  mlogCompact = function(r){
+    const out = base.apply(this, arguments);
+    try{
+      if (out && out[1] && r){
+        const o = out[1];
+        if (r.lk){
+          o.lk = 1;
+          if (r.lk.price != null && isFinite(+r.lk.price)) o.lpr = Math.round(+r.lk.price);
+          if (r.lk.sv || r.lk.v) o.lv = r.lk.sv || r.lk.v;
+          if (r.lk.p != null && isFinite(+r.lk.p)) o.lp = Math.round(+r.lk.p * 10000) / 10000;
+          const lat = +r.lk.at || +r.at || Date.now();
+          const lmn = r.lk.lmn != null && isFinite(+r.lk.lmn) ? Math.round(+r.lk.lmn) : Math.round((+r.t - lat) / 60000);
+          o.lat = lat;
+          o.lmn = lmn;
+          if (lmn > 45){
+            o.lkEarly = 1;
+            v200FlagEarlyLock(Object.assign({id: out[0]}, o), lmn);
+          } else {
+            delete o.lkEarly;
+          }
+        }
+      }
+    }catch(e){}
+    return out;
+  };
+})();
+
+// Allow _v200Force to bypass the 5-min UNI_THROTTLE in uniUpsert
+(function(){
+  if (typeof uniUpsert !== 'function') return;
+  const base = uniUpsert;
+  uniUpsert = function(b, src, id, rowBase, snap){
+    if (snap && snap._v200Force && typeof UNI !== 'undefined'){
+      const ex = UNI.get(id);
+      if (ex && ex.y == null) ex.at = 0;
+    }
+    return base.apply(this, arguments);
+  };
+})();
+
+// Fix mlogPush so T-30 lock re-checks & pre-lock open price/verdict changes always upload to Firestore
+function v200RowSig(o){
+  if (!o) return '';
+  return [typeof mlogRank==='function'?mlogRank(o):0, o.pr??'', o.lpr??'', o.v||'', o.sv||'', o.lv||'', o.lmn??'', o.lat??'', o.bad||''].join('|');
+}
+mlogPush = async function(){
+  if (!mlogOn() || MLOG.pushing) return 0;
+  MLOG.pushing = true;
+  try{
+    const bfKey = (AUTH.user && AUTH.user.uid) || '';
+    if (localStorage.getItem(MLOG_BF_LS)!==bfKey && typeof idbOpen==='function' && UNI_ST.idb!==false){
+      let n = 0;
+      try{
+        const d = await idbOpen(); const lo = mlogDay(Date.now() - 31*86400000);
+        await new Promise((res, rej)=>{ const req = d.transaction('uniDone').objectStore('uniDone').openCursor(IDBKeyRange.lowerBound(lo));
+          req.onsuccess = ()=>{ const c = req.result; if (!c) return res(); const r = c.value; if (r && !r._cloud){ const before = MLOG.queue.size; mlogQueue(r); if (MLOG.queue.size > before) n++; } c.continue(); };
+          req.onerror = ()=>rej(req.error); });
+        MLOG.backfilled = n; MLOG.bfPending = bfKey;
+      }catch(e){ console.warn('model log backfill', e); }
+    }
+    if (typeof UNI!=='undefined') for (const r of UNI.values()) if (!r._cloud) mlogQueue(r);
+    if (!MLOG.queue.size){ MLOG.lastPushAt = Date.now(); if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; } return 0; }
+    if (!MLOG.at) await mlogLoad(true); else if (typeof mlogDeltaSync==='function') await mlogDeltaSync(false);
+    if (!MLOG.at) return 0;
+    const byDoc = new Map(); let n = 0;
+    for (const [id, o] of MLOG.queue){
+      const cloud = mlogFind(id, o);
+      const sig = v200RowSig(o);
+      if (V200.upSig.get(id) === sig) continue;
+      if (cloud){
+        const rCloud = mlogRank(cloud), rNew = mlogRank(o);
+        const cloudGraded = !!(cloud.res && cloud.res !== 'ungradeable');
+        if (cloudGraded && rCloud >= rNew) continue;
+        if (!cloudGraded){
+          const lockUpdated = !!(o.lk && (!cloud.lk || cloud.lpr !== o.lpr || cloud.lv !== o.lv || (o.lmn != null && cloud.lmn == null) || (o.lmn != null && o.lmn <= 45 && (cloud.lmn == null || cloud.lmn > 45)) || (o.lat && cloud.lat !== o.lat)));
+          const openUpdated = !!(!o.lk && !cloud.lk && (+o.at >= (+cloud.at||0) + 10*60000) && (o.pr !== cloud.pr || o.sv !== cloud.sv || o.v !== cloud.v));
+          if (rNew < rCloud) continue;
+          if (rNew === rCloud && !lockUpdated && !openUpdated) continue;
+        }
+      }
+      const k = mlogDocId(id, o); if (!byDoc.has(k)) byDoc.set(k, {d:mlogDay(o.t), b:o.b, r:{}});
+      byDoc.get(k).r[id] = o; n++;
+    }
+    const db = mlogFS(); const all = [...byDoc.entries()];
+    const res = await Promise.allSettled(all.map(([k, body])=>db.collection('modelLog').doc(k).set(Object.assign({}, body, {u:Date.now()}), {merge:true})));
+    const docs = all.filter((x, i)=>res[i].status==='fulfilled');
+    const bad = res.filter(x=>x.status==='rejected');
+    if (bad.length){ MLOG.err = String((bad[0].reason && (bad[0].reason.code||bad[0].reason.message)) || 'upload failed').slice(0, 160); }
+    if (docs.length && typeof mlogDeltaWrite==='function'){ try{ await mlogDeltaWrite(docs); }catch(e){} }
+    for (const [, body] of docs){
+      let m = MLOG.raw.get(body.d); if (!m){ m = new Map(); MLOG.raw.set(body.d, m); }
+      for (const id in body.r){ m.set(id, body.r[id]); MLOG.up.set(id, mlogRank(body.r[id])); V200.upSig.set(id, v200RowSig(body.r[id])); }
+    }
+    { const okIds = new Set(); for (const [, body] of docs) for (const id in body.r) okIds.add(id); for (const id of [...MLOG.queue.keys()]) if (okIds.has(id) || !all.some(([, b])=>id in b.r)) MLOG.queue.delete(id); n = okIds.size; }
+    if (!bad.length) MLOG.err = '';
+    MLOG.uploaded += n; MLOG.lastPushAt = Date.now(); if (n) MLOG.ver++;
+    if (MLOG.bfPending){ localStorage.setItem(MLOG_BF_LS, MLOG.bfPending); MLOG.bfPending = ''; }
+    return n;
+  }catch(e){ MLOG.err = (e && (e.code||e.message)) || 'upload failed'; return 0; }
+  finally{ MLOG.pushing = false; }
+};
+
+// Re-fetch fresh DraftKings game odds from ESPN at T-30 and re-run game + board verdict
+async function v200RefreshGameAtLock(ev, gm, now){
+  const L = typeof LMAP !== 'undefined' ? LMAP[gm.l] : null;
+  if (!L) return false;
+  const dt = v200PtYmd(gm.t);
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${L.path}/scoreboard?dates=${dt}${L.q?'&'+L.q:''}`;
+  try{ if (typeof ESPN_SB_CACHE !== 'undefined') ESPN_SB_CACHE.delete(url); }catch(e){}
+  const r = await fetchJSON(url, 18000);
+  if (!r || !r.ok || !r.data) return false;
+  const evObj = (r.data.events || []).find(e => e && String(e.id) === String(ev));
+  if (!evObj) return false;
+  const comp = evObj.competitions && evObj.competitions[0];
+  if (!comp) return false;
+  const st = (comp.status && comp.status.type && comp.status.type.state) || gm.state || 'pre';
+  const freshOdds = typeof uniSbOdds === 'function' ? uniSbOdds(comp) : null;
+  uniNoteGame({l: gm.l, ev: String(ev), state: st, sbOdds: freshOdds || gm.sbOdds});
+  const g = (typeof games !== 'undefined' && Array.isArray(games)) ? games.find(x => x && String(x.eventId) === String(ev)) : null;
+  if (g && typeof addEspnOdds === 'function'){
+    g.state = st;
+    const keepNonEspn = q => q && q.src !== 'espn';
+    for (const mk of ['ml','spread','total']){
+      if (!g.quotes || !g.quotes[mk]) continue;
+      for (const sd of Object.keys(g.quotes[mk])){
+        g.quotes[mk][sd] = (g.quotes[mk][sd] || []).filter(keepNonEspn);
+      }
+    }
+    addEspnOdds(g, comp.odds);
+    if (typeof evaluateAll === 'function'){
+      evaluateAll();
+      try{ if (typeof v183Hold === 'function') v183Hold(); }catch(e){}
+    }
+  }
+  return true;
+}
+
+// Re-fetch fresh DraftKings props from ESPN at T-30, load missing logs, re-run board & model verdicts
+async function v200RefreshPropsAtLock(ev, gm, now){
+  const ck = 'pb:' + ev;
+  if (typeof propBoardCache !== 'undefined') delete propBoardCache[ck];
+  const recs = await uniPropRecs(gm);
+  if (typeof UNI_ST !== 'undefined') UNI_ST.evAt[ev] = now;
+  const dkRows = uniPairDk(recs, gm);
+  const needAth = new Set(), needLog = new Set();
+  for (const x of dkRows){
+    if (typeof UNI_MODEL_KINDS !== 'undefined' && UNI_MODEL_KINDS.has(x.kind)){
+      const c = propLogCache[gm.l + ':' + x.pid];
+      if (!c || !Array.isArray(c.rows)) needLog.add(gm.l + ':' + x.pid);
+    }
+    const a = propAthleteCache[gm.l + ':' + x.pid];
+    if (!a || !a.name) needAth.add(gm.l + ':' + x.pid);
+  }
+  if (needAth.size){
+    await pool([...needAth].map(k => async()=>{ const [lg, id] = k.split(':'); try{ await fetchEspnAthlete(lg, id); }catch(e){} }), 4);
+    try{ saveJSON('bl_prop_athletes', propAthleteCache); }catch(e){}
+  }
+  if (needLog.size){
+    await pool([...needLog].map(k => async()=>{ const [lg, id] = k.split(':'); try{ await loadPropGamelog(lg, id); }catch(e){ propLogCache[k] = {t:Date.now(), rows:[]}; } }), 4);
+  }
+  // Re-evaluate board props[] for this game so bp.verdict (sv) is fresh at T-30 (and POD stays held)
+  const g = (typeof games !== 'undefined' && Array.isArray(games)) ? games.find(x => x && String(x.eventId) === String(ev)) : null;
+  if (g && typeof pairEspnProps === 'function' && typeof evaluatePropRaw === 'function'){
+    try{
+      const paired = pairEspnProps(recs, g);
+      if (typeof resolvePropAthletes === 'function') await resolvePropAthletes(paired, g.league);
+      const freshProps = [];
+      const seen = new Set();
+      for (const pr of paired){
+        const k = `${pr.eventId}|${pr.playerId}|${pr.kind}|${pr.line}`;
+        if (seen.has(k)) continue; seen.add(k);
+        freshProps.push(evaluatePropRaw(pr));
+      }
+      const evStr = String(ev);
+      if (typeof props !== 'undefined' && Array.isArray(props)){
+        props = props.filter(p => !p || String(p.eventId) !== evStr).concat(freshProps);
+        try{ if (typeof applyPulledFinal === 'function') applyPulledFinal('props'); }catch(e){}
+        try{ if (typeof v42ApplyAutoOff === 'function') v42ApplyAutoOff('props'); }catch(e){}
+        try{ if (typeof v183Hold === 'function') v183Hold(); }catch(e){}
+      }
+    }catch(e){}
+  }
+  const board = new Map();
+  for (const p of (typeof props !== 'undefined' ? props : []) || []) if (p && p.id) board.set(p.id, p);
+  let locked = 0, cooled = 0;
+  const leadP = typeof lockLeadMins === 'function' ? lockLeadMins('props') : 30;
+  for (const x of dkRows){
+    const id = `prop:${ev}:${x.pid}:${x.kind}:${x.side}:${x.line}`;
+    const bp = board.get(id);
+    let m;
+    VERDICT_NO_RANGE++; try{ m = uniPropModel(gm, x.pid, x.kind, x.line, x.side, x.price); } finally{ VERDICT_NO_RANGE--; }
+    const sv = bp && bp.verdict ? bp.verdict : null;
+    if (sv && m.v === 'nocall') m = {v: sv, p: bp.p, need: m.need};
+    const a = propAthleteCache[gm.l + ':' + x.pid];
+    const uVal = (bp && bp.verdict === 'good' && typeof recommendedUnits === 'function') ? recommendedUnits(bp, 'prop').u : null;
+    const tuVal = (bp && bp.verdict === 'good' && typeof recommendedUnits === 'function') ? recommendedUnits(bp, 'prop').tier : null;
+    const r = uniUpsert('props', 'sb', id, {l:gm.l, ev, t:gm.t, kind:x.kind, side:x.side, pt:x.line, pid:x.pid, pn:a&&a.name||'', alt:x.alt||0, yes:x.yes||0}, {
+      price: x.price, v: m.v, sv: sv || undefined, p: m.p, u: uVal, tu: tuVal,
+      shown: bp && (bp.verdict === 'good' || bp.verdict === 'watch') ? 1 : 0, _v200Force: 1
+    });
+    if (r){
+      const mins = (r.t - now) / 60000;
+      const isPodHeld = !!(typeof v131IsPotd === 'function' && bp && v131IsPotd('props', bp));
+      const finalSv = isPodHeld ? 'good' : (sv || r.sv || m.v);
+      if (isPodHeld){ r.sv = 'good'; }
+      if (mins <= leadP + 2 && (!r.lk || !r.lk._v200)){
+        const wasPick = !!(r.pk || (r.lk && r.lk.sv === 'good'));
+        r.lk = {
+          price: r.price, v: r.v, sv: finalSv, p: r.p, u: r.u, tu: r.tu,
+          at: now, lmn: Math.round(mins * 10) / 10, _v200: 1
+        };
+        if (r.v === 'good' && r.pkRun && now - r.pkRun >= (typeof UNI_LOCK_STEADY === 'number' ? UNI_LOCK_STEADY : 30*60000)) r.lk.L = 1;
+        if (wasPick && finalSv !== 'good' && !isPodHeld) cooled++;
+        if (typeof UNI_DIRTY !== 'undefined') UNI_DIRTY.add(r.i);
+        locked++;
+      }
+    }
+  }
+  return {locked, cooled};
+}
+
+async function v200LockPass(opts){
+  opts = opts || {};
+  if (typeof UNI_ST === 'undefined' || !UNI_ST.ready) return null;
+  if (!opts.force && (typeof v154Pub !== 'function' || !v154Pub())) return null;
+  if (V200.busy) return null;
+  V200.busy = true;
+  const now = opts.now || Date.now();
+  const res = {events:0, gamesLocked:0, propsLocked:0, cooled:0, earlyFlags:0};
+  try{
+    const leadG = typeof lockLeadMins === 'function' ? lockLeadMins('games') : 30;
+    const leadP = typeof lockLeadMins === 'function' ? lockLeadMins('props') : 30;
+    const byEv = new Map();
+    const needLock = (r, lead) => {
+      if (!r || r.y != null || r.src !== 'sb') return false;
+      const mins = (r.t - now) / 60000;
+      if (mins < -2 || mins > lead + 2) return false;
+      if (!r.lk) return true;
+      if (r.lk._v200) return false;
+      const lmn = r.lk.lmn != null ? +r.lk.lmn : ((r.t - (+r.lk.at || 0)) / 60000);
+      return lmn > 45 || r.lk.v === 'nocall';
+    };
+    for (const r of UNI.values()){
+      const lead = r.b === 'props' ? leadP : leadG;
+      if (!needLock(r, lead)) continue;
+      const ev = String(r.ev || ''); if (!ev) continue;
+      let o = byEv.get(ev);
+      if (!o){ o = {ev, games:false, props:false, t:r.t, l:r.l}; byEv.set(ev, o); }
+      if (r.b === 'games') o.games = true;
+      if (r.b === 'props') o.props = true;
+    }
+    // Also catch any pregame UNI_GAMES entering T-30 whose sb rows aren't locked yet
+    for (const gm of UNI_GAMES.values()){
+      if (!gm || gm.state !== 'pre') continue;
+      const mins = (gm.t - now) / 60000;
+      if (mins < 0 || mins > Math.max(leadG, leadP) + 2) continue;
+      const ev = String(gm.ev);
+      if (!byEv.has(ev)){
+        const hasAnyV200 = [...UNI.values()].some(r => String(r.ev) === ev && r.src === 'sb' && r.lk && r.lk._v200);
+        if (!hasAnyV200) byEv.set(ev, {ev, games:true, props:!!(typeof PROP_SPORTS !== 'undefined' && PROP_SPORTS[gm.l]), t:gm.t, l:gm.l});
+      }
+    }
+    for (const [ev, info] of byEv){
+      const gm = UNI_GAMES.get(ev);
+      if (!gm) continue;
+      res.events++;
+      if (info.games){
+        try{
+          await v200RefreshGameAtLock(ev, gm, now);
+          // Re-capture games into UNI after fresh DK fetch & board re-eval
+          if (typeof uniCaptureGames === 'function'){
+            for (const r of UNI.values()) if (r.b === 'games' && r.src === 'sb' && String(r.ev) === ev && r.y == null) r.at = 0;
+            uniCaptureGames();
+          }
+          for (const r of UNI.values()){
+            if (r.b !== 'games' || r.src !== 'sb' || String(r.ev) !== ev || r.y != null) continue;
+            const mins = (r.t - now) / 60000;
+            if (mins > leadG + 2 || mins < -2) continue;
+            if (r.lk && r.lk._v200) continue;
+            const play = (typeof plays !== 'undefined' && Array.isArray(plays)) ? plays.find(p => p && p.g && String(p.g.eventId) === ev && p.mk === r.mk && p.side === r.side) : null;
+            const isPodHeld = !!(play && typeof v131IsPotd === 'function' && v131IsPotd('games', play));
+            const finalSv = isPodHeld ? 'good' : (r.sv || (play && play.verdict) || r.v);
+            if (isPodHeld) r.sv = 'good';
+            const wasPick = !!(r.pk || (r.lk && r.lk.sv === 'good'));
+            r.lk = {
+              price: r.price, v: r.v, sv: finalSv, p: r.p, u: r.u, tu: r.tu,
+              at: now, lmn: Math.round(mins * 10) / 10, _v200: 1
+            };
+            if (r.v === 'good' && r.pkRun && now - r.pkRun >= (typeof UNI_LOCK_STEADY === 'number' ? UNI_LOCK_STEADY : 30*60000)) r.lk.L = 1;
+            if (wasPick && finalSv !== 'good' && !isPodHeld){ res.cooled++; V200.counts.cooled++; }
+            if (typeof UNI_DIRTY !== 'undefined') UNI_DIRTY.add(r.i);
+            res.gamesLocked++;
+          }
+        }catch(e){ if (typeof uniErr === 'function') uniErr('v200 lock game '+ev, e); }
+      }
+      if (info.props && typeof PROP_SPORTS !== 'undefined' && PROP_SPORTS[gm.l]){
+        try{
+          const pr = await v200RefreshPropsAtLock(ev, gm, now);
+          res.propsLocked += pr.locked;
+          res.cooled += pr.cooled;
+          V200.counts.cooled += pr.cooled;
+        }catch(e){ if (typeof uniErr === 'function') uniErr('v200 lock props '+ev, e); }
+      }
+    }
+    // Check today's MLOG.raw for any >45m early locks
+    if (typeof MLOG !== 'undefined' && MLOG.raw){
+      const td = mlogDay(now);
+      const m = MLOG.raw.get(td);
+      if (m){
+        for (const [id, o] of m){
+          if (!o || !o.lk || o.res) continue;
+          const lmn = o.lmn != null ? +o.lmn : Math.round((+o.t - (+o.lat || +o.at || 0)) / 60000);
+          if (lmn > 45){ o.lkEarly = 1; v200FlagEarlyLock(Object.assign({id}, o), lmn); res.earlyFlags++; }
+        }
+      }
+    }
+    if (res.gamesLocked || res.propsLocked){
+      V200.counts.lockPass++;
+      V200.counts.lockGames += res.gamesLocked;
+      V200.counts.lockProps += res.propsLocked;
+      V200.lockLog.unshift(Object.assign({at: now}, res));
+      V200.lockLog = V200.lockLog.slice(0, 60);
+      v200Save();
+      if (typeof uniFlush === 'function') await uniFlush();
+      if (typeof mlogPush === 'function' && typeof mlogOn === 'function' && mlogOn()) await mlogPush();
+    }
+    V200.lastAt = now;
+  }finally{ V200.busy = false; }
+  return res;
+}
+
+// Wrap uniTick so T-30 lock pass runs even when unrelated feedBackoffActive() is true
+(function(){
+  if (typeof uniTick !== 'function') return;
+  const base = uniTick;
+  uniTick = async function(opts){
+    const r = await base.apply(this, arguments);
+    try{ await v200LockPass(); }catch(e){}
+    return r;
+  };
+})();
+
+// Unthrottled 60-second Web Worker heartbeat so Chrome background tabs never pause T-30 locks
+function v200StartHeartbeat(){
+  if (V200.worker) return;
+  try{
+    const blob = new Blob(['setInterval(()=>postMessage(1), 60000);'], {type:'application/javascript'});
+    const w = new Worker(URL.createObjectURL(blob));
+    w.onmessage = () => {
+      try{
+        if (typeof v154Pub === 'function' && v154Pub()){
+          v200LockPass().catch(()=>{});
+          if (typeof v198Tick === 'function') v198Tick();
+        }
+      }catch(e){}
+    };
+    V200.worker = w;
+  }catch(e){
+    setInterval(()=>{ try{ if (typeof v154Pub==='function' && v154Pub()) v200LockPass().catch(()=>{}); }catch(e){} }, 60000);
+  }
+}
+setTimeout(()=>{ v200StartHeartbeat(); v200LockPass().catch(()=>{}); }, 15000);
+
+/* ---------- 4) v200 Purge & Learner Rebuild (Props + POD) ---------- */
+async function v200PurgeAndRegrade(force){
+  if (V200.purging) return null;
+  if (!force && localStorage.getItem(V200_LS_PURGE) === '1') return {skipped:true};
+  if (typeof mlogOn !== 'function' || !mlogOn()) return null;
+  if (!force && (typeof v154Pub !== 'function' || !v154Pub())) return null;
+  if (typeof MLOG === 'undefined' || !MLOG.raw || !MLOG.at) return null;
+  V200.purging = true;
+  const stats = {daysLoaded:0, purgedRows:0, unitsVoided:0, shardsWritten:0, idbPurged:0, sumsRebuilt:0};
+  try{
+    const db = mlogFS();
+    const today = mlogDay(Date.now());
+    const startDay = (typeof V131 !== 'undefined' && V131.first) ? V131.first : '20261119';
+    for (let d = startDay; d <= today; d = v131DayAdd(d, 1)){
+      if (!MLOG.raw.has(d) || !MLOG.raw.get(d).size){
+        try{
+          const qs = await db.collection('modelLog').where('d', '==', d).get();
+          let m = MLOG.raw.get(d); if (!m){ m = new Map(); MLOG.raw.set(d, m); }
+          qs.forEach(doc => { const x = doc.data(); if (x && x.r) for (const id in x.r) if (x.r[id]) m.set(id, x.r[id]); });
+          stats.daysLoaded++;
+        }catch(e){}
+      }
+    }
+    if (typeof v163Rebucket === 'function') v163Rebucket();
+
+    // Cross-day + per-day widened ladder check across ALL lines & ALL stats
+    const allEntries = [];
+    for (const [, m] of MLOG.raw) if (m) for (const [id, o] of m) if (o) allEntries.push([id, o]);
+    const badAll = v189BuildBadSet(allEntries);
+    const byDoc = new Map();
+    const purgedIds = new Set();
+    for (const [d, m] of MLOG.raw){
+      if (!m || !m.size) continue;
+      for (const [id, o] of m){
+        if (!badAll.has(id)) continue;
+        const wasGraded = (o.res === 'win' || o.res === 'loss');
+        const dirty = (o.bad !== 'v200' && o.bad !== 'v189') || o.res !== 'void' || o.v === 'good' || o.sv === 'good';
+        if (wasGraded){
+          const px = v200Px(o);
+          if (o.res === 'win' && px != null) stats.unitsVoided += (px > 0 ? px / 100 : 100 / (-px));
+          else if (o.res === 'loss') stats.unitsVoided -= 1;
+        }
+        o.bad = 'v200'; o._v200bad = 1;
+        if (o.res && o.res !== 'void') o.res = 'void';
+        if (o.v === 'good' || o.v === 'watch') o.v = 'avoid';
+        if (o.sv === 'good' || o.sv === 'watch') o.sv = 'avoid';
+        if (o.lv === 'good' || o.lv === 'watch') o.lv = 'avoid';
+        if (dirty){
+          stats.purgedRows++;
+          purgedIds.add(id);
+          const dk = mlogDocId(id, o);
+          let doc = byDoc.get(dk); if (!doc){ doc = {d: mlogDay(o.t), b: o.b, r: {}}; byDoc.set(dk, doc); }
+          const cleanCopy = Object.assign({}, o); delete cleanCopy._v200bad; delete cleanCopy._v189bad;
+          doc.r[id] = cleanCopy;
+          if (MLOG.up) MLOG.up.set(id, mlogRank(cleanCopy));
+        }
+      }
+      if (typeof V189 !== 'undefined' && V189.dayBad) V189.dayBad.set(d, {sz: m.size, bad: badAll});
+    }
+    stats.unitsVoided = Math.round(stats.unitsVoided * 100) / 100;
+    for (const [dk, body] of byDoc){
+      try{ await db.collection('modelLog').doc(dk).set(Object.assign({}, body, {u: Date.now()}), {merge: true}); stats.shardsWritten++; }catch(e){}
+    }
+
+    // Purge IndexedDB uniDone & uni
+    if (typeof idbOpen === 'function' && typeof UNI_ST !== 'undefined' && UNI_ST.idb !== false){
+      try{
+        const doneRows = await storeGetAll('uniDone');
+        const badDone = [];
+        const doneEntries = (doneRows || []).filter(r => r && r.b === 'props' && r.src === 'sb').map(r => [r.i, {ev:r.ev, pid:r.pid, k:r.kind, sd:r.side, pt:r.pt, pr:r.price, lpr:r.lk&&r.lk.price, at:r.at, s:'sb', b:'props'}]);
+        const badDoneLad = v200DetectBadLadderIds(doneEntries, {live:false, tol:0.02});
+        for (const r of (doneRows || [])){
+          if (!r) continue;
+          if (purgedIds.has(r.id || r.i) || badDoneLad.has(r.i) || (r.b==='props'&&r.src==='sb'&&v200CheckStandalone({b:'props',s:'sb',k:r.kind,sd:r.side,pt:r.pt,pr:r.price,lpr:r.lk&&r.lk.price}))){
+            badDone.push(r.i);
+          }
+        }
+        if (badDone.length){ await storeWrite('uniDone', [], badDone); stats.idbPurged += badDone.length; }
+        if (typeof UNI !== 'undefined'){
+          const badOpen = [];
+          for (const [id, r] of UNI) if (r && purgedIds.has(id)){ UNI.delete(id); badOpen.push(id); }
+          if (badOpen.length){ await storeWrite('uni', [], badOpen); stats.idbPurged += badOpen.length; }
+        }
+      }catch(e){}
+    }
+
+    // Rebuild modelSum + clear caches
+    try{
+      if (typeof V145 !== 'undefined') V145.stat = {};
+      for (let i = localStorage.length - 1; i >= 0; i--){
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('bl_v131_rows_') || k === 'bl_v131_fit' || k === 'bl_v163_rows')) localStorage.removeItem(k);
+      }
+      if (typeof V131 !== 'undefined'){ V131.rows.clear(); V131.seg = {demote:{}, promote:{}}; V131.segLog = []; }
+      for (const [d, s] of [...MLOG.sums]) if (s && !s.v200) MLOG.sums.set(d, Object.assign({}, s, {final:false, dd:0, v189:0, v200:0}));
+      if (typeof mlogWriteFinalSums === 'function') await mlogWriteFinalSums();
+      stats.sumsRebuilt = [...MLOG.sums.values()].filter(s => s && s.v189).length;
+    }catch(e){}
+
+    // Rebuild Props learner on clean log
+    try{
+      if (typeof LEARN !== 'undefined' && LEARN.props){
+        LEARN.props.cur = 1;
+        LEARN.props.versions = (LEARN.props.versions || []).slice(0, 1);
+        LEARN.props.sportStats = {};
+        LEARN.props.autoOff = {};
+        LEARN.props.log = [{at: Date.now(), txt: 'Rebuilt Props learner on clean log (widened alt-line guard + -250 floor).'}];
+        if (typeof boardS === 'function' && boardS('props')) boardS('props').sMinWin = 0.60;
+        if (typeof learnSave === 'function') learnSave();
+        if (typeof UNI_LEARN !== 'undefined'){ UNI_LEARN.props = []; UNI_LEARN.at = 0; }
+        if (typeof uniLoadLearn === 'function') await uniLoadLearn(true);
+        if (typeof propsLearnRetune === 'function') await propsLearnRetune({force: true});
+      }
+    }catch(e){}
+
+    // Rebuild POD learner on clean log
+    try{ if (typeof v131Fit === 'function') v131Fit(); }catch(e){}
+
+    // Republish Worker payloads
+    try{
+      if (typeof V154 !== 'undefined' && V154.pubSig){
+        delete V154.pubSig.days2; delete V154.pubSig.rows; delete V154.pubSig.learn; delete V154.pubSig.potd; delete V154.pubSig.audit;
+      }
+      if (typeof v142Publish === 'function') v142Publish(true);
+      if (typeof v189PublishLearn === 'function') await v189PublishLearn();
+      if (typeof v189PublishAudit === 'function') await v189PublishAudit();
+    }catch(e){}
+
+    localStorage.setItem(V200_LS_PURGE, '1');
+    V200.purged = true;
+    V200.counts.purge += stats.purgedRows;
+    v200Save();
+    return stats;
+  }finally{ V200.purging = false; }
+}
+
+setTimeout(function v200BootPurge(){
+  try{
+    if (typeof mlogOn === 'function' && mlogOn() && typeof MLOG !== 'undefined' && MLOG.at && typeof v154Pub === 'function' && v154Pub()){
+      v200PurgeAndRegrade(false).catch(()=>{});
+    } else if (localStorage.getItem(V200_LS_PURGE) !== '1'){
+      setTimeout(v200BootPurge, 15000);
+    }
+  }catch(e){}
+}, 14000);
+
+// Stamp v200 + earlyLockCount onto /p/audit
+(function(){
+  if (typeof v189PublishAudit !== 'function' || typeof v154Put !== 'function') return;
+  v189PublishAudit = async function(){
+    try{
+      if (typeof v154Pub !== 'function' || !v154Pub()) return false;
+      V189.lastAuditAt = Date.now();
+      return await v154Put('audit', {
+        at: V189.lastAuditAt, v: 200,
+        counts: V189.counts,
+        v200: V200.counts,
+        earlyLockCount: V200.earlyLocks.length,
+        earlyLocks: V200.earlyLocks.slice(0, 20),
+        blocked: V189.blocked.slice(0, 40),
+        rejLog: V189.rejLog.slice(0, 50)
+      });
+    }catch(e){ return false; }
+  };
+})();
+
+/* ---------- 5) Sharp Pick Closing-Line Value (CLV) Logging (Pick price vs DK close) ---------- */
+function v200StampSharpClv(SL, now){
+  if (!SL || !SL.rows) return 0;
+  let n = 0;
+  for (const id in SL.rows){
+    const r = SL.rows[id];
+    if (!r || r.res || r.t <= now - 10*60000) continue;
+    // Tag Big-money lean vs Sharp side once known
+    if (r.bigLean == null && typeof v199IsSmart === 'function') r.bigLean = v199IsSmart(r) ? 1 : 0;
+    if (r.sharpSide == null && typeof v199IsSharpTag === 'function') r.sharpSide = v199IsSharpTag(r) ? 1 : 0;
+    const g = typeof v198Game === 'function' ? v198Game(r.ev) : null;
+    if (!g || g.state !== 'pre') continue;
+    const dkPr = typeof v198DkQ === 'function' ? v198DkQ(g, r.mk, r.side, r.pt) : null;
+    const dkMain = typeof v198DkMain === 'function' ? v198DkMain(g, r.mk, r.side) : null;
+    let dkNv = null;
+    try{
+      const oSide = typeof v198Other === 'function' ? v198Other(r.mk, r.side) : (r.side === 'over' ? 'under' : 'home');
+      const oPt = typeof v198OPt === 'function' ? v198OPt(r.mk, r.pt) : r.pt;
+      const oppPr = typeof v198DkQ === 'function' ? v198DkQ(g, r.mk, oSide, oPt) : null;
+      if (dkPr != null && oppPr != null){
+        const ia = v198Imp(dkPr), ib = v198Imp(oppPr);
+        if (ia && ib) dkNv = Math.round((ia / (ia + ib)) * 10000) / 10000;
+      }
+    }catch(e){}
+    if (dkPr != null || (dkMain && dkMain.pr != null)){
+      r.dkCl = {
+        pr: dkPr != null ? Math.round(dkPr) : null,
+        pt: dkMain ? dkMain.pt : r.pt,
+        mpr: dkMain && dkMain.pr != null ? Math.round(dkMain.pr) : null,
+        nv: dkNv,
+        at: now
+      };
+      const pickImp = typeof v198Imp === 'function' ? v198Imp(r.pr) : null;
+      const closeImp = dkPr != null && typeof v198Imp === 'function' ? v198Imp(dkPr) : null;
+      const clvImp = (pickImp != null && closeImp != null) ? Math.round((closeImp - pickImp) * 10000) / 10000 : null;
+      const clvNv = (pickImp != null && dkNv != null) ? Math.round((dkNv - pickImp) * 10000) / 10000 : null;
+      const ptDiff = (r.mk !== 'ml' && dkMain && dkMain.pt != null && r.pt != null)
+        ? (r.mk === 'total' ? (r.side === 'over' ? +(dkMain.pt) - (+r.pt) : (+r.pt) - (+dkMain.pt)) : ((+r.pt) - (+dkMain.pt)))
+        : 0;
+      r.clv = {
+        imp: clvImp,
+        nv: clvNv,
+        ptDiff: Math.round(ptDiff * 100) / 100,
+        beat: clvImp != null ? (clvImp > 0 ? 1 : clvImp < 0 ? -1 : 0) : (ptDiff !== 0 ? (ptDiff > 0 ? 1 : -1) : null)
+      };
+      n++;
+    }
+  }
+  return n;
+}
+
+(function(){
+  if (typeof v198LogSharp === 'function'){
+    const base = v198LogSharp;
+    v198LogSharp = function(rows){
+      const out = base.apply(this, arguments);
+      try{
+        const SL = typeof v198LogLoad === 'function' ? v198LogLoad('sharp') : null;
+        if (SL && SL.rows) v200StampSharpClv(SL, Date.now());
+      }catch(e){}
+      return out;
+    };
+  }
+  if (typeof v198LogMerge === 'function'){
+    const base = v198LogMerge;
+    v198LogMerge = function(kind, remote){
+      const out = base.apply(this, arguments);
+      try{
+        if (kind === 'sharp' && remote && remote.rows){
+          const L = v198LogLoad('sharp');
+          for (const id in remote.rows){
+            const a = L.rows[id], b = remote.rows[id];
+            if (a && b){
+              if (b.dkCl && (!a.dkCl || (b.dkCl.at||0) > (a.dkCl.at||0))) a.dkCl = b.dkCl;
+              if (b.clv && (!a.clv || (b.dkCl && a.dkCl && b.dkCl.at >= a.dkCl.at))) a.clv = b.clv;
+              if (b.bigLean != null && a.bigLean == null) a.bigLean = b.bigLean;
+              if (b.sharpSide != null && a.sharpSide == null) a.sharpSide = b.sharpSide;
+            }
+          }
+        }
+      }catch(e){}
+      return out;
+    };
+  }
+})();
+
+window.v200Status = () => ({
+  build: APP_BUILD,
+  purged: V200.purged || localStorage.getItem(V200_LS_PURGE) === '1',
+  counts: V200.counts,
+  earlyLocks: V200.earlyLocks.slice(0, 20),
+  lockLog: V200.lockLog.slice(0, 10)
+});
+window.v200LockPass = v200LockPass;
+window.v200PurgeAndRegrade = v200PurgeAndRegrade;
+window.v200StampSharpClv = v200StampSharpClv;
 </script>
 </body>
 </html>
