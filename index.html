@@ -39571,6 +39571,195 @@ function v198Tail(id, kind){
 `;
   document.head.appendChild(st);
 })();
+/* ===== v199: Sharp cards as a Juice Reel–style bets/money split (Stanley, Nov 25 2026) =====
+   Each Sharp pick now leads with two thin split bars — % of bets (tickets) and % of money (handle) —
+   one side per team or Over/Under, labeled with the real Action Network public %. If the money
+   split is missing or does not add up, only the bets bar is shown; no numbers are invented.
+   A "Sharp side" tag appears when the line moved against the public or Pinnacle steamed; a
+   "Smart money" tag appears when the money share is 10+ points above the bet share on our side.
+   A short capper line sums it up, and a compact open → now track is drawn when we have both
+   numbers. The rest of +EV and Picks is unchanged. ===== */
+APP_BUILD = 199;
+
+function v199Key(mk, s){ return mk==='total' ? (s==='over' ? 'o' : 'u') : (s==='home' ? 'h' : 'a'); }
+function v199SideOf(mk, k){ return mk==='total' ? (k==='o' ? 'over' : 'under') : (k==='h' ? 'home' : 'away'); }
+function v199Lab(r, s){
+  if (r.mk==='total') return s==='over' ? 'Over' : 'Under';
+  if (s==='home') return r.ha || (r.side==='home' ? r.tm : '') || 'Home';
+  return r.aa || (r.side==='away' ? r.tm : '') || 'Away';
+}
+function v199PctOkPair(a, b){ return a!=null && b!=null && a >= 2 && b >= 2 && Math.abs(a + b - 100) <= 3; }
+/* attach bets %, money % and open/current line onto a Sharp row from Action Network. never invent a percent. */
+function v199Stamp(r){
+  if (!r || r.b==='props') return r;
+  const g = typeof v198Game==='function' ? v198Game(r.ev) : null;
+  if (g){ r.ha = v198Ab(g, 'home'); r.aa = v198Ab(g, 'away'); }
+  const A = (typeof V198!=='undefined' && V198.an) ? V198.an[String(r.ev)] : null;
+  if (!A || !A.b || !r.mk) return r;
+  const s0 = r.mk==='total' ? 'over' : 'home', s1 = typeof v198Other==='function' ? v198Other(r.mk, s0) : (s0==='over' ? 'under' : 'away');
+  const C = A.b.cons && A.b.cons[r.mk], O = A.b.open && A.b.open[r.mk];
+  const k0 = v199Key(r.mk, s0), k1 = v199Key(r.mk, s1);
+  if (C && typeof v198PctOk==='function' && v198PctOk(C, s0, s1) && C[s0] && C[s1]){
+    r.tk = {}; r.tk[k0] = C[s0].tk; r.tk[k1] = C[s1].tk;
+    const m0 = C[s0].mn, m1 = C[s1].mn;
+    if (v199PctOkPair(m0, m1)){ r.mn = {}; r.mn[k0] = m0; r.mn[k1] = m1; }
+    else delete r.mn;
+  }
+  if (O && O[s0] && C && C[s0]){
+    if (r.mk==='ml'){
+      const io = O[s0].pr!=null && O[s1] && O[s1].pr!=null && v198Imp(O[s0].pr) && v198Imp(O[s1].pr) ? v198Imp(O[s0].pr)/(v198Imp(O[s0].pr)+v198Imp(O[s1].pr)) : null;
+      const ic = C[s0].pr!=null && C[s1] && C[s1].pr!=null && v198Imp(C[s0].pr) && v198Imp(C[s1].pr) ? v198Imp(C[s0].pr)/(v198Imp(C[s0].pr)+v198Imp(C[s1].pr)) : null;
+      if (io!=null && ic!=null){ r.op = Math.round(io*100); r.cp = Math.round(ic*100); r.mv = 'ml'; }
+    } else if (O[s0].pt!=null && C[s0].pt!=null && isFinite(+O[s0].pt) && isFinite(+C[s0].pt)){
+      r.op = +O[s0].pt; r.cp = +C[s0].pt; r.mv = 'pt';
+    }
+  }
+  return r;
+}
+function v199Tk(r, s){ return r && r.tk ? r.tk[v199Key(r.mk, s)] : null; }
+function v199Mn(r, s){ return r && r.mn ? r.mn[v199Key(r.mk, s)] : null; }
+function v199HasTk(r){ if (!r || !r.tk) return false; const s0 = r.mk==='total' ? 'over' : 'home'; return v199PctOkPair(v199Tk(r, s0), v199Tk(r, s0==='over'?'under':'away')); }
+function v199HasMn(r){ if (!r || !r.mn) return false; const s0 = r.mk==='total' ? 'over' : 'home'; return v199PctOkPair(v199Mn(r, s0), v199Mn(r, s0==='over'?'under':'away')); }
+function v199MoneyGap(r){ const tk = v199Tk(r, r.side), mn = v199Mn(r, r.side); return (tk!=null && mn!=null) ? mn - tk : null; }
+function v199IsSmart(r){ const g = v199MoneyGap(r); return g!=null && g >= 10; }
+function v199IsSharpTag(r){ return !!(r && r.sig && (r.sig.includes('rlm') || r.sig.includes('steam'))); }
+function v199Pts(r){
+  if (!r || r.mv!=='pt' || r.op==null || r.cp==null) return null;
+  if (r.mk==='total') return {op:r.op, cp:r.cp};
+  const op = r.side==='away' ? -r.op : r.op, cp = r.side==='away' ? -r.cp : r.cp;
+  return {op, cp};
+}
+function v199Against(r){
+  if (!v199HasTk(r)) return false;
+  const pub = v199Tk(r, r.side) <= 40;
+  if (r.mv==='pt'){ const p = v199Pts(r); if (!p || p.op===p.cp) return false;
+    // toward us: total went Over/Under with the pick, or the picked side's number got worse (home −3 → −4.5, away +3 → +1.5)
+    const toUs = r.mk==='total' ? (r.side==='over' ? p.cp > p.op : p.cp < p.op) : (p.cp < p.op);
+    return pub && toUs;
+  }
+  if (r.mv==='ml' && r.op!=null && r.cp!=null){
+    const ours0 = r.side==='home' ? r.op : 100 - r.op, ours1 = r.side==='home' ? r.cp : 100 - r.cp;
+    return pub && ours1 > ours0;
+  }
+  return !!(r.sig && r.sig.includes('rlm'));
+}
+function v199Line(r){
+  const bits = [];
+  const name = r.mk==='total' ? (r.side==='over' ? 'the Over' : 'the Under') : (r.tm || v199Lab(r, r.side));
+  const tk = v199Tk(r, r.side), mn = v199Mn(r, r.side);
+  if (tk!=null && mn!=null) bits.push(`${tk}% of bets, ${mn}% of money on ${name}`);
+  else if (tk!=null) bits.push(`${tk}% of bets on ${name}`);
+  if (r.mv==='pt'){ const p = v199Pts(r); if (p && p.op!==p.cp){ const a = r.mk==='total' ? `${p.op}` : v198FmtPt(p.op), b = r.mk==='total' ? `${p.cp}` : v198FmtPt(p.cp);
+    bits.push(`Line moved ${a} → ${b}${v199Against(r) ? ' against the public' : ''}`); } }
+  else if (r.mv==='ml' && r.op!=null && r.cp!=null && r.op!==r.cp){
+    const lab = r.ha || 'Home'; bits.push(`${lab} went from ${r.op}% to ${r.cp}% to win${v199Against(r) ? ' against the public' : ''}`);
+  }
+  if (!bits.length && r.why && r.why[0]) return r.why[0];
+  return bits.join('. ') + (bits.length ? '.' : '');
+}
+function v199BarRow(lab, left, right, leftN, rightN, sharpLeft){
+  const L = Math.max(0, Math.min(100, +leftN)), R = Math.max(0, Math.min(100, +rightN));
+  const lCls = 'v199-seg L' + (sharpLeft ? ' on' : ''), rCls = 'v199-seg R' + (sharpLeft ? '' : ' on');
+  return `<div class="v199-row"><div class="v199-rl">${esc(lab)}</div>
+    <div class="v199-labs"><span class="${sharpLeft?'on':''}">${esc(left)} ${L}%</span><span class="${sharpLeft?'':'on'}">${R}% ${esc(right)}</span></div>
+    <div class="v199-bar" role="img" aria-label="${esc(lab)}: ${L}% ${left}, ${R}% ${right}">
+      <div class="${lCls}" style="width:${L}%"></div><div class="${rCls}" style="width:${R}%"></div>
+    </div></div>`;
+}
+function v199BarsHTML(r){
+  if (!v199HasTk(r)) return '';
+  const leftS = r.mk==='total' ? 'under' : 'away', rightS = r.mk==='total' ? 'over' : 'home';
+  const L = v199Lab(r, leftS), R = v199Lab(r, rightS); const sharpL = r.side===leftS;
+  let h = v199BarRow('% Bets', L, R, v199Tk(r, leftS), v199Tk(r, rightS), sharpL);
+  if (v199HasMn(r)) h += v199BarRow('% Money', L, R, v199Mn(r, leftS), v199Mn(r, rightS), sharpL);
+  return `<div class="v199-splits">${h}</div>`;
+}
+function v199MoveHTML(r){
+  if (r.mv==='pt'){
+    const p = v199Pts(r); if (!p || p.op===p.cp) return '';
+    const a = r.mk==='total' ? String(p.op) : v198FmtPt(p.op), b = r.mk==='total' ? String(p.cp) : v198FmtPt(p.cp);
+    const lo = Math.min(p.op, p.cp), hi = Math.max(p.op, p.cp), pad = Math.max(0.5, (hi - lo) * 0.35), from = lo - pad, to = hi + pad, span = to - from || 1;
+    const x = v => Math.max(4, Math.min(96, ((v - from) / span) * 100));
+    const toUs = v199Against(r) || (r.sig && (r.sig.includes('rlm') || r.sig.includes('steam') || r.sig.includes('move')));
+    return `<div class="v199-mv"><span class="v199-ml">Open ${esc(a)}</span>
+      <div class="v199-track" aria-hidden="true"><i class="v199-t0" style="left:${x(p.op).toFixed(1)}%"></i><i class="v199-t1${toUs?' on':''}" style="left:${x(p.cp).toFixed(1)}%"></i>
+        <i class="v199-tline" style="left:${Math.min(x(p.op),x(p.cp)).toFixed(1)}%;width:${Math.abs(x(p.cp)-x(p.op)).toFixed(1)}%"></i></div>
+      <span class="v199-ml">Now ${esc(b)}</span></div>`;
+  }
+  if (r.mv==='ml' && r.op!=null && r.cp!=null && r.op!==r.cp){
+    const lab = r.ha || 'Home';
+    const x = v => Math.max(4, Math.min(96, v));
+    return `<div class="v199-mv"><span class="v199-ml">${esc(lab)} ${r.op}%</span>
+      <div class="v199-track" aria-hidden="true"><i class="v199-t0" style="left:${x(r.op)}%"></i><i class="v199-t1 on" style="left:${x(r.cp)}%"></i>
+        <i class="v199-tline" style="left:${Math.min(x(r.op),x(r.cp))}%;width:${Math.abs(x(r.cp)-x(r.op))}%"></i></div>
+      <span class="v199-ml">Now ${r.cp}%</span></div>`;
+  }
+  return '';
+}
+function v199TagsHTML(r){
+  const tags = [];
+  if (v199IsSharpTag(r)) tags.push('<span class="v199-tag sharp">Sharp side</span>');
+  if (v199IsSmart(r)) tags.push('<span class="v199-tag smart">Smart money</span>');
+  if (r.lk) tags.push('<span class="v199-tag lock">Locked</span>');
+  else if (r.t) tags.push(`<span class="v199-tag lock">Locks ${esc(new Date(r.t - (typeof V198_LOCK_MIN==='number'?V198_LOCK_MIN:30)*60000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}))}</span>`);
+  return tags.length ? `<div class="v199-tags">${tags.join('')}</div>` : '';
+}
+function v199CardHTML(r){
+  const W = v198What(r); const g = typeof v198Game==='function' ? v198Game(r.ev) : null; const lab = (typeof V198_LAB!=='undefined' && V198_LAB[r.bk]) || r.bk;
+  const p = r.f!=null ? r.f : null;
+  const ringLab = r.mk==='total' ? (r.side==='over' ? 'Over' : 'Under') : (r.tm || '');
+  const ring = typeof v185Ring==='function' && p!=null ? v185Ring(p, ringLab) : '';
+  const T = g && r.mk!=='total' ? g[r.side] : null;
+  const logo = T && typeof teamLogoHTML==='function' ? teamLogoHTML(T, 'player-pfp v198-tl') : `<span class="player-mono">${r.mk==='total' ? (r.side==='over' ? 'O' : 'U') : esc(String(r.tm||'?').slice(0,3))}</span>`;
+  const name = r.mk==='total' ? `${r.side==='over' ? 'Over' : 'Under'} ${r.pt}` : r.mk==='spread' ? `${r.tm} ${v198FmtPt(r.pt)}` : `${r.tm} ML`;
+  const line = v199Line(r);
+  const wc = r.f!=null ? `<span class="v198-wc">Win chance <b>${Math.round(r.f*100)}%</b></span>` : '';
+  return `<div class="card v198-card v199-card" data-v198-id="${esc(r.id)}" data-v198-kind="sharp">
+    <div class="chead"><span><span class="lg">${esc((LMAP[r.lg]||{}).label || String(r.lg||'').toUpperCase())}</span> <span class="mut">${esc(r.gm)}</span></span><span>${esc(v198When(r.t))}</span></div>
+    <div class="prop-head">${logo}<div class="prop-who"><div class="prop-name">${esc(name)}</div><div class="prop-meta"><span>${esc(r.gm)}</span></div></div><div class="verdict-slot v185-slot">${ring}</div></div>
+    ${v199TagsHTML(r)}${v199BarsHTML(r)}${v199MoveHTML(r)}${line ? `<div class="v199-cap">${esc(line)}</div>` : ''}
+    <div class="pick"><div><div class="mk">${esc(W.mk)} · ${esc(lab)}</div><div class="what">${esc(W.what)}</div></div><div class="price">${v198FmtAm(r.pr)}<small>${esc(lab)}</small></div></div>
+    <div class="cfoot"><span class="cfoot-meta">${wc}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail" data-v198-tail="${esc(r.id)}" data-v198-k="sharp">Tail</button></span></div>
+  </div>`;
+}
+
+(function(){
+  if (typeof v198BuildSharp==='function'){ const base = v198BuildSharp; v198BuildSharp = function(){ const out = base.apply(this, arguments); try{ (out.rows||[]).forEach(v199Stamp); }catch(e){} return out; }; }
+  if (typeof v198CardHTML==='function'){ const base = v198CardHTML; v198CardHTML = function(r, kind){ if (kind==='sharp') return v199CardHTML(r); return base.apply(this, arguments); }; }
+})();
+
+(function(){
+  const st = document.createElement('style'); st.id = 'v199css';
+  st.textContent = `
+.v199-card{min-width:0}
+.v199-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.v199-tag{font-size:11px;font-weight:700;letter-spacing:.02em;padding:4px 9px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+.v199-tag.sharp{background:rgba(74,222,128,.14);border-color:rgba(74,222,128,.4);color:#bbf7d0}
+.v199-tag.smart{background:rgba(37,99,235,.22);border-color:rgba(96,165,250,.45);color:#dbeafe}
+.v199-tag.lock{background:rgba(148,163,184,.10);border-color:rgba(148,163,184,.28);color:#cbd5e1;font-weight:600}
+.v199-splits{display:flex;flex-direction:column;gap:10px;margin:0 0 10px;min-width:0;text-align:left}
+.v199-row{min-width:0}
+.v199-rl{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;margin-bottom:3px;text-align:left}
+.v199-labs{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:650;color:#cbd5e1;margin-bottom:4px;min-width:0}
+.v199-labs span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v199-labs span.on{color:#86efac;font-weight:800}
+.v199-bar{display:flex;height:8px;border-radius:999px;overflow:hidden;background:#0b1628;border:1px solid rgba(96,165,250,.22);min-width:0}
+.v199-seg{height:100%;flex:0 0 auto}
+.v199-seg.L{border-radius:999px 0 0 999px}
+.v199-seg.R{border-radius:0 999px 999px 0}
+.v199-seg{background:rgba(96,165,250,.28)}
+.v199-seg.on{background:#4ade80}
+.v199-mv{display:flex;align-items:center;gap:8px;margin:0 0 10px;min-width:0}
+.v199-ml{font-size:11px;font-weight:650;color:#94a3b8;white-space:nowrap;flex:0 0 auto}
+.v199-track{position:relative;flex:1 1 auto;height:6px;border-radius:999px;background:rgba(96,165,250,.16);border:1px solid rgba(96,165,250,.22);min-width:36px}
+.v199-tline{position:absolute;top:0;height:100%;background:rgba(74,222,128,.45);border-radius:999px}
+.v199-t0,.v199-t1{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;transform:translate(-50%,-50%);background:#94a3b8;border:2px solid #0b1628;box-sizing:border-box}
+.v199-t1.on{background:#4ade80}
+.v199-cap{font-size:13px;line-height:1.4;color:#dbeafe;background:rgba(59,130,246,.10);border:1px solid rgba(96,165,250,.22);border-radius:10px;padding:8px 10px;margin:0 0 10px;overflow-wrap:break-word;word-break:normal;text-align:left}
+#view .v199-card .v185-cs,#view .v199-card .v185-ts{display:none !important}
+`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
