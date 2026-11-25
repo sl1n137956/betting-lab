@@ -43526,6 +43526,48 @@ setInterval(() => {
 window.v204Tick = v204Tick;
 window.v204Stats = v204Stats;
 window.v204Status = () => ({build: APP_BUILD, ready: V204.ready, histN: V204.histN, watching: V204.watching, err: V204.err, st: v204Stats()});
+/* ===== v205: Don't let the player-first history load hang on IndexedDB ===== */
+APP_BUILD = 205;
+
+function v204IdbOp(mode, exec){
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (fn, v) => { if (done) return; done = true; try{ fn(v); }catch(e){} };
+    const timer = setTimeout(() => finish(reject, new Error('idb timeout')), 8000);
+    let req;
+    try{ req = indexedDB.open(V204_IDB, 1); }catch(e){ clearTimeout(timer); finish(reject, e); return; }
+    req.onupgradeneeded = function(){ try{ req.result.createObjectStore('pack'); }catch(e){} };
+    req.onerror = function(){ clearTimeout(timer); finish(reject, req.error || new Error('idb')); };
+    req.onsuccess = function(){
+      const db = req.result;
+      let val;
+      try{
+        const tx = db.transaction('pack', mode);
+        const st = tx.objectStore('pack');
+        tx.oncomplete = function(){ clearTimeout(timer); try{ db.close(); }catch(e){} finish(resolve, val); };
+        tx.onabort = tx.onerror = function(){ clearTimeout(timer); try{ db.close(); }catch(e){} finish(reject, tx.error || new Error('idb tx')); };
+        const r = exec(st);
+        if (r && 'onsuccess' in r){
+          r.onsuccess = function(){ val = r.result; };
+          r.onerror = function(){ clearTimeout(timer); finish(reject, r.error); };
+        }
+      }catch(e){ clearTimeout(timer); try{ db.close(); }catch(x){} finish(reject, e); }
+    };
+  });
+}
+v204HistLoadLocal = async function(){
+  try{
+    const pack = await v204IdbOp('readonly', st => st.get('v1'));
+    if (pack && Array.isArray(pack.pg) && pack.pg.length){ v204Index(pack.pg, pack.tg || []); return true; }
+  }catch(e){}
+  return false;
+};
+v204HistSaveLocal = async function(){
+  try{
+    const pg = V204.PG, tg = V204.TG;
+    await v204IdbOp('readwrite', st => st.put({pg, tg, at: Date.now()}, 'v1'));
+  }catch(e){}
+};
 </script>
 </body>
 </html>
