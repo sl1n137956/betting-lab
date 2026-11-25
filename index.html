@@ -35569,6 +35569,131 @@ setTimeout(function bootV192(){
 }, 20000);
 
 window.v192Status = () => ({build: APP_BUILD, rowsBust: localStorage.getItem(V192_LS_ROWS)==='1', rowsAt: typeof V163R!=='undefined' ? V163R.rowsAt : 0});
+/* ===== v193: injuries in the pick popup, grouped by team (Stanley, Nov 25 12:18 AM PT) =====
+   Opening a pick card, the Injuries section (next to Blowout risk on desktop) now lists each team
+   in its own block: the team on the bet first, then the opponent. Each block has a small header
+   (logo if we have one, plus the abbreviation) and a solid divider between teams. A team with no
+   one on the report gets a short "No injuries reported" line. Within a team, players are sorted
+   Out, then Doubtful, then Questionable, then Day-to-day or Probable, then by name. Game and prop
+   popups both use this. No dashed borders. Earlier versions (including v191–v192 Results fixes)
+   are left as they are. ===== */
+APP_BUILD = 193;
+
+function v193InjRank(st){
+  const s = String(st||'').toLowerCase();
+  if (/^out\b|inactive|injured reserve|^ir\b|suspen/.test(s)) return 0;
+  if (/doubt/.test(s)) return 1;
+  if (/question/.test(s)) return 2;
+  if (/day-to-day|dtd|gtd|game.?time|probable/.test(s)) return 3;
+  return 4;
+}
+function v193BetSides(p){
+  const g = p && p.g;
+  if (!g) return ['away','home'];
+  if ((p.mk==='ml' || p.mk==='spread') && (p.side==='home' || p.side==='away'))
+    return p.side==='home' ? ['home','away'] : ['away','home'];
+  if (p.home===true) return ['home','away'];
+  if (p.home===false) return ['away','home'];
+  try{
+    const t = p.team || {};
+    const same = (side)=>{
+      const T = g[side]; if (!T) return false;
+      if (t.id && T.id && String(t.id)===String(T.id)) return true;
+      const a = String(t.short||t.abbr||t.nick||'').toLowerCase();
+      const b = String(T.short||T.abbr||T.nick||'').toLowerCase();
+      return !!(a && b && a===b);
+    };
+    if (same('home')) return ['home','away'];
+    if (same('away')) return ['away','home'];
+  }catch(e){}
+  return ['away','home'];
+}
+function v193InjRow(g, side, i){
+  const st = typeof prettyInjStatus==='function' ? prettyInjStatus(i.st) : (i.st||'—');
+  const cls = (typeof injStatusClass==='function' ? injStatusClass(i.st) : '') || (/probable/i.test(st)?'st-prob':'');
+  const usage = i.usage ? (i.usageCat ? `${i.usage} ${String(i.usageCat).toLowerCase()}` : i.usage) : (i.pos||'');
+  let missed = '';
+  if (i.missed && i.missed.n>=2){
+    missed = `<div class="inj-missed">Missed ${i.missed.n} games: ${esc((g[side]&&g[side].short)||'')} ${i.missed.w}–${i.missed.l}, ${i.missed.pf.toFixed(1)} ${(i.missed.unit||'points')} for / ${i.missed.pa.toFixed(1)} against</div>`;
+  } else if (i.missed && i.missed.unavailable){
+    missed = `<div class="inj-missed mut">${esc(i.missed.unavailable)}</div>`;
+  }
+  return `<div class="inj-row"><div><span class="${cls}">${esc(st)}</span> · ${esc(i.n||'?')}${usage?` <span class="mut">(${esc(usage)})</span>`:''}${i.key?' <span class="mut">key</span>':''}${missed}</div></div>`;
+}
+function v193InjuriesHTML(p){
+  const g = p && p.g, fx = g && g.fx;
+  if (!fx){
+    const msg = g && g.fxErr
+      ? `Could not load injuries, lineups, or news from ESPN (${esc(g.fxErr)}).`
+      : 'Injuries, lineups, and news load with deep data (every 15 minutes, or 5 minutes within 2 hours of start).';
+    return `<div class="ln-block v193-inj"><h4>Injuries</h4><div class="mut">${msg}</div></div>`;
+  }
+  if (!fx.inj){
+    return `<div class="ln-block v193-inj"><h4>Injuries</h4><div class="mut">The injury report has not loaded yet, or ESPN did not post one for this game.</div></div>`;
+  }
+  let body = '';
+  for (const side of v193BetSides(p)){
+    const T = g[side]; if (!T) continue;
+    const lab = T.short || T.abbr || T.nick || T.name || (side==='home'?'Home':'Away');
+    const logo = typeof teamLogoHTML==='function' ? teamLogoHTML(T, 'v193-logo') : '';
+    const list = (fx.inj[side]||[]).slice().sort((a,b)=>{
+      const d = v193InjRank(a.st) - v193InjRank(b.st);
+      return d || String(a.n||'').localeCompare(String(b.n||''), undefined, {sensitivity:'base'});
+    });
+    const rows = list.length
+      ? list.map(i=>v193InjRow(g, side, i)).join('')
+      : `<div class="v193-none">No injuries reported</div>`;
+    body += `<div class="v193-team"><div class="v193-th">${logo}<span>${esc(lab)}</span></div><div class="v193-rows">${rows}</div></div>`;
+  }
+  if (!body) body = '<div class="mut">No one is on the ESPN injury report.</div>';
+  return `<div class="ln-block v193-inj"><h4>Injuries</h4>${body}</div>`;
+}
+function v193SwapInj(html, p, insertIfMissing){
+  const block = v193InjuriesHTML(p);
+  if (!html) return insertIfMissing ? block : html;
+  try{
+    const w = document.createElement('div');
+    w.innerHTML = html;
+    const old = [...w.querySelectorAll('.ln-block')].find(el=>{
+      const h = el.querySelector(':scope > h4');
+      return h && /^injuries$/i.test((h.textContent||'').trim());
+    });
+    const t = document.createElement('div'); t.innerHTML = block;
+    const neu = t.firstElementChild;
+    if (old && neu) old.replaceWith(neu);
+    else if (insertIfMissing && neu) w.insertAdjacentElement('afterbegin', neu);
+    return w.innerHTML;
+  }catch(e){ return html; }
+}
+(function(){
+  if (typeof injuriesSectionHTML==='function'){
+    const base = injuriesSectionHTML;
+    injuriesSectionHTML = function(p, bodyOnly){ return v193SwapInj(base.apply(this, arguments), p, !!bodyOnly); };
+  }
+  if (typeof lineupsNewsHTML==='function'){
+    const base = lineupsNewsHTML;
+    lineupsNewsHTML = function(p, bodyOnly){ return v193SwapInj(base.apply(this, arguments), p, true); };
+  }
+  const st = document.createElement('style');
+  st.setAttribute('data-v193', '1');
+  st.textContent = `
+.v193-inj{min-width:0}
+.v193-inj,.v193-inj .inj-row,.v193-inj .inj-row > *{overflow-wrap:break-word;word-break:normal}
+.v193-team + .v193-team{border-top:1px solid rgba(96,165,250,.28);margin-top:10px;padding-top:10px}
+.v193-th{display:flex;align-items:center;gap:8px;margin:0 0 6px;min-width:0;font-size:12.5px;font-weight:800;color:#dbeafe;letter-spacing:.02em}
+.v193-th span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v193-th .v193-logo,.v193-th .team-logo,.v193-th .team-mono{width:18px;height:18px;border-radius:50%;object-fit:cover;flex:none;background:rgba(59,130,246,.16)}
+.v193-th .team-mono{font-size:8px;border-radius:50%;letter-spacing:0}
+.v193-none{color:var(--mut);font-size:12.5px;line-height:1.4;padding:2px 0 2px}
+.v193-rows .inj-row{border-top:1px solid rgba(148,163,184,.14)}
+.v193-rows .inj-row:first-child{border-top:0;padding-top:2px}
+`;
+  document.head.appendChild(st);
+})();
+window.v193Status = () => {
+  const teams = [...document.querySelectorAll('#v166Modal .v193-team, .v193-team')];
+  return {build: APP_BUILD, teams: teams.length, headers: teams.map(t=>(t.querySelector('.v193-th span')||{}).textContent||''), empty: teams.filter(t=>t.querySelector('.v193-none')).length};
+};
 </script>
 </body>
 </html>
