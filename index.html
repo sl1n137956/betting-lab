@@ -43568,6 +43568,268 @@ v204HistSaveLocal = async function(){
     await v204IdbOp('readwrite', st => st.put({pg, tg, at: Date.now()}, 'v1'));
   }catch(e){}
 };
+/* ===== v206: Honest "Last 7 days vs the model's estimate"
+   BET matches official Results Picks (sportsbooks, board call, one row per bet, lock price).
+   WATCH / AVOID use the same sportsbook + clean-row filters, one main line per bet.
+   The hit-rate color is green when the actual rate is at or above the model's estimate
+   (AVOID: 50% right); red when below. ROI stays colored by sign.
+   (Stanley, Nov 25 2026) ===== */
+APP_BUILD = 206;
+
+const V206_LS = 'bl_v206_mchk_v1';
+const V206 = window.V206 = {at:0, stats:null, err:''};
+
+function v206Px(o){ const x = o && (o.lpr != null ? o.lpr : o.pr); return x == null || x === '' || !isFinite(+x) ? null : +x; }
+function v206Est(o){ const x = o && (o.lp != null ? o.lp : o.p); return x == null || !isFinite(+x) ? null : +x; }
+function v206Day(o){
+  const t = +(o && o.t) || 0;
+  if (t && typeof mlogDay === 'function') return mlogDay(t);
+  return String((o && o._d) || '');
+}
+function v206Call(o){
+  if (!o) return '';
+  if (o.lv) return o.lv;
+  if (o.sv) return o.sv;
+  const lk = o.lk;
+  if (lk && typeof lk === 'object'){
+    if (lk.sv) return lk.sv;
+    if (lk.v) return lk.v;
+  }
+  return o.v || '';
+}
+function v206IsPick(o){
+  if (typeof v160Counted === 'function') return v160Counted(o);
+  if (typeof v153BoardPick === 'function') return v153BoardPick(o);
+  const px = v206Px(o);
+  return v206Call(o) === 'good' && px != null && px >= -250;
+}
+function v206Clean(o){
+  if (!o || o.s !== 'sb') return false;
+  if (o.bad || o._v189bad || o._v200bad) return false;
+  if (typeof v189RowStandaloneBad === 'function' && v189RowStandaloneBad(o)) return false;
+  const res = o.res;
+  if (res !== 'win' && res !== 'loss' && res !== 'push') return false;
+  return true;
+}
+function v206Who(o){
+  if (typeof v163Nm === 'function'){ const n = v163Nm(o.pn); if (n) return n; }
+  return String(o.pid || o.pn || '');
+}
+function v206FamKey(o){
+  if (o.b === 'props') return `p|${o.ev || ''}|${v206Who(o)}|${o.k || ''}`;
+  return `g|${o.ev || ''}|${o.mk || ''}`;
+}
+function v206Imp(a){ a = +a; if (!isFinite(a) || Math.abs(a) < 100) return null; return a > 0 ? 100 / (a + 100) : (-a) / (-a + 100); }
+function v206MainPt(rows){
+  const byPt = new Map();
+  for (const o of rows){
+    const pt = o.pt != null && o.pt !== '' && isFinite(+o.pt) ? +o.pt : '_';
+    const g = byPt.get(pt) || (byPt.set(pt, {pt, rows:[], sides:{}}), byPt.get(pt));
+    g.rows.push(o);
+    const sd = String(o.sd || '').toLowerCase();
+    if (sd && !g.sides[sd]) g.sides[sd] = o;
+  }
+  const scored = [];
+  for (const g of byPt.values()){
+    let two = 0, nvGap = 1;
+    const sides = Object.keys(g.sides);
+    if (sides.length >= 2){
+      const imps = sides.map(sd => v206Imp(v206Px(g.sides[sd]))).filter(x => x != null);
+      if (imps.length >= 2){
+        const s = imps.reduce((a, b) => a + b, 0);
+        two = 1; nvGap = Math.abs(imps[0] / s - 0.5);
+      } else two = 1;
+    }
+    const alt = g.rows.every(o => o.alt);
+    scored.push({g, two, nvGap, alt, pt: typeof g.pt === 'number' ? g.pt : 99});
+  }
+  scored.sort((a, b) => (b.two - a.two) || (a.alt - b.alt) || (a.nvGap - b.nvGap) || (Math.abs(a.pt) - Math.abs(b.pt)) || (a.pt - b.pt));
+  return scored[0].g;
+}
+function v206SideRows(ptGroup){
+  const out = [];
+  const bySide = new Map();
+  for (const o of ptGroup.rows){
+    const sd = String(o.sd || '').toLowerCase() || '_';
+    const g = bySide.get(sd) || (bySide.set(sd, []), bySide.get(sd));
+    g.push(o);
+  }
+  for (const g of bySide.values()){
+    g.sort((a, b) => (+a.at || +a.t || 0) - (+b.at || +b.t || 0));
+    out.push(g[0]);
+  }
+  return out;
+}
+function v206Official(dayRows){
+  const picks = dayRows.filter(o => v206Clean(o) && v206IsPick(o));
+  const one = (typeof mlogOnePerBet === 'function' ? mlogOnePerBet(picks) : picks);
+  return one.filter(o => { const px = v206Px(o); return px == null || px >= -250; });
+}
+function v206MainOthers(dayRows, officialSet){
+  const src = dayRows.filter(v206Clean);
+  const fam = new Map();
+  for (const o of src){
+    const k = v206FamKey(o);
+    const g = fam.get(k) || (fam.set(k, []), fam.get(k));
+    g.push(o);
+  }
+  const out = [];
+  for (const g of fam.values()){
+    const main = v206MainPt(g);
+    for (const o of v206SideRows(main)){
+      if (officialSet.has(o)) continue;
+      if (v206IsPick(o)) continue;
+      const c = v206Call(o);
+      if (c === 'watch' || c === 'avoid') out.push(o);
+    }
+  }
+  return out;
+}
+function v206Tally(rows){
+  const s = {b:'', v:'', w:0, l:0, p:0, ps:0, pn:0, pf:0, st:0, n:0, hit:null, est:null, roi:null};
+  for (const o of rows){
+    if (o.res === 'push'){ s.p++; continue; }
+    const px = v206Px(o);
+    const win = o.res === 'win';
+    if (win) s.w++; else s.l++;
+    const est = v206Est(o);
+    if (est != null){ s.ps += est; s.pn++; }
+    s.st += 100;
+    s.pf += win ? ((px != null && typeof profitOn === 'function') ? profitOn(px, 100) : 100) : -100;
+  }
+  s.n = s.w + s.l;
+  s.hit = s.n ? s.w / s.n : null;
+  s.est = s.pn ? s.ps / s.pn : null;
+  s.roi = s.st ? s.pf / s.st : null;
+  s.pf = Math.round(s.pf * 100) / 100;
+  s.ps = Math.round(s.ps * 1000) / 1000;
+  return s;
+}
+function v206FromRows(rows){
+  const byDay = new Map();
+  for (const o of rows || []){
+    const d = v206Day(o); if (!d) continue;
+    const m = byDay.get(d) || (byDay.set(d, []), byDay.get(d));
+    m.push(o);
+  }
+  const bags = { 'games|good':[], 'games|watch':[], 'games|avoid':[], 'props|good':[], 'props|watch':[], 'props|avoid':[] };
+  for (const dayRows of byDay.values()){
+    const official = v206Official(dayRows);
+    const set = new Set(official);
+    for (const o of official) bags[(o.b === 'props' ? 'props' : 'games') + '|good'].push(o);
+    for (const o of v206MainOthers(dayRows, set)){
+      bags[(o.b === 'props' ? 'props' : 'games') + '|' + v206Call(o)].push(o);
+    }
+  }
+  const S = {};
+  for (const k in bags){
+    const s = v206Tally(bags[k]);
+    s.b = k.split('|')[0]; s.v = k.split('|')[1];
+    if (s.n || s.p) S[k] = s;
+  }
+  return S;
+}
+function v206Days(){
+  if (typeof mrDays === 'function') return mrDays(7);
+  const out = []; const now = Date.now();
+  for (let i = 0; i < 7; i++) out.push(typeof mlogDay === 'function' ? mlogDay(now - i * 86400000) : '');
+  return out.filter(Boolean);
+}
+function v206LiveRows(){
+  const days = new Set(v206Days());
+  const rows = [];
+  if (typeof MLOG === 'undefined' || !MLOG.raw) return rows;
+  for (const [d, m] of MLOG.raw){
+    if (!m) continue;
+    for (const o of m.values()){
+      if (!o) continue;
+      const pd = v206Day(o) || d;
+      if (days.has(pd) || days.has(d)) rows.push(o);
+    }
+  }
+  return rows;
+}
+function v206Compute(){
+  try{
+    const rows = v206LiveRows();
+    if (!rows.length) return null;
+    V206.stats = v206FromRows(rows);
+    V206.at = Date.now();
+    V206.err = '';
+    return V206.stats;
+  }catch(e){ V206.err = String(e && e.message || e).slice(0, 120); return null; }
+}
+
+mchkStats = function(rows){ return v206FromRows(rows || []); };
+
+function v206RowHTML(label, s, v){
+  const n = s.w + s.l;
+  const roi = s.roi;
+  const avoid = v === 'avoid';
+  const k = avoid ? s.l : s.w;
+  const r = n ? k / n : null;
+  const est = (!avoid && s.est != null) ? s.est : (avoid ? 0.5 : null);
+  let cls = 'mut';
+  if (n){
+    if (est != null && r != null) cls = r + 1e-9 >= est ? 'cx-hi' : 'cx-lo';
+    else if (roi != null) cls = roi >= 0 ? 'cx-hi' : 'cx-lo';
+  }
+  const rc = roi == null ? '' : roi >= 0 ? 'pos' : 'neg';
+  const sub = n
+    ? `${s.w}–${s.l}${s.p ? '–' + s.p : ''} · ROI <b class="${rc}">${roi >= 0 ? '+' : '−'}${Math.abs(roi * 100).toFixed(1)}%</b>${avoid ? ' if bet' : ''}`
+    : (s.p ? `${s.p} push` : 'not graded yet');
+  const estH = (!avoid && s.est != null) ? ` <span class="mut">· est ${Math.round(s.est * 100)}%</span>` : '';
+  const rate = n ? `${Math.round(r * 100)}%` : '—';
+  const of = n ? `${k} of ${n}${avoid ? ' right' : ''}` : 'none graded';
+  return `<div class="yb-row"><div class="yb-l"><div class="yb-k">${label}</div><div class="yb-s">${sub}${estH}</div></div><span class="cx-rate yb-rate" title="${k} of ${n}"><span class="pc ${cls}">${rate}</span><span class="sub">${of}</span></span></div>`;
+}
+
+mchkHTML = function(){
+  const d = (typeof MCHK !== 'undefined' && MCHK.doc) || null;
+  const intro = `<div class="hint mchk-intro">BET matches official Results. WATCH and AVOID count one main line per bet, sportsbooks only, at the lock price. This table updates from the live log; it doesn't change the model.</div>`;
+  const S = v206Compute() || (d && d.stats) || null;
+  if (!S && (!d || !d.at || d.status !== 'done')){
+    const msg = (typeof MCHK !== 'undefined' && MCHK.err) ? `Couldn't reach the check log (${esc(String(MCHK.err))}).` : d && d.status === 'running' ? 'This week\'s check is running now.' : 'No check has run yet. The first one runs within a few minutes on a signed-in admin device.';
+    return `<div class="mchk-card">${intro}<div class="hint">${msg}</div></div>`;
+  }
+  const BN = {games:'Games', props:'Props'};
+  const rows = [];
+  if (S){
+    for (const b of ['games','props']) for (const v of ['good','watch','avoid']){
+      const s = S[b + '|' + v]; if (!s || !(s.n || s.p)) continue;
+      rows.push(v206RowHTML(`${BN[b]} ${v === 'good' ? 'BET' : v === 'watch' ? 'WATCH' : 'AVOID'}`, s, v));
+    }
+  }
+  const findings = (S && typeof mchkFindings === 'function') ? mchkFindings(S) : ((d && d.findings) || []);
+  const fd = findings.length ? findings.map(f => `<li>${esc(f)}</li>`).join('') : '<li>Not enough graded picks in the last 7 days to judge the model yet.</li>';
+  const ch = (d && d.changes && d.changes.length) ? d.changes.map(c => `<li><b>${esc(c.who)}</b> <span class="mut">${esc(mchkWhen(c.at))}</span> · ${esc(c.txt)}</li>`).join('') : '<li>No model settings changed this week.</li>';
+  const when = (V206.at || (d && d.at)) ? esc(mchkWhen(V206.at || d.at)) : '';
+  const graded = S ? Object.values(S).reduce((n, s) => n + (s.n || 0) + (s.p || 0), 0) : +(d && d.graded || 0);
+  return `<div class="mchk-card">${intro}
+    <div class="mchk-last"><b>Last 7 days:</b> ${when}${graded ? ` <span class="mut">· ${graded.toLocaleString()} graded sportsbook bets</span>` : ''}</div>
+    <div class="yb-grid">
+      <div class="v42-b yb-b"><h3>🔎 What it found</h3><ul class="mchk-ul">${fd}</ul></div>
+      <div class="v42-b yb-b"><h3>🛠️ What changed</h3><ul class="mchk-ul">${ch}</ul></div>
+      <div class="v42-b yb-b mchk-wide"><h3>📊 Last 7 days vs the model's estimate</h3>${rows.join('') || '<div class="hint">No graded sportsbook picks in the last 7 days.</div>'}</div>
+    </div></div>`;
+};
+
+(function(){
+  const kick = async function(){
+    try{
+      if (typeof v154Pub !== 'function' || !v154Pub()) return;
+      if (localStorage.getItem(V206_LS) === '1') return;
+      if (typeof mchkRun !== 'function') return;
+      const r = await mchkRun({force:true});
+      if (r && (r.ran || r.why)) localStorage.setItem(V206_LS, '1');
+      try{ if (typeof mchkRefresh === 'function') mchkRefresh(); }catch(e){}
+    }catch(e){}
+  };
+  setTimeout(kick, 18000);
+})();
+
+window.v206Compute = v206Compute;
+window.v206Status = () => ({build: APP_BUILD, at: V206.at, err: V206.err, stats: V206.stats});
 </script>
 </body>
 </html>
