@@ -35003,6 +35003,57 @@ window.v189Status = () => ({
   v131Params: typeof V131 !== 'undefined' ? V131.params : null,
   v131Seg: typeof V131 !== 'undefined' ? V131.seg : null
 });
+/* ===== v190: two-color win-chance ring (Stanley, Nov 24 11:18 PM PT) =====
+   The ring is now a full split: green is the Over share, red is the Under share, with a small gap
+   so the split is easy to read. A 57% Under shows 57% red and 43% green; a 57% Over is the reverse.
+   The big percent and the Over/Under label are the picked side's chance, colored to match (green Over,
+   red Under). On a game moneyline or spread, green is the picked team and red is the opponent. Totals
+   use Over/Under the same way as props. Size and spacing from v188 are unchanged. v189's price guards
+   are left as they are. ===== */
+APP_BUILD = 190;
+v185Ring = function(p, lab){
+  if (p==null || !isFinite(p)) return '';
+  const v = Math.max(0, Math.min(1, p));
+  const kind = /^under$/i.test(lab||'') ? 'under' : /^over$/i.test(lab||'') ? 'over' : 'side';
+  const overP = kind==='under' ? 1 - v : v;
+  const underP = 1 - overP;
+  const C = 2 * Math.PI * 19;
+  const minShare = Math.min(overP, underP);
+  const gap = minShare < 0.04 ? 0 : (minShare < 0.10 ? 2.2 : 3.6);
+  const usable = Math.max(0, C - 2 * gap);
+  const overLen = overP * usable;
+  const underLen = underP * usable;
+  const GRN = '#4ade80', RED = '#f87171';
+  const arc = (len, color, off) => len < 0.35 ? '' :
+    `<circle cx="23" cy="23" r="19" class="v185-rf v190-arc" style="stroke:${color};stroke-dasharray:${len.toFixed(2)} ${C.toFixed(2)};stroke-dashoffset:${off.toFixed(2)}"/>`;
+  // After the SVG's rotate(-90deg), offset 0 starts at 12 o'clock and runs clockwise.
+  // Over (green) always starts at the top; Under (red) follows after a gap. On a game
+  // moneyline or spread, green is the picked team (same as Over's slot) and red is the opponent.
+  const green = arc(overLen, GRN, 0);
+  const red = arc(underLen, RED, -(overLen + gap));
+  const pct = Math.round(v * 100);
+  const cls = kind==='under' ? 'v190-under' : kind==='over' ? 'v190-over' : 'v190-side';
+  const title = kind==='side'
+    ? `Model win chance ${pct}% for ${lab||'this side'}`
+    : `${Math.round(overP*100)}% Over · ${Math.round(underP*100)}% Under`;
+  return `<div class="v185-ring ${cls}" data-v190="${kind}:${pct}" title="${esc(title)}"><svg viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="19" class="v185-rt"/>${green}${red}</svg><div class="v185-rv"><b>${pct}%</b><small>${esc(lab||'')}</small></div></div>`;
+};
+(function(){
+  const st = document.createElement('style');
+  st.setAttribute('data-v190', '1');
+  st.textContent = `
+.v190-arc{stroke-linecap:butt!important}
+.v185-ring.v190-over .v185-rv b,.v185-ring.v190-over .v185-rv small{color:#4ade80!important}
+.v185-ring.v190-under .v185-rv b,.v185-ring.v190-under .v185-rv small{color:#f87171!important}
+.v185-ring.v190-side .v185-rv b,.v185-ring.v190-side .v185-rv small{color:#4ade80!important}
+.v185-ring.v190-over .v185-rv small,.v185-ring.v190-under .v185-rv small,.v185-ring.v190-side .v185-rv small{opacity:.9}
+`;
+  document.head.appendChild(st);
+})();
+window.v190Status = () => {
+  const rings = [...document.querySelectorAll('.v185-ring[data-v190]')];
+  return {build: APP_BUILD, rings: rings.length, sample: rings.slice(0,6).map(r=>r.getAttribute('data-v190'))};
+};
 </script>
 </body>
 </html>
