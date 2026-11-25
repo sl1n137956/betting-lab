@@ -38802,6 +38802,775 @@ function v197BannerHTML(){
   st.textContent = '#setForm .v187-stl-banner{background:rgba(234,179,8,.12);color:#a16207;font-weight:600;border-radius:10px;padding:8px 10px;margin:0 0 10px}';
   document.head.appendChild(st);
 })();
+/* ===== v198: +EV and Sharp sections (Stanley, Nov 25 2026) =====
+   Two new lists next to Picks, reached from a "Picks | +EV | Sharp" switch at the top of the Picks page.
+   Picks itself is unchanged, and neither list touches Picks, POD or Results totals.
+   +EV: pick a book; every bet where that book pays more than the sharp fair price (Pinnacle no-vig at the same
+     number, or a no-vig average of 3+ other books at the same number when Pinnacle is missing), sorted by edge.
+     Games and player props. Hard -250 floor, v189 guards, thin Polymarket/exchange books left out.
+   Sharp: follows the smart side. Signals: reverse line movement against the public bet % (Action Network),
+     Pinnacle steam, and several books moving together. Each pick says why in plain words and locks 30 minutes
+     before start at the best price then.
+   The always-on publisher builds both lists and grades them; everyone reads the shared copy. ===== */
+APP_BUILD = 198;
+
+var V198 = window.V198 = {
+  evx:null, sharp:null, evxLog:null, sharpLog:null, getAt:0, logAt:0, logTry:false, busy:false, lastRun:0, gradeAt:0,
+  av:{}, avAt:0, pmS:{}, an:{}, anAt:0, anErr:'', hist:null, swap:'', err:'', recOpen:{evx:false, sharp:false}, period:{evx:'7d', sharp:'7d'}
+};
+const V198_BOOKS = [
+  ['draftkings','DraftKings','DK'], ['fd','FanDuel','FD'], ['mgm','BetMGM','MGM'], ['czr','Caesars','CZR'], ['b365','bet365','365'], ['br','BetRivers','BR'],
+  ['polymarket','Polymarket','PM'], ['polymarket_us','Polymarket US','PMUS'], ['kalshi','Kalshi','KAL'], ['novig','Novig','NV'], ['prophetx','ProphetX','PX'], ['cryptocom','Crypto.com','CDC']
+];
+const V198_LAB = Object.fromEntries(V198_BOOKS.map(b=>[b[0], b[1]]));
+const V198_SB = ['draftkings','fd','mgm','czr','b365','br'];          // sportsbooks used for consensus and multi-book moves
+const V198_VEN = {polymarket:'pm', polymarket_us:'us', kalshi:'ka', prophetx:'px', cryptocom:'cc', novig:'nv'};
+const V198_MAXP = 400, V198_FLOOR = -250, V198_LOG_MIN = 0.01, V198_EDGE_MAX = 0.12, V198_LOCK_MIN = 30;
+const V198_HIST_LS = 'bl_v198_hist_v1', V198_EVLOG_LS = 'bl_v198_evlog_v1', V198_SHLOG_LS = 'bl_v198_shlog_v1';
+
+/* ---------- small helpers ---------- */
+function v198Imp(a){ a = +a; if (!isFinite(a) || !a || Math.abs(a) < 100) return null; return a < 0 ? -a/(-a+100) : 100/(a+100); }
+function v198Am(p){ if (!(p > 0 && p < 1)) return null; return p >= 0.5 ? Math.round(-100*p/(1-p)) : Math.round(100*(1-p)/p); }
+function v198FmtAm(a){ a = Math.round(+a); return !isFinite(a) ? '—' : (a > 0 ? '+' + a : '−' + Math.abs(a)); }
+function v198FmtPt(p){ return p==null ? '' : (p > 0 ? '+' : p < 0 ? '−' : '') + Math.abs(p); }
+function v198Other(mk, s){ return mk==='total' ? (s==='over' ? 'under' : 'over') : (s==='home' ? 'away' : 'home'); }
+function v198OPt(mk, pt){ return mk==='spread' && pt!=null ? -pt : pt; }
+function v198Pub(){ try{ return typeof v154Pub==='function' && v154Pub(); }catch(e){ return false; } }
+function v198Game(ev){ ev = String(ev); return ((typeof games!=='undefined' && games) || []).find(g=>g && String(g.eventId)===ev) || null; }
+function v198T(g){ return g && g.start ? +new Date(g.start) : 0; }
+function v198Unit(){ try{ return typeof v192Unit==='function' ? v192Unit() : ((+S.unit > 0) ? +S.unit : 25); }catch(e){ return 25; } }
+function v198Save(){ try{ if (typeof saveJSON==='function' && typeof LS!=='undefined') saveJSON(LS.settings, S); }catch(e){} }
+function v198Book(){ const b = S && S.v198Book; return V198_LAB[b] ? b : 'draftkings'; }
+function v198Min(){ const m = S && +S.v198Min; return (m >= 1 && m <= 10) ? m : 2; }
+function v198Sport(lg){ return ((LMAP[lg]||{}).path||'').split('/')[0]; }
+function v198Ab(g, s){ return (g && g[s] && (g[s].short || g[s].abbr || g[s].nick || g[s].name)) || (s==='home' ? 'Home' : 'Away'); }
+
+/* ---------- book prices at an exact number ---------- */
+function v198DkQ(g, mk, side, pt){
+  const qs = (g && g.quotes && g.quotes[mk] && g.quotes[mk][side]) || [];
+  const q = qs.find(q=>/draftkings/i.test(q.bk||q.book||'') && (mk==='ml' || q.point===pt));
+  return q ? q.price : null;
+}
+function v198DkMain(g, mk, side){
+  const qs = (g && g.quotes && g.quotes[mk] && g.quotes[mk][side]) || [];
+  const q = qs.find(q=>/draftkings/i.test(q.bk||q.book||'')); return q ? {pt: mk==='ml' ? null : q.point, pr: q.price} : null;
+}
+function v198SbPrice(g, mk, side, pt, bk){
+  if (bk==='draftkings') return v198DkQ(g, mk, side, pt);
+  return typeof v173Price==='function' ? v173Price(g.eventId, mk, side, pt, bk) : null;
+}
+function v198SbMain(g, mk, side, bk){
+  if (bk==='draftkings') return v198DkMain(g, mk, side);
+  const m = typeof v173Main==='function' ? v173Main(g.eventId, mk, side, bk) : null; return m ? {pt:m.pt, pr:m.pr} : null;
+}
+function v198PinFresh(){ try{ return typeof V173!=='undefined' && Date.now() - (V173.at.pin||0) < 10*60000 && !V173.err.pin; }catch(e){ return false; } }
+
+/* fair chance for (side at pt): Pinnacle no-vig at that exact number first, else a no-vig average of 3+ books at that number */
+function v198Fair(g, mk, side, pt, excl){
+  const o = v198Other(mk, side), opt = v198OPt(mk, pt);
+  if (v198PinFresh() && typeof v173Price==='function'){
+    const a = v173Price(g.eventId, mk, side, pt, 'pin'), b = v173Price(g.eventId, mk, o, opt, 'pin');
+    if (a!=null && b!=null){ const ia = v198Imp(a), ib = v198Imp(b); if (ia && ib) return {p: ia/(ia+ib), src:'Pinnacle'}; }
+  }
+  const nvs = [];
+  for (const bk of V198_SB){
+    if (bk===excl) continue;
+    const x = v198BookNv(g, mk, side, pt, bk); if (x!=null) nvs.push(x);
+  }
+  if (nvs.length < 3) return null;
+  const med = nvs.slice().sort((a,b)=>a-b)[nvs.length>>1]; const use = nvs.filter(x=>Math.abs(x - med) <= 0.06);   // a stale or flipped book is not part of the average
+  return use.length >= 3 ? {p: use.reduce((a,b)=>a+b,0)/use.length, src:'Consensus', n: use.length} : null;
+}
+/* one book's own no-vig for the side at this number (null when it does not price both sides there) */
+function v198BookNv(g, mk, side, pt, bk){
+  const a = v198SbPrice(g, mk, side, pt, bk), b = v198SbPrice(g, mk, v198Other(mk, side), v198OPt(mk, pt), bk); if (a==null || b==null) return null;
+  const ia = v198Imp(a), ib = v198Imp(b); if (!ia || !ib) return null;
+  const hold = ia + ib - 1; if (hold < -0.01 || hold > 0.12) return null;   // a broken pair, not a market
+  return ia/(ia+ib);
+}
+
+/* AN sometimes sends a book with home/away swapped (seen on BetMGM NHL moneylines). Drop a book's game prices
+   when its favorite is the opposite of DraftKings' and Pinnacle's, so the books row and both lists never use it. */
+function v198CleanAn(){
+  if (typeof V173==='undefined') return 0; let n = 0;
+  const rows = [], tally = {};
+  for (const g of ((typeof games!=='undefined' && games) || [])){
+    if (!g || !g.eventId) continue; const r = V173.ev[String(g.eventId)]; if (!r) continue;
+    const ref = (s) => { const d = v198DkQ(g, 'ml', s); if (d!=null) return d; const p = r.ml && r.ml[s] && r.ml[s].pin && r.ml[s].pin[0]; return p ? p.pr : null; };
+    const ih = v198Imp(ref('home')), ia = v198Imp(ref('away')); if (!ih || !ia) continue; const nvRef = ih/(ih+ia);
+    for (const bk of ['fd','mgm','czr','b365','br']){
+      const h = r.ml && r.ml.home && r.ml.home[bk] && r.ml.home[bk][0], a = r.ml && r.ml.away && r.ml.away[bk] && r.ml.away[bk][0]; if (!h || !a) continue;
+      const bh = v198Imp(h.pr), ba = v198Imp(a.pr); if (!bh || !ba) continue; const nv = bh/(bh+ba);
+      const flip = Math.abs((1 - nv) - nvRef) < Math.abs(nv - nvRef) && Math.abs(nvRef - 0.5) > 0.03;
+      const T = tally[bk + '|' + g.league] || (tally[bk + '|' + g.league] = {f:0, ok:0}); if (flip) T.f++; else T.ok++;
+      rows.push({r, bk, lg:g.league, bad: Math.abs(nv - nvRef) > 0.15 || flip});
+    }
+  }
+  for (const x of rows){
+    const T = tally[x.bk + '|' + x.lg]; const leagueBad = T.f >= 2 && T.f > T.ok;   // the whole feed for that book and league is swapped
+    if (x.bad || leagueBad){ for (const mk of ['ml','spread','total']) for (const sd in (x.r[mk]||{})) if (x.r[mk][sd]) delete x.r[mk][sd][x.bk]; n++; }
+  }
+  V198.anTally = tally;
+  return n;
+}
+(function(){ if (typeof v173An!=='function') return; const base = v173An; v173An = async function(){ const r = await base.apply(this, arguments); try{ V198.anClean = v198CleanAn(); }catch(e){} return r; }; })();
+
+/* ---------- exchanges: venue data (loaded here for the publisher when the device does not already load it) ---------- */
+function v198Ven(v){ try{ const want = typeof avWantVenues==='function' ? avWantVenues() : {}; if (want[v] && AV[v] && AV[v].ev && Object.keys(AV[v].ev).length) return AV[v]; }catch(e){} return V198.av[v] || null; }
+async function v198LoadVenues(){
+  if (Date.now() - V198.avAt < 4*60000) return; V198.avAt = Date.now();
+  if (typeof AV==='undefined' || typeof avLeaguesNow!=='function') return;
+  const lgs = avLeaguesNow(); if (!lgs.length) return;
+  const want = typeof avWantVenues==='function' ? avWantVenues() : {};
+  const jobs = [['pm', typeof avLoadGlobal==='function' ? avLoadGlobal : null], ['us', typeof avLoadUs==='function' ? avLoadUs : null], ['ka', typeof avLoadKalshi==='function' ? avLoadKalshi : null],
+    ['px', typeof avLoadPx==='function' ? avLoadPx : null], ['cc', typeof avLoadCc==='function' ? avLoadCc : null], ['nv', typeof avLoadNv==='function' ? avLoadNv : null]];
+  for (const [v, fn] of jobs){
+    if (!fn || (want[v] && v!=='pm')) continue;                  // the device already loads it (pm: we always need the strict copy below)
+    if (want[v] && v==='pm') continue;
+    while (AV.busy) await new Promise(r=>setTimeout(r, 500));
+    const keep = AV[v]; const X = {ev:{}, lg:{}, types:(keep && keep.types) || {}, t:0, err:null};
+    AV.busy = true; V198.swap = v; AV[v] = X;
+    try{ await fn(lgs); }catch(e){ X.err = String(e && e.message || e).slice(0, 60); }
+    finally{ AV[v] = keep; V198.swap = ''; AV.busy = false; }
+    V198.av[v] = X;
+  }
+}
+/* while a scratch venue is swapped in, the model log must not pick it up (it would add rows to Results) */
+(function(){
+  if (typeof uniUpsert!=='function') return; const base = uniUpsert;
+  const SRC = {ka:'kalshi', px:'px', cc:'cc', nv:'nv'};
+  uniUpsert = function(b, src){ if (V198.swap && SRC[V198.swap] === src) return null; return base.apply(this, arguments); };
+})();
+/* strict Polymarket copy: only markets with a tight, deep order book (Settings thin-market limits) */
+function v198PmStrictOk(m){
+  const sp0 = m.spread!=null && m.spread!=='' ? +m.spread : (m.bestBid!=null && m.bestAsk!=null ? (+m.bestAsk) - (+m.bestBid) : null);
+  const liq = m.liquidityNum!=null ? +m.liquidityNum : (m.liquidityClob!=null ? +m.liquidityClob : null);
+  const maxSp = (S && +S.pmThinSpread > 0) ? +S.pmThinSpread : 0.03, minLiq = (S && +S.pmThinLiq > 0) ? +S.pmThinLiq : 5000;
+  return sp0!=null && isFinite(sp0) && sp0 <= maxSp + 1e-9 && liq!=null && isFinite(liq) && liq >= minLiq && +m.bestBid > 0 && +m.bestAsk > 0 && +m.bestAsk < 1;
+}
+(function(){
+  if (typeof avIngestGammaEvent!=='function') return; const base = avIngestGammaEvent;
+  avIngestGammaEvent = function(X, g, ev){
+    const r = base.apply(this, arguments);
+    try{ if (g && g.eventId && ev && Array.isArray(ev.markets)){
+      const ms = ev.markets.filter(m=>m && v198PmStrictOk(m));
+      const X2 = {ev:{}, lg:{}, types:{}};
+      V198.pmS[g.eventId] = ms.length ? base.call(this, X2, g, Object.assign({}, ev, {markets: ms})) : {g:{}, p:{}, t:Date.now()};
+      V198.pmS[g.eventId].t = Date.now();
+    } }catch(e){}
+    return r;
+  };
+})();
+function v198VenAm(q){
+  if (!q) return null;
+  if (q.am!=null && isFinite(+q.am)) return +q.am;
+  if (!(q.ask > 0 && q.ask < 1)) return null;
+  const c = typeof pmCost==='function' ? pmCost(q.ask, q.fee) : q.ask; return c > 0 && c < 1 ? decToAm(1/c) : null;
+}
+/* both sides of an exchange market at the same number must form a real, tight book */
+function v198VenTight(E, mk, side, pt){
+  const o = v198Other(mk, side), opt = v198OPt(mk, pt);
+  const a = ((E.g||{})[mk+'|'+side]||[]).find(q=>mk==='ml' || q.pt===pt), b = ((E.g||{})[mk+'|'+o]||[]).find(q=>mk==='ml' || q.pt===opt);
+  if (!a || !b || !(a.ask > 0 && a.ask < 1) || !(b.ask > 0 && b.ask < 1)) return false;
+  const s = a.ask + b.ask; return s >= 0.985 && s <= 1.07;
+}
+
+/* ---------- +EV engine ---------- */
+function v198EvGames(now, out){
+  for (const g of ((typeof games!=='undefined' && games) || [])){
+    if (!g || g.state!=='pre' || !g.eventId || !g.home || !g.away) continue;
+    const t = v198T(g); if (!(t > now + 60000 && t < now + 24*3600000)) continue;
+    if (typeof SOCCER!=='undefined' && SOCCER.has(g.league)) continue;     // no sharp fair for 3-way soccer here
+    for (const mk of ['ml','spread','total']){
+      for (const side of (mk==='total' ? ['over','under'] : ['home','away'])){
+        const cands = [];
+        const dk = (g.quotes && g.quotes[mk] && g.quotes[mk][side] || []).filter(q=>/draftkings/i.test(q.bk||q.book||''));
+        for (const q of dk) cands.push({bk:'draftkings', pt: mk==='ml' ? null : q.point, pr:q.price});
+        const r = typeof V173!=='undefined' ? V173.ev[String(g.eventId)] : null;
+        for (const bk of ['fd','mgm','czr','b365','br']){ const arr = r && r[mk] && r[mk][side] && r[mk][side][bk]; for (const x of (arr||[])) cands.push({bk, pt: mk==='ml' ? null : x.pt, pr:x.pr}); }
+        for (const book in V198_VEN){
+          const v = V198_VEN[book]; let E = null;
+          if (v==='pm') E = V198.pmS[g.eventId]; else { const X = v198Ven(v); E = X && X.ev ? X.ev[g.eventId] : null; }
+          if (!E || !E.g) continue;
+          if (v==='pm' && Date.now() - (E.t||0) > 15*60000) continue;
+          for (const q of (E.g[mk+'|'+side]||[])){
+            const pt = mk==='ml' ? null : q.pt; if (mk!=='ml' && (pt==null || !isFinite(pt))) continue;
+            if (!v198VenTight(E, mk, side, pt)) continue;
+            const am = v198VenAm(q); if (am!=null) cands.push({bk:book, pt, pr:am});
+          }
+        }
+        // Kalshi moneylines live on the game
+        if (mk==='ml' && g.kalshi && g.kalshi.ml && g.kalshi.ml[side] && g.kalshi.ml.home && g.kalshi.ml.away){
+          const a = g.kalshi.ml[side], b = g.kalshi.ml[v198Other('ml', side)];
+          if (a.ask > 0 && b.ask > 0 && a.ask + b.ask >= 0.985 && a.ask + b.ask <= 1.07){ const am = v198VenAm(a); if (am!=null && !cands.some(c=>c.bk==='kalshi')) cands.push({bk:'kalshi', pt:null, pr:am}); }
+        }
+        const seen = new Set();
+        for (const c of cands){
+          const k = c.bk + '|' + c.pt; if (seen.has(k)) continue; seen.add(k);
+          if (!isFinite(+c.pr) || c.pr < V198_FLOOR || c.pr > V198_MAXP) continue;
+          try{ if (typeof v189RowStandaloneBad==='function' && v189RowStandaloneBad({b:'games', price:c.pr, mk, side, pt:c.pt})) continue; }catch(e){}
+          const F = v198Fair(g, mk, side, c.pt, c.bk); if (!F) continue;
+          if (V198_SB.includes(c.bk)){ const own = v198BookNv(g, mk, side, c.pt, c.bk); if (own!=null && Math.abs(own - F.p) > 0.07) continue; }   // the book's own two sides disagree with the market: stale or flipped feed
+          const ip = v198Imp(c.pr); if (!ip) continue;
+          const edge = F.p - ip; if (edge < V198_LOG_MIN || edge > V198_EDGE_MAX) continue;
+          out.push({id:`${c.bk}|${g.eventId}|${mk}||${side}|${c.pt==null?'':c.pt}`, b:'games', bk:c.bk, ev:String(g.eventId), lg:g.league, t, mk, side, pt:c.pt, pr:Math.round(c.pr), f:Math.round(F.p*10000)/10000, e:Math.round(edge*10000)/10000, src:F.src,
+            gm:`${v198Ab(g,'away')} @ ${v198Ab(g,'home')}`, tm: mk==='total' ? '' : v198Ab(g, side)});
+        }
+      }
+    }
+  }
+}
+function v198EvProps(now, out){
+  if (typeof v187BookIndex!=='function' || typeof V187==='undefined') return;
+  let I; try{ I = v187BookIndex(); }catch(e){ return; }
+  const pinOk = lg => Date.now() - ((V187.pinAt||{})[lg]||0) < 15*60000;
+  const seen = new Set();
+  // DraftKings props vs Pinnacle player props at the same line
+  for (const p of ((typeof props!=='undefined' && props) || [])){
+    const r = p && (p.raw || p); if (!r || !r.league || r.overPrice==null || r.underPrice==null) continue;
+    if (!V187_LG[r.league] || !pinOk(r.league)) continue;
+    if (/polymarket|prizepicks|underdog/i.test(String(r.source||p.source||''))) continue;
+    const g = r.g || p.g; if (!g || g.state!=='pre') continue; const t = v198T(g); if (!(t > now + 60000 && t < now + 24*3600000)) continue;
+    const kind = r.league==='nhl' && r.kind==='hpts' ? 'pts' : r.kind; const L = +r.line; if (!isFinite(L)) continue;
+    const k0 = `${g.eventId}|${r.playerId||r.playerName}|${kind}|${L}`; if (seen.has(k0)) continue; seen.add(k0);
+    const pin = v187BookFind(I, r.league, r.playerName || p.playerName || '', kind, t).find(e=>e.src==='pin'); if (!pin) continue;
+    const x = pin.lines.find(l=>l.l===L); if (!x) continue;
+    const fo = v187Nv(x.o, x.u); if (fo==null) continue;
+    for (const [side, pr, f] of [['over', +r.overPrice, fo], ['under', +r.underPrice, 1 - fo]]){
+      if (!isFinite(pr) || pr < V198_FLOOR || pr > V198_MAXP) continue;
+      try{ if (typeof v189RowStandaloneBad==='function' && v189RowStandaloneBad({b:'props', price:pr, side, kind:r.kind, pt:L})) continue; }catch(e){}
+      const ip = v198Imp(pr); if (!ip) continue; const edge = f - ip; if (edge < V198_LOG_MIN || edge > V198_EDGE_MAX) continue;
+      out.push({id:`draftkings|${g.eventId}|${r.kind}|${r.playerId||''}|${side}|${L}`, b:'props', bk:'draftkings', ev:String(g.eventId), lg:r.league, t, kind:r.kind, side, pt:L, pr:Math.round(pr), f:Math.round(f*10000)/10000, e:Math.round(edge*10000)/10000, src:'Pinnacle',
+        pn:r.playerName || p.playerName || '', pid:String(r.playerId||''), tm:(r.team && (r.team.short||r.team.abbr)) || '', home: r.home===true ? 1 : r.home===false ? 0 : null, gm:`${v198Ab(g,'away')} @ ${v198Ab(g,'home')}`});
+    }
+  }
+  // Polymarket player props (tight, deep books only) vs Pinnacle at the same line
+  for (const lg in (V187.pin||{})){
+    if (!pinOk(lg)) continue;
+    for (const [key, A] of I){
+      if (key.indexOf(lg + '|') !== 0) continue;
+      for (const e of A){
+        if (e.src!=='pin' || !e.ev) continue; const g = v198Game(e.ev); if (!g || g.state!=='pre') continue;
+        const t = v198T(g); if (!(t > now + 60000 && t < now + 24*3600000)) continue;
+        const E = V198.pmS[g.eventId]; if (!E || !E.p || Date.now() - (E.t||0) > 15*60000) continue;
+        const kinds = lg==='nhl' && e.kind==='pts' ? ['hpts','pts'] : [e.kind];
+        for (const kd of kinds){
+          const recs = E.p[kd + '|' + (typeof avNameKey==='function' ? avNameKey(e.name) : String(e.name).toLowerCase())] || [];
+          for (const q of recs){
+            const x = e.lines.find(l=>l.l===+q.eq); if (!x || +q.raw !== +q.eq) continue;
+            const fo = v187Nv(x.o, x.u); if (fo==null) continue;
+            if (!(q.over > 0 && q.under > 0) || q.over + q.under < 0.985 || q.over + q.under > 1.07) continue;
+            for (const [side, ask, f] of [['over', q.over, fo], ['under', q.under, 1 - fo]]){
+              const pr = v198VenAm({ask, fee:q.fee}); if (pr==null || pr < V198_FLOOR || pr > V198_MAXP) continue;
+              const ip = v198Imp(pr); if (!ip) continue; const edge = f - ip; if (edge < V198_LOG_MIN || edge > V198_EDGE_MAX) continue;
+              out.push({id:`polymarket|${g.eventId}|${e.kind}|${v187N(e.name).replace(/ /g,'_')}|${side}|${x.l}`, b:'props', bk:'polymarket', ev:String(g.eventId), lg, t, kind:e.kind, side, pt:x.l, pr:Math.round(pr), f:Math.round(f*10000)/10000, e:Math.round(edge*10000)/10000, src:'Pinnacle',
+                pn:e.name, pid:'', tm:'', home:null, gm:`${v198Ab(g,'away')} @ ${v198Ab(g,'home')}`});
+            }
+          }
+        }
+      }
+    }
+  }
+}
+function v198BuildEvx(){
+  const now = Date.now(), out = [];
+  try{ v198EvGames(now, out); }catch(e){ V198.err = 'EV games: ' + String(e && e.message || e).slice(0, 60); }
+  try{ v198EvProps(now, out); }catch(e){ V198.err = 'EV props: ' + String(e && e.message || e).slice(0, 60); }
+  out.sort((a,b)=>b.e - a.e);
+  { const seen = new Set(); for (let i = 0; i < out.length; i++){ const r = out[i]; const k = [r.bk, r.ev, r.mk||r.kind, r.pid||r.pn||'', r.side].join('|'); if (seen.has(k)){ out.splice(i--, 1); continue; } seen.add(k); } }   // one number per bet: the best edge
+  const by = {}; for (const r of out) by[r.bk] = (by[r.bk]||0) + 1;
+  return {at: now, build: APP_BUILD, rows: out.slice(0, 1500), by,
+    cov: {pin: v198PinFresh(), an: typeof V173!=='undefined' && Date.now() - (V173.at.an||0) < 10*60000 && !V173.err.an, pinProps: Object.keys((typeof V187!=='undefined' && V187.pin) || {}),
+      ven: Object.fromEntries(Object.entries(V198_VEN).map(([b, v])=>[b, v==='pm' ? Object.keys(V198.pmS).length : (()=>{ const X = v198Ven(v); return X && X.ev ? Object.keys(X.ev).length : 0; })()]))}};
+}
+
+/* ---------- Sharp engine ---------- */
+const V198_AN_IDS = {15:'cons', 30:'open', 68:'draftkings', 69:'fd', 75:'mgm', 123:'czr', 79:'b365', 71:'br'};
+async function v198LoadAn(){
+  if (Date.now() - V198.anAt < 3*60000) return; V198.anAt = Date.now();
+  if (typeof v173Leagues!=='function' || typeof V173_AN_LG==='undefined') return;
+  const days = [...new Set([v173Ymd(Date.now()), v173Ymd(Date.now() + 86400000)])]; const fresh = {}; let ok = 0;
+  for (const lg of v173Leagues()){
+    const slug = V173_AN_LG[lg]; if (!slug) continue;
+    for (const day of days){
+      let d; try{ d = await v173Json(`https://api.actionnetwork.com/web/v2/scoreboard/${slug}?bookIds=${Object.keys(V198_AN_IDS).join(',')}&date=${day}&periods=event`); ok++; }catch(e){ V198.anErr = String(e && e.message || e).slice(0, 60); continue; }
+      for (const gm of ((d && d.games) || [])){
+        if (!gm || gm.status !== 'scheduled') continue;
+        const tm = {}; (gm.teams||[]).forEach(t=>{ tm[t.id] = t; }); const H = tm[gm.home_team_id], A = tm[gm.away_team_id]; if (!H || !A) continue;
+        const hit = v173Match(lg, gm.start_time, H.full_name || H.display_name, A.full_name || A.display_name, H.abbr, A.abbr); if (!hit || !hit.g.eventId) continue;
+        const sideOf = s => !hit.flip ? s : (s==='home' ? 'away' : s==='away' ? 'home' : s);
+        const rec = {lg, at: Date.now(), b:{}};
+        for (const bid in (gm.markets||{})){
+          const nm = V198_AN_IDS[bid]; const E = nm && gm.markets[bid] && gm.markets[bid].event; if (!E) continue;
+          const B = rec.b[nm] = {ml:{}, spread:{}, total:{}};
+          const put = (mk, x) => { if (!x || x.is_live || x.is_alt_market) return; const s = mk==='total' ? x.side : sideOf(x.side); if (!s) return;
+            const bi = x.bet_info || null; B[mk][s] = {pt: mk==='ml' ? null : +x.value, pr: +x.odds, tk: bi && bi.tickets ? bi.tickets.percent : null, mn: bi && bi.money ? bi.money.percent : null}; };
+          for (const x of (E.moneyline||[])) if (x.side==='home' || x.side==='away') put('ml', x);
+          for (const x of (E.spread||[])) if (x.side==='home' || x.side==='away') put('spread', x);
+          for (const x of (E.total||[])) if (x.side==='over' || x.side==='under') put('total', x);
+        }
+        fresh[String(hit.g.eventId)] = rec;
+      }
+    }
+  }
+  if (ok){ V198.an = fresh; V198.anErr = ''; }
+}
+/* history of Pinnacle and each sportsbook's main line, for steam and multi-book moves */
+function v198Hist(){ if (!V198.hist){ try{ V198.hist = JSON.parse(localStorage.getItem(V198_HIST_LS)||'null'); }catch(e){} if (!V198.hist || typeof V198.hist!=='object') V198.hist = {}; } return V198.hist; }
+function v198PinMain(g, mk){
+  const r = typeof V173!=='undefined' ? V173.ev[String(g.eventId)] : null; if (!r || !r[mk]) return null;
+  if (mk==='ml'){ const a = r.ml.home && r.ml.home.pin && r.ml.home.pin[0], b = r.ml.away && r.ml.away.pin && r.ml.away.pin[0]; if (!a || !b) return null; const ia = v198Imp(a.pr), ib = v198Imp(b.pr); return ia && ib ? {pt:null, nv: ia/(ia+ib)} : null; }
+  const s0 = mk==='total' ? 'over' : 'home', s1 = v198Other(mk, s0); const A = r[mk][s0] && r[mk][s0].pin, B = r[mk][s1] && r[mk][s1].pin; if (!A || !B) return null;
+  let best = null;
+  for (const x of A){ const y = B.find(z=>z.pt === v198OPt(mk, x.pt)); if (!y) continue; const ia = v198Imp(x.pr), ib = v198Imp(y.pr); if (!ia || !ib) continue; const nv = ia/(ia+ib); const d = Math.abs(nv - 0.5); if (!best || d < best.d) best = {d, pt:x.pt, nv}; }
+  return best ? {pt:best.pt, nv:best.nv} : null;
+}
+function v198Snap(now){
+  const H = v198Hist();
+  for (const g of ((typeof games!=='undefined' && games) || [])){
+    if (!g || g.state!=='pre' || !g.eventId) continue; const t = v198T(g); if (!(t > now && t < now + 36*3600000)) continue;
+    for (const mk of ['ml','spread','total']){
+      const k = g.eventId + '|' + mk; const h = H[k] || (H[k] = {t, s:[]});
+      const snap = {at: now};
+      if (v198PinFresh()){ const pm = v198PinMain(g, mk); if (pm) snap.pin = [pm.pt, Math.round(pm.nv*1000)/1000]; }
+      const s0 = mk==='total' ? 'over' : 'home';
+      for (const bk of V198_SB){ const m = v198SbMain(g, mk, s0, bk); if (m && m.pr!=null) snap[bk] = [m.pt, m.pr]; }
+      const last = h.s[h.s.length - 1];
+      if (!last || now - last.at >= 2.5*60000) h.s.push(snap);
+      if (h.s.length > 120) h.s.splice(0, h.s.length - 120);
+    }
+  }
+  for (const k in H) if ((H[k].t||0) < now - 6*3600000) delete H[k];
+  try{ localStorage.setItem(V198_HIST_LS, JSON.stringify(H)); }catch(e){}
+}
+/* how far a market moved toward the home/over side between two readings: + means toward home/over */
+function v198Dir(mk, a, b){   // a, b = [pt, price-or-nv]; for pin price slot is no-vig of home/over
+  if (!a || !b) return 0;
+  if (mk==='ml') return 0;
+  if (a[0]==null || b[0]==null) return 0;
+  return mk==='spread' ? (a[0] - b[0]) : (b[0] - a[0]);   // spread: home number falling (-3 → -4.5) = toward home; total rising = toward over
+}
+function v198PtTh(lg, mk){ const sp = v198Sport(lg); if (mk==='total') return (sp==='hockey' || sp==='baseball') ? 0.5 : (sp==='basketball' ? 1.5 : 1); return (sp==='hockey' || sp==='baseball') ? 99 : 1; }
+/* public % is real only when both sides have it and it adds up (Action Network sends 0/0 when it has none) */
+function v198PctOk(C, s0, s1){
+  const a = C[s0], b = C[s1]; if (!a || !b) return false;
+  const ok = (x, y) => x!=null && y!=null && x >= 2 && y >= 2 && Math.abs(x + y - 100) <= 3;
+  return ok(a.tk, b.tk) && (a.mn==null || b.mn==null || ok(a.mn, b.mn) || (a.mn===0 && b.mn===0));
+}
+function v198LineTxt(mk, side, pt){ return mk==='total' ? String(pt) : v198FmtPt(pt); }
+function v198SharpFor(g, now){
+  const out = []; const lg = g.league; const H = v198Hist(); const A = V198.an[String(g.eventId)];
+  for (const mk of ['spread','total','ml']){
+    const sig = {}; const add = (side, k, txt, strong) => { (sig[side] || (sig[side] = [])).push({k, txt, strong}); };
+    const s0 = mk==='total' ? 'over' : 'home', s1 = v198Other(mk, s0);
+    const nm = s => mk==='total' ? (s==='over' ? 'the Over' : 'the Under') : v198Ab(g, s);
+    const Nm = s => { const x = nm(s); return x.charAt(0).toUpperCase() + x.slice(1); };
+    // 1) reverse line movement: Action Network opener vs consensus now, against the public bet %
+    if (A && A.b.open && A.b.cons){
+      const O = A.b.open[mk], C = A.b.cons[mk];
+      if (O && C && O[s0] && C[s0]){
+        let toward = null, mv = '';
+        if (mk==='ml'){
+          const io = O[s0] && O[s1] ? v198Imp(O[s0].pr)/(v198Imp(O[s0].pr)+v198Imp(O[s1].pr)) : null, ic = C[s0] && C[s1] ? v198Imp(C[s0].pr)/(v198Imp(C[s0].pr)+v198Imp(C[s1].pr)) : null;
+          if (io!=null && ic!=null && Math.abs(ic - io) >= 0.04){ toward = ic > io ? s0 : s1; mv = `${Nm(s0)} went from ${Math.round(io*100)}% to ${Math.round(ic*100)}% to win in the market`; }
+        } else {
+          const d = v198Dir(mk, [O[s0].pt], [C[s0].pt]);
+          if (Math.abs(d) >= v198PtTh(lg, mk)){ toward = d > 0 ? s0 : s1;
+            mv = mk==='total' ? `The total moved from ${O[s0].pt} to ${C[s0].pt}` : `${Nm(s0)} moved from ${v198FmtPt(O[s0].pt)} to ${v198FmtPt(C[s0].pt)}`; }
+        }
+        if (toward){
+          const ok = v198PctOk(C, s0, s1); const tk = ok && C[toward] ? C[toward].tk : null, mn = ok && C[toward] ? C[toward].mn : null;
+          if (tk!=null && tk <= 40) add(toward, 'rlm', `${mv} while ${100 - tk}% of bets were on ${nm(v198Other(mk, toward))}`, true);
+          else add(toward, 'move', `${mv} since it opened`, false);
+          if (tk!=null && mn!=null && mn > 0 && mn - tk >= 15) add(toward, 'money', `${Nm(toward)} has ${mn}% of the money on only ${tk}% of the bets`, false);
+        } else {
+          if (v198PctOk(C, s0, s1)) for (const s of [s0, s1]){ const tk = C[s].tk, mn = C[s].mn; if (tk!=null && mn!=null && mn - tk >= 20) add(s, 'money', `${Nm(s)} has ${mn}% of the money on only ${tk}% of the bets`, false); }
+        }
+      }
+    }
+    // 2) Pinnacle steam: Pinnacle's line in the last hour
+    const h = H[g.eventId + '|' + mk];
+    if (h && h.s.length >= 2){
+      const cur = h.s[h.s.length - 1]; const old = h.s.find(x=>x.at >= now - 65*60000 && now - x.at >= 15*60000 && x.pin);
+      if (cur.pin && old){
+        let toward = null, txt = '';
+        if (cur.pin[0]!=null && old.pin[0]!=null && cur.pin[0]!==old.pin[0]){
+          const d = v198Dir(mk, old.pin, cur.pin);
+          if (Math.abs(d) >= (mk==='total' ? Math.max(1, v198PtTh(lg, mk)) : 1)){ toward = d > 0 ? s0 : s1;
+            txt = mk==='total' ? `Pinnacle moved the total from ${old.pin[0]} to ${cur.pin[0]} in the last hour` : `Pinnacle moved ${nm(s0)} from ${v198FmtPt(old.pin[0])} to ${v198FmtPt(cur.pin[0])} in the last hour`; }
+        } else if (mk==='ml' && Math.abs(cur.pin[1] - old.pin[1]) >= 0.04){
+          toward = cur.pin[1] > old.pin[1] ? s0 : s1; txt = `Pinnacle moved ${nm(toward)} from ${Math.round((toward===s0?old.pin[1]:1-old.pin[1])*100)}% to ${Math.round((toward===s0?cur.pin[1]:1-cur.pin[1])*100)}% to win in the last hour`;
+        }
+        if (toward) add(toward, 'steam', txt, true);
+      }
+      // 3) several books moving the same way in the last hour
+      if (old){
+        let up = 0, dn = 0;
+        for (const bk of V198_SB){ const a = old[bk], b = cur[bk]; if (!a || !b) continue;
+          if (mk==='ml'){ const d = v198Imp(b[1]) - v198Imp(a[1]); if (d >= 0.03) up++; else if (d <= -0.03) dn++; }
+          else { const d = v198Dir(mk, a, b); if (d >= 0.5) up++; else if (d <= -0.5) dn++; } }
+        if (up >= 3 && dn === 0) add(s0, 'books', `${up} books moved toward ${nm(s0)} in the last hour`, false);
+        if (dn >= 3 && up === 0) add(s1, 'books', `${dn} books moved toward ${nm(s1)} in the last hour`, false);
+      }
+    }
+    for (const side of [s0, s1]){
+      const mine = sig[side] || [], theirs = sig[v198Other(mk, side)] || [];
+      if (!mine.length || theirs.some(x=>x.strong)) continue;
+      const strong = mine.some(x=>x.strong), books = mine.some(x=>x.k==='books'), sup = mine.some(x=>x.k==='money' || x.k==='move');
+      if (!(strong || (books && sup))) continue;
+      out.push({mk, side, why: mine.filter(x=>x.k!=='move' || !mine.some(y=>y.k==='rlm')).map(x=>x.txt), sig: mine.map(x=>x.k)});
+    }
+  }
+  // one pick per team per game: spread for basketball/football, moneyline for hockey/baseball
+  const sp = v198Sport(lg); const keepMl = sp==='hockey' || sp==='baseball';
+  return out.filter(x=>{ if (x.mk==='total') return true; const twin = out.find(y=>y!==x && y.mk!==x.mk && y.mk!=='total' && y.side===x.side); if (!twin) return true; return keepMl ? x.mk==='ml' : x.mk==='spread'; });
+}
+/* best price for the side: the current consensus number, best book there (sportsbooks + tight exchanges), -250 floor */
+function v198BestPrice(g, mk, side){
+  const A = V198.an[String(g.eventId)]; let pt = null;
+  if (mk!=='ml'){ const C = A && A.b.cons && A.b.cons[mk] && A.b.cons[mk][side]; pt = C ? C.pt : null; if (pt==null){ const m = v198DkMain(g, mk, side); pt = m ? m.pt : null; } if (pt==null) return null; }
+  let best = null;
+  for (const bk of V198_SB){ const pr = v198SbPrice(g, mk, side, pt, bk); if (pr==null || pr < V198_FLOOR) continue; if (!best || v198Imp(pr) < v198Imp(best.pr)) best = {bk, pt, pr}; }
+  if (!best && mk!=='ml'){   // nobody hangs the consensus number: DraftKings' own number
+    const m = v198DkMain(g, mk, side); if (m && m.pr >= V198_FLOOR) best = {bk:'draftkings', pt:m.pt, pr:m.pr};
+  }
+  return best;
+}
+function v198BuildSharp(prev){
+  const now = Date.now(); const rows = []; const covLg = {};
+  for (const g of ((typeof games!=='undefined' && games) || [])){
+    if (!g || g.state!=='pre' || !g.eventId || !g.home || !g.away) continue; const t = v198T(g); if (!(t > now && t < now + 24*3600000)) continue;
+    const c = covLg[g.league] || (covLg[g.league] = {games:0, pct:0, pin:0}); c.games++; if (V198.an[String(g.eventId)]) c.pct++; if (v198PinMain(g, 'ml') || v198PinMain(g, 'spread') || v198PinMain(g, 'total')) c.pin++;
+    for (const x of v198SharpFor(g, now)){
+      const bp = v198BestPrice(g, x.mk, x.side); if (!bp) continue;
+      const F = v198Fair(g, x.mk, x.side, bp.pt, null);
+      rows.push({id:`${g.eventId}|${x.mk}|${x.side}`, b:'games', ev:String(g.eventId), lg:g.league, t, mk:x.mk, side:x.side, pt:bp.pt, pr:Math.round(bp.pr), bk:bp.bk, f: F ? Math.round(F.p*10000)/10000 : null, src: F ? F.src : '',
+        why:x.why, sig:x.sig, gm:`${v198Ab(g,'away')} @ ${v198Ab(g,'home')}`, tm: x.mk==='total' ? '' : v198Ab(g, x.side), at: now});
+    }
+  }
+  return {rows, covLg};
+}
+
+/* ---------- logs (publisher) ---------- */
+function v198LogLoad(kind){ const k = kind==='evx' ? 'evxLog' : 'sharpLog'; if (!V198[k]){ try{ V198[k] = JSON.parse(localStorage.getItem(kind==='evx' ? V198_EVLOG_LS : V198_SHLOG_LS)||'null'); }catch(e){} if (!V198[k] || !V198[k].rows) V198[k] = {rows:{}}; } return V198[k]; }
+function v198LogSave(kind){ try{ localStorage.setItem(kind==='evx' ? V198_EVLOG_LS : V198_SHLOG_LS, JSON.stringify(v198LogLoad(kind))); }catch(e){} }
+function v198LogMerge(kind, remote){
+  const L = v198LogLoad(kind); if (!remote || !remote.rows) return;
+  for (const id in remote.rows){ const a = L.rows[id], b = remote.rows[id]; if (!a) L.rows[id] = b; else if (b.res && !a.res) L.rows[id] = Object.assign({}, a, {res:b.res, act:b.act}); }
+}
+function v198Trim(kind){
+  const L = v198LogLoad(kind); const cut = Date.now() - 60*86400000;
+  for (const id in L.rows) if ((L.rows[id].t||0) < cut) delete L.rows[id];
+  let ids = Object.keys(L.rows).sort((a,b)=>(L.rows[a].t||0) - (L.rows[b].t||0));
+  while (ids.length > 200 && JSON.stringify(L).length > 1700000){ for (const id of ids.splice(0, 200)) delete L.rows[id]; }
+}
+function v198LogEvx(list){
+  const L = v198LogLoad('evx'); const now = Date.now();
+  for (const r of list.rows){ if (L.rows[r.id] || r.e < V198_LOG_MIN || r.t <= now) continue;
+    L.rows[r.id] = Object.assign({}, r, {at: now}); }
+}
+function v198LogSharp(rows){
+  const L = v198LogLoad('sharp'); const now = Date.now();
+  for (const r of rows){ if (L.rows[r.id]) continue; const mins = (r.t - now)/60000; if (mins > V198_LOCK_MIN || mins < 0) continue;
+    L.rows[r.id] = Object.assign({}, r, {at: now, lk: 1}); }
+}
+async function v198Grade(kind){
+  const L = v198LogLoad(kind); const now = Date.now(); let n = 0;
+  const due = Object.values(L.rows).filter(r=>!r.res && r.t < now - 3*3600000);
+  const byEv = new Map(); for (const r of due){ const k = r.lg + '|' + r.ev; if (!byEv.has(k)) byEv.set(k, []); byEv.get(k).push(r); }
+  let i = 0;
+  for (const [k, list] of byEv){
+    if (++i > 40) break;
+    const [lg, ev] = k.split('|'); let fin = null, bx = null;
+    try{ if (list.some(r=>r.b==='games') && typeof uniFinFor==='function') fin = await uniFinFor(lg, ev, list[0].t); }catch(e){}
+    try{ if (list.some(r=>r.b==='props') && typeof uniBoxFor==='function') bx = await uniBoxFor(lg, ev); }catch(e){}
+    for (const r of list){
+      let gr = null;
+      try{
+        if (r.b==='games'){ if (fin){ if (fin.canceled) gr = {res:'void'}; else if (fin.done) gr = uniGradeGameRow({l:r.lg, mk:r.mk, side:r.side, pt:r.pt}, fin); } }
+        else if (bx) gr = uniGradePropRow({l:r.lg, kind:r.kind, pid:r.pid, pn:r.pn, side:r.side, pt:+r.pt}, bx);
+      }catch(e){ gr = null; }
+      if (!gr && r.t < now - 4*86400000) gr = {res:'ungradeable'};
+      if (gr && gr.res){ r.res = gr.res; if (gr.act!=null) r.act = gr.act; n++; }
+    }
+  }
+  return n;
+}
+async function v198Publisher(){
+  if (V198.busy) return; V198.busy = true;
+  try{
+    if (!V198.logTry){
+      try{ const [a, b] = await Promise.all([v154Get('evxlog'), v154Get('sharplog')]); v198LogMerge('evx', a); v198LogMerge('sharp', b); V198.logTry = true; }
+      catch(e){ return; }                                      // never start a fresh log over one we could not read
+    }
+    if (Date.now() - V198.lastRun < 110000) return; V198.lastRun = Date.now();
+    await v198LoadVenues(); await v198LoadAn();
+    const now = Date.now(); v198Snap(now);
+    const ev = v198BuildEvx(); V198.evx = ev; v198LogEvx(ev);
+    // sharp: keep picks that locked; open picks follow the live signals
+    const SL = v198LogLoad('sharp'); const sb = v198BuildSharp(); v198LogSharp(sb.rows);
+    const locked = Object.values(SL.rows).filter(r=>r.t > now - 4*3600000 && !r.res);
+    const open = sb.rows.filter(r=>!SL.rows[r.id]);
+    V198.sharp = {at: now, build: APP_BUILD, rows: open.concat(locked.map(r=>Object.assign({}, r, {lk:1}))), cov: sb.covLg, an: !V198.anErr && Object.keys(V198.an).length > 0, pin: v198PinFresh()};
+    if (now - V198.gradeAt > 10*60000){ V198.gradeAt = now; await v198Grade('evx'); await v198Grade('sharp'); }
+    v198Trim('evx'); v198Trim('sharp'); v198LogSave('evx'); v198LogSave('sharp');
+    await v154Put('evx', V198.evx); await v154Put('sharp', V198.sharp);
+    await v154Put('evxlog', Object.assign({at: now}, v198LogLoad('evx'))); await v154Put('sharplog', Object.assign({at: now}, v198LogLoad('sharp')));
+    V198.getAt = now; V198.logAt = now;
+    v198Repaint();
+  }catch(e){ V198.err = String(e && e.message || e).slice(0, 80); }
+  finally{ V198.busy = false; }
+}
+async function v198Fetch(logs){
+  try{
+    if (Date.now() - V198.getAt > 100000){ V198.getAt = Date.now(); const [a, b] = await Promise.all([v154Get('evx').catch(()=>null), v154Get('sharp').catch(()=>null)]); if (a && a.rows) V198.evx = a; if (b && b.rows) V198.sharp = b; v198Repaint(); }
+    if (logs && Date.now() - V198.logAt > 5*60000){ V198.logAt = Date.now(); const [a, b] = await Promise.all([v154Get('evxlog').catch(()=>null), v154Get('sharplog').catch(()=>null)]); if (a && a.rows) V198.evxLog = a; if (b && b.rows) V198.sharpLog = b; v198Repaint(); }
+  }catch(e){}
+}
+function v198Tick(){
+  try{
+    if (v198Pub()) v198Publisher();
+    else { const on = typeof ui!=='undefined' && (ui.tab==='evx' || ui.tab==='sharp'); if (on || Date.now() - V198.getAt > 5*60000) v198Fetch(on); }
+  }catch(e){}
+}
+setTimeout(v198Tick, 6000); setInterval(v198Tick, 30000);
+
+/* ---------- records ---------- */
+function v198PeriodStart(p){
+  const d = new Date(); d.setHours(0,0,0,0);
+  if (p==='today') return +d; if (p==='7d') return +d - 6*86400000; if (p==='30d') return +d - 29*86400000; return 0;
+}
+function v198Record(kind){
+  const L = kind==='evx' ? V198.evxLog : V198.sharpLog; if (!L || !L.rows) return null;
+  const from = v198PeriodStart(V198.period[kind]); const bk = v198Book(), mn = v198Min()/100;
+  let w = 0, l = 0, p = 0, u = 0, open = 0;
+  for (const id in L.rows){ const r = L.rows[id]; if ((r.t||0) < from) continue;
+    if (kind==='evx' && (r.bk!==bk || r.e < mn - 1e-9)) continue;
+    if (!r.res){ open++; continue; }
+    if (r.res==='win'){ w++; u += profitOn(r.pr, 1); } else if (r.res==='loss'){ l++; u -= 1; } else if (r.res==='push') p++; }
+  return {w, l, p, u: Math.round(u*100)/100, open};
+}
+function v198RecHTML(kind){
+  const R = v198Record(kind); const per = V198.period[kind];
+  const pills = [['today','Today'],['7d','7 days'],['30d','30 days'],['all','All']].map(([k, t])=>`<button type="button" class="v198-pp${per===k?' on':''}" data-v198-per="${kind}:${k}">${t}</button>`).join('');
+  let body;
+  if (!R) body = `<div class="v198-mut">Loading the record…</div>`;
+  else if (!(R.w + R.l + R.p)) body = `<div class="v198-mut">No graded picks in this period yet${R.open ? ` (${R.open} waiting on results)` : ''}.</div>`;
+  else { const unit = v198Unit(); const dol = R.u * unit; const cls = R.u > 0 ? 'pos' : R.u < 0 ? 'neg' : '';
+    body = `<div class="v198-rs"><div class="v198-rt"><span>Record</span><b>${R.w}-${R.l}${R.p ? '-' + R.p : ''}</b></div><div class="v198-rt"><span>Units</span><b class="${cls}">${R.u > 0 ? '+' : R.u < 0 ? '−' : ''}${Math.abs(R.u).toFixed(2)}u</b></div><div class="v198-rt"><span>At $${unit}/unit</span><b class="${cls}">${dol > 0 ? '+' : dol < 0 ? '−' : ''}$${Math.abs(dol).toFixed(0)}</b></div></div>${R.open ? `<div class="v198-mut">${R.open} more waiting on results.</div>` : ''}`; }
+  const scope = kind==='evx' ? `${esc(V198_LAB[v198Book()])} · edge ${v198Min()}%+` : 'All Sharp picks';
+  return `<div class="v198-rec"><div class="v198-rh"><span class="v198-rl">Record</span><span class="v198-rsc">${scope}</span></div><div class="v198-per">${pills}</div>${body}</div>`;
+}
+
+/* ---------- cards ---------- */
+function v198When(t){ try{ return fmtTime(new Date(t)); }catch(e){ return new Date(t).toLocaleString(); } }
+function v198What(r){
+  if (r.b==='props'){ const lab = (typeof PROP_KIND_LABEL!=='undefined' && PROP_KIND_LABEL[r.kind]) || r.kind; return {mk: lab, what: `${r.pn} ${r.side==='over' ? 'Over' : 'Under'} ${r.pt} ${lab}`}; }
+  if (r.mk==='total') return {mk:'Total', what:`${r.side==='over' ? 'Over' : 'Under'} ${r.pt} (${r.gm})`};
+  if (r.mk==='spread') return {mk:'Spread', what:`${r.tm} ${v198FmtPt(r.pt)}`};
+  return {mk:'Moneyline', what:`${r.tm} to win`};
+}
+function v198BoardProp(r){
+  if (r.b!=='props') return null;
+  return ((typeof props!=='undefined' && props) || []).find(p=>p && p.g && String(p.g.eventId)===r.ev && (p.kind===r.kind || (r.kind==='pts' && p.kind==='hpts')) && ((r.pid && String(p.playerId)===r.pid) || (!r.pid && typeof v187N==='function' && v187N(p.playerName)===v187N(r.pn)))) || null;
+}
+function v198Block(r){
+  const g = v198Game(r.ev); const p = r.f!=null ? r.f : null;
+  try{
+    if (r.b==='props'){ const bp = v198BoardProp(r); if (bp && typeof v185PropHTML==='function') return {o: v185PropHTML(Object.assign({}, bp, {side:r.side, line:r.pt, p})), g: bp.g, bp}; return {o:{ring: typeof v185Ring==='function' ? v185Ring(p, r.side==='over' ? 'Over' : 'Under') : '', chips:[], tiles:[]}, g}; }
+    if (g && typeof v185GameHTML==='function') return {o: v185GameHTML({g, mk:r.mk, side:r.side, p, est:p}), g};
+  }catch(e){}
+  return {o:{ring: typeof v185Ring==='function' ? v185Ring(p, r.mk==='total' ? (r.side==='over' ? 'Over' : 'Under') : r.tm) : '', chips:[], tiles:[]}, g};
+}
+function v198CardHTML(r, kind){
+  const W = v198What(r); const B = v198Block(r); const g = B.g; const lab = V198_LAB[r.bk] || r.bk;
+  let head;
+  if (r.b==='props'){
+    const bp = B.bp; const pf = typeof playerPfpHTML==='function' ? playerPfpHTML(bp || {playerName:r.pn, playerId:r.pid, league:r.lg}) : '';
+    const tmT = bp && bp.team ? bp.team : null; const meta = bp ? `${esc((tmT && (tmT.short||tmT.abbr)) || r.tm || '')}${bp.opp ? ' vs ' + esc(bp.opp.short || bp.opp.abbr || bp.opp.name || '') : ''}` : esc(r.gm);
+    head = `<div class="prop-head">${pf}<div class="prop-who"><div class="prop-name">${esc(r.pn)}</div><div class="prop-meta">${tmT && typeof teamLogoHTML==='function' ? teamLogoHTML(tmT) : ''}<span>${meta}</span></div></div><div class="verdict-slot v185-slot">${B.o.ring||''}</div></div>`;
+  } else {
+    const T = g && r.mk!=='total' ? g[r.side] : null; const logo = T && typeof teamLogoHTML==='function' ? teamLogoHTML(T, 'player-pfp v198-tl') : `<span class="player-mono">${r.mk==='total' ? (r.side==='over' ? 'O' : 'U') : esc(String(r.tm||'?').slice(0,3))}</span>`;
+    const name = r.mk==='total' ? `${r.side==='over' ? 'Over' : 'Under'} ${r.pt}` : r.mk==='spread' ? `${r.tm} ${v198FmtPt(r.pt)}` : `${r.tm} ML`;
+    head = `<div class="prop-head">${logo}<div class="prop-who"><div class="prop-name">${esc(name)}</div><div class="prop-meta"><span>${esc(r.gm)}</span></div></div><div class="verdict-slot v185-slot">${B.o.ring||''}</div></div>`;
+  }
+  const chips = [];
+  if (kind==='evx'){ chips.push(`<span class="v185-c me">Edge <b>+${(r.e*100).toFixed(1)}%</b></span>`); chips.push(`<span class="v185-c">Fair from <b>${r.src==='Pinnacle' ? 'Pinnacle' : 'book average'}</b></span>`); }
+  else { chips.push(`<span class="v185-c me">${r.lk ? 'Locked' : 'Locks ' + esc(new Date(r.t - V198_LOCK_MIN*60000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}))}</span>`);
+    const SG = {rlm:'Against the public', steam:'Pinnacle steam', books:'Books moving', money:'Money vs bets', move:'Line move'};
+    for (const s of [...new Set(r.sig||[])]) if (SG[s]) chips.push(`<span class="v185-c">${SG[s]}</span>`); }
+  const ex = (B.o.chips || []).slice(0, kind==='evx' ? 2 : 1);
+  const body = `<div class="v185"><div class="v185-cs">${chips.concat(ex).join('')}</div>${(B.o.tiles||[]).length ? `<div class="v185-ts">${B.o.tiles.join('')}</div>` : ''}</div>`;
+  const why = kind==='sharp' && r.why && r.why.length ? `<div class="v198-why">${esc(r.why[0])}${r.why.length > 1 ? `<span class="v198-more"> +${r.why.length - 1} more</span>` : ''}</div>` : '';
+  const wc = r.f!=null ? `<span class="v198-wc">Win chance <b>${Math.round(r.f*100)}%</b></span>` : '';
+  return `<div class="card v198-card" data-v198-id="${esc(r.id)}" data-v198-kind="${kind}">
+    <div class="chead"><span><span class="lg">${esc((LMAP[r.lg]||{}).label || String(r.lg||'').toUpperCase())}</span> <span class="mut">${esc(r.gm)}</span></span><span>${esc(v198When(r.t))}</span></div>
+    ${head}${body}${why}
+    <div class="pick"><div><div class="mk">${esc(W.mk)} · ${esc(lab)}</div><div class="what">${esc(W.what)}</div></div><div class="price">${v198FmtAm(r.pr)}<small>${esc(lab)}</small></div></div>
+    <div class="cfoot"><span class="cfoot-meta">${wc}</span><span class="cfoot-acts"><button type="button" class="btn sm btn-tail" data-v198-tail="${esc(r.id)}" data-v198-k="${kind}">Tail</button></span></div>
+  </div>`;
+}
+
+/* ---------- views ---------- */
+function v198SegHTML(){
+  const nE = v198EvRows().length, nS = v198ShRows().length; const t = ui.tab;
+  const b = (tab, lab, n) => `<button type="button" role="tab" class="v198-sb${t===tab ? ' on' : ''}" data-v198-tab="${tab}" aria-selected="${t===tab}">${lab}${n!=null ? `<span class="v198-sn">${n}</span>` : ''}</button>`;
+  return `<div class="v198-seg" id="v198Seg" role="tablist" aria-label="Pick lists">${b('good', 'Picks', null)}${b('evx', '+EV', V198.evx ? nE : null)}${b('sharp', 'Sharp', V198.sharp ? nS : null)}</div>`;
+}
+function v198Live(r){ return r && r.t > Date.now(); }
+function v198EvRows(){ const L = V198.evx; if (!L || !L.rows) return []; const bk = v198Book(), mn = v198Min()/100; return L.rows.filter(r=>r.bk===bk && r.e >= mn - 1e-9 && v198Live(r)); }
+function v198ShRows(){ const L = V198.sharp; if (!L || !L.rows) return []; return L.rows.filter(v198Live).sort((a,b)=>a.t - b.t); }
+function v198Stale(L){ return L && L.at && Date.now() - L.at > 20*60000; }
+function v198EvView(){
+  const rows = v198EvRows(); const bk = v198Book(); const L = V198.evx;
+  const opts = V198_BOOKS.map(([k, lab])=>`<option value="${k}"${k===bk ? ' selected' : ''}>${esc(lab)}${L && L.by ? ` (${(L.rows||[]).filter(r=>r.bk===k && r.e >= v198Min()/100 - 1e-9 && v198Live(r)).length})` : ''}</option>`).join('');
+  const ctl = `<div class="v198-ctl"><label class="v198-bk"><span>Book</span><select id="v198Book" aria-label="Book">${opts}</select></label>
+    <div class="v198-me"><span>Min edge</span><button type="button" class="v198-st" data-v198-min="-1" aria-label="Lower minimum edge">−</button><b id="v198MinV">${v198Min()}%</b><button type="button" class="v198-st" data-v198-min="1" aria-label="Raise minimum edge">+</button></div></div>`;
+  const note = `<div class="v198-note">Bets where ${esc(V198_LAB[bk])} pays more than the sharp fair price at the same number. Fair comes from Pinnacle, or the average of 3+ other books when Pinnacle has no price.${bk==='polymarket' || bk==='polymarket_us' || V198_VEN[bk] ? ' Thin or one-sided markets are left out.' : ''}</div>`;
+  let list;
+  if (!L) list = `<div class="empty-state">Loading +EV bets…</div>`;
+  else if (!rows.length) list = `<div class="empty-state">No ${esc(V198_LAB[bk])} bets beat the fair price by ${v198Min()}% or more right now. Lines change often, so check back.</div>`;
+  else list = `<div class="grid v198-grid">${rows.slice(0, 120).map(r=>v198CardHTML(r, 'evx')).join('')}</div>${rows.length > 120 ? `<div class="v198-mut">Showing the top 120 of ${rows.length}.</div>` : ''}`;
+  const stale = v198Stale(L) ? `<div class="v198-warn">This list was last updated ${Math.round((Date.now() - L.at)/60000)} minutes ago.</div>` : '';
+  return `<div class="v198-wrap">${v198SegHTML()}<div class="v198-top"><div class="v198-tt"><h2>+EV</h2><span class="v198-tn">${rows.length} bet${rows.length===1 ? '' : 's'}</span></div></div>${ctl}${note}${stale}${v198RecHTML('evx')}${list}</div>`;
+}
+function v198ShView(){
+  const rows = v198ShRows(); const L = V198.sharp;
+  const cov = L && L.cov ? Object.entries(L.cov).map(([lg, c])=>`${esc((LMAP[lg]||{}).label || lg.toUpperCase())} ${c.pct}/${c.games}`).join(' · ') : '';
+  const note = `<div class="v198-note">Follows the smart side: lines moving against the public, Pinnacle steam, and several books moving together. Picks lock 30 minutes before start.</div>${cov ? `<details class="v198-cov"><summary>Data coverage</summary><div>Public bet % (games with data): ${cov}. No public % for soccer, tennis, UFC or props, and Pinnacle steam needs about an hour of history.</div></details>` : ''}`;
+  let list;
+  if (!L) list = `<div class="empty-state">Loading Sharp picks…</div>`;
+  else if (!rows.length) list = `<div class="empty-state">No sharp signals right now. These show up as lines move, often in the last few hours before games.</div>`;
+  else list = `<div class="grid v198-grid">${rows.map(r=>v198CardHTML(r, 'sharp')).join('')}</div>`;
+  const stale = v198Stale(L) ? `<div class="v198-warn">This list was last updated ${Math.round((Date.now() - L.at)/60000)} minutes ago.</div>` : '';
+  return `<div class="v198-wrap">${v198SegHTML()}<div class="v198-top"><div class="v198-tt"><h2>Sharp</h2><span class="v198-tn">${rows.length} pick${rows.length===1 ? '' : 's'}</span></div></div>${note}${stale}${v198RecHTML('sharp')}${list}</div>`;
+}
+function v198Render(){
+  const v = document.getElementById('view'); if (!v) return;
+  const html = ui.tab==='evx' ? v198EvView() : v198ShView();
+  if (v.dataset.v198 === String(html.length) + ':' + ui.tab && v.querySelector('.v198-wrap')){ const cur = v.querySelector('.v198-wrap'); if (cur && cur.outerHTML === html) return; }
+  const y = window.scrollY; v.innerHTML = html; v.dataset.v198 = String(html.length) + ':' + ui.tab;
+  if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  try{ if (typeof syncTabChrome==='function') syncTabChrome(); }catch(e){}
+}
+function v198Repaint(){ try{ if (typeof ui!=='undefined' && (ui.tab==='evx' || ui.tab==='sharp')) v198Render(); else v198EnsureSeg(); }catch(e){} }
+/* the switch on the Picks page */
+function v198EnsureSeg(){
+  try{
+    if (typeof ui==='undefined' || ui.tab!=='good') return;
+    const v = document.getElementById('view'); if (!v) return;
+    let el = document.getElementById('v198Seg');
+    const html = v198SegHTML();
+    if (el && el.parentNode === v && v.firstElementChild === el){ if (el.outerHTML !== html){ const t = document.createElement('div'); t.innerHTML = html; el.replaceWith(t.firstElementChild); } return; }
+    if (el) el.remove();
+    const t = document.createElement('div'); t.innerHTML = html; v.insertBefore(t.firstElementChild, v.firstChild);
+  }catch(e){}
+}
+(function(){
+  const r0 = render;
+  render = function(){ if (typeof ui!=='undefined' && (ui.tab==='evx' || ui.tab==='sharp')){ try{ renderChips(); }catch(e){} try{ if (typeof updateFilterChrome==='function') updateFilterChrome(); }catch(e){} v198Render(); return; } const r = r0.apply(this, arguments); v198EnsureSeg(); return r; };
+  if (typeof softRender==='function'){ const s0 = softRender; softRender = function(){ if (typeof ui!=='undefined' && (ui.tab==='evx' || ui.tab==='sharp')){ v198Render(); return; } const r = s0.apply(this, arguments); v198EnsureSeg(); return r; }; }
+  if (typeof syncTabChrome==='function'){ const c0 = syncTabChrome; syncTabChrome = function(){ const r = c0.apply(this, arguments);
+    try{ if (ui.tab==='evx' || ui.tab==='sharp') document.querySelectorAll('#bottomNav button[data-tab="good"], #tabs button[data-tab="good"]').forEach(b=>b.classList.add('on')); }catch(e){} return r; }; }
+  let q = false;
+  const mo = new MutationObserver(()=>{ if (q) return; const v = document.getElementById('view'); if (typeof ui!=='undefined' && ui.tab==='good' && v && v.firstElementChild && v.firstElementChild.id!=='v198Seg'){ q = true; try{ v198EnsureSeg(); }finally{ q = false; } } });
+  const start = () => { const v = document.getElementById('view'); if (v) mo.observe(v, {childList:true, subtree:true}); };
+  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+
+/* ---------- popup ---------- */
+function v198Find(id, kind){ const L = kind==='evx' ? V198.evx : V198.sharp; return L && L.rows ? L.rows.find(r=>r.id===id) : null; }
+function v198Open(id, kind){
+  const r = v198Find(id, kind); if (!r || typeof v166Host!=='function') return;
+  const host = v166Host(); const body = host.querySelector('.v166-body'); if (!body) return;
+  const g = v198Game(r.ev); const lab = V198_LAB[r.bk] || r.bk;
+  let why;
+  if (kind==='evx'){
+    why = `<p>${esc(lab)} pays ${v198FmtAm(r.pr)} here. The sharp fair price for the same bet is ${v198FmtAm(v198Am(r.f))} (${r.src==='Pinnacle' ? 'Pinnacle with its fee taken out' : 'the average of 3+ other books with their fees taken out'}), so this bet pays more than it should.</p>
+      <p>Win chance <b>${Math.round(r.f*100)}%</b> · edge <b>+${(r.e*100).toFixed(1)}%</b>.</p>`;
+  } else {
+    why = `<ul class="v198-ul">${(r.why||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul><p>${r.lk ? 'Locked' : 'Locks'} at ${esc(new Date(r.t - V198_LOCK_MIN*60000).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}))}. Best price: ${esc(lab)} ${v198FmtAm(r.pr)}.${r.f!=null ? ` Win chance ${Math.round(r.f*100)}%.` : ''}</p>`;
+  }
+  const inj = g && typeof v193InjuriesHTML==='function' ? v193InjuriesHTML({g, mk:r.mk || '', side:r.side, home: r.home===1 ? true : r.home===0 ? false : undefined}) : '';
+  body.innerHTML = `<div class="v166-head v198-ph">${v198CardHTML(r, kind)}</div><div class="v198-pg"><div class="ln-block v198-whyb"><h4>${kind==='evx' ? 'Why it is +EV' : 'Why this is the sharp side'}</h4>${why}</div>${inj}</div>`;
+  host.hidden = false; requestAnimationFrame(()=>host.classList.add('open'));
+  try{ v166Lock(true); }catch(e){}
+  try{ if (!V166.pushed){ history.pushState({v166:'v198'}, ''); V166.pushed = true; } }catch(e){}
+}
+
+/* ---------- clicks ---------- */
+document.addEventListener('click', e=>{
+  const t = e.target; if (!t || !t.closest) return;
+  const seg = t.closest('[data-v198-tab]');
+  if (seg){ e.preventDefault(); const tab = seg.getAttribute('data-v198-tab'); if (tab==='good'){ setTab('good', {board: ui.board || 'games'}); } else { setTab(tab); }
+    window.scrollTo({top:0}); render(); if (tab!=='good') v198Fetch(true); return; }
+  const per = t.closest('[data-v198-per]');
+  if (per){ const [k, p] = per.getAttribute('data-v198-per').split(':'); V198.period[k] = p; v198Render(); return; }
+  const mn = t.closest('[data-v198-min]');
+  if (mn){ S.v198Min = Math.max(1, Math.min(10, v198Min() + (+mn.getAttribute('data-v198-min')))); v198Save(); v198Render(); return; }
+  const tl = t.closest('[data-v198-tail]');
+  if (tl){ e.preventDefault(); e.stopPropagation(); v198Tail(tl.getAttribute('data-v198-tail'), tl.getAttribute('data-v198-k')); return; }
+  const card = t.closest('#view .v198-card');
+  if (card && !t.closest('button,a,select,input,label')){ e.preventDefault(); v198Open(card.getAttribute('data-v198-id'), card.getAttribute('data-v198-kind')); }
+}, true);
+document.addEventListener('change', e=>{ const s = e.target; if (s && s.id==='v198Book'){ S.v198Book = s.value; v198Save(); v198Render(); } });
+
+function v198Tail(id, kind){
+  const r = v198Find(id, kind); if (!r || typeof renderTracker!=='function') return;
+  const g = v198Game(r.ev); const W = v198What(r); const lab = V198_LAB[r.bk] || r.bk;
+  const pf = {src: r.b==='props' ? 'prop' : 'game', tailLock:'locked', date: typeof isoDate==='function' ? isoDate(new Date(r.t)) : '', sport: (LMAP[r.lg]||{}).label || r.lg,
+    market: r.b==='props' ? 'Prop' : (typeof MKN!=='undefined' ? MKN[r.mk] : r.mk), pick: `${W.what}${g ? ` (${g.away.name} vs ${g.home.name})` : ''} · ${kind==='evx' ? '+EV' : 'Sharp'}`,
+    stake: v198Unit(), oddsType:'american', odds: String(r.pr > 0 ? '+' + r.pr : r.pr), book: lab,
+    link: {ev:r.ev, lg:r.lg, mk: r.b==='props' ? r.kind : r.mk, side:r.side, point:r.pt, start:r.t, pid: r.b==='props' ? (r.pid||'') : undefined, kind: r.b==='props' ? 'prop' : undefined, stat: r.b==='props' ? r.kind : undefined, playerName: r.b==='props' ? r.pn : undefined}};
+  setTab('tracker'); try{ if (typeof updateFilterChrome==='function') updateFilterChrome(); }catch(e){}
+  renderTracker(pf); window.scrollTo({top:0});
+  try{ toast(`Pre-filled from ${kind==='evx' ? '+EV' : 'Sharp'}. Check the price at ${lab}, then add the bet.`); }catch(e){}
+}
+
+/* ---------- styles ---------- */
+(function(){
+  const st = document.createElement('style'); st.id = 'v198css';
+  st.textContent = `
+.v198-seg{display:flex;gap:6px;margin:0 0 12px;padding:4px;border-radius:14px;background:rgba(15,30,52,.7);border:1px solid rgba(96,165,250,.22);width:100%;max-width:460px;box-sizing:border-box}
+.v198-sb{flex:1 1 0;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 6px;border:0;border-radius:10px;background:transparent;color:#cbd5e1;font:inherit;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
+.v198-sb.on{background:linear-gradient(180deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 4px 14px -6px rgba(37,99,235,.8)}
+.v198-sn{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:rgba(148,163,184,.18);color:#e2e8f0}
+.v198-sb.on .v198-sn{background:rgba(255,255,255,.22)}
+.v198-wrap{min-width:0}
+.v198-top{display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px}
+.v198-tt{display:flex;align-items:baseline;gap:10px}.v198-tt h2{margin:0;font-size:20px}.v198-tn{color:#94a3b8;font-size:13px;font-weight:600}
+.v198-ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+.v198-bk{display:flex;align-items:center;gap:8px;flex:0 1 340px;min-width:0}.v198-bk span,.v198-me span{color:#94a3b8;font-size:12.5px;font-weight:600;white-space:nowrap}
+.v198-bk select{flex:1;min-width:0;max-width:280px;padding:9px 10px;border-radius:10px;border:1px solid rgba(96,165,250,.3);background:#0f1e34;color:#e2e8f0;font:inherit;font-size:14px}
+.v198-me{display:flex;align-items:center;gap:8px}.v198-me b{min-width:34px;text-align:center;color:#e2e8f0}
+.v198-st{width:34px;height:34px;border-radius:10px;border:1px solid rgba(96,165,250,.3);background:#13253f;color:#e2e8f0;font-size:18px;line-height:1;cursor:pointer}
+.v198-note{font-size:12.5px;line-height:1.45;color:#94a3b8;margin:0 0 10px}
+.v198-warn{font-size:12.5px;color:#fde68a;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:10px;padding:8px 10px;margin:0 0 10px}
+.v198-rec{border:1px solid rgba(96,165,250,.22);background:rgba(15,30,52,.55);border-radius:14px;padding:10px 12px;margin:0 0 14px}
+.v198-rh{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px}.v198-rl{font-weight:700;color:#e2e8f0}.v198-rsc{font-size:12px;color:#94a3b8;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v198-per{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.v198-pp{padding:5px 10px;border-radius:999px;border:1px solid rgba(96,165,250,.25);background:transparent;color:#cbd5e1;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.v198-pp.on{background:rgba(37,99,235,.3);border-color:rgba(96,165,250,.6);color:#fff}
+.v198-rs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.v198-rt{display:flex;flex-direction:column;gap:2px;padding:8px;border-radius:10px;background:rgba(59,130,246,.08);min-width:0}.v198-rt span{font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.v198-rt b{font-size:16px;color:#e2e8f0}
+.v198-rt b.pos{color:#4ade80}.v198-rt b.neg{color:#f87171}
+.v198-mut{font-size:12.5px;color:#94a3b8;margin-top:6px}
+.v198-cov{font-size:12.5px;color:#94a3b8;margin:-4px 0 10px}.v198-cov summary{cursor:pointer;color:#93c5fd;font-weight:600}.v198-cov div{margin-top:6px;line-height:1.45}
+.v198-card{cursor:pointer;min-width:0}
+#view .v198-card .v185-cs,.v198-card .v185-cs{flex-wrap:wrap !important;overflow:visible !important;max-height:none !important}
+.v198-card .v198-tl{object-fit:contain;background:#0f1e34;padding:4px;box-sizing:border-box}
+.v198-why{font-size:13px;line-height:1.4;color:#dbeafe;background:rgba(59,130,246,.10);border:1px solid rgba(96,165,250,.22);border-radius:10px;padding:8px 10px;margin:0 0 10px}
+.v198-more{color:#94a3b8}
+.v198-wc,.v198-eb{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid rgba(96,165,250,.3);color:#cbd5e1;white-space:nowrap}.v198-wc b,.v198-eb b{color:#e2e8f0}
+.v198-eb{border-color:rgba(74,222,128,.35);color:#bbf7d0}
+.v198-card .cfoot-meta{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.v198-pg{display:grid;grid-template-columns:1fr;gap:12px;margin-top:14px}
+@media (min-width:900px){.v198-pg{grid-template-columns:1fr 1fr}}
+.v198-whyb p{margin:6px 0;font-size:14px;line-height:1.5;color:#dbeafe}.v198-ul{margin:6px 0;padding-left:18px;font-size:14px;line-height:1.5;color:#dbeafe}
+.v198-ph > .card{cursor:default}
+`;
+  document.head.appendChild(st);
+})();
 </script>
 </body>
 </html>
