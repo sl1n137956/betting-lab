@@ -33949,6 +33949,64 @@ setInterval(v187Settings, 1000);
 #setForm .v187-mul{background:rgba(59,130,246,.12);color:#1d4ed8} #setForm .v187-stl{background:rgba(234,179,8,.15);color:#a16207}
 #setForm details.v187-more{margin-top:10px} #setForm details.v187-more > summary{cursor:pointer;font-weight:600;color:#2563eb;font-size:13px;padding:4px 0}
 `; document.head.appendChild(st); })();
+/* ===== v188: bigger win-chance ring, no BET pill on the card (Stanley, Nov 24 10:46 PM PT) =====
+   The v186 ring was 40px (36px on a 360-wide phone) with the green BET tag tucked under it, almost touching.
+   The tag is now hidden on every pick card (props, games, Play of the Day gold cards) and in the details popup
+   when a ring is shown. The Tail button is unchanged. The ring is about 1.65× the old size (66px, 62px at 360,
+   70px on desktop), with a thicker stroke, larger percent, and a readable Under/Over or team label. Extra space
+   keeps it clear of the date line and the name. The unapproved price-sanity fix is not in this build. ===== */
+APP_BUILD = 188;
+(function(){
+  const st = document.createElement('style');
+  st.setAttribute('data-v188', '1');
+  st.textContent = `
+/* hide the BET / WATCH / AVOID tag that sat under the ring; only when a ring is present */
+.verdict-slot.v185-slot > .verdict-pill,
+#v166Modal .verdict-slot.v185-slot > .verdict-pill{display:none!important}
+
+/* the slot is just the ring now, centered on the player / team header */
+.verdict-slot.v185-slot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;flex:0 0 auto;align-self:center;margin-left:4px}
+
+/* 66px ≈ 1.65× the v186 40px ring */
+.v185-ring,.v185-ring svg{width:66px!important;height:66px!important;flex-basis:66px!important;flex:0 0 66px}
+.v185-rt,.v185-rf{stroke-width:5}
+.v185-rv b{font-size:16px!important;font-weight:800;letter-spacing:-.02em;line-height:1}
+.v185-rv small{font-size:9.5px!important;letter-spacing:.04em;margin-top:2px;max-width:54px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* room between the date/time line, the name, and the ring */
+.card.v185-card > .chead{margin-bottom:12px}
+.card.v185-card > .prop-head{margin:6px 0 18px;gap:14px}
+.card.v185-card > .teams-block{margin:6px 0 18px}
+.card.v185-card .prop-name{overflow-wrap:break-word;word-break:normal}
+
+@media (max-width:370px){
+  .v185-ring,.v185-ring svg{width:62px!important;height:62px!important;flex-basis:62px!important;flex:0 0 62px}
+  .v185-rv b{font-size:15px!important}
+  .v185-rv small{font-size:9px!important;max-width:50px}
+  .card.v185-card > .prop-head{gap:10px}
+}
+@media (min-width:900px){
+  .v185-ring,.v185-ring svg{width:70px!important;height:70px!important;flex-basis:70px!important;flex:0 0 70px}
+  .v185-rt,.v185-rf{stroke-width:5.25}
+  .v185-rv b{font-size:17px!important}
+  .v185-rv small{font-size:10px!important;max-width:58px}
+}
+`;
+  document.head.appendChild(st);
+})();
+window.v188Status = () => {
+  const cards = document.querySelectorAll('.card.v185-card');
+  let rings = 0, pills = 0, sizes = [];
+  cards.forEach(c=>{
+    const r = c.querySelector('.v185-ring');
+    if (r){ rings++; sizes.push(Math.round(r.getBoundingClientRect().width)); }
+    if (c.querySelector('.verdict-slot.v185-slot > .verdict-pill')){
+      const cs = getComputedStyle(c.querySelector('.verdict-slot.v185-slot > .verdict-pill'));
+      if (cs.display!=='none') pills++;
+    }
+  });
+  return {build: APP_BUILD, cards: cards.length, rings, visiblePills: pills, ringPx: sizes[0]||0};
+};
 </script>
 </body>
 </html>
