@@ -42859,6 +42859,673 @@ document.addEventListener('click', e => {
 `;
   document.head.appendChild(st);
 })();
+/* ===== v204: Quiet player-first pocket tracking (Stanley, Nov 25 2026)
+   Shadow only: not in Picks, Play of the Day, Results totals, or the learners.
+   Publisher scores NBA DraftKings props from pre-game player data, locks 65%+
+   reads that pass the price guard at T-30, grades them, and logs whether each
+   official Pick agreed with the player read. Admin-only line in Model learning. ===== */
+APP_BUILD = 204;
+
+const V204_LS = 'bl_v204_pflog_v1';
+const V204_IDB = 'bl_v204_espn';
+const V204_SEASON_START = '20261021';
+const V204 = window.V204 = {
+  ready: false, loading: false, err: '', histAt: 0, histN: 0, lastTick: 0, busy: false, pubTry: false,
+  PG: [], TG: [], byPl: {}, byTeam: {}, tgBy: {},
+  lgCache: {}, oppCache: {},
+  inj: {}, injAt: {},
+  watching: 0, nextLockMins: null
+};
+
+const V204_COMBO = {
+  pts:['pts'], reb:['reb'], ast:['ast'], threes:['threes'], stl:['stl'], blk:['blk'],
+  pr:['pts','reb'], pra:['pts','reb','ast'], pa:['pts','ast'], ar:['ast','reb'], sb:['stl','blk']
+};
+const V204_PARAMS = {
+  home:{h:1, a:1}, b2b_min:0.97, blow_min:0.95, usage_per_min:0, min_per_out:0.10,
+  opp_exp:0.5, pace_exp:1.0, wS:0.85, wmS:0.6, fresh:true, onoff_on:true, scale:0.96
+};
+const V204_DISP = {
+  pts:[4.1213,0], reb:[1.7516,0], ast:[1.4201,0.031], threes:[1.7959,0], stl:[1.393,0], blk:[0.8526,0.3887],
+  pr:[4.0891,0], pra:[4.3269,0], pa:[4.0592,0], ar:[2.1382,0], sb:[1.2578,0]
+};
+const V204_W = [0.148, 0.807, -0.298, -0.455, 1.947];
+const V204_PMIN = 0.65, V204_FLOOR = -250, V204_MAXGAP = 0.15;
+
+function v204Val(r, k){ return (V204_COMBO[k] || []).reduce((s,c)=>s+(+r[c]||0), 0); }
+function v204Grp(p){ p = String(p||''); return /C/.test(p) ? 'C' : (/G/.test(p) ? 'G' : 'F'); }
+function v204Iso(t){ return new Date(t).toISOString(); }
+function v204Imp(a){
+  a = +a; if (!isFinite(a) || Math.abs(a) < 100) return null;
+  return a > 0 ? 100/(a+100) : (-a)/(-a+100);
+}
+function v204Units(res, pr){
+  if (res === 'loss') return -1;
+  if (res !== 'win' || pr == null || !isFinite(+pr)) return 0;
+  pr = +pr; return pr > 0 ? pr/100 : 100/(-pr);
+}
+function v204PoissonCdf(k, lam){
+  if (k < 0) return 0; if (!(lam > 0)) return 1;
+  let term = Math.exp(-lam), s = term;
+  if (!isFinite(term)) return k >= lam ? 1 : 0;
+  for (let i = 1; i <= k; i++){ term *= lam/i; s += term; if (term < 1e-16) break; }
+  return s > 1 ? 1 : s;
+}
+function v204NbinomCdf(k, n, p){
+  if (k < 0) return 0; if (!(p > 0) || p >= 1) return p >= 1 ? 1 : 0;
+  let term = Math.exp(n * Math.log(p)), s = term, q = 1 - p;
+  if (!isFinite(term)) return k >= n*(1-p)/p ? 1 : 0;
+  for (let i = 1; i <= k; i++){ term *= (i + n - 1) / i * q; s += term; if (term < 1e-16 && i > 8) break; }
+  return s > 1 ? 1 : s;
+}
+function v204Pnb(mu, line, k){
+  mu = Math.max(+mu || 0.05, 0.05);
+  const d = V204_DISP[k] || [1.5, 0], a = d[0], b = d[1];
+  const va = a*mu + b*mu*mu, thr = Math.floor(line) + 1;
+  if (va <= mu * 1.02) return 1 - v204PoissonCdf(thr - 1, mu);
+  const n = mu*mu / (va - mu), p = n / (n + mu);
+  return 1 - v204NbinomCdf(thr - 1, n, p);
+}
+function v204Hr(hist, line, last){
+  const h = last ? hist.slice(-last) : hist;
+  let n = 0; for (let i = 0; i < h.length; i++) if (h[i] > line) n++;
+  return (n + 1) / (h.length + 2);
+}
+function v204Lg(p){ p = Math.min(Math.max(p, 1e-4), 1 - 1e-4); return Math.log(p / (1 - p)); }
+function v204Pover(f, mu, line, k){
+  const x = [1, v204Lg(v204Pnb(mu, line, k)), v204Hr(f.hist, line, 5) - 0.5, v204Hr(f.hist, line, 10) - 0.5, v204Hr(f.hist, line) - 0.5];
+  let z = 0; for (let i = 0; i < 5; i++) z += V204_W[i] * x[i];
+  return 1 / (1 + Math.exp(-z));
+}
+
+/* ---------- log (own key, never mixed into Picks / Results / learners) ---------- */
+function v204LogLoad(){
+  if (!V204.log){
+    try{ V204.log = JSON.parse(localStorage.getItem(V204_LS) || 'null'); }catch(e){}
+    if (!V204.log || typeof V204.log !== 'object') V204.log = {rows:{}, ties:{}};
+    if (!V204.log.rows) V204.log.rows = {};
+    if (!V204.log.ties) V204.log.ties = {};
+  }
+  return V204.log;
+}
+function v204LogSave(){ try{ localStorage.setItem(V204_LS, JSON.stringify(v204LogLoad())); }catch(e){} }
+function v204LogMerge(remote){
+  if (!remote || typeof remote !== 'object') return;
+  const L = v204LogLoad();
+  for (const bucket of ['rows','ties']){
+    const src = remote[bucket] || {};
+    for (const id in src){
+      const a = src[id], b = L[bucket][id];
+      if (!a) continue;
+      if (!b) L[bucket][id] = a;
+      else if ((a.res && !b.res) || ((a.at || 0) > (b.at || 0) && b.res === a.res)) L[bucket][id] = Object.assign({}, b, a);
+    }
+  }
+}
+function v204Stats(){
+  const L = v204LogLoad();
+  let w = 0, l = 0, u = 0, pending = 0, voided = 0;
+  for (const id in L.rows){
+    const r = L.rows[id]; if (!r) continue;
+    if (!r.res){ pending++; continue; }
+    if (r.res === 'void' || r.res === 'push' || r.res === 'ungradeable'){ voided++; continue; }
+    if (r.res === 'win'){ w++; u += (r.u != null ? +r.u : v204Units('win', r.pr)); }
+    else if (r.res === 'loss'){ l++; u += (r.u != null ? +r.u : -1); }
+  }
+  let agree = 0, disagree = 0, agreeW = 0, agreeL = 0, disW = 0, disL = 0;
+  for (const id in L.ties){
+    const t = L.ties[id]; if (!t) continue;
+    if (t.agree){ agree++; if (t.res === 'win') agreeW++; else if (t.res === 'loss') agreeL++; }
+    else { disagree++; if (t.res === 'win') disW++; else if (t.res === 'loss') disL++; }
+  }
+  const n = w + l;
+  return {
+    w, l, u: Math.round(u * 100) / 100, n, pending, voided,
+    roi: n ? u / n : 0,
+    agree, disagree, agreeW, agreeL, disW, disL
+  };
+}
+
+/* ---------- IndexedDB history ---------- */
+function v204Idb(mode, fn){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(V204_IDB, 1);
+    req.onupgradeneeded = () => { try{ req.result.createObjectStore('pack'); }catch(e){} };
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction('pack', mode);
+      const st = tx.objectStore('pack');
+      Promise.resolve(fn(st)).then(v => { tx.oncomplete = () => { db.close(); resolve(v); }; }).catch(e => { db.close(); reject(e); });
+    };
+  });
+}
+async function v204HistLoadLocal(){
+  try{
+    const pack = await v204Idb('readonly', st => new Promise((res, rej) => { const r = st.get('v1'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+    if (pack && Array.isArray(pack.pg) && pack.pg.length){ v204Index(pack.pg, pack.tg || []); return true; }
+  }catch(e){}
+  return false;
+}
+async function v204HistSaveLocal(){
+  try{
+    const pg = V204.PG, tg = V204.TG;
+    await v204Idb('readwrite', st => st.put({pg, tg, at: Date.now()}, 'v1'));
+  }catch(e){}
+}
+function v204Index(pg, tg){
+  V204.PG = (pg || []).slice().sort((a,b) => a.start < b.start ? -1 : a.start > b.start ? 1 : 0);
+  V204.TG = (tg || []).slice().sort((a,b) => a.start < b.start ? -1 : a.start > b.start ? 1 : 0);
+  const byPl = {}, byTeam = {}, tgBy = {};
+  for (const r of V204.PG){
+    r.grp = v204Grp(r.pos);
+    (byPl[r.pid] || (byPl[r.pid] = [])).push(r);
+    (byTeam[r.team] || (byTeam[r.team] = [])).push(r);
+  }
+  for (const t of V204.TG) (tgBy[t.team] || (tgBy[t.team] = [])).push(t);
+  V204.byPl = byPl; V204.byTeam = byTeam; V204.tgBy = tgBy;
+  V204.lgCache = {}; V204.oppCache = {};
+  V204.histN = V204.PG.filter(r => r.played).length;
+  V204.ready = V204.histN >= 200;
+  V204.histAt = Date.now();
+}
+function v204ParseSummary(gid, date, data){
+  const bs = data && data.boxscore; if (!bs) return null;
+  const hdr = data.header && data.header.competitions && data.header.competitions[0];
+  if (!hdr) return null;
+  const typ = (data.header && data.header.season && data.header.season.type) || (hdr.season && hdr.season.type);
+  if (+typ && +typ !== 2) return {pg:[], tg:[], skip:true};
+  const stt = hdr.status && hdr.status.type || {};
+  if (!stt.completed) return null;
+  const start = hdr.date || (data.header && data.header.competitions[0].date) || '';
+  const ha = {}, teams = [];
+  for (const c of (hdr.competitors || [])){
+    const ab = c.team && c.team.abbreviation; if (!ab) continue;
+    ha[ab] = c.homeAway; teams.push(ab);
+  }
+  if (teams.length < 2) return null;
+  let spread = null, total = null;
+  const pc = (data.pickcenter || [])[0] || {};
+  total = pc.overUnder != null ? +pc.overUnder : null;
+  const det = String(pc.details || '');
+  if (det === 'EVEN') spread = 0;
+  else if (det && det.indexOf(' ') >= 0){
+    const sp = det.lastIndexOf(' '); const fav = det.slice(0, sp), val = parseFloat(det.slice(sp + 1));
+    const home = teams.find(t => ha[t] === 'home');
+    if (home && isFinite(val)) spread = fav === home ? val : -val;
+  }
+  const poss = {};
+  const num = s => { const n = parseFloat(s); return isFinite(n) ? n : 0; };
+  for (const b of (bs.teams || [])){
+    const ab = b.team && b.team.abbreviation; if (!ab) continue;
+    const st = {}; for (const s of (b.statistics || [])) st[s.name] = s.displayValue;
+    const mk = k => { const p = String(st[k] || '0-0').split('-'); return [num(p[0]), num(p[1])]; };
+    const fga = mk('fieldGoalsMade-fieldGoalsAttempted')[1], fta = mk('freeThrowsMade-freeThrowsAttempted')[1];
+    const orb = num(st.offensiveRebounds), tov = num(st.totalTurnovers || st.turnovers);
+    poss[ab] = fga + 0.44 * fta - orb + tov;
+  }
+  const pg = [], tg = [];
+  for (const b of (bs.players || [])){
+    const ab = b.team && b.team.abbreviation; if (!ab) continue;
+    const opp = teams.find(t => t !== ab); if (!opp) continue;
+    const s0 = (b.statistics || [])[0]; if (!s0) continue;
+    const keys = s0.keys || [];
+    for (const a of (s0.athletes || [])){
+      const st = {}; for (let i = 0; i < keys.length; i++) st[keys[i]] = (a.stats || [])[i];
+      const mn = num(st.minutes);
+      const played = !a.didNotPlay && !!(a.stats && a.stats.length) && mn > 0;
+      const row = {
+        gid:String(gid), date, start, team:ab, opp, home: ha[ab]==='home', pid:String(a.athlete && a.athlete.id || ''),
+        name:(a.athlete && a.athlete.displayName) || '', pos:((a.athlete && a.athlete.position && a.athlete.position.abbreviation) || 'F'),
+        starter:!!a.starter, played, min:mn, spread_home:spread, total:total
+      };
+      if (played){
+        const tpm = String(st['threePointFieldGoalsMade-threePointFieldGoalsAttempted'] || '0-0').split('-')[0];
+        row.pts = num(st.points); row.reb = num(st.rebounds); row.ast = num(st.assists);
+        row.threes = num(tpm); row.stl = num(st.steals); row.blk = num(st.blocks);
+      }
+      if (row.pid) pg.push(row);
+    }
+  }
+  for (const ab of teams) tg.push({gid:String(gid), date, start, team:ab, opp:teams.find(t=>t!==ab), poss:poss[ab], home:ha[ab]==='home'});
+  return {pg, tg};
+}
+async function v204HistRefresh(){
+  if (V204.loading) return V204.ready;
+  V204.loading = true; V204.err = '';
+  try{
+    if (!V204.ready) await v204HistLoadLocal();
+    const have = new Set(V204.TG.map(t => t.gid));
+    const start = new Date(Date.UTC(+V204_SEASON_START.slice(0,4), +V204_SEASON_START.slice(4,6)-1, +V204_SEASON_START.slice(6,8)));
+    const today = new Date();
+    const days = [];
+    for (let d = new Date(start); d <= today; d = new Date(d.getTime() + 86400000)) days.push(ymd(d));
+    const events = [];
+    const sbs = await pool(days.map(ds => async () => {
+      const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${ds}`, 20000, {bg:true});
+      return {ds, data: r && r.ok ? r.data : null};
+    }), 3);
+    for (const x of sbs){
+      if (!x || x.error || !x.data) continue;
+      for (const ev of (x.data.events || [])){
+        const st = ev.competitions && ev.competitions[0] && ev.competitions[0].status && ev.competitions[0].status.type;
+        const typ = ev.season && ev.season.type;
+        if (typ && +typ !== 2) continue;
+        if (st && st.completed && !have.has(String(ev.id))) events.push({id:String(ev.id), date:x.ds});
+      }
+    }
+    let addedPg = [], addedTg = [];
+    const sums = await pool(events.map(e => async () => {
+      const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${e.id}`, 20000, {bg:true});
+      return {e, data: r && r.ok ? r.data : null};
+    }), 3);
+    for (const x of sums){
+      if (!x || x.error || !x.data) continue;
+      const parsed = v204ParseSummary(x.e.id, x.e.date, x.data);
+      if (parsed && !parsed.skip){ addedPg = addedPg.concat(parsed.pg); addedTg = addedTg.concat(parsed.tg); }
+    }
+    if (addedPg.length || addedTg.length){
+      v204Index(V204.PG.concat(addedPg), V204.TG.concat(addedTg));
+      await v204HistSaveLocal();
+    } else if (V204.PG.length){
+      v204Index(V204.PG, V204.TG);
+    }
+    if (!V204.ready) V204.err = V204.histN ? 'Not enough completed games yet.' : 'Could not load this season\'s box scores.';
+  }catch(e){ V204.err = String(e && e.message || e).slice(0, 120); }
+  finally{ V204.loading = false; }
+  return V204.ready;
+}
+
+/* ---------- projection (pre-game only; teammates-out from the injury report) ---------- */
+function v204League(start){
+  const d = start.slice(0, 10);
+  if (V204.lgCache[d]) return V204.lgCache[d];
+  const out = {}, rows = V204.PG.filter(r => r.played && r.start.slice(0,10) < d);
+  for (const k in V204_COMBO){
+    for (const g of ['G','F','C']){
+      let s = 0, m = 0;
+      for (const r of rows) if (r.grp === g){ s += v204Val(r, k); m += r.min; }
+      out[k+'|'+g] = m ? s / m : null;
+    }
+  }
+  let ps = 0, n = 0;
+  for (const t of V204.TG) if (t.start.slice(0,10) < d && t.poss){ ps += t.poss; n++; }
+  out.pace = n ? ps / n : 100;
+  V204.lgCache[d] = out; return out;
+}
+function v204OppFactor(opp, k, g, start){
+  const key = opp+'|'+k+'|'+g+'|'+start.slice(0,10);
+  if (V204.oppCache[key] != null) return V204.oppCache[key];
+  const L = v204League(start), base = L[k+'|'+g];
+  const d = start.slice(0,10);
+  let s = 0, m = 0; const gids = {};
+  for (const r of V204.PG){
+    if (r.played && r.opp === opp && r.grp === g && r.start.slice(0,10) < d){ s += v204Val(r,k); m += r.min; gids[r.gid] = 1; }
+  }
+  const ng = Object.keys(gids).length;
+  let f = 1;
+  if (base && m > 0){ const raw = (s/m)/base; f = 1 + (raw - 1) * ng / (ng + 10); }
+  V204.oppCache[key] = f; return f;
+}
+function v204TeamPace(team, start){
+  const L = V204.tgBy[team] || [];
+  let s = 0, n = 0;
+  for (const t of L) if (t.start < start && t.poss){ s += t.poss; n++; }
+  return n ? (s + 100 * 5) / (n + 5) : 100;
+}
+function v204Feat(r, k, outIds){
+  const hist = (V204.byPl[r.pid] || []).filter(x => x.start < r.start && x.played);
+  if (hist.length < 3) return null;
+  const L = v204League(r.start), g = r.grp || v204Grp(r.pos), base = L[k+'|'+g] || 0.1;
+  const mins = hist.map(x => x.min);
+  const avg = a => a.reduce((s,x)=>s+x,0) / a.length;
+  const sMin = avg(mins), l3 = avg(mins.slice(-3)), l5 = avg(mins.slice(-5));
+  const stRate = hist.filter(x => x.starter).length / hist.length;
+  const recent = hist.slice(-2);
+  const stRecent = recent.filter(x => x.starter).length / recent.length;
+  const roleChange = Math.abs(stRecent - stRate) >= 0.5;
+  const rate = xs => {
+    let s = 0, m = 0; for (const x of xs){ s += v204Val(x,k); m += x.min; }
+    return (s + base * 150) / (m + 150);
+  };
+  const rS = rate(hist), r5 = rate(hist.slice(-5)), r10 = rate(hist.slice(-10));
+  const mates = {};
+  for (const x of (V204.byTeam[r.team] || [])){
+    if (x.played && x.start < r.start && x.pid !== r.pid) (mates[x.pid] || (mates[x.pid] = [])).push(x);
+  }
+  const out = [];
+  for (const pid in mates){
+    const v = mates[pid]; if (v.length < 3) continue;
+    const mpg = v.reduce((s,y)=>s+y.min,0) / v.length;
+    if (mpg >= 20 && outIds && outIds.has(String(pid))) out.push([pid, mpg]);
+  }
+  let mOut = 0, mFresh = 0;
+  for (const z of out) mOut += z[1];
+  const tgs = (V204.tgBy[r.team] || []).filter(t => t.start < r.start).slice(-2).map(t => t.gid);
+  for (const z of out) if ((mates[z[0]] || []).some(y => tgs.indexOf(y.gid) >= 0)) mFresh += z[1];
+  let onoff = 1, onoffN = 0;
+  if (out.length){
+    const top = out.reduce((a,b) => a[1] >= b[1] ? a : b)[0];
+    const playedG = {}; for (const y of (mates[top] || [])) playedG[y.gid] = 1;
+    const without = hist.filter(x => !playedG[x.gid]), withg = hist.filter(x => playedG[x.gid]);
+    if (without.length >= 2 && withg.length){
+      const ratio = rate(without) / Math.max(rate(withg), 1e-6);
+      onoffN = without.length;
+      onoff = 1 + (ratio - 1) * onoffN / (onoffN + 4);
+    }
+  }
+  const lp = L.pace || 100;
+  const pace = ((v204TeamPace(r.team, r.start) + v204TeamPace(r.opp, r.start)) / 2) / lp;
+  const of = v204OppFactor(r.opp, k, g, r.start);
+  const prev = hist[hist.length-1].start.slice(0,10);
+  const d0 = Date.parse(r.start.slice(0,10)+'T00:00:00Z'), d1 = Date.parse(prev+'T00:00:00Z');
+  const rest = Math.round((d0 - d1) / 86400000); const b2b = rest <= 1;
+  const sp = r.spread_home; const blow = sp != null && Math.abs(sp) >= 10;
+  return {
+    sMin, l3, l5, role_change:roleChange, rS, r5, r10,
+    m_out:mOut, m_fresh:mFresh, onoff, onoff_n:onoffN, pace, opp:of,
+    home:!!r.home, b2b, blow, n:hist.length, hist: hist.map(x => v204Val(x,k)), grp:g
+  };
+}
+function v204Project(f){
+  const P = V204_PARAMS, rec = 1 - P.wmS;
+  let pm = f.role_change ? (0.6*f.l3 + 0.4*f.l5) : (rec*0.6*f.l3 + rec*0.4*f.l5 + P.wmS*f.sMin);
+  const rt0 = (1-P.wS)/2*f.r5 + (1-P.wS)/2*f.r10 + P.wS*f.rS;
+  const mo = P.fresh ? f.m_fresh : f.m_out;
+  if (f.b2b) pm *= P.b2b_min;
+  if (f.blow && f.sMin >= 24) pm *= P.blow_min;
+  pm += P.min_per_out * mo * (f.sMin / 48);
+  if (pm > 42) pm = 42;
+  const usage = (P.onoff_on && f.onoff_n >= 2) ? f.onoff : 1 + P.usage_per_min * mo;
+  const rt = rt0 * usage * Math.pow(f.opp, P.opp_exp) * Math.pow(f.pace, P.pace_exp) * (f.home ? P.home.h : P.home.a);
+  return Math.max(pm * rt * P.scale, 0.05);
+}
+
+/* ---------- injuries at T-30 (Out / Doubtful / IR / Inactive; not Questionable) ---------- */
+async function v204InjOut(ev){
+  const now = Date.now();
+  if (V204.inj[ev] && now - (V204.injAt[ev] || 0) < 4 * 60000) return V204.inj[ev];
+  const out = new Set();
+  try{
+    const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${ev}`, 20000, {bg:true});
+    const data = r && r.data;
+    for (const t of (data && data.injuries) || []){
+      for (const i of (t.injuries || [])){
+        const fant = i.details && i.details.fantasyStatus && i.details.fantasyStatus.abbreviation;
+        const st = String(i.status || '') + ' ' + String(fant || '');
+        if (/injured reserve|\bir\b|season|physically unable|\bout\b|suspen|inactive|doubt/i.test(st)){
+          if (i.athlete && i.athlete.id) out.add(String(i.athlete.id));
+        }
+      }
+    }
+  }catch(e){}
+  V204.inj[ev] = out; V204.injAt[ev] = now; return out;
+}
+
+function v204PlayerCtx(pid, gm){
+  const hist = V204.byPl[String(pid)] || [];
+  const last = hist.filter(x => x.played && Date.parse(x.start) < gm.t).slice(-1)[0];
+  if (!last) return null;
+  const homeAb = (gm.home && (gm.home.short || gm.home.abbr)) || '';
+  const awayAb = (gm.away && (gm.away.short || gm.away.abbr)) || '';
+  let team = last.team, home = false;
+  if (team === homeAb) home = true;
+  else if (team === awayAb) home = false;
+  else {
+    team = homeAb; home = true;
+    if (last.team && last.team === awayAb){ team = awayAb; home = false; }
+  }
+  const opp = home ? awayAb : homeAb;
+  if (!team || !opp) return null;
+  const sp = gm.sbOdds && gm.sbOdds.spread && gm.sbOdds.spread.home ? +gm.sbOdds.spread.home[0] : (last.spread_home != null ? last.spread_home : null);
+  return {
+    gid:String(gm.ev), start:v204Iso(gm.t), team, opp, home, pid:String(pid),
+    pos:last.pos, grp:v204Grp(last.pos), spread_home: isFinite(sp) ? sp : null
+  };
+}
+function v204Nv(overPr, underPr, side, sidePr){
+  const io = v204Imp(overPr), iu = v204Imp(underPr);
+  if (io && iu && (io + iu) >= 0.97 && (io + iu) <= 1.25){
+    const pOver = io / (io + iu);
+    return side === 'over' ? pOver : 1 - pOver;
+  }
+  const p = v204Imp(sidePr);
+  return p != null ? p / 1.045 : null;
+}
+function v204ScoreSide(ctx, kind, side, line, outIds){
+  if (!V204_COMBO[kind] || !ctx) return null;
+  const f = v204Feat(ctx, kind, outIds);
+  if (!f) return null;
+  const mu = v204Project(f);
+  const po = v204Pover(f, mu, line, kind);
+  const ps = side === 'over' ? po : 1 - po;
+  return {f, mu, po, ps};
+}
+function v204GuardOk(ps, pr, nv, kind, side, pt){
+  if (pr == null || !isFinite(+pr) || +pr < V204_FLOOR) return false;
+  if (typeof v189RowStandaloneBad === 'function' && v189RowStandaloneBad({b:'props', s:'sb', k:kind, sd:side, pt:pt, pr:+pr})) return false;
+  if (nv != null && (ps - nv) > V204_MAXGAP) return false;
+  return true;
+}
+function v204RowId(ev, pid, k, sd, pt){ return `pf:${ev}:${pid}:${k}:${sd}:${pt}`; }
+function v204TieId(ev, pid, k, sd, pt){ return `pk:${ev}:${pid}:${k}:${sd}:${pt}`; }
+
+function v204PropPrice(r){ return r.lk && r.lk.price != null ? +r.lk.price : (r.price != null ? +r.price : null); }
+function v204IsOfficialPick(r){
+  if (!r || r.b !== 'props' || r.src !== 'sb' || r.l !== 'nba') return false;
+  const pr = v204PropPrice(r);
+  if (pr == null || pr < V204_FLOOR) return false;
+  if (r.lk && r.lk.sv) return r.lk.sv === 'good';
+  if (r.sv) return r.sv === 'good';
+  return r.v === 'good';
+}
+
+async function v204LockPass(now){
+  if (!V204.ready || typeof UNI === 'undefined' || typeof UNI_GAMES === 'undefined') return {locked:0, ties:0};
+  now = now || Date.now();
+  const byEv = new Map();
+  for (const r of UNI.values()){
+    if (r.b !== 'props' || r.src !== 'sb' || r.l !== 'nba' || !V204_COMBO[r.kind]) continue;
+    if (r.yes) continue;
+    const mins = (r.t - now) / 60000;
+    if (mins < -1 || mins > 32) continue;
+    const ev = String(r.ev || ''); if (!ev) continue;
+    if (!byEv.has(ev)) byEv.set(ev, []);
+    byEv.get(ev).push(r);
+  }
+  let locked = 0, ties = 0, watching = 0, nextMins = null;
+  const L = v204LogLoad();
+  for (const [ev, rows] of byEv){
+    const gm = UNI_GAMES.get(ev); if (!gm) continue;
+    const outIds = await v204InjOut(ev);
+    const pair = {};
+    for (const r of rows){
+      const k = `${r.pid}|${r.kind}|${r.pt}`;
+      (pair[k] || (pair[k] = {}))[r.side] = v204PropPrice(r);
+    }
+    for (const r of rows){
+      const ctx = v204PlayerCtx(r.pid, gm); if (!ctx) continue;
+      const sc = v204ScoreSide(ctx, r.kind, r.side, +r.pt, outIds); if (!sc) continue;
+      const pr = v204PropPrice(r);
+      const prices = pair[`${r.pid}|${r.kind}|${r.pt}`] || {};
+      const nv = v204Nv(prices.over, prices.under, r.side, pr);
+      const mins = (r.t - now) / 60000;
+      const pocket = sc.ps >= V204_PMIN && v204GuardOk(sc.ps, pr, nv, r.kind, r.side, +r.pt);
+      if (pocket){
+        watching++;
+        if (nextMins == null || mins < nextMins) nextMins = mins;
+        const id = v204RowId(ev, r.pid, r.kind, r.side, r.pt);
+        if (!L.rows[id] && mins <= 32 && mins >= -1){
+          L.rows[id] = {
+            ev, pid:String(r.pid), pn:r.pn || '', k:r.kind, sd:r.side, pt:+r.pt, pr:pr,
+            ps:Math.round(sc.ps*10000)/10000, po:Math.round(sc.po*10000)/10000,
+            mu:Math.round(sc.mu*100)/100, nv: nv != null ? Math.round(nv*10000)/10000 : null,
+            t:r.t, at:now, lmn:Math.round(mins*10)/10, mout:Math.round((sc.f.m_fresh||0)*10)/10
+          };
+          locked++;
+        } else if (L.rows[id] && !L.rows[id].res && L.rows[id].lmn == null && mins <= 32){
+          L.rows[id].pr = pr; L.rows[id].lmn = Math.round(mins*10)/10; L.rows[id].at = now;
+        }
+      }
+      if (v204IsOfficialPick(r)){
+        const tid = v204TieId(ev, r.pid, r.kind, r.side, r.pt);
+        if (!L.ties[tid] || !L.ties[tid].lk){
+          L.ties[tid] = {
+            ev, pid:String(r.pid), pn:r.pn || '', k:r.kind, sd:r.side, pt:+r.pt, pr:pr,
+            ps:Math.round(sc.ps*10000)/10000, nv: nv != null ? Math.round(nv*10000)/10000 : null,
+            agree: sc.ps >= 0.5 ? 1 : 0, strong: (sc.ps >= V204_PMIN && v204GuardOk(sc.ps, pr, nv, r.kind, r.side, +r.pt)) ? 1 : 0,
+            t:r.t, at:now, lk:1
+          };
+          ties++;
+        }
+      }
+    }
+  }
+  // also count pre-window watching so the admin line is useful before T-30
+  if (!byEv.size){
+    for (const r of UNI.values()){
+      if (r.b !== 'props' || r.src !== 'sb' || r.l !== 'nba' || !V204_COMBO[r.kind] || r.yes) continue;
+      const mins = (r.t - now) / 60000;
+      if (mins < 0 || mins > 18 * 60) continue;
+      const gm = UNI_GAMES.get(String(r.ev)); if (!gm) continue;
+      const ctx = v204PlayerCtx(r.pid, gm); if (!ctx) continue;
+      const outIds = V204.inj[String(r.ev)] || new Set();
+      const sc = v204ScoreSide(ctx, r.kind, r.side, +r.pt, outIds); if (!sc) continue;
+      const pr = v204PropPrice(r);
+      const nv = v204Nv(null, null, r.side, pr);
+      if (sc.ps >= V204_PMIN && v204GuardOk(sc.ps, pr, nv, r.kind, r.side, +r.pt)){
+        watching++;
+        if (nextMins == null || mins < nextMins) nextMins = mins;
+      }
+    }
+  }
+  V204.watching = watching; V204.nextLockMins = nextMins;
+  if (locked || ties) v204LogSave();
+  return {locked, ties, watching};
+}
+
+async function v204Grade(){
+  const L = v204LogLoad(); const now = Date.now(); let n = 0;
+  const gradeOne = async (r) => {
+    if (!r || r.res || !r.t || r.t > now - 3 * 3600000) return;
+    if (typeof uniBoxFor !== 'function' || typeof uniGradePropRow !== 'function') return;
+    try{
+      const bx = await uniBoxFor('nba', r.ev);
+      if (!bx) return;
+      const gr = uniGradePropRow({l:'nba', kind:r.k, pid:r.pid, pn:r.pn, side:r.sd, pt:+r.pt}, bx);
+      if (!gr || !gr.res){ if (r.t < now - 4 * 86400000){ r.res = 'ungradeable'; n++; } return; }
+      r.res = gr.res; r.act = gr.act;
+      if (gr.res === 'win' || gr.res === 'loss') r.u = Math.round(v204Units(gr.res, r.pr) * 1000) / 1000;
+      else r.u = 0;
+      n++;
+    }catch(e){}
+  };
+  const due = Object.values(L.rows).filter(r => r && !r.res && r.t < now - 3 * 3600000).slice(0, 40);
+  for (const r of due) await gradeOne(r);
+  const dueT = Object.values(L.ties).filter(r => r && !r.res && r.t < now - 3 * 3600000).slice(0, 40);
+  for (const r of dueT) await gradeOne(r);
+  if (n) v204LogSave();
+  return n;
+}
+
+async function v204Publish(){
+  if (typeof v154Put !== 'function' || typeof v154Pub !== 'function' || !v154Pub()) return false;
+  const L = v204LogLoad();
+  const now = Date.now();
+  const cut = now - 60 * 86400000;
+  for (const bucket of ['rows','ties']){
+    for (const id in L[bucket]) if ((L[bucket][id].t || 0) < cut) delete L[bucket][id];
+  }
+  const st = v204Stats();
+  return await v154Put('pflog', {
+    at: now, v: 204, ready: !!V204.ready, histN: V204.histN, err: V204.err,
+    watching: V204.watching, nextLockMins: V204.nextLockMins, st,
+    rows: L.rows, ties: L.ties
+  });
+}
+
+async function v204Tick(){
+  if (V204.busy) return;
+  if (typeof v154Pub !== 'function' || !v154Pub()) return;
+  V204.busy = true;
+  try{
+    if (!V204.pubTry && typeof v154Get === 'function'){
+      try{ const r = await v154Get('pflog'); v204LogMerge(r); V204.pubTry = true; v204LogSave(); }catch(e){ V204.pubTry = true; }
+    }
+    if (!V204.ready) await v204HistRefresh();
+    if (V204.ready){
+      await v204LockPass();
+      await v204Grade();
+    }
+    await v204Publish();
+    V204.lastTick = Date.now();
+  }catch(e){ V204.err = String(e && e.message || e).slice(0, 120); }
+  finally{ V204.busy = false; }
+}
+
+/* ---------- admin-only Model learning line ---------- */
+function v204FmtRec(w, l, u, n){
+  if (!n) return 'no graded picks yet';
+  const roi = (u / n) * 100;
+  const us = (u >= 0 ? '+' : '−') + Math.abs(u).toFixed(2) + 'u';
+  const rs = (roi >= 0 ? '+' : '−') + Math.abs(roi).toFixed(1) + '%';
+  return `${w}–${l}, ${us}, ROI ${rs}`;
+}
+function v204LearnLineHTML(){
+  try{
+    if (typeof v138Admin !== 'function' || !v138Admin()) return '';
+    const st = v204Stats();
+    const rec = v204FmtRec(st.w, st.l, st.u, st.n);
+    const pending = st.pending ? ` · ${st.pending} pending` : '';
+    const watch = V204.watching ? ` · watching ${V204.watching} on today's slate` : '';
+    const when = (V204.nextLockMins != null && V204.nextLockMins > 0)
+      ? ` · first lock in ${Math.round(V204.nextLockMins)} min`
+      : '';
+    const ready = V204.ready ? '' : (V204.loading ? ' Loading this season\'s box scores…' : (V204.err ? ' ' + V204.err : ' Waiting for box scores.'));
+    const ties = (st.agree + st.disagree)
+      ? ` Official Picks agreed ${st.agree}, disagreed ${st.disagree}` + (st.agreeW+st.agreeL || st.disW+st.disL ? ` (agreed ${st.agreeW}–${st.agreeL}, disagreed ${st.disW}–${st.disL}).` : '.')
+      : ' No official Picks have been compared yet.';
+    return `<div class="ln-card" style="margin-top:12px" id="v204Learn">
+      <div class="hint">Player-first pocket (shadow only — not in Picks, Play of the Day, or Results)</div>
+      <div>${esc(rec + pending + watch + when + '.' + ready)}</div>
+      <div class="hint" style="margin-top:4px">${esc(ties)}</div>
+    </div>`;
+  }catch(e){ return ''; }
+}
+(function(){
+  if (typeof propsLearnPanelHTML === 'function'){
+    const base = propsLearnPanelHTML;
+    propsLearnPanelHTML = function(){ return base.apply(this, arguments) + v204LearnLineHTML(); };
+  }
+})();
+
+/* ---------- hooks: run with the T-30 lock pass, never write into the main log or learners ---------- */
+(function(){
+  if (typeof v200LockPass === 'function'){
+    const base = v200LockPass;
+    v200LockPass = async function(){
+      const r = await base.apply(this, arguments);
+      try{ await v204Tick(); }catch(e){}
+      return r;
+    };
+  }
+})();
+setTimeout(() => { try{ if (typeof v154Pub === 'function' && v154Pub()) v204Tick(); }catch(e){} }, 12000);
+setInterval(() => {
+  try{
+    if (typeof v154Pub === 'function' && v154Pub()){ v204Tick(); return; }
+    if (typeof v138Admin === 'function' && v138Admin() && typeof ui !== 'undefined' && ui.tab === 'tracker' && typeof v154Get === 'function'){
+      if (Date.now() - (V204.lastTick || 0) > 5 * 60000){
+        V204.lastTick = Date.now();
+        v154Get('pflog').then(r => { v204LogMerge(r); if (r && r.st){ V204.watching = r.watching || 0; V204.nextLockMins = r.nextLockMins; V204.ready = !!r.ready; V204.histN = r.histN || 0; } v204LogSave(); }).catch(()=>{});
+      }
+    }
+  }catch(e){}
+}, 60000);
+
+window.v204Tick = v204Tick;
+window.v204Stats = v204Stats;
+window.v204Status = () => ({build: APP_BUILD, ready: V204.ready, histN: V204.histN, watching: V204.watching, err: V204.err, st: v204Stats()});
 </script>
 </body>
 </html>
