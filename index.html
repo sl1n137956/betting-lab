@@ -37709,6 +37709,1000 @@ function v195FantasyEstimate(leg, rows){
     </div>`;
   };
 })();
+/* ===== v196: Submitted DFS arrow detection, OCR decimal repair, multi-source line autofill & player-name autocomplete (Stanley, Nov 25 2026 t419u) ===== */
+APP_BUILD = 196;
+
+/* ---------- 1) Multi-source live line catalog (DraftKings + Pinnacle + PrizePicks + Underdog) ---------- */
+const V196_EXTRA_PPK = {
+  nba: {
+    'Fantasy Score': 'fantasy', '3-PT Attempted': '3pa', 'FG Made': 'fgm', 'FG Attempted': 'fga',
+    'Free Throws Made': 'ftm', 'Blks+Stls': 'blks_stls', 'Blocks + Steals': 'blks_stls',
+    'Rebs+Asts': 'ar', 'Pts+Rebs+Asts': 'pra', 'Pts+Rebs': 'pr', 'Pts+Asts': 'pa',
+    'Points': 'pts', 'Rebounds': 'reb', 'Assists': 'ast', '3-PT Made': 'threes',
+    'Steals': 'stl', 'Blocked Shots': 'blk', 'Turnovers': 'tov', 'Minutes': 'min'
+  },
+  nhl: {
+    'Shots On Goal': 'sog', 'Goalie Saves': 'saves', 'Points': 'pts', 'Goals': 'goals', 'Assists': 'ast',
+    'Blocked Shots': 'blk', 'Hits': 'hits', 'Fantasy Score': 'fantasy', 'Time On Ice': 'toi'
+  },
+  nfl: {
+    'Pass Yards': 'pass_yds', 'Rush Yards': 'rush_yds', 'Receiving Yards': 'rec_yds', 'Receptions': 'rec',
+    'Rush Attempts': 'rush_att', 'Pass Attempts': 'pass_att', 'Pass Completions': 'pass_cmp',
+    'Pass+Rush Yds': 'pass_rush_yds', 'Rush+Rec Yds': 'rush_rec_yds', 'Pass TDs': 'pass_td',
+    'Fantasy Score': 'fantasy', 'Kicking Points': 'k_pts', 'FG Made': 'fgm'
+  },
+  mlb: {
+    'Hitter Fantasy Score': 'hitter_fantasy', 'Pitcher Fantasy Score': 'pitcher_fantasy',
+    'Pitcher Strikeouts': 'k', 'Strikeouts': 'k', 'Hits': 'hits', 'Total Bases': 'tb',
+    'Home Runs': 'hr', 'RBIs': 'rbi', 'Runs': 'runs', 'Pitching Outs': 'outs'
+  }
+};
+
+async function v196EnsureAllFeeds(){
+  const tasks = [];
+  if (typeof props !== 'undefined' && (!props || !props.length)){
+    if (typeof propStatus !== 'undefined' && propStatus && propStatus.loading){
+      tasks.push(new Promise(res => {
+        let tries = 0;
+        const iv = setInterval(() => {
+          tries++;
+          if (!propStatus.loading || (props && props.length) || tries >= 20){ clearInterval(iv); res(); }
+        }, 250);
+      }));
+    } else if (typeof games !== 'undefined' && games && games.length && typeof loadLiveProps === 'function'){
+      tasks.push(loadLiveProps().catch(() => {}));
+    }
+  }
+  const lgs = new Set(['nba']);
+  for (const g of ((typeof games !== 'undefined' && games) || [])){
+    if (g && ['nba', 'nhl', 'nfl'].includes(g.league)) lgs.add(g.league);
+  }
+  if (typeof v195EnsurePinAndPp === 'function'){
+    tasks.push(v195EnsurePinAndPp([...lgs]).catch(() => {}));
+  }
+  if (typeof V187 !== 'undefined' && typeof v187Fetch === 'function' && typeof v187UdTrim === 'function'){
+    const now = Date.now();
+    if (!V187.ud || now - (V187.udAt || 0) > 5 * 60000){
+      tasks.push(
+        v187Fetch('https://api.underdogfantasy.com/v1/over_under_lines', 25000)
+          .then(d => { V187.ud = v187UdTrim(d); V187.udAt = Date.now(); })
+          .catch(() => {})
+      );
+    }
+  }
+  if (tasks.length) await Promise.all(tasks);
+  if (typeof V187 !== 'undefined' && !Object.values(V187.pp || {}).some(a => a && a.length) && !V187.log && typeof v187Fetch === 'function' && typeof PUB_BASE !== 'undefined'){
+    try{ V187.log = await v187Fetch(PUB_BASE + '/p/dfs', 6000); }catch(e){}
+  }
+}
+
+function v196NormName(s){
+  try{ return norm(s); }catch(e){ return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+}
+
+function v196AllPlayerNames(){
+  const set = new Set();
+  for (const p of ((typeof props !== 'undefined' && props) || [])) if (p && p.playerName) set.add(p.playerName);
+  if (typeof V187 !== 'undefined'){
+    for (const lg in (V187.pp || {})){
+      for (const x of (V187.pp[lg] || [])) if (x && x.n) set.add(x.n);
+    }
+    for (const x of (V187.ud || [])) if (x && x.n) set.add(x.n);
+    for (const lg in (V187.pin || {})){
+      for (const m of (V187.pin[lg] || [])){
+        const nm = String(m && m.d || '').split(' Total ')[0].replace(/\s*\(.*\)$/, '').trim();
+        if (nm) set.add(nm);
+      }
+    }
+  }
+  if (typeof rosterCache !== 'undefined'){
+    for (const k in rosterCache){
+      for (const a of ((rosterCache[k] && rosterCache[k].list) || [])) if (a && a.name) set.add(a.name);
+    }
+  }
+  return [...set];
+}
+
+function v196MatchPlayerName(rawName){
+  if (!rawName) return rawName;
+  const q = v196NormName(rawName);
+  if (!q || q.length < 3) return rawName;
+  const cands = v196AllPlayerNames();
+  let best = null, bestSc = 0;
+  for (const c of cands){
+    if (typeof nameScore === 'function'){
+      const ns = nameScore(q, c);
+      if (ns >= 8) return c;
+    }
+    if (typeof fuzzyNameSim === 'function'){
+      const sim = fuzzyNameSim(q, v196NormName(c));
+      if (sim > bestSc){ bestSc = sim; best = c; }
+    }
+  }
+  return (best && bestSc >= 0.78) ? best : rawName;
+}
+
+function v196MapStatKey(kind){
+  if (!kind) return null;
+  const k = String(kind).toLowerCase();
+  if (k === 'hpts') return 'pts';
+  if (k === '3pm') return 'threes';
+  if (k === 'ra') return 'ar';
+  return k;
+}
+
+function v196PlayerLines(playerName){
+  const q = v196NormName(playerName);
+  if (!q) return [];
+  const matchName = (cand) => {
+    const nc = v196NormName(cand);
+    if (!nc) return false;
+    if (nc === q) return true;
+    if (typeof nameScore === 'function' && nameScore(q, cand) >= 7) return true;
+    if (typeof fuzzyNameSim === 'function' && fuzzyNameSim(q, nc) >= 0.84) return true;
+    return false;
+  };
+  const out = [];
+  for (const p of ((typeof props !== 'undefined' && props) || [])){
+    const r = (p && (p.raw || p)) || p;
+    if (!r || !r.playerName || r.line == null) continue;
+    if (!matchName(r.playerName)) continue;
+    out.push({
+      source: 'DraftKings', platform: 'DraftKings', lg: r.league || 'nba',
+      name: r.playerName, stat: v196MapStatKey(r.kind), line: +r.line,
+      flag: null, mult: null, overPrice: r.overPrice, underPrice: r.underPrice, sideHint: null
+    });
+  }
+  if (typeof V187 !== 'undefined'){
+    for (const lg in (V187.pin || {})){
+      const mapPin = (typeof V187_PINK !== 'undefined' && V187_PINK[lg]) || {};
+      for (const m of (V187.pin[lg] || [])){
+        const st = mapPin[m && m.u];
+        if (!st) continue;
+        const nm = String(m.d || '').split(' Total ')[0].replace(/\s*\(.*\)$/, '').trim();
+        if (!nm || !matchName(nm)) continue;
+        for (const q0 of (m.ou || [])){
+          if (!isFinite(+q0[0])) continue;
+          out.push({
+            source: 'Pinnacle', platform: 'Pinnacle', lg,
+            name: nm, stat: v196MapStatKey(st), line: +q0[0],
+            flag: null, mult: null, overPrice: +q0[1], underPrice: +q0[2], sideHint: null
+          });
+        }
+      }
+    }
+    for (const lg in (V187.pp || {})){
+      const map1 = (typeof V187_PPK !== 'undefined' && V187_PPK[lg]) || {};
+      const map2 = V196_EXTRA_PPK[lg] || {};
+      for (const x of (V187.pp[lg] || [])){
+        if (!x || !x.n || !isFinite(+x.l)) continue;
+        if (!matchName(x.n)) continue;
+        const st = map1[x.st] || map2[x.st] || (typeof v195MatchStat === 'function' ? (v195MatchStat(x.st) || {}).st : null);
+        if (!st) continue;
+        out.push({
+          source: 'PrizePicks', platform: 'PrizePicks', lg,
+          name: x.n, stat: v196MapStatKey(st), line: +x.l,
+          flag: (x.ot === 'goblin' || x.ot === 'demon') ? x.ot : null,
+          mult: null, overPrice: null, underPrice: null,
+          sideHint: x.w === 'over' ? 'over' : x.w === 'under' ? 'under' : null,
+          promo: !!x.pr
+        });
+      }
+    }
+    if (!Object.values(V187.pp || {}).some(a => a && a.length) && V187.log && V187.log.days){
+      const dks = Object.keys(V187.log.days).sort().slice(-2);
+      for (const dk of dks){
+        for (const x of Object.values((V187.log.days[dk] && V187.log.days[dk].legs) || {})){
+          if (!x || x.pf !== 'pp' || !x.n || !isFinite(+x.l) || !matchName(x.n)) continue;
+          out.push({
+            source: 'PrizePicks', platform: 'PrizePicks', lg: x.lg || 'nba',
+            name: x.n, stat: v196MapStatKey(x.kind), line: +x.l,
+            flag: (x.ot === 'goblin' || x.ot === 'demon') ? x.ot : null,
+            mult: null, overPrice: null, underPrice: null, sideHint: null
+          });
+        }
+      }
+    }
+    for (const x of (V187.ud || [])){
+      if (!x || !x.n || !isFinite(+x.l)) continue;
+      if (!matchName(x.n)) continue;
+      out.push({
+        source: 'Underdog', platform: 'Underdog', lg: x.lg || 'nba',
+        name: x.n, stat: v196MapStatKey(x.kind), line: +x.l,
+        flag: (x.mh && x.mh > 1.15) || (x.ml && x.ml > 1.15) ? 'demon' : null,
+        mult: x.mh || x.ml || 1, multOver: x.mh, multUnder: x.ml,
+        overPrice: null, underPrice: null, sideHint: null
+      });
+    }
+  }
+  return out;
+}
+
+/* ---------- 2) Pixel-shape Arrow & Chevron Detection + OCR Decimal Repair ---------- */
+function v196ClassifyArrowBox(cc, bx, bgSample){
+  if (!cc || !bx) return null;
+  const W = cc.width, H = cc.height;
+  const x0 = Math.max(0, Math.floor(bx.x0)), y0 = Math.max(0, Math.floor(bx.y0));
+  const x1 = Math.min(W, Math.ceil(bx.x1)), y1 = Math.min(H, Math.ceil(bx.y1));
+  const bw = x1 - x0, bh = y1 - y0;
+  if (bw < 5 || bh < 5 || bw > 76 || bh > 76) return null;
+
+  const data = cc.getContext('2d', {willReadFrequently: true}).getImageData(x0, y0, bw, bh).data;
+  const bgR = bgSample ? bgSample.r : (PHOTO._darkMode ? 20 : 248);
+  const bgG = bgSample ? bgSample.g : (PHOTO._darkMode ? 24 : 250);
+  const bgB = bgSample ? bgSample.b : (PHOTO._darkMode ? 40 : 252);
+
+  const fg = new Uint8Array(bw * bh);
+  let fgCount = 0;
+  for (let py = 0; py < bh; py++){
+    for (let px = 0; px < bw; px++){
+      const i = (py * bw + px) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const diff = Math.max(Math.abs(r - bgR), Math.abs(g - bgG), Math.abs(b - bgB));
+      if (diff >= 36){ fg[py * bw + px] = 1; fgCount++; }
+    }
+  }
+  if (fgCount < 8) return null;
+
+  const colHas = new Uint8Array(bw);
+  for (let px = 0; px < bw; px++){
+    for (let py = 0; py < bh; py++){
+      if (fg[py * bw + px]){ colHas[px] = 1; break; }
+    }
+  }
+  const comps = [];
+  let cx0 = -1;
+  for (let px = 0; px <= bw; px++){
+    if (px < bw && colHas[px]){ if (cx0 < 0) cx0 = px; }
+    else if (cx0 >= 0){
+      if (px - cx0 >= 4) comps.push([cx0, px]);
+      cx0 = -1;
+    }
+  }
+
+  let bestArrow = null;
+  for (const [xa, xb] of comps){
+    let ya = bh, yb = -1, cnt = 0, gPx = 0, rPx = 0;
+    for (let py = 0; py < bh; py++){
+      for (let px = xa; px < xb; px++){
+        if (!fg[py * bw + px]) continue;
+        if (py < ya) ya = py;
+        if (py > yb) yb = py;
+        cnt++;
+        const i = (py * bw + px) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        if (g > 100 && g - r > 22 && g - b > 14) gPx++;
+        if (r > 115 && r - g > 24 && r - b > 24) rPx++;
+      }
+    }
+    const iw = xb - xa, ih = yb - ya + 1;
+    if (iw < 5 || ih < 5 || iw > 56 || ih > 56) continue;
+    const asp = iw / ih;
+    if (asp < 0.42 || asp > 2.35) continue;
+    const fill = cnt / (iw * ih);
+    if (fill < 0.08 || fill > 0.88) continue;
+
+    const spans = new Float32Array(ih);
+    const counts = new Float32Array(ih);
+    let maxSpan = 1, sumY = 0;
+    for (let ry = 0; ry < ih; ry++){
+      let mnX = iw, mxX = -1, rc = 0;
+      for (let rx = 0; rx < iw; rx++){
+        if (fg[(ya + ry) * bw + (xa + rx)]){
+          if (rx < mnX) mnX = rx;
+          if (rx > mxX) mxX = rx;
+          rc++;
+          sumY += ry / Math.max(1, ih - 1);
+        }
+      }
+      const sp = mxX >= mnX ? (mxX - mnX + 1) : 0;
+      spans[ry] = sp;
+      counts[ry] = rc;
+      if (sp > maxSpan) maxSpan = sp;
+    }
+    const comY = sumY / cnt;
+
+    const half = Math.max(1, Math.floor(ih * 0.50));
+    let topHalfSpan = 0, botHalfSpan = 0;
+    for (let ry = 0; ry < half; ry++) topHalfSpan += spans[ry];
+    for (let ry = ih - half; ry < ih; ry++) botHalfSpan += spans[ry];
+    topHalfSpan /= half; botHalfSpan /= half;
+
+    const band = Math.max(1, Math.floor(ih * 0.35));
+    let topSpan = 0, botSpan = 0, topCnt = 0, botCnt = 0;
+    for (let ry = 0; ry < band; ry++){ topSpan += spans[ry]; topCnt += counts[ry]; }
+    for (let ry = ih - band; ry < ih; ry++){ botSpan += spans[ry]; botCnt += counts[ry]; }
+    topSpan /= band; botSpan /= band;
+
+    let wingSum = 0, wingN = 0;
+    for (let ry = 0; ry < ih; ry++){
+      if (spans[ry] >= maxSpan * 0.82){ wingSum += ry / Math.max(1, ih - 1); wingN++; }
+    }
+    const wingsY = wingN ? wingSum / wingN : 0.5;
+
+    const tipN = Math.max(1, Math.floor(ih * 0.14));
+    let topTip = 0, botTip = 0;
+    for (let ry = 0; ry < tipN; ry++) topTip += spans[ry];
+    for (let ry = ih - tipN; ry < ih; ry++) botTip += spans[ry];
+    topTip /= tipN; botTip /= tipN;
+
+    // Detect true shafted arrows (↑ / ↓): BOTH extreme tips are narrow AND one half has a long narrow shaft
+    let topShaftN = 0, botShaftN = 0;
+    for (let ry = 2; ry < ih - 2; ry++){
+      if (spans[ry] <= maxSpan * 0.42){
+        if (ry < ih * 0.45) topShaftN++;
+        else if (ry > ih * 0.55) botShaftN++;
+      }
+    }
+    const bothTipsNarrow = topTip < maxSpan * 0.58 && botTip < maxSpan * 0.58;
+    const isShafted = bothTipsNarrow && Math.max(topShaftN, botShaftN) >= Math.max(3, Math.floor(ih * 0.20)) && Math.abs(botShaftN - topShaftN) >= 2;
+
+    const comDelta = comY - 0.50;
+    const spanDelta = (botSpan - topSpan) / maxSpan;
+    const halfDelta = (botHalfSpan - topHalfSpan) / maxSpan;
+    const cntDelta = (botCnt - topCnt) / Math.max(1, botCnt + topCnt);
+    const wingsDelta = 0.50 - wingsY;
+
+    const isSymmetric = !isShafted && Math.abs(comDelta) < 0.030 && Math.abs(spanDelta) < 0.09 && Math.abs(halfDelta) < 0.08 && Math.abs(cntDelta) < 0.070 && Math.abs(wingsDelta) < 0.085;
+    if (isSymmetric) continue;
+
+    const shapeScore = isShafted
+      ? ((botShaftN - topShaftN) / ih) * 2.0
+      : (spanDelta * 0.45 + halfDelta * 0.35 + cntDelta * 0.25 + comDelta * 0.70);
+
+    const colorHint = (gPx > rPx * 1.5 && gPx >= 3) ? 1 : (rPx > gPx * 1.5 && rPx >= 3) ? -1 : 0;
+    let dir = null, conf = Math.abs(shapeScore);
+    if (Math.abs(shapeScore) >= 0.065){
+      dir = shapeScore > 0 ? 'over' : 'under';
+    } else if (Math.abs(shapeScore) >= 0.025 && colorHint !== 0){
+      dir = colorHint > 0 ? 'over' : 'under';
+      conf = Math.abs(shapeScore) + 0.05;
+    }
+    if (dir && (!bestArrow || conf > bestArrow.conf)){
+      bestArrow = {dir, conf, colorHint, isShafted, x0: x0 + xa, x1: x0 + xb, y0: y0 + ya, y1: y0 + yb};
+    }
+  }
+  return bestArrow;
+}
+
+function v196SampleRgb(cc, bx){
+  if (!cc || !bx) return null;
+  const x0 = Math.max(0, Math.floor(bx.x0)), y0 = Math.max(0, Math.floor(bx.y0));
+  const x1 = Math.min(cc.width, Math.ceil(bx.x1)), y1 = Math.min(cc.height, Math.ceil(bx.y1));
+  if (x1 <= x0 || y1 <= y0) return null;
+  const d = cc.getContext('2d', {willReadFrequently: true}).getImageData(x0, y0, x1 - x0, y1 - y0).data;
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4){ r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+  return n ? {r: r / n, g: g / n, b: b / n} : null;
+}
+
+function v196RepairNumToken(t){
+  let s = String(t || '').trim();
+  s = s.replace(/^[↑▲⬆△⌄▼↓⬇▽^v]+(?=\d)/i, '').replace(/[↑▲⬆△⌄▼↓⬇▽]+$/g, '');
+  if (!s) return s;
+  s = s.replace(/^(\d{1,3})[,:](\d)$/, '$1.$2');
+  if (/\d/.test(s) && (/^[0-9A-Za-z.|,:]+$/.test(s)) && (/[.,:]/.test(s) || /^[0-9OoIlZzASGTB]{2,4}$/.test(s))){
+    const looksNumeric = (s.match(/\d/g) || []).length >= Math.ceil(s.length * 0.5);
+    if (looksNumeric && !/^(am|pm|vs|at|okc|min|phi|mia|cha|nyk|lal|bos|gsw|mil|phx|dal|den|sac|orl|det|tor|ind|chi|cle|atl|bkn|was|hou|sas|nop|mem|por|uta|lac)$/i.test(s)){
+      const fixed = s
+        .replace(/[,:]/g, '.')
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il|]/g, '1')
+        .replace(/Z/g, '2')
+        .replace(/A/g, '4')
+        .replace(/S/g, '5')
+        .replace(/G/g, '6')
+        .replace(/T/g, '7')
+        .replace(/B/g, '8');
+      if (/^\d{1,3}(?:\.\d)?$/.test(fixed)) return fixed;
+    }
+  }
+  return s;
+}
+
+/* Upgrade v195SpatialLines to detect arrow icons/glyphs (row-scoped!) and repair decimal tokens */
+(function(){
+  const baseSpatial = typeof v195SpatialLines === 'function' ? v195SpatialLines : null;
+  if (!baseSpatial) return;
+
+  v195SpatialLines = function(data, cc, pillResults){
+    const rawSymWords = (data && Array.isArray(data.words) ? data.words : [])
+      .filter(w => w && w.text && w.bbox && String(w.text).trim().length > 0)
+      .map(w => ({
+        t: String(w.text).trim(),
+        c: +w.confidence || 0,
+        x0: +w.bbox.x0, y0: +w.bbox.y0, x1: +w.bbox.x1, y1: +w.bbox.y1,
+        cx: (+w.bbox.x0 + +w.bbox.x1) / 2,
+        cy: (+w.bbox.y0 + +w.bbox.y1) / 2,
+        h: Math.max(6, +w.bbox.y1 - +w.bbox.y0)
+      }));
+
+    const cleanData = data ? Object.assign({}, data) : data;
+    const gluedArrows = [];
+    if (cleanData && Array.isArray(cleanData.words)){
+      cleanData.words = cleanData.words.map(w => {
+        if (!w || !w.text) return w;
+        let t = String(w.text).trim();
+        const leadM = t.match(/^([↑▲⬆△⌄▼↓⬇▽^v])+(?=\d)/i);
+        const trailM = t.match(/(?:\d)([↑▲⬆△⌄▼↓⬇▽])+$/);
+        if (leadM || trailM){
+          const g = (leadM ? leadM[0] : trailM[1]);
+          const dir = /[↑▲⬆△^]/.test(g) ? 'over' : 'under';
+          if (w.bbox) gluedArrows.push({cy: (+w.bbox.y0 + +w.bbox.y1) / 2, cx: (+w.bbox.x0 + +w.bbox.x1) / 2, h: Math.max(6, +w.bbox.y1 - +w.bbox.y0), dir});
+        }
+        const rep = v196RepairNumToken(t);
+        return rep !== t ? Object.assign({}, w, {text: rep, confidence: Math.max(+w.confidence || 0, 50)}) : w;
+      });
+    }
+
+    const lines = baseSpatial(cleanData, cc, pillResults);
+    if (!cc && !gluedArrows.length && !rawSymWords.length) return lines;
+
+    const W = cc ? cc.width : 800, H = cc ? cc.height : 1200;
+    const bgSample = cc ? v196SampleRgb(cc, {x0: 2, y0: Math.floor(H * 0.12), x1: Math.min(28, W), y1: Math.floor(H * 0.16)}) : null;
+
+    const cleanWords = (cleanData && Array.isArray(cleanData.words) ? cleanData.words : [])
+      .filter(w => w && w.text && w.bbox)
+      .map(w => ({
+        t: String(w.text).trim(),
+        x0: +w.bbox.x0, y0: +w.bbox.y0, x1: +w.bbox.x1, y1: +w.bbox.y1,
+        cx: (+w.bbox.x0 + +w.bbox.x1) / 2, cy: (+w.bbox.y0 + +w.bbox.y1) / 2,
+        h: Math.max(6, +w.bbox.y1 - +w.bbox.y0)
+      }));
+
+    // Track consumed word boxes in document order so duplicate numbers (e.g. 22.5 on two cards) match their own row!
+    const usedAnchors = new Set();
+
+    return lines.map(line => {
+      if (line === '---CARD---') return line;
+      let s = line.replace(/\b(\d{1,3})\s+(5)(?=\s*(?:\[|$|[A-Za-z]))/g, (m, a, b, off, str) => {
+        const tail = str.slice(off + m.length);
+        if (/^\s*(?:x|pm|am)\b/i.test(tail)) return m;
+        return `${a}.${b}`;
+      });
+      s = s.replace(/\b(\d{1,3}),(\d)\b/g, '$1.$2');
+      if (/\[(?:PICK|ARROW):(?:OVER|UNDER)\]/i.test(s) || /\[BOARD:BOTH\]/i.test(s)) return s;
+
+      if (/[↑▲⬆△]/.test(s) && !/[↓▼⬇▽]/.test(s)) return s.replace(/\s*\[FLAG:(?:GOBLIN|DEMON)\]/gi, '') + ' [ARROW:OVER]';
+      if (/[↓▼⬇▽]/.test(s) && !/[↑▲⬆△]/.test(s)) return s.replace(/\s*\[FLAG:(?:GOBLIN|DEMON)\]/gi, '') + ' [ARROW:UNDER]';
+
+      const stripped = s.replace(/\[[^\]]+\]/g, '').trim();
+      // Prefer decimal line number over isolated misread "1" (e.g. "Victor Wembanyama 1 45.5")
+      const decM = stripped.match(/\b(\d{1,3}\.\d)\b/);
+      const anyNumM = stripped.match(/\b(\d{1,3}(?:\.\d)?)\b/);
+      const numM = decM || anyNumM;
+      const statM = typeof v195MatchStat === 'function' ? v195MatchStat(stripped) : null;
+      if (!numM && !statM) return s;
+
+      // Determine this specific row's Y band using all text words on this line
+      const lineWords = stripped.split(/\s+/).filter(w => w.length >= 2 && !/^\d/.test(w));
+      let rowCy = null;
+      for (const lw of lineWords){
+        const hit = cleanWords.find(w => !usedAnchors.has(w) && w.t.toLowerCase() === lw.toLowerCase());
+        if (hit){ rowCy = hit.cy; usedAnchors.add(hit); break; }
+      }
+
+      const anchorTokens = [];
+      if (numM){
+        const candNums = cleanWords.filter(w => !usedAnchors.has(w) && w.t === numM[1]);
+        const scoped = rowCy != null ? candNums.filter(w => Math.abs(w.cy - rowCy) <= w.h * 2.5) : candNums;
+        const pick = (scoped.length ? scoped : candNums)[0];
+        if (pick){ anchorTokens.push(pick); usedAnchors.add(pick); }
+      }
+      if (statM){
+        const stFirst = statM.word.split(/[\s+]+/)[0].toLowerCase();
+        const candSt = cleanWords.filter(w => !usedAnchors.has(w) && w.t.toLowerCase().includes(stFirst));
+        const scoped = rowCy != null ? candSt.filter(w => Math.abs(w.cy - rowCy) <= w.h * 2.5) : candSt;
+        const pick = (scoped.length ? scoped : candSt)[0];
+        if (pick){ anchorTokens.push(pick); usedAnchors.add(pick); }
+      }
+
+      const attachArrow = (dir, misreadTok) => {
+        let cleaned = s.replace(/\s*\[FLAG:(?:GOBLIN|DEMON)\]/gi, '');
+        if (misreadTok){
+          const escTok = misreadTok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          cleaned = cleaned.replace(new RegExp(`(^|\\s)${escTok}(?=\\s+\\d)`), '$1').replace(/\s{2,}/g, ' ').trim();
+        }
+        return cleaned + (dir === 'over' ? ' [ARROW:OVER]' : ' [ARROW:UNDER]');
+      };
+
+      for (const a of anchorTokens){
+        const ga = gluedArrows.find(g => Math.abs(g.cy - a.cy) <= a.h * 1.4 && Math.abs(g.cx - a.cx) < W * 0.25);
+        if (ga) return attachArrow(ga.dir);
+      }
+
+      if (cc){
+        for (const a of anchorTokens){
+          const nearSyms = rawSymWords.filter(sw =>
+            sw.t.length <= 2 && Math.abs(sw.cy - a.cy) <= Math.max(a.h, 18) * 1.4 &&
+            Math.abs(sw.cx - a.cx) <= W * 0.28 && Math.abs(sw.cx - a.cx) > 2
+          );
+          for (const sw of nearSyms){
+            // Always verify pixel shape first when image exists, then fall back to exact arrow glyphs
+            const cls = v196ClassifyArrowBox(cc, {x0: sw.x0 - 4, y0: sw.y0 - 4, x1: sw.x1 + 4, y1: sw.y1 + 4}, bgSample);
+            if (cls){
+              const stripTok = /^[AvV+1|l!^↑▲⬆△↓▼⬇▽]{1,2}$/i.test(sw.t) ? sw.t : null;
+              return attachArrow(cls.dir, stripTok);
+            }
+            if (/^[\^↑▲⬆△]$/.test(sw.t)) return attachArrow('over', sw.t);
+            if (/^[v↓▼⬇▽]$/.test(sw.t)) return attachArrow('under', sw.t);
+          }
+          const cardBg = v196SampleRgb(cc, {x0: Math.max(0, a.x0), y0: Math.max(0, a.y0 - a.h * 0.9), x1: Math.min(W, a.x0 + 18), y1: Math.max(1, a.y0 - 2)}) || bgSample;
+          const strips = [
+            {x0: a.x0 - a.h * 2.3, y0: a.y0 - a.h * 0.4, x1: a.x0 - 2, y1: a.y1 + a.h * 0.4},
+            {x0: a.x1 + 2, y0: a.y0 - a.h * 0.4, x1: a.x1 + a.h * 2.3, y1: a.y1 + a.h * 0.4}
+          ];
+          for (const st of strips){
+            const cls = v196ClassifyArrowBox(cc, st, cardBg);
+            if (cls) return attachArrow(cls.dir);
+          }
+        }
+      }
+      return s;
+    });
+  };
+})();
+
+/* ---------- 3) Submitted DFS detection & arrow/side handling ---------- */
+(function(){
+  const baseDetect = v195DetectDfsMeta;
+  v195DetectDfsMeta = function(text){
+    const meta = baseDetect.apply(this, arguments);
+    if (meta) return meta;
+    const s = String(text || '');
+    const hasArrowTag = /\[ARROW:(OVER|UNDER)\]/i.test(s) || /[↑▲⬆△↓▼⬇▽]/.test(s);
+    const hasSubmittedCue = /\b(my\s+lineups?|active\s+entries|lineup|payout|to\s+win|pts\s*\+\s*rebs|rebs\s*\+\s*asts|fantasy\s+score|3\s*-?\s*pt\s+made)\b/i.test(s);
+    if (hasArrowTag || (hasSubmittedCue && !/\b(moneyline|spread|parlay odds|total points)\b/i.test(s))){
+      return baseDetect.call(this, s + '\nPrizePicks');
+    }
+    return null;
+  };
+
+  const baseParse = v195ParseDfsLines;
+  v195ParseDfsLines = function(lines, conf, meta){
+    const pre = (lines || []).map(l => {
+      if (l === '---CARD---') return l;
+      let s = String(l || '');
+      const arrowM = s.match(/\[ARROW:(OVER|UNDER)\]/i);
+      s = s.replace(/\bO\s+(\d{1,3}(?:\.\d)?)\b/g, 'Over $1').replace(/\bU\s+(\d{1,3}(?:\.\d)?)\b/g, 'Under $1');
+      s = s.replace(/(?:^|\s)[\^↑▲⬆]\s*(\d{1,3}(?:\.\d)?)/g, ' Over $1').replace(/(?:^|\s)[v↓▼⬇]\s*(\d{1,3}(?:\.\d)?)/g, ' Under $1');
+      if (arrowM && !/\[PICK:(OVER|UNDER)\]/i.test(s)){
+        s = s.replace(/\[ARROW:(OVER|UNDER)\]/gi, '').trim() + (arrowM[1].toUpperCase() === 'UNDER' ? ' [PICK:UNDER]' : ' [PICK:OVER]');
+      }
+      return s;
+    });
+
+    const res = baseParse.call(this, pre, conf, meta);
+    if (res && Array.isArray(res.rows)){
+      for (const r of res.rows){
+        if (!r.side && r.ok){
+          r.dfsUnselected = true;
+          r.needsSide = true;
+        }
+      }
+    }
+    return res;
+  };
+
+  const prevSlipParse = slipParse;
+  slipParse = function(text, conf){
+    const rawLines = Array.isArray(text) ? text : String(text || '').replace(/[−–—]/g, '-').split(/\n+/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const joined = rawLines.join('\n');
+    const dfsMeta = v195DetectDfsMeta(joined);
+    if (dfsMeta){
+      const r = v195ParseDfsLines(rawLines, conf, dfsMeta);
+      if (r && (r.rows.some(x => x.ok) || r.rows.some(x => x.read && /player/i.test(x.why || '')))) return r;
+    }
+    return prevSlipParse.apply(this, arguments);
+  };
+})();
+
+/* ---------- 4) Multi-source Autofill for Partial Legs & Dropped Decimals ---------- */
+function v196NumCandidates(val){
+  const n = +val;
+  if (!isFinite(n) || n <= 0) return [];
+  const cands = [n];
+  const s = String(Math.round(n));
+  if (Number.isInteger(n) && s.length >= 2 && s.endsWith('5')){
+    cands.push(n / 10);
+  }
+  if (Number.isInteger(n) && n < 120){
+    cands.push(n + 0.5, Math.max(0.5, n - 0.5));
+  }
+  return [...new Set(cands)];
+}
+
+function v196AutofillRows(rows, meta){
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const plat = (meta && meta.platform) || '';
+  const rankSource = (c) => {
+    let sc = 0;
+    if (plat && c.platform === plat) sc += 100;
+    else if (c.platform === 'DraftKings') sc += 60;
+    else if (c.platform === 'Pinnacle') sc += 50;
+    else if (c.platform === 'PrizePicks') sc += 40;
+    else if (c.platform === 'Underdog') sc += 30;
+    if (!c.flag && !c.promo) sc += 10;
+    return sc;
+  };
+
+  for (const r of rows){
+    if (!r) continue;
+    let player = null;
+    if (r.text){
+      const m = r.text.match(/^(.+?)\s+(?:Over|Under)\s+\d/i);
+      if (m) player = m[1].trim();
+    }
+    if (!player && r.read){
+      for (const seg of String(r.read).split('·')){
+        const p = typeof v195CleanDfsPlayer === 'function' ? v195CleanDfsPlayer(seg) : null;
+        if (p){ player = p; break; }
+      }
+    }
+    if (!player) continue;
+    const fixedPlayer = v196MatchPlayerName(player);
+    if (fixedPlayer && fixedPlayer !== player){
+      player = fixedPlayer;
+      if (r.text) r.text = r.text.replace(/^.+?(\s+(?:Over|Under)\s+)/i, player + '$1');
+    }
+
+    const catalog = v196PlayerLines(player);
+    if (!catalog.length) continue;
+
+    let statKey = v196MapStatKey(r.statKey);
+    let lineVal = r.line != null ? +r.line : null;
+    if (!statKey && r.read && typeof v195MatchStat === 'function'){
+      const sm = v195MatchStat(r.read);
+      if (sm) statKey = v196MapStatKey(sm.st);
+    }
+    if (lineVal == null && r.read){
+      const nm = r.read.replace(/\b\d{1,2}:\d{2}\s*(?:am|pm)?\b/gi, ' ').replace(/\b\d+(?:\.\d+)?x\b/gi, ' ').match(/\b(\d{1,3}(?:\.\d)?)\b/);
+      if (nm) lineVal = +nm[1];
+    }
+
+    let picked = null, reason = '';
+    const numCands = lineVal != null ? v196NumCandidates(lineVal) : [];
+
+    if (statKey && lineVal != null){
+      const exact = catalog.filter(c => c.stat === statKey && Math.abs(c.line - lineVal) < 1e-6).sort((a, b) => rankSource(b) - rankSource(a));
+      if (exact.length){
+        picked = exact[0];
+      } else {
+        for (const candL of numCands.slice(1)){
+          const hit = catalog.filter(c => c.stat === statKey && Math.abs(c.line - candL) < 1e-6).sort((a, b) => rankSource(b) - rankSource(a));
+          if (hit.length){
+            picked = hit[0];
+            reason = `Auto-filled from ${picked.source}`;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!picked && !statKey && numCands.length){
+      for (const candL of numCands){
+        const hit = catalog.filter(c => Math.abs(c.line - candL) < 1e-6).sort((a, b) => rankSource(b) - rankSource(a));
+        if (hit.length){
+          picked = hit[0];
+          reason = `Auto-filled from ${picked.source}`;
+          break;
+        }
+      }
+    }
+
+    if (!picked && statKey && lineVal == null){
+      const hit = catalog.filter(c => c.stat === statKey).sort((a, b) => rankSource(b) - rankSource(a));
+      if (hit.length){
+        picked = hit[0];
+        reason = `Auto-filled from ${picked.source}`;
+      }
+    }
+
+    if (!picked && !statKey && lineVal == null){
+      const prefOrder = {pts: 5, pra: 4, pr: 3, pa: 2, reb: 2, ast: 2, threes: 1};
+      const hit = catalog.slice().sort((a, b) => (rankSource(b) + (prefOrder[b.stat] || 0)) - (rankSource(a) + (prefOrder[a.stat] || 0)));
+      if (hit.length){
+        picked = hit[0];
+        reason = `Auto-filled from ${picked.source}`;
+      }
+    }
+
+    if (picked){
+      const changed = (picked.stat !== v196MapStatKey(r.statKey)) || (r.line == null || Math.abs(picked.line - +r.line) > 1e-6) || !r.ok;
+      r.statKey = picked.stat;
+      r.line = picked.line;
+      if (!r.dfsFlag && picked.flag) r.dfsFlag = picked.flag;
+      const statWord = (typeof STAT_LABEL !== 'undefined' && STAT_LABEL[picked.stat]) || picked.stat;
+      const knownSide = r.side || picked.sideHint || null;
+      if (knownSide && !r.side) r.side = knownSide;
+      if (changed){
+        r.text = r.side
+          ? `${player} ${r.side === 'under' ? 'Under' : 'Over'} ${picked.line} ${statWord}`
+          : `${player} ${picked.line} ${statWord}`;
+        r.ok = true;
+        r.why = '';
+        r.dfs = true;
+        r.autoFilledFrom = picked.source;
+        r.autoFillReason = reason || `Auto-filled from ${picked.source}`;
+      }
+      if (!r.side){
+        r.dfsUnselected = true;
+        r.needsSide = true;
+      }
+    }
+  }
+  return rows;
+}
+
+/* ---------- 5) Hook photoHandle + photoPanelHTML + photoBind + player-name autocomplete ---------- */
+(function(){
+  photoHandle = async function(file){
+    if (!file) return;
+    if (!/^image\//.test(file.type || '') && !/\.(png|jpe?g|webp|heic|gif|bmp)$/i.test(file.name || '')){ toast('Pick an image file'); return; }
+    Object.assign(PHOTO, {busy:true, stage:'loading', pct:0, text:'', conf:null, rows:[], stake:'', fail:'', thumb:'', ran:false, dfs:null, _colorCanvas:null});
+    PK.dfsMeta = null; PK.dfsLegMeta = null;
+    renderPicks();
+    try{
+      const [canvas] = await Promise.all([photoCanvas(file), v196EnsureAllFeeds()]);
+      const w = await ocrWorker();
+      await w.setParameters({tessedit_pageseg_mode: '11'});
+      let data = null, pillResults = [];
+      try{
+        data = (await w.recognize(canvas)).data;
+        if (typeof v195RecognizePills === 'function'){
+          pillResults = await v195RecognizePills(w, PHOTO._colorCanvas, PHOTO._darkMode);
+        }
+      } finally {
+        await w.setParameters({tessedit_pageseg_mode: '3'});
+      }
+      const flatText = String(data && data.text || '').trim();
+      PHOTO.conf = data && isFinite(+data.confidence) ? +data.confidence : null;
+      const spatial = v195SpatialLines(data, PHOTO._colorCanvas, pillResults);
+      const spatialText = spatial.filter(x => x !== '---CARD---').join('\n').trim();
+      PHOTO.text = spatialText || flatText;
+      let r = slipParse(spatial.length ? spatial : flatText, PHOTO.conf);
+      if (r && Array.isArray(r.rows) && r.rows.length){
+        v196AutofillRows(r.rows, r.dfs);
+        const okCount = r.rows.filter(x => x.ok).length;
+        if (okCount > 0 && r.fail && !/too blurry/i.test(r.fail)) r.fail = '';
+      }
+      PHOTO.rows = r.rows.length ? r.rows : [{text:'', odds:'', ok:false, why:'nothing readable', read:''}];
+      PHOTO.stake = r.stake;
+      PHOTO.fail = r.fail;
+      PHOTO.dfs = r.dfs || null;
+      if (!PHOTO.text) PHOTO.fail = 'No readable text in this image';
+    }catch(e){
+      PHOTO.fail = String(e && e.message || e);
+      PHOTO.rows = [{text:'', odds:'', ok:false, why:'could not read the image', read:''}];
+    }
+    PHOTO.busy = false;
+    if (PHOTO.fail){ renderPicks(); return; }
+    const needsChoice = PHOTO.rows.some(r => r.ok && r.needsSide);
+    PK.photoStake = parseFloat(PHOTO.stake) > 0 ? +parseFloat(PHOTO.stake) : null;
+    if (typeof v195AttachPhotoMeta === 'function') v195AttachPhotoMeta();
+    if (needsChoice){
+      PK.text = ''; PK.photoText = null; PHOTO.ran = false;
+      renderPicks();
+      return;
+    }
+    PK.text = photoRowsToText();
+    PK.photoText = PK.text;
+    PHOTO.ran = true;
+    renderPicks();
+    runPicks();
+  };
+
+  const baseAttach = v195AttachPhotoMeta;
+  v195AttachPhotoMeta = function(){
+    baseAttach.apply(this, arguments);
+    if (!PK.dfsLegMeta) return;
+    for (const r of (PHOTO.rows || [])){
+      if (!r || !r.text) continue;
+      const key = String(r.text).trim().toLowerCase();
+      if (PK.dfsLegMeta[key]){
+        PK.dfsLegMeta[key].autoFilledFrom = r.autoFilledFrom || null;
+        PK.dfsLegMeta[key].autoFillReason = r.autoFillReason || null;
+      }
+    }
+  };
+
+  const basePropLeg = propLegAnalysis;
+  propLegAnalysis = async function(leg){
+    await basePropLeg.apply(this, arguments);
+    if (leg && PK && PK.dfsLegMeta){
+      const m = PK.dfsLegMeta[String(leg.raw || '').trim().toLowerCase()];
+      if (m && m.autoFilledFrom) leg.autoFilledFrom = m.autoFilledFrom;
+    }
+  };
+
+  if (typeof legAssistHTML === 'function'){
+    const baseAssist = legAssistHTML;
+    legAssistHTML = function(leg, i){
+      let html = baseAssist.apply(this, arguments);
+      if (leg && leg.autoFilledFrom){
+        const badge = `<div class="pk-assume"><span class="badge b-info">Auto-filled from ${esc(leg.autoFilledFrom)}</span></div>`;
+        html = badge + html;
+      }
+      return html;
+    };
+  }
+
+  const basePanel = photoPanelHTML;
+  photoPanelHTML = function(){
+    let html = basePanel.apply(this, arguments);
+    if (!html || PHOTO.busy) return html;
+    try{
+      const w = document.createElement('div');
+      w.innerHTML = html;
+      const okBox = w.querySelector('.ph-ok');
+      const needsChoice = (PHOTO.rows || []).some(r => r.ok && r.needsSide);
+      if (okBox && needsChoice){
+        okBox.style.minWidth = '0';
+        okBox.insertAdjacentHTML('beforeend', `<div style="margin-top:6px;color:var(--watch);font-weight:600;white-space:normal;word-break:break-word;max-width:100%">Pick Over or Under below to run the check.</div>`);
+      }
+      const failBox = w.querySelector('.ph-fail');
+      if (failBox){
+        failBox.insertAdjacentHTML('beforeend', `<div style="margin-top:8px"><input id="phPlayerSearch" placeholder="Or type a player name to pick from live lines…" autocomplete="off" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"><div id="phPlayerSuggest"></div></div>`);
+      }
+      w.querySelectorAll('.ph-leg').forEach((rowEl, i) => {
+        const r = PHOTO.rows[i];
+        if (!r) return;
+        const extra = [];
+        if (r.autoFilledFrom) extra.push(`<span class="badge b-info">Auto-filled from ${esc(r.autoFilledFrom)}</span>`);
+        if (r.needsSide && r.ok){
+          // Remove redundant v195 Flip/Unselected badges when direct Over/Under choice buttons are shown
+          rowEl.querySelectorAll("[data-ph-flip]").forEach(el => el.remove());
+          rowEl.querySelectorAll(".ph-flags .badge").forEach(el => { if (/not highlighted/i.test(el.textContent || "")) el.remove(); });
+          extra.push(`<button type="button" class="chip pk-dym" data-ph-side="${i}" data-side="over">Pick Over (More)</button>`);
+          extra.push(`<button type="button" class="chip pk-dym" data-ph-side="${i}" data-side="under">Pick Under (Less)</button>`);
+        }
+        if (extra.length){
+          let flags = rowEl.querySelector('.ph-flags');
+          if (!flags){
+            rowEl.insertAdjacentHTML('beforeend', `<div class="ph-flags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;width:100%">${extra.join('')}</div>`);
+          } else {
+            flags.insertAdjacentHTML('afterbegin', extra.join(''));
+          }
+        }
+      });
+      return w.innerHTML;
+    }catch(e){ return html; }
+  };
+
+  function v196BuildSuggestHTML(query){
+    const q = v196NormName(query);
+    if (!q || q.length < 2) return '';
+    const allNames = v196AllPlayerNames();
+    const matchedPlayers = [];
+    for (const nm of allNames){
+      const nn = v196NormName(nm);
+      if (!nn) continue;
+      if (nn.includes(q) || (typeof nameScore === 'function' && nameScore(q, nm) >= 6)){
+        matchedPlayers.push(nm);
+      }
+    }
+    if (!matchedPlayers.length) return '';
+    const rows = [];
+    for (const nm of matchedPlayers.slice(0, 3)){
+      const lines = v196PlayerLines(nm);
+      const grouped = new Map();
+      for (const l of lines){
+        const k = `${l.stat}|${l.line}`;
+        let g = grouped.get(k);
+        if (!g) grouped.set(k, g = {name: nm, stat: l.stat, line: l.line, sources: new Set(), flag: l.flag});
+        g.sources.add(l.source);
+        if (l.flag && !g.flag) g.flag = l.flag;
+      }
+      for (const g of [...grouped.values()].slice(0, 5)){
+        const stLab = (typeof STAT_LABEL !== 'undefined' && STAT_LABEL[g.stat]) || g.stat;
+        const srcs = [...g.sources].join(' / ');
+        const flg = g.flag ? ` (${g.flag})` : '';
+        rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:rgba(59,130,246,.08);margin-top:4px;flex-wrap:wrap">
+          <div style="font-size:12.5px"><b>${esc(g.name)}</b> · ${g.line} ${esc(stLab)}${esc(flg)} <span class="mut">(${esc(srcs)})</span></div>
+          <div style="display:flex;gap:5px">
+            <button type="button" class="chip pk-dym" data-v196-pick="${esc(g.name + ' Over ' + g.line + ' ' + stLab)}">Over</button>
+            <button type="button" class="chip pk-dym" data-v196-pick="${esc(g.name + ' Under ' + g.line + ' ' + stLab)}">Under</button>
+          </div>
+        </div>`);
+      }
+    }
+    return rows.join('');
+  }
+
+  const baseBind = photoBind;
+  photoBind = function(v){
+    baseBind.apply(this, arguments);
+    v.querySelectorAll('[data-ph-side]').forEach(b => b.onclick = () => {
+      photoSyncInputs();
+      const idx = +b.dataset.phSide, side = b.dataset.side;
+      const r = PHOTO.rows[idx];
+      if (!r || !r.text) return;
+      const word = side === 'under' ? 'Under' : 'Over';
+      if (/\b(Over|Under)\b/i.test(r.text)) r.text = r.text.replace(/\b(Over|Under)\b/i, word);
+      else r.text = r.text.replace(/\s+(\d)/, ' ' + word + ' $1');
+      r.side = side;
+      r.dfsUnselected = false;
+      r.needsSide = false;
+      v195AttachPhotoMeta();
+      const stillNeeds = PHOTO.rows.some(x => x.ok && x.needsSide);
+      if (!stillNeeds){
+        PK.text = photoRowsToText();
+        PK.photoText = PK.text;
+        PHOTO.ran = true;
+        renderPicks();
+        runPicks();
+      } else {
+        renderPicks();
+      }
+    });
+
+    const ta = v.querySelector('#pkText');
+    const pkBox = v.querySelector('#pkInput');
+    if (pkBox && !v.querySelector('#pkSuggest')){
+      pkBox.insertAdjacentHTML('afterend', '<div id="pkSuggest"></div>');
+    }
+    const wireSuggestClicks = (container, isPhotoSearch) => {
+      if (!container) return;
+      container.querySelectorAll('[data-v196-pick]').forEach(btn => {
+        btn.onclick = () => {
+          const pickTxt = btn.dataset.v196Pick;
+          if (!pickTxt) return;
+          if (isPhotoSearch){
+            if (PHOTO.rows.length === 1 && !PHOTO.rows[0].ok && !PHOTO.rows[0].text){
+              PHOTO.rows[0] = {text: pickTxt, odds: '', ok: true, dfs: !!PHOTO.dfs, why: ''};
+            } else {
+              PHOTO.rows.push({text: pickTxt, odds: '', ok: true, dfs: !!PHOTO.dfs, why: ''});
+            }
+            PHOTO.fail = '';
+            PK.text = photoRowsToText();
+            PK.photoText = PK.text;
+            v195AttachPhotoMeta();
+            renderPicks();
+            return;
+          }
+          const cur = String(ta ? ta.value : PK.text || '');
+          const lines = cur.split(/\n/);
+          lines[lines.length - 1] = pickTxt;
+          PK.text = lines.join('\n');
+          if (ta) ta.value = PK.text;
+          const sug = v.querySelector('#pkSuggest');
+          if (sug) sug.innerHTML = '';
+        };
+      });
+    };
+
+    if (ta){
+      const prevOnInput = ta.oninput;
+      let feedPreloaded = false;
+      ta.oninput = async (e) => {
+        if (prevOnInput) prevOnInput.call(ta, e);
+        const lastLine = String(ta.value || '').split(/\n/).pop().trim();
+        const sug = v.querySelector('#pkSuggest');
+        if (!sug) return;
+        if (lastLine.length >= 2 && !/\d|\b(ml|over|under|more|less)\b/i.test(lastLine)){
+          if (!feedPreloaded){ feedPreloaded = true; await v196EnsureAllFeeds(); }
+          sug.innerHTML = v196BuildSuggestHTML(lastLine);
+          wireSuggestClicks(sug, false);
+        } else {
+          sug.innerHTML = '';
+        }
+      };
+    }
+
+    const phSearch = v.querySelector('#phPlayerSearch');
+    if (phSearch){
+      phSearch.oninput = async () => {
+        const q = phSearch.value.trim();
+        const box = v.querySelector('#phPlayerSuggest');
+        if (!box) return;
+        if (q.length < 2){ box.innerHTML = ''; return; }
+        await v196EnsureAllFeeds();
+        box.innerHTML = v196BuildSuggestHTML(q);
+        wireSuggestClicks(box, true);
+      };
+    }
+  };
+})();
 </script>
 </body>
 </html>
