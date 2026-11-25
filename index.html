@@ -16032,7 +16032,7 @@ async function uniPropRecs(gm){
     pages = Math.max(1, +pr.data.pageCount || 1);
     for (const x of (pr.data.items||[])){
       // keep only what the universe needs (the raw records are large)
-      recs.push({athlete:x.athlete?{$ref:x.athlete.$ref}:null, type:x.type?{name:x.type.name}:null, odds:x.odds?{american:x.odds.american?{value:x.odds.american.value}:null, total:x.odds.total?{value:x.odds.total.value}:null}:null, current:x.current?{target:x.current.target}:null});
+      recs.push({athlete:x.athlete?{$ref:x.athlete.$ref}:null, type:x.type?{name:x.type.name}:null, odds:x.odds?{american:x.odds.american?{value:x.odds.american.value}:null, total:x.odds.total?{value:x.odds.total.value,open:x.odds.total.open!=null?x.odds.total.open:null}:null}:null, current:x.current?{target:x.current.target}:null});
     }
     page++;
   }
@@ -34007,6 +34007,1002 @@ window.v188Status = () => {
   });
   return {build: APP_BUILD, cards: cards.length, rings, visiblePills: pills, ringPx: sizes[0]||0};
 };
+/* ================= v189: Permanent price-sanity, monotonic ladder, grading & learner audit guards =================
+   Fixes the corrupted DraftKings Milestones / rebound alt-line bug (Nov 20-23) so it can never recur:
+   1. Input/log-time guards (uniPairDk, pairEspnProps, uniPropModel, buildPropPlay, uniUpsert):
+      - Rejects Milestones whose open line diverges from current value at implausible odds (e.g. open 9+, val 3+ @ +126).
+      - Anchors alt lines to the player's main two-way Total <Stat> line and enforces strict ladder monotonicity
+        (Over implied prob must fall as line rises; Under implied prob must rise as line rises).
+      - Rejects implausible prices (outside [-5000, +10000], alt +money > +2500, reb Over <= 3.5 @ > -200, < -250 floor for Picks).
+      - Stores compact ladder snapshot (lad: [mainPt, mainOver, mainUnder]) on prop rows.
+   2. Grading-time guard (uniFinalize, v145DayStat, mlogAggAdd, v163Pack, v147ModelRows, v131, v155, uniLoadLearn):
+      - Re-validates every prop row's logged price against its stored ladder snapshot and sibling day ladder.
+      - Invalid bets are voided and excluded (never counted as wins or losses in Results, summaries, or learners).
+   3. Automated self-check & auditable rejection log (V189.rejLog + Worker /p/audit + /p/learn):
+      - Flags any market/segment whose ROI or win rate is anomalously high (e.g. ROI > +35% or WR > 72% on n >= 15)
+        or has price-order violations, and blocks promotion until clean.
+   4. One-time purge & regrade of existing poisoned Nov 19-24 entries in Firestore (modelLog, modelSum, learnShare/state),
+      IndexedDB, localStorage, Worker caches (days2, rows, potd, learn), and re-runs POD + Props learners cleanly.
+   5. Daily-check fixes:
+      - Fixes mlogInjectOpen() creating fake lk=1 locks 15-19 hours before kickoff on un-locked cloud rows.
+      - Persists fair price (fr) and opening line (op) directly on UNI records so reloads don't drop them.
+   ================================================================================================================= */
+APP_BUILD = 189;
+try{ if (typeof V160!=='undefined') V160.VER = 189; }catch(e){}
+
+const V189_FLOOR = -250;
+const V189_MONO_TOL = 0.025;
+const V189_LS_REJ = 'bl_v189_rej_v1';
+const V189_LS_PURGE = 'bl_v189_purge_v1';
+const V189_LS_CLIENT = 'bl_v189_client_v1';
+
+var V189 = window.V189 = {
+  ladders: new Map(),     // `${ev}|${pid}|${kind}|${side}` -> {m, mo, mu, pts}
+  dayBad: new Map(),      // day -> {sz, bad:Set}
+  rejLog: [],             // auditable rejection entries
+  blocked: [],            // blocked promotions / anomaly flags
+  counts: {feed:0, board:0, grade:0, purge:0, promoBlock:0},
+  purged: false,
+  purging: false,
+  lastAuditAt: 0
+};
+try{
+  const r = JSON.parse(localStorage.getItem(V189_LS_REJ) || 'null');
+  if (r){ if (Array.isArray(r.rejLog)) V189.rejLog = r.rejLog.slice(0, 120); if (Array.isArray(r.blocked)) V189.blocked = r.blocked.slice(0, 80); if (r.counts) Object.assign(V189.counts, r.counts); }
+}catch(e){}
+
+function v189SaveRej(){
+  try{ localStorage.setItem(V189_LS_REJ, JSON.stringify({rejLog: V189.rejLog.slice(0, 120), blocked: V189.blocked.slice(0, 80), counts: V189.counts, at: Date.now()})); }catch(e){}
+}
+function v189LogRej(where, item, why){
+  try{
+    V189.counts[where] = (V189.counts[where] || 0) + 1;
+    const desc = item ? (item.pn || item.playerName || item.pid || item.playerId || item.id || '') + ' ' + (item.k || item.kind || item.mk || '') + ' ' + (item.sd || item.side || '') + (item.pt!=null ? ' '+item.pt : (item.line!=null ? ' '+item.line : '')) + ' @ ' + (item.lpr!=null ? item.lpr : (item.pr!=null ? item.pr : item.price)) : '';
+    const msg = `${where}: ${why}${desc ? ' ('+desc.trim()+')' : ''}`;
+    if (!V189.rejLog.length || V189.rejLog[0].msg !== msg){
+      V189.rejLog.unshift({at: Date.now(), where, why, desc: desc.trim().slice(0, 90), msg: msg.slice(0, 140)});
+      V189.rejLog = V189.rejLog.slice(0, 120);
+    }
+    v189SaveRej();
+  }catch(e){}
+}
+function v189Imp(a){
+  a = +a;
+  if (!isFinite(a) || a === 0 || Math.abs(a) < 100) return null;
+  return a > 0 ? 100 / (a + 100) : (-a) / (-a + 100);
+}
+function v189Px(o){
+  if (!o) return null;
+  const x = o.lpr != null ? o.lpr : (o.pr != null ? o.pr : o.price);
+  return x == null || x === '' || !isFinite(+x) ? null : +x;
+}
+function v189NumLine(x){
+  if (x == null || x === '') return null;
+  const s = String(x).trim();
+  const n = parseFloat(s.replace(/\+$/, ''));
+  if (!isFinite(n)) return null;
+  return /\+$/.test(s) ? n - 0.5 : n;
+}
+
+/* ---------- 1) Live feed ladder & price-sanity validation ---------- */
+function v189ValidateFeedRows(recs, rows, evId){
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  // Collect open values from raw recs to catch ESPN "open: 9+, value: 3+ @ +126" corruption
+  const openMap = new Map();
+  for (const rec of (recs || [])){
+    try{
+      const aid = typeof athleteIdFromRef==='function' ? athleteIdFromRef(rec.athlete && rec.athlete.$ref) : '';
+      if (!aid) continue;
+      const typ = (rec.type && rec.type.name) || '';
+      const T = typeof uniDkType==='function' ? uniDkType('nba', typ) : null; // only need kind extraction; fallback below
+      const tot = rec.odds && rec.odds.total;
+      if (!tot || tot.value == null || tot.open == null) continue;
+      const lv = v189NumLine(tot.value), ov = v189NumLine(tot.open);
+      if (lv != null && ov != null){
+        const k = aid + '|' + typ + '|' + lv;
+        openMap.set(k, ov);
+        if (T && T.kind) openMap.set(aid + '|' + T.kind + '|' + lv, ov);
+      }
+    }catch(e){}
+  }
+  // Identify two-way main line per (pid, kind)
+  const byPk = new Map();
+  for (const x of rows){
+    if (!x || x.alt || x.yes) continue;
+    const pk = `${x.pid}|${x.kind}`;
+    let m = byPk.get(pk);
+    if (!m){ m = new Map(); byPk.set(pk, m); }
+    let cell = m.get(x.line);
+    if (!cell){ cell = {line: x.line, over: null, under: null}; m.set(x.line, cell); }
+    if (x.side === 'over') cell.over = x.price;
+    else if (x.side === 'under') cell.under = x.price;
+  }
+  const mainMap = new Map();
+  for (const [pk, lm] of byPk){
+    let best = null;
+    for (const c of lm.values()){
+      if (c.over != null && c.under != null && (!best || c.line > best.line)) best = c;
+    }
+    if (best) mainMap.set(pk, best);
+  }
+
+  // Group all rows by (pid, kind, side) and validate ladder monotonicity & plausibility
+  const groups = new Map();
+  for (const x of rows){
+    if (!x) continue;
+    const key = `${x.pid}|${x.kind}|${x.side}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(x);
+  }
+
+  const kept = [];
+  for (const [gk, list] of groups){
+    list.sort((a, b) => a.line - b.line);
+    const [pid, kind, side] = gk.split('|');
+    const main = mainMap.get(pid + '|' + kind) || null;
+    const sgn = side === 'over' ? 1 : -1;
+
+    // Step A: standalone sanity + main-line anchor + open-line mismatch
+    const cand = [];
+    for (const x of list){
+      const px = +x.price;
+      const ip = v189Imp(px);
+      if (ip == null || px < -5000 || px > 10000){
+        v189LogRej('feed', Object.assign({ev: evId}, x), 'invalid odds');
+        continue;
+      }
+      if (x.alt && px > 2500){
+        v189LogRej('feed', Object.assign({ev: evId}, x), 'alt +money outlier > +2500');
+        continue;
+      }
+      if (kind === 'reb' && side === 'over' && x.line <= 3.5 && px > -200){
+        v189LogRej('feed', Object.assign({ev: evId}, x), 'suspect reb milestone <= 3.5');
+        continue;
+      }
+      const ov = openMap.get(`${pid}|${kind}|${x.line}`);
+      if (x.alt && ov != null && side === 'over' && (ov - x.line) >= 2 && px > -180){
+        v189LogRej('feed', Object.assign({ev: evId}, x), `milestone open ${ov} vs line ${x.line}`);
+        continue;
+      }
+      if (main && side === 'over' && main.over != null){
+        const mip = v189Imp(main.over);
+        if (mip != null){
+          if (x.line < main.line && ip < mip - 0.02){
+            v189LogRej('feed', Object.assign({ev: evId}, x), `lower Over (${x.line}) longer than main (${main.line} @ ${main.over})`);
+            continue;
+          }
+          if (x.line <= main.line - 1.5 && ip < Math.min(0.85, mip + 0.05)){
+            v189LogRej('feed', Object.assign({ev: evId}, x), `deep lower Over (${x.line}) not shorter than main (${main.line} @ ${main.over})`);
+            continue;
+          }
+          if (x.line > main.line && ip > mip + 0.02){
+            v189LogRej('feed', Object.assign({ev: evId}, x), `higher Over (${x.line}) shorter than main (${main.line} @ ${main.over})`);
+            continue;
+          }
+        }
+      }
+      if (main && side === 'under' && main.under != null){
+        const mip = v189Imp(main.under);
+        if (mip != null){
+          if (x.line < main.line && ip > mip + 0.02){
+            v189LogRej('feed', Object.assign({ev: evId}, x), `lower Under (${x.line}) shorter than main (${main.line})`);
+            continue;
+          }
+          if (x.line > main.line && ip < mip - 0.02){
+            v189LogRej('feed', Object.assign({ev: evId}, x), `higher Under (${x.line}) longer than main (${main.line})`);
+            continue;
+          }
+        }
+      }
+      cand.push(x);
+    }
+
+    // Step B: enforce strict monotonicity across surviving rungs
+    const clean = [];
+    if (cand.length <= 1){
+      clean.push(...cand);
+    } else if (main){
+      // Anchor at main line and validate outward
+      const below = cand.filter(x => x.line < main.line).sort((a, b) => b.line - a.line);
+      const atOrAbove = cand.filter(x => x.line >= main.line).sort((a, b) => a.line - b.line);
+      let prevImp = v189Imp(side === 'over' ? main.over : main.under);
+      const keepBelow = [];
+      for (const x of below){
+        const ip = v189Imp(x.price);
+        // moving to lower line: over must rise (ip >= prevImp - tol), under must fall (ip <= prevImp + tol)
+        const ok = prevImp == null ? true : (side === 'over' ? ip >= prevImp - V189_MONO_TOL : ip <= prevImp + V189_MONO_TOL);
+        if (!ok){ v189LogRej('feed', Object.assign({ev: evId}, x), 'non-monotonic below main'); continue; }
+        keepBelow.push(x); prevImp = ip;
+      }
+      prevImp = v189Imp(side === 'over' ? main.over : main.under);
+      const keepAbove = [];
+      for (const x of atOrAbove){
+        const ip = v189Imp(x.price);
+        // moving to higher line: over must fall (ip <= prevImp + tol), under must rise (ip >= prevImp - tol)
+        const ok = (x.line === main.line && !x.alt) ? true : (prevImp == null ? true : (side === 'over' ? ip <= prevImp + V189_MONO_TOL : ip >= prevImp - V189_MONO_TOL));
+        if (!ok){ v189LogRej('feed', Object.assign({ev: evId}, x), 'non-monotonic above main'); continue; }
+        keepAbove.push(x); prevImp = ip;
+      }
+      clean.push(...keepBelow.reverse(), ...keepAbove);
+    } else {
+      // No two-way main line: walk from top down for Over (higher lines are real tail) or bottom up for Under
+      const ordered = side === 'over' ? [...cand].sort((a, b) => b.line - a.line) : [...cand].sort((a, b) => a.line - b.line);
+      let prevImp = null;
+      const tmp = [];
+      for (const x of ordered){
+        const ip = v189Imp(x.price);
+        // Walking downward on Over: ip must rise (ip >= prevImp - tol). Walking upward on Under: ip must rise.
+        const ok = prevImp == null ? true : (ip >= prevImp - V189_MONO_TOL);
+        if (!ok){ v189LogRej('feed', Object.assign({ev: evId}, x), 'non-monotonic alt ladder'); continue; }
+        tmp.push(x); prevImp = ip;
+      }
+      clean.push(...tmp.sort((a, b) => a.line - b.line));
+    }
+
+    // Store ladder snapshot for grading-time verification
+    if (evId && clean.length){
+      const snap = {
+        m: main ? main.line : null,
+        mo: main ? main.over : null,
+        mu: main ? main.under : null,
+        pts: clean.map(r => [r.line, r.price])
+      };
+      V189.ladders.set(`${evId}|${pid}|${kind}|${side}`, snap);
+      if (V189.ladders.size > 15000){
+        const keep = [...V189.ladders].slice(-8000);
+        V189.ladders = new Map(keep);
+      }
+      for (const r of clean) if (main) r._lad = [main.line, main.over, main.under];
+    }
+    kept.push(...clean);
+  }
+  return kept;
+}
+
+(function(){
+  if (typeof uniPairDk === 'function'){
+    const base = uniPairDk;
+    uniPairDk = function(recs, gm){
+      const out = base.apply(this, arguments);
+      try{
+        const ev = gm && gm.ev ? String(gm.ev) : '';
+        const clean = v189ValidateFeedRows(recs, out, ev);
+        // Remove V160.fair entries for rejected lines if any
+        if (typeof V160 !== 'undefined' && V160.fair && ev){
+          const okSet = new Set(clean.map(x => `${x.pid}|${x.kind}|${x.line}`));
+          for (const x of out || []){
+            if (!okSet.has(`${x.pid}|${x.kind}|${x.line}`) && typeof v160Key === 'function'){
+              V160.fair.delete(v160Key(ev, x.pid, x.kind, x.line));
+            }
+          }
+        }
+        return clean;
+      }catch(e){ return out; }
+    };
+  }
+  if (typeof pairEspnProps === 'function'){
+    const base = pairEspnProps;
+    pairEspnProps = function(recs, g){
+      const out = base.apply(this, arguments);
+      try{
+        if (!Array.isArray(out) || !out.length) return out;
+        // Convert paired items into side rows, validate, and drop invalid sides
+        const sideRows = [];
+        for (const r of out){
+          if (!r) continue;
+          if (r.overPrice != null) sideRows.push({pid: r.playerId, kind: r.kind, line: r.line, side: 'over', price: r.overPrice, alt: /Milestones/i.test(r.typ||'') ? 1 : 0});
+          if (r.underPrice != null) sideRows.push({pid: r.playerId, kind: r.kind, line: r.line, side: 'under', price: r.underPrice, alt: /Milestones/i.test(r.typ||'') ? 1 : 0});
+        }
+        const ev = (g && g.eventId) ? String(g.eventId) : '';
+        const clean = v189ValidateFeedRows(recs, sideRows, ev);
+        const ok = new Set(clean.map(x => `${x.pid}|${x.kind}|${x.line}|${x.side}`));
+        return out.filter(r => {
+          if (r.overPrice != null && !ok.has(`${r.playerId}|${r.kind}|${r.line}|over`)) r.overPrice = null;
+          if (r.underPrice != null && !ok.has(`${r.playerId}|${r.kind}|${r.line}|under`)) r.underPrice = null;
+          return r.overPrice != null || r.underPrice != null;
+        });
+      }catch(e){ return out; }
+    };
+  }
+})();
+
+/* ---------- 2) Day-level & row-level price-sanity + grading-time validator ---------- */
+function v189RowStandaloneBad(o){
+  if (!o) return 'missing';
+  const px = v189Px(o);
+  if (px == null || px === 0 || Math.abs(px) < 100 || px < -5000 || px > 10000) return 'bad_odds';
+  if (o.b === 'props'){
+    const sd = String(o.sd || o.side || '').toLowerCase();
+    const k = o.k || o.kind || '';
+    const pt = o.pt != null ? +o.pt : (o.line != null ? +o.line : null);
+    if (k === 'reb' && sd === 'over' && pt != null && pt <= 3.5 && px > -200) return 'reb_alt_corrupt';
+    if (Array.isArray(o.lad) && o.lad.length >= 3 && pt != null){
+      const [mPt, mOv, mUn] = o.lad;
+      const ip = v189Imp(px);
+      if (sd === 'over' && mPt != null && mOv != null && ip != null){
+        const mip = v189Imp(mOv);
+        if (mip != null && pt < mPt && ip < mip - 0.02) return 'lad_snap_below';
+        if (mip != null && pt <= mPt - 1.5 && ip < Math.min(0.85, mip + 0.05)) return 'lad_snap_deep';
+        if (mip != null && pt > mPt && ip > mip + 0.02) return 'lad_snap_above';
+      }
+      if (sd === 'under' && mPt != null && mUn != null && ip != null){
+        const mip = v189Imp(mUn);
+        if (mip != null && pt < mPt && ip > mip + 0.02) return 'lad_snap_under_below';
+        if (mip != null && pt > mPt && ip < mip - 0.02) return 'lad_snap_under_above';
+      }
+    }
+  }
+  return '';
+}
+
+function v189BuildBadSet(entries){
+  // entries: array of [id, o]
+  const bad = new Set();
+  const lad = new Map();
+  const ptsByEpk = new Map();
+  for (const [id, o] of entries){
+    if (!o) continue;
+    if (o.bad === 'v189' || o._v189bad){ bad.add(id); continue; }
+    if (o.s === 'sb' && v189RowStandaloneBad(o)){ bad.add(id); continue; }
+    if (o.b === 'props' && o.s === 'sb' && o.pt != null && isFinite(+o.pt) && v189Px(o) != null){
+      const sd = String(o.sd || '').toLowerCase();
+      const k = o.k || '';
+      const epk = `${o.ev}|${o.pid || o.pn || ''}|${k}`;
+      let pm = ptsByEpk.get(epk); if (!pm){ pm = new Map(); ptsByEpk.set(epk, pm); }
+      let ss = pm.get(+o.pt); if (!ss){ ss = new Set(); pm.set(+o.pt, ss); }
+      ss.add(sd);
+      const lk = `${epk}|${sd}`;
+      if (!lad.has(lk)) lad.set(lk, []);
+      lad.get(lk).push([id, o]);
+    }
+  }
+  for (const [lk, items] of lad){
+    items.sort((a, b) => (+a[1].pt) - (+b[1].pt));
+    const [ev, pid, k, sd] = lk.split('|');
+    const pm = ptsByEpk.get(`${ev}|${pid}|${k}`);
+    let anchorPt = null;
+    if (pm){
+      for (const [pt, sds] of pm){
+        if (sds.has('over') && sds.has('under') && (anchorPt == null || pt > anchorPt)) anchorPt = pt;
+      }
+    }
+    const sgn = sd === 'over' ? 1 : -1;
+    for (let i = 0; i < items.length; i++){
+      const [idI, oI] = items[i], pI = v189Px(oI), impI = v189Imp(pI);
+      if (impI == null){ bad.add(idI); continue; }
+      for (let j = i + 1; j < items.length; j++){
+        const [idJ, oJ] = items[j], pJ = v189Px(oJ), impJ = v189Imp(pJ);
+        if (impJ == null) continue;
+        if (sgn * (impJ - impI) > V189_MONO_TOL){
+          if (sd === 'over'){
+            if (anchorPt != null && +oI.pt < anchorPt && +oJ.pt >= anchorPt) bad.add(idI);
+            else if (anchorPt != null && +oI.pt <= anchorPt && +oJ.pt > anchorPt) bad.add(idJ);
+            else {
+              bad.add(idI);
+              if (anchorPt == null) bad.add(idJ);
+            }
+          } else {
+            bad.add(idI); bad.add(idJ);
+          }
+        }
+      }
+    }
+  }
+  return bad;
+}
+
+function v189SweepDay(day, m, force){
+  if (!m || !m.size) return 0;
+  const cached = V189.dayBad.get(day);
+  if (!force && cached && cached.sz === m.size) return 0;
+  const bad = v189BuildBadSet([...m.entries()]);
+  V189.dayBad.set(day, {sz: m.size, bad});
+  let changed = 0;
+  for (const id of bad){
+    const o = m.get(id); if (!o) continue;
+    if (o.bad !== 'v189' || o.res !== 'void' || o.v === 'good' || o.sv === 'good'){
+      o.bad = 'v189';
+      o._v189bad = 1;
+      if (o.res && o.res !== 'void') o.res = 'void';
+      if (o.v === 'good' || o.v === 'watch') o.v = 'avoid';
+      if (o.sv === 'good' || o.sv === 'watch') o.sv = 'avoid';
+      changed++;
+    }
+  }
+  return changed;
+}
+
+function v189SweepAll(force){
+  if (typeof MLOG === 'undefined' || !MLOG.raw) return 0;
+  let tot = 0;
+  for (const [d, m] of MLOG.raw) tot += v189SweepDay(d, m, force);
+  return tot;
+}
+
+// Check a single UNI item at grading or evaluation time
+function v189CheckUniRow(r){
+  if (!r || r.b !== 'props' || r.src !== 'sb') return '';
+  const px = (r.lk && r.lk.price != null) ? +r.lk.price : +r.price;
+  const why = v189RowStandaloneBad({b:'props', s:'sb', k:r.kind, sd:r.side, pt:r.pt, pr:px, lad:r.lad});
+  if (why) return why;
+  // Check against live ladder snapshot in V189.ladders
+  const snap = V189.ladders.get(`${r.ev}|${r.pid}|${r.kind}|${r.side}`);
+  if (snap && snap.m != null && r.pt != null){
+    const why2 = v189RowStandaloneBad({b:'props', s:'sb', k:r.kind, sd:r.side, pt:r.pt, pr:px, lad:[snap.m, snap.mo, snap.mu]});
+    if (why2) return why2;
+  }
+  // Check against sibling open UNI rows for same (ev, pid, kind, side)
+  if (typeof UNI !== 'undefined'){
+    const sgn = r.side === 'over' ? 1 : -1;
+    const myImp = v189Imp(px);
+    if (myImp != null){
+      for (const x of UNI.values()){
+        if (!x || x === r || x.b !== 'props' || x.src !== 'sb' || x.ev !== r.ev || x.pid !== r.pid || x.kind !== r.kind || x.side !== r.side) continue;
+        if (x.pt == null || x.price == null) continue;
+        const xImp = v189Imp(x.price); if (xImp == null) continue;
+        if (+x.pt > +r.pt && sgn * (xImp - myImp) > V189_MONO_TOL) return 'uni_ladder_violation';
+        if (+x.pt < +r.pt && sgn * (myImp - xImp) > V189_MONO_TOL && !(x.alt && !r.alt)) return 'uni_ladder_violation';
+      }
+    }
+  }
+  return '';
+}
+
+(function(){
+  // Grading-time guard in uniFinalize
+  if (typeof uniFinalize === 'function'){
+    const base = uniFinalize;
+    uniFinalize = function(r, res, act){
+      try{
+        if (r && r.b === 'props' && r.src === 'sb'){
+          const why = v189CheckUniRow(r);
+          if (why){
+            res = 'void';
+            r.v = 'avoid'; r.sv = 'avoid'; r._v189 = why;
+            if (r.lk){ r.lk.v = 'avoid'; r.lk.sv = 'avoid'; }
+            v189LogRej('grade', r, why);
+          }
+        }
+      }catch(e){}
+      return base.call(this, r, res, act);
+    };
+  }
+  // Board-time guard in uniPropModel & buildPropPlay
+  if (typeof uniPropModel === 'function'){
+    const base = uniPropModel;
+    uniPropModel = function(gm, pid, kind, line, side, price){
+      if (v189RowStandaloneBad({b:'props', s:'sb', k:kind, sd:side, pt:line, pr:price})){
+        v189LogRej('board', {ev:gm&&gm.ev, pid, kind, side, line, price}, 'eval price sanity');
+        return {v:'avoid', p:null, need:false};
+      }
+      const m = base.apply(this, arguments);
+      if (m && m.v === 'good' && +price < V189_FLOOR) return Object.assign({}, m, {v:'watch'});
+      return m;
+    };
+  }
+  // Never count invalid rows as Picks or in Results / Aggregations / Learners
+  if (typeof v153BoardPick === 'function'){
+    const base = v153BoardPick;
+    v153BoardPick = function(o){
+      if (!o || o.bad === 'v189' || o._v189bad || v189RowStandaloneBad(o)) return false;
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof mlogAggAdd === 'function'){
+    const base = mlogAggAdd;
+    mlogAggAdd = function(agg, o){
+      if (!o || o.bad === 'v189' || o._v189bad || (o.s === 'sb' && v189RowStandaloneBad(o))) return;
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof v145DayStat === 'function'){
+    const base = v145DayStat;
+    v145DayStat = function(m){
+      try{ if (m && m.size){ const first = m.values().next().value; if (first && first.t) v189SweepDay(mlogDay(first.t), m); } }catch(e){}
+      const x = base.apply(this, arguments);
+      if (x) x.v189 = 1;
+      return x;
+    };
+  }
+  try{ if (typeof V145 !== 'undefined' && V145.stat) for (const d in V145.stat){ const s = V145.stat[d]; if (s && !s.v189) delete V145.stat[d]; } }catch(e){}
+  const pre = ['v145RefreshStats','v131RowsFromRaw','v155Rows','v156Buckets','mlogDayAgg','v142AdminIndex','v147ModelRows'];
+  for (const fn of pre){
+    if (typeof window[fn] !== 'function') continue;
+    const base = window[fn];
+    window[fn] = function(){ try{ v189SweepAll(); }catch(e){} return base.apply(this, arguments); };
+  }
+  for (const fn of ['mlogLoad','mlogDeltaSync']){
+    if (typeof window[fn] !== 'function') continue;
+    const base = window[fn];
+    window[fn] = async function(){ const r = await base.apply(this, arguments); try{ v189SweepAll(); }catch(e){} return r; };
+  }
+  // v131Compact & v131Keep: enforce sportsbook-only, -250 floor, and clean price sanity in POD learner
+  if (typeof v131Compact === 'function'){
+    const base = v131Compact;
+    v131Compact = function(o){
+      const c = base.apply(this, arguments);
+      if (c && o){ c.s = o.s || ''; if (o.bad || o._v189bad || v189RowStandaloneBad(o)) c.bad = 'v189'; }
+      return c;
+    };
+  }
+  if (typeof v131Keep === 'function'){
+    const base = v131Keep;
+    v131Keep = function(c){
+      if (!c || c.bad || (c.s && c.s !== 'sb')) return false;
+      const px = c.lpr != null ? +c.lpr : +c.pr;
+      if (!isFinite(px) || px < V189_FLOOR || px > 2500) return false;
+      return base.apply(this, arguments);
+    };
+  }
+  // Also guard propLearnRows() against any bad rows from PROP_SNAPS or UNI_LEARN
+  if (typeof propLearnRows === 'function'){
+    const base = propLearnRows;
+    propLearnRows = function(){
+      const rows = base.apply(this, arguments) || [];
+      return rows.filter(r => !v189RowStandaloneBad({b:'props', s:'sb', k:r.kind, sd:r.side, pt:r.line, pr:r.price}));
+    };
+  }
+})();
+
+/* ---------- 3) Automated self-check (blocks anomalous segment/stat promotions & logs rejections) ---------- */
+function v189AnomalyCheck(label, w, l, roi, n){
+  n = n || ((w||0) + (l||0));
+  if (n < 15) return '';
+  const wr = n ? (w / n) : 0;
+  if (roi != null && roi > 0.35) return `ROI ${(roi*100).toFixed(1)}% over ${n} plays exceeds +35% anomaly guard`;
+  if (wr > 0.72) return `win rate ${(wr*100).toFixed(1)}% over ${n} plays exceeds 72% anomaly guard`;
+  if (/reb/i.test(label) && roi != null && roi > 0.25) return `rebounds segment ROI ${(roi*100).toFixed(1)}% flagged for audit`;
+  return '';
+}
+
+(function(){
+  // Guard v131Segments (Watch -> Pick promotion)
+  if (typeof v131Segments === 'function'){
+    const base = v131Segments;
+    v131Segments = function(win){
+      const sg = base.apply(this, arguments);
+      try{
+        if (sg && sg.promote){
+          for (const k of Object.keys(sg.promote)){
+            const o = sg.A && sg.A[k] && sg.A[k].watch;
+            const roi = o && o.st ? (o.pf / o.st) : null;
+            const why = o ? v189AnomalyCheck(k, o.w, o.l, roi, o.n) : (/rebounds/i.test(k) ? 'rebounds promotion blocked' : '');
+            if (why){
+              const desc = sg.promote[k];
+              delete sg.promote[k];
+              V189.counts.promoBlock++;
+              V189.blocked.unshift({at: Date.now(), type: 'segment', key: k, desc, why});
+              V189.blocked = V189.blocked.slice(0, 80);
+              v189LogRej('promoBlock', {id: k}, why + ' (' + desc + ')');
+            }
+          }
+        }
+      }catch(e){}
+      return sg;
+    };
+  }
+  // Guard v131Step (POD stat/cutoff additions)
+  if (typeof v131Step === 'function'){
+    const base = v131Step;
+    v131Step = function(pr, win, D){
+      const r = base.apply(this, arguments);
+      try{
+        if (r && r.ch && r.next && r.next.P){
+          const keepCh = [];
+          for (const c of r.ch){
+            const m = /^Added stat: (\S+)$/.exec(c.what || '');
+            if (m){
+              const st = m[1];
+              const wm = /(\d+)[–-](\d+),\s*([+-]?[\d.]+)%/.exec(c.why || '');
+              const why = wm ? v189AnomalyCheck(st, +wm[1], +wm[2], +wm[3]/100) : '';
+              if (why){
+                r.next.P.kinds = (r.next.P.kinds || []).filter(x => x !== st);
+                V189.counts.promoBlock++;
+                V189.blocked.unshift({at: Date.now(), type: 'pod_stat', key: st, desc: c.why, why});
+                V189.blocked = V189.blocked.slice(0, 80);
+                v189LogRej('promoBlock', {id: 'pod:' + st}, why);
+                continue;
+              }
+            }
+            keepCh.push(c);
+          }
+          r.ch = keepCh;
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  // Publish learn & audit to Worker whenever v131Fit finishes
+  if (typeof v131Fit === 'function'){
+    const base = v131Fit;
+    v131Fit = function(){
+      const out = base.apply(this, arguments);
+      try{
+        if (typeof v154Pub === 'function' && v154Pub()){
+          v189PublishLearn();
+          v189PublishAudit();
+        }
+      }catch(e){}
+      return out;
+    };
+  }
+})();
+
+async function v189PublishLearn(){
+  try{
+    if (typeof v154Put !== 'function' || typeof v154Pub !== 'function' || !v154Pub()) return false;
+    const payload = {
+      v: 189, at: Date.now(),
+      v131: typeof V131 !== 'undefined' ? {params: V131.params, seg: V131.seg, log: (V131.log||[]).slice(-20), segLog: (V131.segLog||[]).slice(-20), fitAt: V131.fitAt} : null,
+      props: typeof LEARN !== 'undefined' && LEARN.props ? {cur: LEARN.props.cur, sportStats: LEARN.props.sportStats} : null
+    };
+    return await v154Put('learn', payload);
+  }catch(e){ return false; }
+}
+async function v189PublishAudit(){
+  try{
+    if (typeof v154Put !== 'function' || typeof v154Pub !== 'function' || !v154Pub()) return false;
+    V189.lastAuditAt = Date.now();
+    return await v154Put('audit', {
+      at: V189.lastAuditAt, v: 189,
+      counts: V189.counts,
+      blocked: V189.blocked.slice(0, 40),
+      rejLog: V189.rejLog.slice(0, 50)
+    });
+  }catch(e){ return false; }
+}
+
+/* ---------- 4) Daily-check fixes: (A) stop 15-19h early locks on cloud-injected rows, (B) persist fr & op on UNI ---------- */
+mlogInjectOpen = function(){
+  if (typeof UNI === 'undefined' || typeof UNI_ST === 'undefined' || !UNI_ST.ready) return 0;
+  const now = Date.now(); let n = 0;
+  for (const [d, m] of MLOG.raw){
+    for (const [id, o] of m){
+      if (o.res || !(o.t < now - 3*3600000) || o.t < now - 4*86400000 || UNI.has(id)) continue;
+      // Only attach lk if the row actually locked (never fabricate a lock 15-19h before tip!)
+      const wasLocked = !!(o.lk || o.lkd || (o.mn != null && o.mn <= 120));
+      const row = {i:id, id, b:o.b, src:o.s, l:o.l, ev:o.ev, t:o.t, mk:o.mk, side:o.sd, pt:o.pt, kind:o.k, pid:o.pid, pn:o.pn, game:o.gm, book:o.bk, v:o.v, p:o.p, price:o.pr, shown:o.sh, u:o.u, mins:o.mn,
+        pk:o.v==='good' ? {price:o.pr, p:o.p, at:o.at} : undefined, fd:mlogDay(o.t||o.at), first:o.at||o.t, at:o.at||o.t, y:null, _cloud:1};
+      if (o.fr != null) row.fr = o.fr;
+      if (o.op != null) row.op = o.op;
+      if (o.un != null) row.un = o.un;
+      if (o.lad) row.lad = o.lad;
+      if (wasLocked) row.lk = {v:o.v, p:o.p, price:o.lpr!=null ? o.lpr : o.pr, u:o.u, at:o.at, L:o.lkd ? 1 : 0};
+      UNI.set(id, row);
+      n++;
+    }
+  }
+  return n;
+};
+
+(function(){
+  // Persist fr, op, un, lad directly on UNI rows so reloads don't drop them
+  if (typeof uniUpsert === 'function'){
+    const base = uniUpsert;
+    uniUpsert = function(b, src, id, rowBase, snap){
+      const r = base.apply(this, arguments);
+      try{
+        if (r && r.y == null){
+          if (b === 'props'){
+            const k = typeof v160Key === 'function' ? v160Key(String(r.ev||''), r.pid, r.kind, r.pt) : '';
+            if (k && typeof V160 !== 'undefined'){
+              const c = V160.fair && V160.fair.get(k);
+              if (c && r.fr == null){ const f = r.side === 'under' ? 1 - c.f : c.f; r.fr = Math.round(f * 10000) / 10000; }
+              const op = V160.open && V160.open.get(k);
+              if (op != null && isFinite(+op)){ r.op = +op; r.un = (typeof v161Unch === 'function' && v161Unch(op, r.pt)) ? 1 : 0; }
+            }
+            const ls = V189.ladders.get(`${r.ev}|${r.pid}|${r.kind}|${r.side}`);
+            if (ls && ls.m != null && !r.lad) r.lad = [ls.m, ls.mo, ls.mu];
+          } else if (b === 'games'){
+            const c = typeof V162 !== 'undefined' && V162.gf && typeof v162GKey === 'function' ? V162.gf.get(v162GKey(String(r.ev||''), r.mk||'', r.side||'')) : null;
+            if (c && r.fr == null) r.fr = Math.round(c.f * 10000) / 10000;
+            // Fallback fair chance from two-way sbOdds if board hasn't computed V162.gf yet
+            if (r.fr == null && typeof UNI_GAMES !== 'undefined'){
+              const gm = UNI_GAMES.get(String(r.ev||'')); const so = gm && gm.sbOdds;
+              if (so){
+                if (r.mk === 'ml' && so.ml && so.ml.home != null && so.ml.away != null && !so.ml.draw){
+                  const ih = v189Imp(so.ml.home), ia = v189Imp(so.ml.away);
+                  if (ih && ia) r.fr = Math.round(((r.side === 'home' ? ih : ia) / (ih + ia)) * 10000) / 10000;
+                } else if (r.mk === 'spread' && so.spread && so.spread.home && so.spread.away){
+                  const ih = v189Imp(so.spread.home[1]), ia = v189Imp(so.spread.away[1]);
+                  if (ih && ia) r.fr = Math.round(((r.side === 'home' ? ih : ia) / (ih + ia)) * 10000) / 10000;
+                } else if (r.mk === 'total' && so.total && so.total.over && so.total.under){
+                  const io = v189Imp(so.total.over[1]), iu = v189Imp(so.total.under[1]);
+                  if (io && iu) r.fr = Math.round(((r.side === 'over' ? io : iu) / (io + iu)) * 10000) / 10000;
+                }
+                if (r.op == null && r.mk === 'total' && so.tOpen != null) r.op = +so.tOpen;
+              }
+            }
+            if (r.op == null && r.mk === 'total' && r.l === 'nhl' && typeof V180 !== 'undefined' && V180.open && V180.open[String(r.ev||'')]) r.op = +V180.open[String(r.ev||'')].v;
+            if (r.op == null && r.pt != null && isFinite(+r.pt)) r.op = +r.pt;
+          }
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  if (typeof mlogCompact === 'function'){
+    const base = mlogCompact;
+    mlogCompact = function(r){
+      const out = base.apply(this, arguments);
+      try{
+        if (out && out[1] && r){
+          const o = out[1];
+          // Don't write spurious early lock flag if mins > 120 and not actually steady-locked
+          if (o.lk && o.mn != null && o.mn > 120 && !(r.lk && r.lk.L)) delete o.lk;
+          if (o.fr == null && r.fr != null && isFinite(+r.fr)) o.fr = Math.round(+r.fr * 10000) / 10000;
+          if (o.op == null && r.op != null && isFinite(+r.op)) o.op = +r.op;
+          if (o.un == null && r.un != null) o.un = r.un ? 1 : 0;
+          if (Array.isArray(r.lad)) o.lad = r.lad;
+        }
+      }catch(e){}
+      return out;
+    };
+  }
+})();
+
+/* ---------- 5) Invalidate pre-v189 summaries & run one-time purge + regrade on publisher ---------- */
+(function(){
+  if (typeof MLOG !== 'undefined' && MLOG.sums){
+    const fix = x => (x && x.final && !x.v189) ? Object.assign({}, x, {final:false, dd:0}) : x;
+    const set0 = MLOG.sums.set.bind(MLOG.sums);
+    MLOG.sums.set = function(k, x){ return set0(k, fix(x)); };
+    for (const [k, x] of [...MLOG.sums]) set0(k, fix(x));
+  }
+  if (typeof mlogWriteFinalSums === 'function'){
+    const base = mlogWriteFinalSums;
+    mlogWriteFinalSums = async function(){
+      v189SweepAll();
+      if (typeof mlogOn === 'function' && !mlogOn()) return;
+      if (typeof v154Pub === 'function' && !v154Pub()) return;
+      try{ if (typeof v157Sweep === 'function') v157Sweep(); }catch(e){}
+      if (typeof v163Rebucket === 'function') v163Rebucket();
+      const now = Date.now(), cut = mlogDay(now - 86400000); const db = mlogFS(); let w = 0;
+      for (const [day, m] of MLOG.raw){
+        if (day > cut || !m || !m.size) continue;
+        const s = MLOG.sums.get(day);
+        if (s && s.v189 && s.v163 && s.final && s.dd && s.n === m.size) continue;
+        const rows = [...m.values()];
+        const open = rows.filter(o => !o.res).length;
+        const final = open === 0 || day <= mlogDay(now - 4*86400000);
+        if (!final) continue;
+        const one = mlogOnePerBet(rows);
+        const agg = {};
+        for (const o of one) mlogAggAdd(agg, o);
+        for (const k in agg) agg[k][4] = Math.round(agg[k][4]*100)/100;
+        const body = {d:day, final:true, dd:1, v157:1, v160:1, v163:1, v189:1, n:m.size, nb:one.length, agg, bp: v163Pack(rows, 'sb'), bpa: v163Pack(rows, 'all'), at:now};
+        try{ await db.collection('modelSum').doc(day).set(body); MLOG.sums.set(day, body); w++; }catch(e){ break; }
+        if (w >= 8) break;
+      }
+    };
+  }
+})();
+
+// Non-publisher cache reset once when v189 first boots
+try{
+  if (localStorage.getItem(V189_LS_CLIENT) !== '1'){
+    localStorage.removeItem('bl_v131_fit');
+    localStorage.removeItem('bl_v163_rows');
+    for (let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if (k && k.startsWith('bl_v131_rows_')) localStorage.removeItem(k);
+    }
+    localStorage.setItem(V189_LS_CLIENT, '1');
+  }
+}catch(e){}
+
+async function v189PurgeAndRegrade(force){
+  if (V189.purging) return null;
+  if (!force && localStorage.getItem(V189_LS_PURGE) === '1') return {skipped: true};
+  if (typeof mlogOn !== 'function' || !mlogOn()) return null;
+  if (!force && (typeof v154Pub !== 'function' || !v154Pub())) return null;
+  if (typeof MLOG === 'undefined' || !MLOG.raw || !MLOG.at) return null;
+  V189.purging = true;
+  const stats = {daysLoaded:0, purgedRows:0, shardsWritten:0, idbPurged:0, sumsRebuilt:0, potdDropped:0};
+  try{
+    const db = mlogFS();
+    const today = mlogDay(Date.now());
+    const startDay = (typeof V131 !== 'undefined' && V131.first) ? V131.first : '20261119';
+    // 1) Ensure all days from 20261119..today are in MLOG.raw
+    for (let d = startDay; d <= today; d = v131DayAdd(d, 1)){
+      if (!MLOG.raw.has(d) || !MLOG.raw.get(d).size){
+        try{
+          const qs = await db.collection('modelLog').where('d', '==', d).get();
+          let m = MLOG.raw.get(d); if (!m){ m = new Map(); MLOG.raw.set(d, m); }
+          qs.forEach(doc => { const x = doc.data(); if (x && x.r) for (const id in x.r) if (x.r[id]) m.set(id, x.r[id]); });
+          stats.daysLoaded++;
+        }catch(e){ console.warn('v189 load day', d, e); }
+      }
+    }
+    if (typeof v163Rebucket === 'function') v163Rebucket();
+
+    // 2) Identify & void every invalid row across MLOG.raw, and patch Firestore shards directly
+    const byDoc = new Map();
+    for (const [d, m] of MLOG.raw){
+      if (!m || !m.size) continue;
+      const bad = v189BuildBadSet([...m.entries()]);
+      for (const id of bad){
+        const o = m.get(id); if (!o) continue;
+        const dirty = (o.bad !== 'v189' || o.res !== 'void' || o.v === 'good' || o.sv === 'good');
+        o.bad = 'v189'; o._v189bad = 1;
+        if (o.res && o.res !== 'void') o.res = 'void';
+        if (o.v === 'good' || o.v === 'watch') o.v = 'avoid';
+        if (o.sv === 'good' || o.sv === 'watch') o.sv = 'avoid';
+        if (dirty){
+          stats.purgedRows++;
+          v189LogRej('purge', Object.assign({id}, o), 'purged historical invalid price');
+          const dk = mlogDocId(id, o);
+          let doc = byDoc.get(dk); if (!doc){ doc = {d: mlogDay(o.t), b: o.b, r: {}}; byDoc.set(dk, doc); }
+          const cleanCopy = Object.assign({}, o); delete cleanCopy._v189bad;
+          doc.r[id] = cleanCopy;
+          if (MLOG.up) MLOG.up.set(id, mlogRank(cleanCopy));
+        }
+      }
+      V189.dayBad.set(d, {sz: m.size, bad});
+    }
+    for (const [dk, body] of byDoc){
+      try{ await db.collection('modelLog').doc(dk).set(Object.assign({}, body, {u: Date.now()}), {merge: true}); stats.shardsWritten++; }
+      catch(e){ console.warn('v189 shard write', dk, e); }
+    }
+
+    // 3) Clean IndexedDB uniDone & uni
+    if (typeof idbOpen === 'function' && typeof UNI_ST !== 'undefined' && UNI_ST.idb !== false){
+      try{
+        const idb = await idbOpen();
+        const doneRows = await storeGetAll('uniDone');
+        const badDone = [];
+        for (const r of (doneRows || [])){
+          if (r && r.b === 'props' && r.src === 'sb' && v189RowStandaloneBad({b:'props', s:'sb', k:r.kind, sd:r.side, pt:r.pt, pr:r.lk&&r.lk.price!=null?r.lk.price:r.price})){
+            badDone.push(r.i);
+          }
+        }
+        // Also delete any uniDone id matching purged MLOG rows
+        const purgedIds = new Set(); for (const [, doc] of byDoc) for (const id in doc.r) purgedIds.add(id);
+        for (const r of (doneRows || [])){ if (r && purgedIds.has(r.id || r.i) && !badDone.includes(r.i)) badDone.push(r.i); }
+        if (badDone.length){ await storeWrite('uniDone', [], badDone); stats.idbPurged += badDone.length; }
+        if (typeof UNI !== 'undefined'){
+          const badOpen = [];
+          for (const [id, r] of UNI){ if (r && r.b === 'props' && r.src === 'sb' && (purgedIds.has(id) || v189RowStandaloneBad({b:'props', s:'sb', k:r.kind, sd:r.side, pt:r.pt, pr:r.price}))){ UNI.delete(id); badOpen.push(id); } }
+          if (badOpen.length){ await storeWrite('uni', [], badOpen); stats.idbPurged += badOpen.length; }
+        }
+      }catch(e){ console.warn('v189 idb purge', e); }
+    }
+
+    // 4) Clear local caches & stale modelSum stamps, then rebuild modelSum
+    try{
+      if (typeof V145 !== 'undefined') V145.stat = {};
+      for (let i = localStorage.length - 1; i >= 0; i--){
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('bl_v131_rows_') || k === 'bl_v131_fit' || k === 'bl_v163_rows')) localStorage.removeItem(k);
+      }
+      if (typeof V131 !== 'undefined'){
+        V131.rows.clear();
+        V131.seg = {demote:{}, promote:{}};
+        V131.segLog = [];
+      }
+      for (const [d, s] of [...MLOG.sums]){
+        if (s && !s.v189) MLOG.sums.set(d, Object.assign({}, s, {final: false, dd: 0, v189: 0}));
+      }
+      if (typeof mlogWriteFinalSums === 'function') await mlogWriteFinalSums();
+      stats.sumsRebuilt = [...MLOG.sums.values()].filter(s => s && s.v189).length;
+    }catch(e){ console.warn('v189 rebuild sums', e); }
+
+    // 5) Clean POTD store if any bad prop entries exist
+    try{
+      if (typeof v131Store === 'function'){
+        const St = v131Store();
+        if (St && St.days){
+          for (const d in St.days){
+            const P = St.days[d] && St.days[d].props; if (!P) continue;
+            for (const id of Object.keys(P)){
+              const e = P[id]; if (!e) continue;
+              const px = e.pr != null ? +e.pr : null;
+              if ((px != null && px < V189_FLOOR) || (e.k === 'reb' && e.sd === 'over' && e.pt != null && +e.pt <= 3.5 && (px == null || px > -200))){
+                delete P[id]; stats.potdDropped++;
+              }
+            }
+          }
+          if (stats.potdDropped && typeof v131StoreSave === 'function') v131StoreSave();
+        }
+      }
+    }catch(e){}
+
+    // 6) Reset poisoned LEARN.props track if contaminated (>72% WR / 88.2% version) and re-run learners
+    try{
+      if (typeof LEARN !== 'undefined' && LEARN.props){
+        const lp = LEARN.props;
+        const nba = lp.sportStats && lp.sportStats.nba;
+        const badVer = (lp.versions || []).some(v => v && v.hold && v.hold.wr > 0.75 && v.hold.n >= 50);
+        if (badVer || (nba && nba.wr > 0.72 && nba.n >= 40)){
+          lp.cur = 1;
+          lp.versions = (lp.versions || []).slice(0, 1);
+          lp.sportStats = {};
+          lp.log = [{at: Date.now(), txt: 'Reset Props learner to v1 after purging corrupted rebound milestone prices.'}];
+          if (typeof boardS === 'function' && boardS('props')) boardS('props').sMinWin = 0.60;
+          if (typeof learnSave === 'function') learnSave();
+          if (typeof UNI_LEARN !== 'undefined'){ UNI_LEARN.props = []; UNI_LEARN.at = 0; }
+          if (typeof uniLoadLearn === 'function') await uniLoadLearn(true);
+          if (typeof propsLearnRetune === 'function') await propsLearnRetune({force: true});
+        }
+      }
+    }catch(e){ console.warn('v189 props learner reset', e); }
+
+    // 7) Re-run POD learner + Watch->Pick promotion on clean MLOG.raw
+    try{
+      if (typeof v131Fit === 'function') v131Fit();
+    }catch(e){ console.warn('v189 v131Fit', e); }
+
+    // 8) Force-publish clean Worker payloads
+    try{
+      if (typeof V154 !== 'undefined' && V154.pubSig){
+        delete V154.pubSig.days2; delete V154.pubSig.rows; delete V154.pubSig.learn; delete V154.pubSig.potd; delete V154.pubSig.audit;
+      }
+      if (typeof v142Publish === 'function') v142Publish(true);
+      if (typeof V154 !== 'undefined' && V154.store && typeof v154Put === 'function'){
+        await v154Put('potd', Object.assign({at: Date.now()}, typeof v154Trim==='function' ? v154Trim(V154.store) : V154.store));
+      }
+      await v189PublishLearn();
+      await v189PublishAudit();
+    }catch(e){ console.warn('v189 publish', e); }
+
+    localStorage.setItem(V189_LS_PURGE, '1');
+    V189.purged = true;
+    V189.counts.purge = (V189.counts.purge || 0) + stats.purgedRows;
+    v189SaveRej();
+    try{ if (typeof ui !== 'undefined' && ui.tab === 'results' && typeof renderResults === 'function') renderResults(); }catch(e){}
+    return stats;
+  }finally{
+    V189.purging = false;
+  }
+}
+
+// Schedule automatic purge & periodic self-audit on publisher
+setTimeout(function bootPurge(){
+  try{
+    if (typeof mlogOn === 'function' && mlogOn() && typeof MLOG !== 'undefined' && MLOG.at && typeof v154Pub === 'function' && v154Pub()){
+      v189PurgeAndRegrade(false).catch(()=>{});
+    } else if (localStorage.getItem(V189_LS_PURGE) !== '1'){
+      setTimeout(bootPurge, 15000);
+    }
+  }catch(e){}
+}, 12000);
+
+setInterval(() => {
+  try{
+    if (typeof mlogOn === 'function' && mlogOn() && typeof v154Pub === 'function' && v154Pub()){
+      const c = v189SweepAll(false);
+      if (c > 0){ v189PublishAudit(); if (typeof v142Publish === 'function') v142Publish(true); }
+    }
+  }catch(e){}
+}, 20 * 60000);
+
+/* ---------- 6) Plain-English Price & Learning Audit status in Admin Model Learning ---------- */
+(function(){
+  if (typeof v150Changes !== 'function') return;
+  const base = v150Changes;
+  v150Changes = function(){
+    const out = base.apply(this, arguments) || [];
+    try{
+      for (const b of (V189.blocked || []).slice(0, 6)){
+        out.push({at: +b.at || Date.now(), who: 'Audit Guard', txt: `Blocked promotion (${b.key}): ${b.why}`});
+      }
+      out.sort((a, b) => (b.at||0) - (a.at||0));
+    }catch(e){}
+    return out.slice(0, 30);
+  };
+})();
+
+window.v189RunPurge = v189PurgeAndRegrade;
+window.v189Status = () => ({
+  build: APP_BUILD,
+  purged: V189.purged || localStorage.getItem(V189_LS_PURGE) === '1',
+  ladders: V189.ladders.size,
+  counts: V189.counts,
+  blocked: V189.blocked.slice(0, 10),
+  recentRej: V189.rejLog.slice(0, 10),
+  v131Params: typeof V131 !== 'undefined' ? V131.params : null,
+  v131Seg: typeof V131 !== 'undefined' ? V131.seg : null
+});
 </script>
 </body>
 </html>
