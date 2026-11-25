@@ -35054,6 +35054,222 @@ window.v190Status = () => {
   const rings = [...document.querySelectorAll('.v185-ring[data-v190]')];
   return {build: APP_BUILD, rings: rings.length, sample: rings.slice(0,6).map(r=>r.getAttribute('data-v190'))};
 };
+/* ===== v191: restore missing Nov 23 Picks and fix swapped neutral-site grades (Stanley, Nov 24)
+   1) Grade game bets by the logged home/away team names, not ESPN's home/away flag. On neutral
+      sites ESPN can flip who is "home" (Grand Canyon 91, Saint Louis 88 was graded as a Saint
+      Louis +1.5 win because ESPN listed GCU as home).
+   2) One-time: reload every modelLog shard for recent days (don't skip a day that is only partly
+      in memory — that dropped the DraftKings Memphis -3.5 Pick from the Sportsbooks Results
+      tally), regrade flipped games, rebuild day totals, and republish Results.
+   Price-sanity guards from v189 are unchanged. v190 ring colors are unchanged. ===== */
+APP_BUILD = 191;
+const V191_LS = 'bl_v191_fix';
+
+function v191Nm(s){
+  try{ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,''); }
+  catch(e){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+}
+function v191TeamNames(comp){
+  if (!comp) return [];
+  const t = comp.team || {};
+  return [t.displayName, t.shortDisplayName, t.name, t.abbreviation, t.location, comp.displayName].filter(Boolean).map(v191Nm);
+}
+function v191NameHit(logged, names){
+  const a = v191Nm(logged);
+  if (!a || !names || !names.length) return false;
+  for (const b of names){ if (!b) continue; if (a===b || a.indexOf(b)>=0 || b.indexOf(a)>=0) return true; }
+  return false;
+}
+/* Map ESPN's finished scores onto the home/away the row was logged with. Returns {hs, as, swapped} or null. */
+function v191AlignFin(r, fin){
+  if (!r || !fin) return null;
+  const Hn = v191TeamNames(fin.H), An = v191TeamNames(fin.A);
+  const gh = r.gh || '', ga = r.ga || '';
+  if (!gh && !ga) return null;
+  const homeIsH = v191NameHit(gh, Hn), homeIsA = v191NameHit(gh, An);
+  const awayIsA = v191NameHit(ga, An), awayIsH = v191NameHit(ga, Hn);
+  const hs = +fin.hs, as = +fin.as;
+  if (!isFinite(hs) || !isFinite(as)) return null;
+  // Logged home matches ESPN away (and/or logged away matches ESPN home): swap.
+  if ((homeIsA && !homeIsH) || (awayIsH && !awayIsA)){
+    if ((homeIsA || !gh) && (awayIsH || !ga)) return {hs: as, as: hs, swapped: 1, H: fin.A, A: fin.H};
+  }
+  if ((homeIsH && !homeIsA) || (awayIsA && !awayIsH)){
+    if ((homeIsH || !gh) && (awayIsA || !ga)) return {hs, as, swapped: 0, H: fin.H, A: fin.A};
+  }
+  return null;
+}
+
+(function(){
+  if (typeof uniGradeGameRow === 'function'){
+    const base = uniGradeGameRow;
+    uniGradeGameRow = function(r, fin){
+      try{
+        const al = v191AlignFin(r, fin);
+        if (al && al.swapped){
+          fin = Object.assign({}, fin, {hs: al.hs, as: al.as, H: al.H, A: al.A, _v191swap: 1});
+        }
+      }catch(e){}
+      return base.call(this, r, fin);
+    };
+  }
+})();
+
+function v191RegradeRow(o, fin){
+  if (!o || o.b !== 'games' || !fin || !fin.done) return null;
+  if (o.res === 'void' || o.res === 'ungradeable') return null;
+  if (typeof uniGradeGameRow !== 'function') return null;
+  const g = uniGradeGameRow({
+    mk: o.mk, l: o.l, side: o.sd, pt: o.pt, gh: o.gh, ga: o.ga, gm: o.gm
+  }, fin);
+  if (!g || !g.res || g.res === 'ungradeable') return null;
+  if (g.res === o.res && String(g.act||'') === String(o.act||'')) return null;
+  return g;
+}
+
+async function v191LoadDayRaw(d){
+  const db = mlogFS();
+  const qs = await db.collection('modelLog').where('d', '==', d).get();
+  const m = new Map();
+  qs.forEach(doc => {
+    const x = doc.data(); if (!x || !x.r) return;
+    for (const id in x.r){
+      const o = x.r[id]; if (!o) continue;
+      if (!o.b) o.b = x.b;
+      if (!o.b) continue;
+      const old = m.get(id);
+      if (!old){ m.set(id, o); continue; }
+      const a = mlogRank(o), b = mlogRank(old);
+      if (a > b){ m.set(id, o); continue; }
+      if (a < b) continue;
+      // Same rank: prefer the sportsbook board Pick, then the later snapshot
+      const as = (o.s==='sb'?2:0) + (o.sv==='good'?1:0);
+      const bs = (old.s==='sb'?2:0) + (old.sv==='good'?1:0);
+      if (as > bs || (as===bs && (+o.at||0) >= (+old.at||0))) m.set(id, o);
+    }
+  });
+  return m;
+}
+
+async function v191Fix(force){
+  if (!force && localStorage.getItem(V191_LS)==='1') return {skipped:true};
+  if (typeof mlogOn==='function' && !mlogOn()) return null;
+  if (!force && (typeof v154Pub!=='function' || !v154Pub())) return null;
+  if (typeof MLOG==='undefined' || !MLOG.raw) return null;
+  const stats = {daysReloaded:0, rows:0, flipped:0, shardsWritten:0, sums:0};
+  try{
+    const db = mlogFS();
+    const today = mlogDay(Date.now());
+    const start = '20261119';
+    const days = [];
+    for (let d = start; d <= today; d = (typeof v131DayAdd==='function' ? v131DayAdd(d, 1) : String(+d+1))) days.push(d);
+
+    // 1) Reload every shard for each day so no board Pick is missing from the pack
+    for (const d of days){
+      try{
+        const m = await v191LoadDayRaw(d);
+        if (m && m.size){ MLOG.raw.set(d, m); stats.daysReloaded++; stats.rows += m.size; }
+      }catch(e){ console.warn('v191 load', d, e); }
+    }
+    try{ if (typeof v163Rebucket==='function') v163Rebucket(); }catch(e){}
+
+    // 2) Regrade games whose logged home/away does not match ESPN's, including the
+    //    Nov 24 Saint Louis +1.5 Pick that was counted as a win at 88-91.
+    const byEv = new Map();
+    for (const [d, m] of MLOG.raw){
+      if (!m) continue;
+      for (const [id, o] of m){
+        if (!o || o.b!=='games' || !o.ev || !o.res || o.res==='void' || o.res==='ungradeable') continue;
+        if (!o.gh && !o.ga) continue;
+        const k = `${o.l||''}|${o.ev}|${+o.t||0}`;
+        if (!byEv.has(k)) byEv.set(k, {l:o.l, ev:o.ev, t:+o.t||0, ids:[]});
+        byEv.get(k).ids.push([d, id]);
+      }
+    }
+    const flipped = [];
+    for (const rec of byEv.values()){
+      let fin = null;
+      try{ fin = await uniFinFor(rec.l, rec.ev, rec.t); }catch(e){}
+      if (!fin || !fin.done) continue;
+      for (const [d, id] of rec.ids){
+        const m = MLOG.raw.get(d); const o = m && m.get(id); if (!o) continue;
+        const g = v191RegradeRow(o, fin); if (!g) continue;
+        o.res = g.res; if (g.act!=null) o.act = g.act; o.v191 = 1; o.g = Date.now();
+        flipped.push({d, id, ev:o.ev, gm:o.gm, sd:o.sd, pt:o.pt, res:g.res, act:g.act});
+      }
+    }
+    stats.flipped = flipped.length;
+
+    // 3) Write corrected rows back into the shards they already live in
+    if (flipped.length){
+      const want = new Map();
+      for (const x of flipped) want.set(x.d+'|'+x.id, x);
+      const daySet = [...new Set(flipped.map(x=>x.d))];
+      for (const d of daySet){
+        try{
+          const qs = await db.collection('modelLog').where('d','==',d).get();
+          const writes = [];
+          qs.forEach(doc => {
+            const x = doc.data(); if (!x || !x.r) return;
+            const patch = {}; let n = 0;
+            for (const id in x.r){
+              if (!want.has(d+'|'+id)) continue;
+              const o = MLOG.raw.get(d) && MLOG.raw.get(d).get(id);
+              if (!o) continue;
+              patch[id] = o; n++;
+            }
+            if (n) writes.push(doc.ref.set({r: patch, u: Date.now()}, {merge:true}));
+          });
+          await Promise.all(writes);
+          stats.shardsWritten += writes.length;
+        }catch(e){ console.warn('v191 write', d, e); }
+      }
+    }
+
+    // 4) Rebuild day summaries from the complete, regraded logs and publish Results
+    try{
+      if (typeof V145!=='undefined') V145.stat = {};
+      try{ localStorage.removeItem('bl_v163_rows'); }catch(e){}
+      for (const [d, s] of [...MLOG.sums]){
+        if (s && d >= start) MLOG.sums.set(d, Object.assign({}, s, {final:false, dd:0, v191:0}));
+      }
+      if (typeof mlogWriteFinalSums==='function') await mlogWriteFinalSums();
+      // Stamp v191 and republish even for today (not yet final)
+      if (typeof v145DayStat==='function'){
+        for (const d of days){
+          const m = MLOG.raw.get(d); if (!m || !m.size) continue;
+          try{ V145.stat[d] = v145DayStat(m); }catch(e){}
+        }
+      }
+      stats.sums = [...MLOG.sums.values()].filter(s=>s && (s.v189 || s.v191)).length;
+      if (typeof V154!=='undefined' && V154.pubSig){
+        delete V154.pubSig.days2; delete V154.pubSig.rows; delete V154.pubSig.learn;
+      }
+      if (typeof v142Publish==='function') v142Publish(true);
+    }catch(e){ console.warn('v191 publish', e); }
+
+    localStorage.setItem(V191_LS, '1');
+    try{ if (typeof ui!=='undefined' && ui.tab==='results' && typeof renderResults==='function') renderResults(); }catch(e){}
+    console.log('v191 fix', stats, flipped.slice(0, 12));
+    return Object.assign(stats, {sample: flipped.slice(0, 20)});
+  }catch(e){
+    console.warn('v191 fix failed', e);
+    return {err: String(e && e.message || e).slice(0, 200), stats};
+  }
+}
+
+setTimeout(function bootV191(){
+  try{
+    if (typeof mlogOn==='function' && mlogOn() && typeof MLOG!=='undefined' && MLOG.at && typeof v154Pub==='function' && v154Pub()){
+      v191Fix(false).catch(()=>{});
+    } else if (localStorage.getItem(V191_LS)!=='1'){
+      setTimeout(bootV191, 20000);
+    }
+  }catch(e){}
+}, 18000);
+
+window.v191RunFix = v191Fix;
+window.v191Status = () => ({build: APP_BUILD, done: localStorage.getItem(V191_LS)==='1'});
 </script>
 </body>
 </html>
