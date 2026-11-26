@@ -43830,6 +43830,685 @@ mchkHTML = function(){
 
 window.v206Compute = v206Compute;
 window.v206Status = () => ({build: APP_BUILD, at: V206.at, err: V206.err, stats: V206.stats});
+/* ===== v207: Model lab phase 2 (Stanley, Nov 25 2026)
+   1. Prop Picks paused: props never become a Pick or Play of the Day. Would-be Prop Picks are still
+      locked at T-30 and graded as an admin-only shadow log ("propshadow").
+   2. Admin-only paper models (versioned): NBA spread, NFL spread, NBA total at open, NHL moneyline at open
+      (Picky / Super Picky), NCAAB total at open. Free data only: ESPN finals + DraftKings lines via ESPN.
+      Each call logs model version, probability, the DK price, the T-30 DK line and the closing DK line (CLV).
+      Auto-suspend at -10u or 4 straight losing weeks, with rollback to the last stable version.
+      Promotion needs 300+ bets, ROI > 0, positive CLV and a better Brier than no-vig in both halves, plus your OK.
+   3. DraftKings open / close line log for every game in every covered sport (Firestore lineLog/{day}).
+   4. Results (admin): "Model lab" with Backtest / Paper / Live kept separate.
+   Nothing changes for other users except props leaving Picks. ===== */
+APP_BUILD = 207;
+const V207_PAUSE_AT = Date.parse('2026-11-26T00:00:00Z');   // Nov 25, 4:00 PM PT
+const V207_FLOOR = -250;
+
+/*CORE-START*/
+const V207_ELO = {nba:[20,100], ncaab:[20,100], nfl:[20,55], nhl:[8,35], mlb:[4,24]};
+function v207Dec(a){ a = +a; return !isFinite(a) || Math.abs(a) < 100 ? NaN : (a > 0 ? 1 + a/100 : 1 + 100/(-a)); }
+function v207Imp(a){ a = +a; return !isFinite(a) || Math.abs(a) < 100 ? NaN : (a > 0 ? 100/(a+100) : (-a)/(-a+100)); }
+function v207Nv(a, b){ const x = v207Imp(a), y = v207Imp(b); return isFinite(x) && isFinite(y) ? x/(x+y) : NaN; }
+const V207_ETF = (typeof Intl !== 'undefined') ? new Intl.DateTimeFormat('en-CA', {timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit'}) : null;
+function v207DayET(ms){ const s = V207_ETF.format(new Date(ms)); const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m-1, d) / 86400000); }
+
+/* team state: Elo + every earlier game per team (same order and maths as the Python trainer) */
+function v207NewState(sport){ const e = V207_ELO[sport] || [20, 100]; return {sport, K:e[0], H:e[1], R:{}, ls:{}, tm:{}}; }
+function v207EloPre(st, t, season){ let r = st.R[t]; if (r == null) r = 1500; if (st.ls[t] != null && st.ls[t] !== season) r = 1500 + (r - 1500) * 2 / 3; return r; }
+function v207Add(st, g){   // g: {h, a, day, season, neutral, hs, as}
+  const rh = v207EloPre(st, g.h, g.season), ra = v207EloPre(st, g.a, g.season);
+  st.R[g.h] = rh; st.R[g.a] = ra; st.ls[g.h] = g.season; st.ls[g.a] = g.season;
+  const h = g.neutral ? 0 : st.H, m = g.hs - g.as;
+  const pe = 1 / (1 + Math.pow(10, -(rh + h - ra) / 400));
+  const res = m > 0 ? 1 : m < 0 ? 0 : 0.5;
+  const mult = Math.log(Math.abs(m) + 1) * 2.2 / ((Math.abs(rh + h - ra) * 0.001) + 2.2);
+  const d = st.K * mult * (res - pe);
+  st.R[g.h] = rh + d; st.R[g.a] = ra - d;
+  (st.tm[g.h] || (st.tm[g.h] = [])).push({d:g.day, s:g.season, h:1, pf:g.hs, pa:g.as});
+  (st.tm[g.a] || (st.tm[g.a] = [])).push({d:g.day, s:g.season, h:0, pf:g.as, pa:g.hs});
+}
+function v207Team(st, t, day, season, isHome){
+  const L = st.tm[t] || [], o = {};
+  for (const n of [3, 5, 10, 20]){
+    const k = Math.min(n, L.length), mp = Math.max(2, Math.floor(n / 2));
+    if (k < mp){ o['mg'+n] = o['pf'+n] = o['pa'+n] = NaN; continue; }
+    let a = 0, b = 0, c = 0; for (let i = L.length - k; i < L.length; i++){ a += L[i].pf - L[i].pa; b += L[i].pf; c += L[i].pa; }
+    o['mg'+n] = a/k; o['pf'+n] = b/k; o['pa'+n] = c/k;
+  }
+  let i = L.length; while (i > 0 && L[i-1].s === season) i--;
+  const S = L.slice(i), n = S.length;
+  if (n){ let a = 0, b = 0, c = 0, w = 0; for (const x of S){ a += x.pf - x.pa; b += x.pf; c += x.pa; w += (x.pf - x.pa) > 0 ? 1 : 0; }
+    o.mgS = a/n; o.pfS = b/n; o.paS = c/n; o.winS = w/n;
+    if (n >= 2){ let v = 0; for (const x of S){ const z = (x.pf - x.pa) - o.mgS; v += z*z; } o.sdS = Math.sqrt(v / (n - 1)); } else o.sdS = NaN;
+  } else { o.mgS = o.pfS = o.paS = o.winS = o.sdS = NaN; }
+  o.gp = n;
+  o.rest = L.length ? Math.min(10, day - L[L.length-1].d) : NaN;
+  const HA = S.filter(x => x.h === isHome); o.mgHA = HA.length ? HA.reduce((s, x) => s + x.pf - x.pa, 0) / HA.length : NaN;
+  return o;
+}
+function v207Pre(st, g){   // g: {h, a, day, season, neutral}
+  const rh = v207EloPre(st, g.h, g.season), ra = v207EloPre(st, g.a, g.season);
+  const H = v207Team(st, g.h, g.day, g.season, 1), A = v207Team(st, g.a, g.day, g.season, 0);
+  const f = {};
+  f.elo_d = rh - ra + (g.neutral ? 0 : st.H); f.elo_p = 1 / (1 + Math.pow(10, -f.elo_d / 400));
+  for (const c of ['mg3','mg5','mg10','mg20','mgS','winS','pfS','paS','rest','mgHA']) f['d_'+c] = H[c] - A[c];
+  f.b2b_h = H.rest === 1 ? 1 : 0; f.b2b_a = A.rest === 1 ? 1 : 0;
+  f.form_h = H.mg5 - H.mgS; f.form_a = A.mg5 - A.mgS;
+  f.h_sdS = H.sdS; f.a_sdS = A.sdS; f.h_gp = H.gp; f.a_gp = A.gp;
+  f.exp_tot = (H.pfS + A.paS) / 2 + (A.pfS + H.paS) / 2;
+  f.exp_tot10 = (H.pf10 + A.pa10) / 2 + (A.pf10 + H.pa10) / 2;
+  f.h_pf10 = H.pf10; f.h_pa10 = H.pa10; f.a_pf10 = A.pf10; f.a_pa10 = A.pa10;
+  f.neutral = g.neutral ? 1 : 0;
+  return f;
+}
+/* model input row: team features + market features, same names as training */
+function v207Row(spec, F, M){   // M: {nv, line, nvml, mv_sp, mv_tot, mv_ml, dome, div}
+  const X = Object.assign({}, F);
+  X.m_nv = M.nv; X.m_line = M.line; X.m_nvml = M.nvml;
+  if (spec.market === 'total'){ X.m_gap = F.exp_tot - M.line; X.m_gap10 = F.exp_tot10 - M.line; }
+  if (spec.market === 'spread'){ X.m_gap = F.d_mgS + M.line; X.m_gap10 = F.d_mg10 + M.line; }
+  X.mv_sp = M.mv_sp; X.mv_tot = M.mv_tot; X.mv_ml = M.mv_ml; X.dome = M.dome; X.div = M.div;
+  for (const c of spec.nan_cols || []) X[c] = NaN;
+  for (const c in (spec.const_cols || {})) X[c] = spec.const_cols[c];
+  return spec.cols.map(c => { const v = X[c]; return v == null ? NaN : +v; });
+}
+function v207Comp(c, cols, x){
+  const get = n => x[cols.indexOf(n)];
+  if (c.type === 'logit'){
+    let z = c.b; for (let i = 0; i < c.cols.length; i++){ let v = get(c.cols[i]); if (!isFinite(v)) v = c.med[i]; z += c.coef[i] * (v - c.mean[i]) / c.scale[i]; }
+    return 1 / (1 + Math.exp(-z));
+  }
+  if (c.type === 'lgbm'){
+    const xi = c.cols.map(get); let z = 0;
+    for (const T of c.trees){ let k = 0;
+      for (let guard = 0; guard < 4096; guard++){ const nd = T[k]; if (nd.v !== undefined){ z += nd.v; break; }
+        let v = xi[nd.f]; let left;
+        if (!isFinite(v)){ if (nd.mt === 'NaN') left = !!nd.dl; else { v = 0; left = nd.mt === 'Zero' ? !!nd.dl : v <= nd.t; } }
+        else if (nd.mt === 'Zero' && v === 0) left = !!nd.dl;
+        else left = v <= nd.t;
+        k = left ? nd.l : nd.r; } }
+    return 1 / (1 + Math.exp(-z));
+  }
+  if (c.type === 'xgb'){
+    const xi = c.cols.map(get); let z = c.base;
+    for (const T of c.trees){ let k = 0;
+      for (let guard = 0; guard < 4096; guard++){ const nd = T[k]; if (nd.v !== undefined){ z += nd.v; break; }
+        const v = xi[nd.f]; k = !isFinite(v) ? nd.m : (Math.fround(v) < Math.fround(nd.t) ? nd.y : nd.n); } }
+    return 1 / (1 + Math.exp(-z));
+  }
+  return NaN;
+}
+function v207Predict(spec, x){ let s = 0; for (const c of spec.comps) s += v207Comp(c, spec.cols, x); return s / spec.comps.length; }
+/*CORE-END*/
+
+/* =====================================================================================
+   1. Prop Picks paused (props still shown as Watch with the model's read; nothing becomes a Pick)
+   ===================================================================================== */
+const V207_PAUSE_MSG = 'Prop Picks are paused while the props model is re-tested. Games Picks are unchanged.';
+function v207Demote(p){
+  try{
+    if (!p || p.verdict !== 'good') return p;
+    p.verdict = 'watch'; p._v0 = 'watch'; p._v207p = 1;
+    p.strictFails = ['Prop Picks paused'];
+    if (p.C && p.C.J === 'BET') p.C.J = 'MAYBE LATER';
+    const r = Array.isArray(p.reasons) ? p.reasons : [];
+    if (r[0] !== V207_PAUSE_MSG) p.reasons = [V207_PAUSE_MSG].concat(r);
+  }catch(e){}
+  return p;
+}
+function v207Sweep(){ try{ if (typeof props !== 'undefined' && Array.isArray(props)) for (const p of props) if (p && p.verdict === 'good') v207Demote(p); }catch(e){} }
+(function(){
+  if (typeof evaluatePropRaw === 'function'){ const base = evaluatePropRaw;
+    evaluatePropRaw = function(){ return v207Demote(base.apply(this, arguments)); }; }
+  if (typeof renderPropsBoard === 'function'){ const base = renderPropsBoard;
+    renderPropsBoard = function(){ v207Sweep(); return base.apply(this, arguments); }; }
+  if (typeof uniCaptureProps === 'function'){ const base = uniCaptureProps;
+    uniCaptureProps = function(){ v207Sweep(); return base.apply(this, arguments); }; }
+  if (typeof sportFilterEmpty === 'function'){ const base = sportFilterEmpty;
+    sportFilterEmpty = function(generic){
+      if (typeof generic === 'string' && /^No player props passed today/.test(generic)) generic = V207_PAUSE_MSG;
+      return base.call(this, generic); }; }
+  if (typeof v131PotdOfDay === 'function'){ const base = v131PotdOfDay;
+    v131PotdOfDay = function(rows, pr){
+      const keep = (rows || []).filter(c => !(c && c.b === 'props' && (+c.t || +c.at || 0) >= V207_PAUSE_AT));
+      return base.call(this, keep, pr); }; }
+})();
+setInterval(v207Sweep, 3000);
+
+/* shadow log of paused would-be Prop Picks: locked at T-30, graded from box scores (admin only) */
+const V207_PS_LS = 'bl_v207_propshadow_v1';
+let V207_PS = null;
+function v207PsLoad(){ if (V207_PS) return V207_PS; try{ V207_PS = JSON.parse(localStorage.getItem(V207_PS_LS) || 'null'); }catch(e){} if (!V207_PS || !V207_PS.r) V207_PS = {r:{}}; return V207_PS; }
+function v207PsSave(){ try{ localStorage.setItem(V207_PS_LS, JSON.stringify(v207PsLoad())); }catch(e){} }
+function v207PsMerge(o){ const L = v207PsLoad(); if (!o || !o.r) return; for (const k in o.r){ const a = L.r[k], b = o.r[k]; if (!a || (!a.res && b.res)) L.r[k] = b; } }
+function v207Units(res, pr){ if (res === 'loss') return -1; if (res !== 'win') return 0; const d = v207Dec(pr); return isFinite(d) ? d - 1 : 0; }
+function v207PsLock(){
+  const L = v207PsLoad(), now = Date.now(); let n = 0;
+  for (const p of ((typeof props !== 'undefined' && props) || [])){
+    if (!p || !p._v207p || !p.g || p.g.state !== 'pre' || L.r[p.id]) continue;
+    const t = (typeof itemStartMs === 'function' ? itemStartMs(p) : 0) || +p.g.start || 0; if (!t) continue;
+    const mins = (t - now) / 60000; if (mins > 30 || mins < -1) continue;
+    const pr = +p.price; if (!isFinite(pr) || Math.abs(pr) < 100 || pr < V207_FLOOR) continue;
+    if (/polymarket|kalshi|novig|prophet/i.test(String(p.source || '') + ' ' + String(p.sourceNote || ''))) continue;
+    L.r[p.id] = {id:p.id, ev:String(p.g.eventId || p.eventId || ''), l:p.league || (p.g && p.g.league) || '', t, at:now,
+      pid:p.playerId || '', pn:p.playerName || '', k:p.kind, sd:p.side, pt:+p.line, pr, p:p.p != null ? Math.round(p.p * 1000) / 1000 : null};
+    n++;
+  }
+  if (n) v207PsSave(); return n;
+}
+async function v207PsGrade(){
+  const L = v207PsLoad(), now = Date.now(); let n = 0;
+  if (typeof uniBoxFor !== 'function' || typeof uniGradePropRow !== 'function') return 0;
+  const due = Object.values(L.r).filter(r => r && !r.res && r.t < now - 3 * 3600000).slice(0, 30);
+  for (const r of due){
+    try{
+      const bx = await uniBoxFor(r.l, r.ev); if (!bx) continue;
+      const gr = uniGradePropRow({l:r.l, kind:r.k, pid:r.pid, pn:r.pn, side:r.sd, pt:+r.pt}, bx);
+      if (!gr || !gr.res){ if (r.t < now - 4 * 86400000){ r.res = 'ungradeable'; n++; } continue; }
+      r.res = gr.res; r.act = gr.act; r.u = Math.round(v207Units(gr.res, r.pr) * 1000) / 1000; n++;
+    }catch(e){}
+  }
+  if (n) v207PsSave(); return n;
+}
+function v207PsStats(L){
+  L = L || v207PsLoad(); const T = {n:0, w:0, l:0, u:0, pend:0, ps:0, pn:0};
+  for (const r of Object.values(L.r || {})){
+    if (!r) continue;
+    if (!r.res){ T.pend++; continue; }
+    if (r.res === 'win' || r.res === 'loss'){ T.n++; r.res === 'win' ? T.w++ : T.l++; T.u += +r.u || 0; if (r.p != null){ T.ps += r.p; T.pn++; } }
+  }
+  T.roi = T.n ? T.u / T.n : null; T.est = T.pn ? T.ps / T.pn : null; T.hit = T.n ? T.w / T.n : null;
+  return T;
+}
+
+/* =====================================================================================
+   2. DraftKings open / close line log, every game in every covered sport
+   ===================================================================================== */
+(function(){
+  if (typeof uniSbOdds !== 'function') return;
+  const base = uniSbOdds;
+  uniSbOdds = function(c){
+    const out = base.apply(this, arguments);
+    try{
+      const o = (c && c.odds || []).find(x => x && x.provider && String(x.provider.id) === '100');
+      if (out && o){
+        const op = x => x && x.open || {};
+        const A = UNI_AM, P = UNI_PT, k = {};
+        const mh = A(op(o.moneyline && o.moneyline.home).odds), ma = A(op(o.moneyline && o.moneyline.away).odds);
+        if (mh != null && ma != null) k.ml = [mh, ma];
+        const sh = op(o.pointSpread && o.pointSpread.home), sa = op(o.pointSpread && o.pointSpread.away);
+        if (P(sh.line) != null && A(sh.odds) != null && A(sa.odds) != null) k.sp = [P(sh.line), A(sh.odds), A(sa.odds)];
+        const to = op(o.total && o.total.over), tu = op(o.total && o.total.under);
+        if (P(to.line) != null && A(to.odds) != null && A(tu.odds) != null) k.to = [P(to.line), A(to.odds), A(tu.odds)];
+        if (k.ml || k.sp || k.to) out.op = k;
+        out.dk = 1;
+      }
+    }catch(e){}
+    return out;
+  };
+})();
+const V207_LL_LS = 'bl_v207_lines_v1';
+let V207_LL = null;
+function v207LlLoad(){ if (V207_LL) return V207_LL; try{ V207_LL = JSON.parse(localStorage.getItem(V207_LL_LS) || 'null'); }catch(e){} if (!V207_LL || !V207_LL.d) V207_LL = {d:{}, dirty:{}, flushed:{}}; return V207_LL; }
+function v207LlSave(){ try{ localStorage.setItem(V207_LL_LS, JSON.stringify(v207LlLoad())); }catch(e){} }
+function v207Cmp(s){ if (!s) return null; const o = {};
+  if (s.ml) o.ml = [s.ml.home, s.ml.away];
+  if (s.spread) o.sp = [s.spread.home[0], s.spread.home[1], s.spread.away[1]];
+  if (s.total) o.to = [s.total.over[0], s.total.over[1], s.total.under[1]];
+  return (o.ml || o.sp || o.to) ? o : null; }
+function v207LlTick(){
+  const L = v207LlLoad(), now = Date.now(); let ch = 0;
+  if (typeof UNI_GAMES === 'undefined') return 0;
+  for (const [ev, g] of UNI_GAMES){
+    if (!g || !g.t || !g.sbOdds || !g.sbOdds.dk) continue;
+    const day = ymd(new Date(g.t)); const D = L.d[day] || (L.d[day] = {});
+    const r = D[ev] || (D[ev] = {l:g.l, t:g.t, h:(g.home && g.home.short) || '', a:(g.away && g.away.short) || ''});
+    if (g.sbOdds.op && !r.o){ r.o = g.sbOdds.op; ch++; L.dirty[day] = 1; }
+    if (g.state === 'pre' && now < g.t){
+      const c = v207Cmp(g.sbOdds); if (!c) continue;
+      if (!r.f){ r.f = c; r.fa = now; }
+      const s = JSON.stringify(c); if (JSON.stringify(r.c || null) !== s){ r.c = c; r.ca = now; ch++; L.dirty[day] = 1; }
+    }
+  }
+  const keep = ymd(new Date(now - 10 * 86400000)); for (const d in L.d) if (d < keep){ delete L.d[d]; delete L.dirty[d]; delete L.flushed[d]; }
+  if (ch) v207LlSave();
+  return ch;
+}
+async function v207LlFlush(){
+  const L = v207LlLoad(), now = Date.now();
+  if (typeof mlogFS !== 'function') return;
+  for (const d in L.dirty){
+    const D = L.d[d]; if (!D) { delete L.dirty[d]; continue; }
+    const allStarted = Object.values(D).every(r => r.t < now);
+    if (!allStarted && now - (L.flushed[d] || 0) < 2 * 3600000) continue;
+    try{
+      await mlogFS().collection('lineLog').doc(d).set({d, v:1, at:now, src:'ESPN DraftKings', n:Object.keys(D).length, g:D});
+      L.flushed[d] = now; delete L.dirty[d]; V207.llErr = '';
+    }catch(e){ V207.llErr = String(e && e.message || e).slice(0, 80); }
+  }
+  v207LlSave();
+}
+
+/* =====================================================================================
+   3. Paper models (publisher runs them; admins read the shared log)
+   ===================================================================================== */
+const V207_LS = 'bl_v207_paper_v1', V207_FIN = 'bl_v207_fin_';
+const V207_PATH = {nba:'basketball/nba', nfl:'football/nfl', nhl:'hockey/nhl', ncaab:'basketball/mens-college-basketball', mlb:'baseball/mlb'};
+const V207_Q = {ncaab:'&groups=50&limit=500'};
+const V207_NAME = {nba_spread:'NBA spread', nfl_spread:'NFL spread', nba_total_open:'NBA total (at open)', nhl_ml_open:'NHL moneyline (at open)', ncaab_total_open:'College basketball total (at open)'};
+const V207 = window.V207 = {spec:null, specAt:0, specErr:'', hist:{}, fin:{}, st:{}, stN:{}, sb:{}, sbAt:{}, active:{}, busy:false, err:'', llErr:'', lastTick:0, pubTry:false, remote:null, remoteAt:0, log:null};
+
+function v207LogLoad(){ if (V207.log) return V207.log; try{ V207.log = JSON.parse(localStorage.getItem(V207_LS) || 'null'); }catch(e){} if (!V207.log || !V207.log.P) V207.log = {v:1, mv:{}, P:{}, B:{}}; return V207.log; }
+function v207LogSave(){ try{ localStorage.setItem(V207_LS, JSON.stringify(v207LogLoad())); }catch(e){ V207.err = 'save: ' + String(e && e.message || e).slice(0, 60); } }
+function v207LogMerge(o){
+  if (!o || !o.log || !o.log.P) return; const L = v207LogLoad(), R = o.log;
+  for (const k in R.P){ const a = L.P[k], b = R.P[k]; if (!a || (!a.res && b.res)) L.P[k] = b; }
+  for (const id in (R.B || {})) if (!L.B[id] || (R.B[id] || []).length > L.B[id].length) L.B[id] = R.B[id];
+  for (const id in (R.mv || {})) if (!L.mv[id] || (R.mv[id].hist || []).length > (L.mv[id].hist || []).length) L.mv[id] = R.mv[id];
+}
+function v207Ymd(ms){ return ymd(new Date(ms)); }
+function v207Week(ms){ const d = new Date(ms); const k = (d.getDay() + 6) % 7; d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - k); return ymd(d); }
+function v207Leagues(){ const S = V207.spec; const s = new Set(); if (S) for (const id in S.models) s.add(S.models[id].sport); return [...s]; }
+
+async function v207LoadSpec(){
+  if (V207.spec && Date.now() - V207.specAt < 6 * 3600000) return V207.spec;
+  try{ const r = await fetch('models/paper_v1.json', {cache:'no-cache'}); if (!r.ok) throw new Error('models ' + r.status);
+    V207.spec = await r.json(); V207.specAt = Date.now(); V207.specErr = ''; }
+  catch(e){ V207.specErr = String(e && e.message || e).slice(0, 80); }
+  return V207.spec;
+}
+function v207FinLoad(lg){ if (V207.fin[lg]) return V207.fin[lg]; let o = null; try{ o = JSON.parse(localStorage.getItem(V207_FIN + lg) || 'null'); }catch(e){} return (V207.fin[lg] = (o && o.g) ? o : {g:{}, days:{}}); }
+function v207FinSave(lg){ try{ localStorage.setItem(V207_FIN + lg, JSON.stringify(V207.fin[lg])); }catch(e){} }
+async function v207LoadHist(lg){
+  if (V207.hist[lg]) return V207.hist[lg];
+  const r = await fetch(`models/hist_${lg}.json`, {cache:'no-cache'}); if (!r.ok) throw new Error('hist ' + lg + ' ' + r.status);
+  V207.hist[lg] = await r.json(); return V207.hist[lg];
+}
+function v207ParseEv(ev){
+  const c = ev.competitions && ev.competitions[0]; if (!c) return null;
+  const H = (c.competitors || []).find(z => z.homeAway === 'home'), A = (c.competitors || []).find(z => z.homeAway === 'away'); if (!H || !A) return null;
+  const st = (c.status && c.status.type) || {};
+  const g = {id:String(ev.id), t:Date.parse(c.date || ev.date), season:(ev.season && ev.season.year) || null, stype:(ev.season && ev.season.type) || null,
+    state:st.state || 'pre', done:!!st.completed, sname:st.name || '', neutral:c.neutralSite ? 1 : 0,
+    h:String(H.team && H.team.id || ''), a:String(A.team && A.team.id || ''), ha:(H.team && H.team.abbreviation) || '', aa:(A.team && A.team.abbreviation) || '',
+    hs:H.score != null && H.score !== '' ? +H.score : null, as:A.score != null && A.score !== '' ? +A.score : null, dk:null};
+  const o = (c.odds || []).find(x => x && x.provider && String(x.provider.id) === '100');
+  if (o){
+    const A2 = UNI_AM, P2 = UNI_PT, cur = x => x && (x.close || x.current) || {}, op = x => x && x.open || {}, k = {c:{}, o:{}};
+    for (const [w, f] of [['c', cur], ['o', op]]){
+      const mh = A2(f(o.moneyline && o.moneyline.home).odds), ma = A2(f(o.moneyline && o.moneyline.away).odds); if (mh != null && ma != null) k[w].ml = [mh, ma];
+      const sh = f(o.pointSpread && o.pointSpread.home), sa = f(o.pointSpread && o.pointSpread.away);
+      if (P2(sh.line) != null && A2(sh.odds) != null && A2(sa.odds) != null) k[w].sp = [P2(sh.line), A2(sh.odds), A2(sa.odds)];
+      const to = f(o.total && o.total.over), tu = f(o.total && o.total.under);
+      if (P2(to.line) != null && A2(to.odds) != null && A2(tu.odds) != null) k[w].to = [P2(to.line), A2(to.odds), A2(tu.odds)];
+    }
+    g.dk = k;
+  }
+  return g;
+}
+async function v207Scoreboard(lg, day){
+  const r = await fetchJSON(`https://site.api.espn.com/apis/site/v2/sports/${V207_PATH[lg]}/scoreboard?dates=${day}${V207_Q[lg] || ''}`, 20000);
+  if (!r.ok || !r.data) throw new Error(lg + ' scoreboard ' + r.status);
+  return (r.data.events || []).map(v207ParseEv).filter(Boolean);
+}
+function v207NoteFinals(lg, list){
+  const F = v207FinLoad(lg), H = V207.hist[lg]; let n = 0;
+  const have = V207._histIds && V207._histIds[lg];
+  for (const g of list){
+    if (!g.done || g.hs == null || g.as == null || !(g.stype === 2 || g.stype === 3)) continue;
+    if (have && have.has(g.id)) continue;
+    if (!F.g[g.id]){ F.g[g.id] = [g.id, Math.round(g.t / 1000), g.season, g.h, g.a, g.hs, g.as, g.neutral, g.ha, g.aa]; n++; }
+  }
+  if (n) v207FinSave(lg);
+  return n;
+}
+function v207State(lg){
+  const H = V207.hist[lg]; if (!H) return null;
+  const F = v207FinLoad(lg); const sig = H.n + ':' + Object.keys(F.g).length;
+  if (V207.st[lg] && V207.stN[lg] === sig) return V207.st[lg];
+  if (!V207._histIds) V207._histIds = {};
+  if (!V207._histIds[lg]) V207._histIds[lg] = new Set(H.g.map(r => r[0]));
+  const rows = H.g.concat(Object.values(F.g).filter(r => !V207._histIds[lg].has(r[0])));
+  const all = rows.map(r => ({r, day:v207DayET(r[1] * 1000)}));
+  all.sort((x, y) => x.day - y.day || x.r[1] - y.r[1] || (+x.r[0]) - (+y.r[0]));
+  const st = v207NewState(lg);
+  for (const x of all){ const r = x.r; v207Add(st, {h:String(r[3]), a:String(r[4]), day:x.day, season:r[2], neutral:r[7], hs:r[5], as:r[6]}); }
+  st.n = all.length; st.last = all.length ? all[all.length - 1].r[1] * 1000 : 0;
+  V207.st[lg] = st; V207.stN[lg] = sig; return st;
+}
+/* fill any gap between the static history file and yesterday (once per date) */
+async function v207FillGap(lg){
+  const H = V207.hist[lg], F = v207FinLoad(lg); if (!H) return;
+  const y = +H.through.slice(0, 4), m = +H.through.slice(4, 6) - 1, d = +H.through.slice(6, 8);
+  const start = new Date(y, m, d + 1), end = new Date(Date.now() - 86400000); let k = 0;
+  for (let t = new Date(start); t <= end && k < 6; t.setDate(t.getDate() + 1)){
+    const day = ymd(t); if (F.days[day]) continue;
+    try{ v207NoteFinals(lg, await v207Scoreboard(lg, day)); F.days[day] = 1; k++; }catch(e){ break; }
+  }
+  if (k) v207FinSave(lg);
+}
+
+/* market inputs for one model at decision time (DraftKings via ESPN; open models use the earliest DK line Verdict sees) */
+function v207Market(spec, g){
+  const C = g.dk && g.dk.c || {}, O = g.dk && g.dk.o || {};
+  const ok2 = (a, b) => { const x = v207Imp(a), y = v207Imp(b); return isFinite(x) && isFinite(y) && x + y > 0.98 && x + y < 1.15; };
+  let pa, pb, line = NaN, nv;
+  if (spec.market === 'ml'){ if (!C.ml || !ok2(C.ml[0], C.ml[1])) return null; [pa, pb] = C.ml; nv = v207Nv(pa, pb); }
+  else if (spec.market === 'spread'){ if (!C.sp || !ok2(C.sp[1], C.sp[2]) || Math.abs(C.sp[0]) > 45) return null; line = C.sp[0]; pa = C.sp[1]; pb = C.sp[2]; nv = spec.assumed_110 ? 0.5 : v207Nv(pa, pb); }
+  else { if (!C.to || !ok2(C.to[1], C.to[2]) || !(C.to[0] > 0)) return null; line = C.to[0]; pa = C.to[1]; pb = C.to[2]; nv = spec.assumed_110 ? 0.5 : v207Nv(pa, pb); }
+  const nvml = C.ml && ok2(C.ml[0], C.ml[1]) ? v207Nv(C.ml[0], C.ml[1]) : NaN;
+  const nvmlO = O.ml && ok2(O.ml[0], O.ml[1]) ? v207Nv(O.ml[0], O.ml[1]) : NaN;
+  const M = {nv, line, nvml, pa, pb, nvTrue:v207Nv(pa, pb),
+    mv_sp: C.sp && O.sp ? C.sp[0] - O.sp[0] : NaN, mv_tot: C.to && O.to ? C.to[0] - O.to[0] : NaN, mv_ml: nvml - nvmlO};
+  if (spec.sport === 'nfl' && V207.spec && V207.spec.nfl_static){ const S = V207.spec.nfl_static;
+    M.dome = S.dome[g.ha] != null ? S.dome[g.ha] : 0; M.div = S.div[g.ha] && S.div[g.ha] === S.div[g.aa] ? 1 : 0; }
+  return M;
+}
+function v207Decide(spec, g, st, now){
+  const M = v207Market(spec, g); if (!M) return null;
+  const F = v207Pre(st, {h:g.h, a:g.a, day:v207DayET(g.t), season:g.season, neutral:g.neutral});
+  if (!(F.h_gp >= 1 && F.a_gp >= 1) && spec.sport !== 'nfl') { /* very first game of a team's season: still fine, features are NaN-tolerant */ }
+  const x = v207Row(spec, F, M); const p = v207Predict(spec, x); if (!isFinite(p)) return null;
+  const da = v207Dec(M.pa), db = v207Dec(M.pb); const ea = p * da - 1, eb = (1 - p) * db - 1;
+  const s = ea >= eb ? 'a' : 'b', e = s === 'a' ? ea : eb, pr = s === 'a' ? M.pa : M.pb;
+  let tier = null; for (const t of spec.tiers) if (e >= spec.thr[t] - 1e-9) tier = t;
+  const ln = spec.market === 'spread' ? (s === 'a' ? M.line : -M.line) : spec.market === 'total' ? M.line : null;
+  const R = (v, k) => isFinite(v) ? Math.round(v * Math.pow(10, k)) / Math.pow(10, k) : null;
+  return {m:spec.id, ver:spec.ver, ev:g.id, l:spec.sport, t:g.t, d:v207Ymd(g.t), at:now, mk:spec.market, w:spec.when,
+    h:g.ha, a:g.aa, hl:R(M.line, 1), pa:M.pa, pb:M.pb, nv:R(M.nvTrue, 4), p:R(p, 4), s, e:R(e, 4), tier, bet:(tier && pr >= V207_FLOOR) ? 1 : 0, pr, ln};
+}
+function v207Snap(spec, g){ const C = g.dk && g.dk.c || {}; const k = spec.market === 'ml' ? C.ml : spec.market === 'spread' ? C.sp : C.to; if (!k) return null;
+  return spec.market === 'ml' ? {pa:k[0], pb:k[1], at:Date.now()} : {line:k[0], pa:k[1], pb:k[2], at:Date.now()}; }
+function v207Grade(r, g){
+  if (!g || !g.done || g.hs == null || g.as == null) return false;
+  const m = g.hs - g.as, pts = g.hs + g.as;
+  let y; if (r.mk === 'ml') y = m > 0 ? 1 : m < 0 ? 0 : null;
+  else if (r.mk === 'spread'){ const v = m + r.hl; y = v > 0 ? 1 : v < 0 ? 0 : null; }
+  else { const v = pts - r.hl; y = v > 0 ? 1 : v < 0 ? 0 : null; }
+  r.y = y; r.sc = [g.hs, g.as];
+  if (r.bet){ r.res = y == null ? 'push' : ((y === 1) === (r.s === 'a') ? 'win' : 'loss'); r.u = Math.round(v207Units(r.res, r.pr) * 1000) / 1000; }
+  else r.res = 'done';
+  // CLV vs the last DraftKings line before start
+  const c = r.cl; if (r.bet && c){
+    if (r.mk === 'ml'){ const nvc = v207Nv(c.pa, c.pb); const ps = r.s === 'a' ? nvc : 1 - nvc; r.clv = isFinite(ps) ? Math.round((ps * v207Dec(r.pr) - 1) * 1000) / 1000 : null; r.ck = 'pct'; }
+    else if (c.line != null){ let d;
+      if (r.mk === 'spread') d = r.s === 'a' ? r.hl - c.line : c.line - r.hl;
+      else d = r.s === 'a' ? c.line - r.hl : r.hl - c.line;
+      if (d === 0){ const nvc = v207Nv(c.pa, c.pb); const ps = r.s === 'a' ? nvc : 1 - nvc; r.clvp = isFinite(ps) ? Math.round((ps * v207Dec(r.pr) - 1) * 1000) / 1000 : null; }
+      r.clv = Math.round(d * 10) / 10; r.ck = 'pts'; }
+  }
+  return true;
+}
+
+/* stats + suspend / promote rules for one model version */
+function v207Stats(log, id, ver){
+  const B = Object.values(log.P || {}).filter(r => r && r.m === id && r.bet && (!ver || r.ver === ver));
+  const T = {n:0, w:0, l:0, p:0, u:0, pend:0, clvN:0, clvS:0, clvPos:0, tiers:{}, weeks:{}};
+  for (const r of B){
+    if (!r.res){ T.pend++; continue; }
+    if (r.res === 'push'){ T.p++; continue; }
+    if (r.res !== 'win' && r.res !== 'loss') continue;
+    T.n++; r.res === 'win' ? T.w++ : T.l++; T.u += +r.u || 0;
+    const tt = T.tiers[r.tier] || (T.tiers[r.tier] = {n:0, w:0, l:0, u:0}); tt.n++; r.res === 'win' ? tt.w++ : tt.l++; tt.u += +r.u || 0;
+    if (r.clv != null){ T.clvN++; T.clvS += r.clv; if (r.clv > 0) T.clvPos++; }
+    const wk = v207Week(r.t); T.weeks[wk] = (T.weeks[wk] || 0) + (+r.u || 0);
+  }
+  T.roi = T.n ? T.u / T.n : null; T.clv = T.clvN ? T.clvS / T.clvN : null;
+  const cur = v207Week(Date.now()); const wks = Object.keys(T.weeks).filter(w => w < cur).sort();
+  let streak = 0; for (let i = wks.length - 1; i >= 0; i--){ if (T.weeks[wks[i]] < 0) streak++; else break; }
+  T.lossWeeks = streak;
+  // Brier: every graded call of this version (bets and passes), model vs DraftKings no-vig
+  const G = (log.B[id] || []).filter(x => !ver || x[4] === ver).concat(Object.values(log.P || {}).filter(r => r && r.m === id && (!ver || r.ver === ver) && r.res && r.y != null).map(r => [+r.d, r.p, r.nv, r.y, r.ver]));
+  G.sort((a, b) => a[0] - b[0]);
+  const half = Math.floor(G.length / 2), br = (a) => { let m = 0, k = 0, n = 0; for (const x of a){ if (x[2] == null) continue; m += (x[1] - x[3]) ** 2; k += (x[2] - x[3]) ** 2; n++; } return n ? [m / n, k / n, n] : null; };
+  T.brier = {all:br(G), h1:br(G.slice(0, half)), h2:br(G.slice(half))};
+  return T;
+}
+function v207Checklist(T){
+  const b = T.brier || {};
+  return [
+    {ok:T.n >= 300, t:`300+ graded DraftKings bets (${T.n} so far)`},
+    {ok:T.n > 0 && T.roi > 0, t:'Profitable (ROI above 0)'},
+    {ok:T.clv != null && T.clv > 0, t:'Beats the closing line on average (positive CLV)'},
+    {ok:!!(b.h1 && b.h2 && b.h1[0] < b.h1[1] && b.h2[0] < b.h2[1]), t:'Better Brier than DraftKings no-vig in both halves'}
+  ];
+}
+function v207Rules(log, spec){
+  const now = Date.now(); let ch = 0;
+  for (const id in spec.models){
+    const cur = spec.models[id]; let mv = log.mv[id];
+    if (!mv){ mv = log.mv[id] = {ver:cur.ver, status:'paper', since:now, hist:[{at:now, ver:cur.ver, ev:'start', why:'Paper tracking started'}]}; ch++; }
+    // a newer version in the model file starts fresh; the old one is kept as the last stable version
+    if (mv.ver !== cur.ver && mv.status !== 'rolledback' && !(mv.skip || []).includes(cur.ver)){
+      mv.hist.push({at:now, ver:cur.ver, ev:'start', why:`New version ${cur.ver} (was ${mv.ver})`}); if (mv.status === 'paper') mv.stable = mv.ver;
+      mv.ver = cur.ver; mv.status = 'paper'; mv.since = now; ch++; }
+    if (mv.status !== 'paper') continue;
+    const T = v207Stats(log, id, mv.ver); let why = '';
+    if (T.u <= -10) why = `Down ${T.u.toFixed(1)}u on this version`;
+    else if (T.lossWeeks >= 4) why = `${T.lossWeeks} losing weeks in a row`;
+    if (why){
+      const back = mv.stable && mv.stable !== mv.ver && spec.prev && spec.prev[id] && spec.prev[id][mv.stable];
+      mv.hist.push({at:now, ver:mv.ver, ev:'suspend', why});
+      if (back){ (mv.skip || (mv.skip = [])).push(mv.ver); mv.hist.push({at:now, ver:mv.stable, ev:'rollback', why:`Rolled back to ${mv.stable}`}); mv.ver = mv.stable; mv.status = 'paper'; mv.since = now; }
+      else mv.status = 'suspended';
+      ch++;
+    }
+    const ready = v207Checklist(T).every(x => x.ok);
+    if (ready && !mv.ready){ mv.ready = now; mv.hist.push({at:now, ver:mv.ver, ev:'ready', why:'Passed every promotion check; waiting for your OK'}); ch++; }
+  }
+  return ch;
+}
+function v207SpecOf(spec, id, ver){ const m = spec.models[id]; if (m && m.ver === ver) return m; return spec.prev && spec.prev[id] && spec.prev[id][ver] || null; }
+
+async function v207PaperPass(){
+  const spec = await v207LoadSpec(); if (!spec) return;
+  const log = v207LogLoad(), now = Date.now();
+  v207Rules(log, spec);
+  const lgs = v207Leagues();
+  for (const lg of lgs){
+    try{ await v207LoadHist(lg); }catch(e){ V207.err = String(e && e.message || e).slice(0, 80); continue; }
+    const soon = [...(V207.sb[lg] || new Map()).values()].some(g => g.state === 'pre' && g.t - now < 45 * 60000 && g.t > now - 5 * 60000);
+    const every = soon ? 4 * 60000 : 10 * 60000;
+    if (!V207.sbAt[lg] || now - V207.sbAt[lg] > every){
+      const days = [new Date(now - 86400000), new Date(now), new Date(now + 86400000)].map(ymd);
+      const all = [];
+      for (const d of days){ try{ all.push(...await v207Scoreboard(lg, d)); }catch(e){ V207.err = String(e && e.message || e).slice(0, 80); } }
+      if (all.length || !V207.sb[lg]){ V207.sb[lg] = new Map(all.map(g => [g.id, g])); V207.sbAt[lg] = now; v207NoteFinals(lg, all); }
+      V207.active[lg] = all.some(g => (g.stype === 2 || g.stype === 3) && g.t > now - 12 * 3600000);
+    }
+    await v207FillGap(lg);
+    const st = v207State(lg); if (!st) continue;
+    const SB = V207.sb[lg] || new Map();
+    for (const id in spec.models){
+      const mv = log.mv[id]; if (!mv || spec.models[id].sport !== lg) continue;
+      const sp = v207SpecOf(spec, id, mv.ver); if (!sp) continue;
+      for (const g of SB.values()){
+        if (!(g.stype === 2 || g.stype === 3) || g.state !== 'pre' || !g.dk || !isFinite(g.t)) continue;
+        const key = id + '|' + g.id, mins = (g.t - now) / 60000; let r = log.P[key];
+        if (!r && mv.status === 'paper'){
+          const due = sp.when === 'open' ? (mins > 30) : (mins <= 30 && mins > -2);
+          if (due){ const d = v207Decide(sp, g, st, now); if (d){ log.P[key] = r = d; } }
+        }
+        if (!r) continue;
+        if (mins <= 30 && !r.lk){ r.lk = v207Snap(sp, g); }
+        if (mins > -1){ const s = v207Snap(sp, g); if (s) r.cl = s; }
+      }
+    }
+    // grade from the scoreboard (or that day's scoreboard if the publisher missed it)
+    const due = Object.values(log.P).filter(r => r.l === lg && !r.res && r.t < now - 2 * 3600000);
+    const need = new Set();
+    for (const r of due){ const g = SB.get(r.ev); if (g && v207Grade(r, g)) continue;
+      if (g && /POSTPONED|CANCELED|CANCELLED/i.test(g.sname)){ r.res = r.bet ? 'void' : 'done'; r.u = 0; continue; }
+      if (r.t < now - 5 * 86400000){ r.res = r.bet ? 'void' : 'done'; r.u = 0; continue; }
+      need.add(ymd(new Date(r.t))); }
+    for (const d of [...need].slice(0, 3)){ try{ const L = await v207Scoreboard(lg, d); v207NoteFinals(lg, L); const M = new Map(L.map(g => [g.id, g])); for (const r of due) if (!r.res) v207Grade(r, M.get(r.ev)); }catch(e){} }
+  }
+  // graded passes move to the compact Brier list; drop very old ungraded passes
+  for (const k in log.P){ const r = log.P[k];
+    if (!r.bet && r.res){ if (r.y != null) (log.B[r.m] || (log.B[r.m] = [])).push([+r.d, r.p, r.nv, r.y, r.ver]); delete log.P[k]; } }
+  v207Rules(log, spec);
+  log.at = now; v207LogSave();
+}
+async function v207Publish(){
+  if (typeof v154Put !== 'function' || !v154Pub()) return;
+  const spec = V207.spec, log = v207LogLoad();
+  await v154Put('paperlog', {at:Date.now(), v:207, active:V207.active, err:V207.err || V207.specErr || '', llErr:V207.llErr || '', lines:v207LlSummary(), log});
+  await v154Put('propshadow', {at:Date.now(), v:207, r:v207PsLoad().r});
+}
+function v207LlSummary(){ const L = v207LlLoad(); const o = {}; for (const d in L.d){ const D = L.d[d]; let n = 0, op = 0, cl = 0; for (const k in D){ n++; if (D[k].o) op++; if (D[k].c) cl++; } o[d] = [n, op, cl, L.flushed[d] || 0]; } return o; }
+
+async function v207Tick(){
+  if (V207.busy || typeof v154Pub !== 'function' || !v154Pub()) return;
+  V207.busy = true;
+  try{
+    if (!V207.pubTry && typeof v154Get === 'function'){
+      V207.pubTry = true;
+      try{ v207LogMerge(await v154Get('paperlog')); }catch(e){}
+      try{ v207PsMerge(await v154Get('propshadow')); }catch(e){}
+    }
+    try{ v207PsLock(); await v207PsGrade(); }catch(e){}
+    try{ v207LlTick(); await v207LlFlush(); }catch(e){}
+    try{ await v207PaperPass(); }catch(e){ V207.err = String(e && e.message || e).slice(0, 80); }
+    await v207Publish();
+    V207.lastTick = Date.now();
+  }finally{ V207.busy = false; }
+}
+(function(){
+  if (typeof v200LockPass === 'function'){ const base = v200LockPass;
+    v200LockPass = async function(){ const r = await base.apply(this, arguments); try{ v207PsLock(); }catch(e){} return r; }; }
+})();
+setTimeout(() => { try{ if (v154Pub()) v207Tick(); }catch(e){} }, 15000);
+setInterval(() => { try{ if (v154Pub()) v207Tick(); }catch(e){} }, 2 * 60000);
+
+/* =====================================================================================
+   4. Results (admin): Model lab. Backtest, Paper and Live are separate blocks and never added together.
+   ===================================================================================== */
+async function v207LoadForAdmin(force){
+  if (typeof v154Pub === 'function' && v154Pub()) return;
+  if (!force && Date.now() - V207.remoteAt < 5 * 60000) return;
+  V207.remoteAt = Date.now();
+  try{ const r = await v154Get('paperlog'); if (r && r.log){ V207.remote = r; v207LogMerge(r); V207.active = Object.assign({}, r.active || {}); } }catch(e){}
+  try{ const r = await v154Get('propshadow'); if (r && r.r) v207PsMerge(r); }catch(e){}
+  if (!V207.spec) await v207LoadSpec();
+  v207LabRefresh();
+}
+const v207Pct = x => x == null || !isFinite(x) ? '—' : (x >= 0 ? '+' : '') + (x * 100).toFixed(1) + '%';
+const v207U = x => x == null || !isFinite(x) ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + 'u';
+const v207Cls = x => x == null || !isFinite(x) ? '' : x >= 0 ? 'pos' : 'neg';
+function v207Ago(t){ if (!t) return 'never'; const s = Math.max(0, (Date.now() - t) / 1000); return s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + ' min ago' : s < 172800 ? Math.round(s / 3600) + ' hr ago' : Math.round(s / 86400) + ' days ago'; }
+function v207BacktestHTML(spec){
+  if (!spec || !spec.backtest) return '<div class="hint">Loading the backtest numbers…</div>';
+  const rows = Object.keys(spec.models).map(id => {
+    const B = spec.backtest[id], m = spec.models[id]; if (!B) return '';
+    const tn = m.tiers[0], T = B.tiers[tn] || {}, P = B.tiers['Picky'] || {}, S = B.tiers['Super Picky'] || {};
+    const bw = B.brier || {}; const bb = h => bw[h] ? (bw[h][0] < bw[h][1] ? 'better' : 'worse') : '—';
+    return `<tr><td><b>${esc(V207_NAME[id] || id)}</b><div class="hint">${esc(tn)} · ${B.seasons[0]}–${B.seasons[1]}</div></td>
+      <td>${T.w}-${T.l}</td><td class="${v207Cls(T.roi_dk)}">${v207Pct(T.roi_dk)}</td><td><span class="${v207Cls(T.h1)}">${v207Pct(T.h1)}</span> / <span class="${v207Cls(T.h2)}">${v207Pct(T.h2)}</span></td>
+      <td>${bb('H1')} / ${bb('H2')}</td>
+      <td class="hint">${P.n && tn !== 'Picky' ? `Picky ${P.w}-${P.l} ${v207Pct(P.roi_dk)}<br>` : ''}${S.n ? `Super ${S.w}-${S.l} ${v207Pct(S.roi_dk)}` : ''}</td></tr>`;
+  }).join('');
+  const un = (spec.unsupported || []).map(u => `<li><b>${esc(u.name)}</b>: ${esc(u.why)}</li>`).join('');
+  return `<div class="v207-tw"><table class="v207-t"><thead><tr><th>Model</th><th>Record</th><th>ROI at DK</th><th>1st / 2nd half*</th><th>Brier vs no-vig</th><th>Pickier tiers</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="hint" style="margin-top:6px">Walk-forward tests on free archives: each season is predicted only by a model trained on earlier seasons. Flat 1u bets, −250 floor, ROI after a DraftKings price haircut (*halves are before the haircut). None passed every promotion check, which is why they start on paper.</div>
+    ${un ? `<div class="v207-sub">Not supported with free data</div><ul class="v207-ul">${un}</ul>` : ''}`;
+}
+function v207StatusChip(mv, active, id){
+  if (!mv) return '<span class="v207-chip">Starting</span>';
+  if (mv.status === 'suspended') return '<span class="v207-chip neg">Suspended</span>';
+  if (mv.ready) return '<span class="v207-chip pos">Ready for your OK</span>';
+  return active ? '<span class="v207-chip on">Paper · in season</span>' : '<span class="v207-chip">Paper · off-season</span>';
+}
+function v207PaperHTML(spec){
+  const log = v207LogLoad();
+  if (!spec) return '<div class="hint">Loading the paper models…</div>';
+  const cards = Object.keys(spec.models).map(id => {
+    const m = spec.models[id], mv = log.mv[id], ver = mv ? mv.ver : m.ver;
+    const T = v207Stats(log, id, ver), act = !!(V207.active || {})[m.sport];
+    const ck = v207Checklist(T).map(x => `<li class="${x.ok ? 'ok' : 'no'}">${x.ok ? '✓' : '✗'} ${esc(x.t)}</li>`).join('');
+    const b = T.brier || {}; const bt = h => b[h] ? `${b[h][0].toFixed(4)} vs ${b[h][1].toFixed(4)}` : '—';
+    const clv = T.clv == null ? '—' : (Object.values(log.P).some(r => r.m === id && r.ck === 'pct') ? v207Pct(T.clv) : (T.clv >= 0 ? '+' : '') + T.clv.toFixed(2) + ' pts');
+    const recent = Object.values(log.P).filter(r => r.m === id && r.bet).sort((a, c) => c.t - a.t).slice(0, 8).map(r => {
+      const side = r.mk === 'ml' ? (r.s === 'a' ? r.h : r.a) : r.mk === 'spread' ? `${r.s === 'a' ? r.h : r.a} ${r.ln > 0 ? '+' : ''}${r.ln}` : `${r.s === 'a' ? 'Over' : 'Under'} ${r.ln}`;
+      const res = r.res ? (r.res === 'win' ? `<span class="pos">Won ${v207U(r.u)}</span>` : r.res === 'loss' ? '<span class="neg">Lost −1.0u</span>' : esc(r.res)) : 'Pending';
+      return `<li>${esc(r.d.slice(4, 6) + '/' + r.d.slice(6))} ${esc(r.a)} @ ${esc(r.h)}: <b>${esc(side)}</b> ${r.pr > 0 ? '+' : ''}${r.pr} · ${esc(r.tier || '')} · model ${Math.round((r.s === 'a' ? r.p : 1 - r.p) * 100)}% · ${res}</li>`;
+    }).join('');
+    const hist = ((mv && mv.hist) || []).slice(-4).reverse().map(h => `<li>${esc(new Date(h.at).toLocaleDateString('en-US', {month:'short', day:'numeric'}))} · ${esc(h.ver)}: ${esc(h.why)}</li>`).join('');
+    const tiers = Object.keys(T.tiers).map(k => { const t = T.tiers[k]; return `${esc(k)} ${t.w}-${t.l} ${v207U(t.u)}`; }).join(' · ');
+    return `<div class="v207-m"><div class="v207-mh"><b>${esc(V207_NAME[id] || id)}</b> <span class="hint">${esc(ver)}</span> ${v207StatusChip(mv, act, id)}</div>
+      <div class="v207-kv"><span>Record <b>${T.w}-${T.l}${T.p ? '-' + T.p : ''}</b></span><span class="${v207Cls(T.u)}">${v207U(T.n ? T.u : null)}</span><span>ROI <b class="${v207Cls(T.roi)}">${v207Pct(T.roi)}</b></span><span>CLV <b>${clv}</b></span><span>${T.pend} pending</span></div>
+      ${tiers ? `<div class="hint">${tiers}</div>` : ''}
+      <div class="hint">Brier, model vs DraftKings no-vig: 1st half ${bt('h1')} · 2nd half ${bt('h2')}${b.all ? ` (${b.all[2]} games)` : ''}. Losing weeks in a row: ${T.lossWeeks}.</div>
+      <details class="dd v207-dd" data-k="${id}-ck"><summary>Promotion checklist</summary><ul class="v207-ck">${ck}</ul><div class="hint">Promotion to real Picks only happens with your OK. Auto-suspend at −10u or 4 losing weeks in a row, then roll back to the last stable version.</div></details>
+      ${recent ? `<details class="dd v207-dd" data-k="${id}-rb"><summary>Latest paper bets</summary><ul class="v207-ul">${recent}</ul></details>` : ''}
+      ${hist ? `<details class="dd v207-dd" data-k="${id}-vh"><summary>Version history</summary><ul class="v207-ul">${hist}</ul></details>` : ''}</div>`;
+  }).join('');
+  const PS = v207PsStats();
+  const ps = `<div class="v207-m"><div class="v207-mh"><b>Paused Prop Picks (shadow)</b> <span class="v207-chip">Not shown to anyone</span></div>
+    <div class="v207-kv"><span>Record <b>${PS.w}-${PS.l}</b></span><span class="${v207Cls(PS.u)}">${v207U(PS.n ? PS.u : null)}</span><span>ROI <b class="${v207Cls(PS.roi)}">${v207Pct(PS.roi)}</b></span><span>Hit ${PS.hit == null ? '—' : Math.round(PS.hit * 100) + '%'} vs est ${PS.est == null ? '—' : Math.round(PS.est * 100) + '%'}</span><span>${PS.pend} pending</span></div>
+    <div class="hint">Props the old model would have made Picks since the pause, locked at T-30 at the DraftKings price and graded from box scores.</div></div>`;
+  const LS = (V207.remote && V207.remote.lines) || v207LlSummary(); const today = ymd(new Date());
+  const lt = LS[today]; const days = Object.keys(LS).length;
+  const ll = `<div class="hint v207-ll">DraftKings line log: ${lt ? `${lt[0]} games today, ${lt[1]} with the open line, ${lt[2]} with a pre-game close` : 'nothing yet today'} · ${days} day${days === 1 ? '' : 's'} kept${lt && lt[3] ? ` · last saved ${v207Ago(lt[3])}` : ''}.</div>`;
+  const upd = (V207.remote && V207.remote.at) || log.at;
+  const err = (V207.remote && V207.remote.err) || V207.err;
+  return `<div class="hint" style="margin:0 0 8px">Every paper call uses the live DraftKings price and is locked before the game. Paper bets are not Picks and never count in Results above.${upd ? ` Updated ${v207Ago(upd)}.` : ''}${err ? ` <span class="neg">Last issue: ${esc(err)}</span>` : ''}</div>${cards}${ps}${ll}`;
+}
+function v207LiveHTML(){
+  let S = null; try{ S = (typeof V206 !== 'undefined' && V206.stats) || (typeof v206Compute === 'function' ? v206Compute() : null); }catch(e){}
+  const row = (lab, s) => s ? `<li>${lab}: <b>${s.w}-${s.l}</b>, ROI <b class="${v207Cls(s.roi)}">${v207Pct(s.roi)}</b></li>` : `<li>${lab}: no graded Picks</li>`;
+  return `<ul class="v207-ul">${row('Games Picks', S && S['games|good'])}${row('Prop Picks', S && S['props|good'])}</ul>
+    <div class="hint">Official Picks only, last 7 days, same numbers as the weekly check. Prop Picks are paused from Nov 25, so new props won't be added here.</div>`;
+}
+function v207Sec(t, inner){ return `<section class="v98-sec v207-sec"><h3 class="v98-h">${t}</h3><div class="v55-dd-body">${inner}</div></section>`; }
+function v207LabHTML(){
+  const spec = V207.spec;
+  return `<div class="card v55-learn v207-lab"><div class="section-title" style="margin:0 0 6px"><h2><span class="h-emo" aria-hidden="true">🧪</span>Model lab</h2><span class="hint">Backtest, paper and live results are kept apart and never added together. Admin only.</span></div>
+    ${v207Sec('📚 Backtest (past seasons)', v207BacktestHTML(spec))}
+    ${v207Sec('📝 Paper (live prices, not Picks)', v207PaperHTML(spec))}
+    ${v207Sec('✅ Live (official Picks)', v207LiveHTML())}</div>`;
+}
+function v207LabRefresh(){ try{ const el = document.querySelector('#view .v207-lab'); if (!el) return;
+  const open = new Set([...el.querySelectorAll('details[data-k]')].filter(d => d.open).map(d => d.dataset.k));
+  const t = document.createElement('div'); t.innerHTML = v207LabHTML(); const nw = t.firstElementChild;
+  nw.querySelectorAll('details[data-k]').forEach(d => { if (open.has(d.dataset.k)) d.open = true; });
+  el.replaceWith(nw); }catch(e){} }
+(function(){
+  if (typeof renderResults !== 'function') return;
+  const base = renderResults;
+  renderResults = function(){
+    const out = base.apply(this, arguments);
+    try{
+      if (typeof v138Admin === 'function' && v138Admin() && typeof ui !== 'undefined' && ui.tab === 'results'){
+        const v = document.querySelector('#view');
+        if (v && !v.querySelector('.v207-lab')) v.insertAdjacentHTML('beforeend', v207LabHTML());
+        if (!V207.spec) v207LoadSpec().then(v207LabRefresh);
+        v207LoadForAdmin(false);
+      }
+    }catch(e){ console.warn('v207 lab', e); }
+    return out;
+  };
+  const st = document.createElement('style');
+  st.textContent = `.v207-tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.v207-t{width:100%;border-collapse:collapse;font-size:13px;min-width:560px}
+.v207-t th{text-align:left;font-weight:600;color:var(--mut,#8aa0c8);padding:6px 8px;border-bottom:1px solid rgba(96,140,255,.25)}
+.v207-t td{padding:7px 8px;border-bottom:1px solid rgba(96,140,255,.12);vertical-align:top}
+.v207-lab .pos{color:#3fd28a}.v207-lab .neg{color:#ff6b6b}
+.v207-m{border:1px solid rgba(96,140,255,.25);border-radius:12px;padding:10px 12px;margin:0 0 10px;background:rgba(40,80,180,.06)}
+.v207-mh{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 6px}
+.v207-kv{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13.5px;margin:0 0 4px}
+.v207-chip{font-size:11.5px;padding:2px 8px;border-radius:999px;border:1px solid rgba(96,140,255,.35);color:#9db8ff}
+.v207-chip.on{background:rgba(60,110,255,.18);color:#cfe0ff}.v207-chip.pos{border-color:#3fd28a;color:#3fd28a}.v207-chip.neg{border-color:#ff6b6b;color:#ff6b6b}
+.v207-ul,.v207-ck{margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.45}.v207-ck{list-style:none;padding-left:2px}
+.v207-ck li.ok{color:#3fd28a}.v207-ck li.no{color:var(--mut,#8aa0c8)}
+.v207-sub{font-weight:600;font-size:13px;margin:10px 0 0}
+.v207-dd{margin-top:6px}.v207-ll{margin-top:4px}`;
+  document.head.appendChild(st);
+})();
+setInterval(() => { try{ if (typeof v138Admin === 'function' && v138Admin() && typeof ui !== 'undefined' && ui.tab === 'results'){ if (v154Pub()) v207LabRefresh(); else v207LoadForAdmin(false); } }catch(e){} }, 60000);
+
+window.v207Tick = v207Tick;
+window.v207Status = () => { const L = v207LogLoad(); return {build:APP_BUILD, spec:!!V207.spec, specErr:V207.specErr, err:V207.err, active:V207.active, preds:Object.keys(L.P).length, mv:L.mv, ps:v207PsStats(), lines:v207LlSummary(), st:Object.fromEntries(Object.entries(V207.st).map(([k, s]) => [k, s.n]))}; };
 </script>
 </body>
 </html>
