@@ -45464,6 +45464,663 @@ window.v209Status = () => ({
   evicted: V209.evicted,
   verified: V209.verified
 });
+/* ===== v210:
+   1. Prediction-market / exchange rows (pm, kalshi, nv, px, cc) are NEVER tagged Pick (good),
+      never logged as new rows, and never counted in Results or void counts.
+      Existing PM/exchange rows (including +9428 voided rows) are retagged as non-Pick legacy rows.
+   2. Freeze Props Play of the Day edge cutoff while prop Picks are paused (v207):
+      stop daily auto-loosening and restore to 12% (the validated prior before the 4-day drift).
+      Games Play of the Day rules remain unchanged.
+   3. Rebuild Props learner (LEARN.props) from the exact same one-per-bet Results set
+      (v160Counted + mlogOnePerBet) and use the 30-minute lock window (not 120m).
+   4. Preserve board call (sv) and newer snapshot timestamp (at) when merging duplicate IDs across
+      UTC/PT day shards (fixes Nov 21 Texas Southern ML g:401925049:ml:home: discrepancy).
+   (Stanley, Nov 26 2026) ===== */
+APP_BUILD = 210;
+
+const V210_LS_CLEAN = 'bl_v210_clean_v1';
+const V210_LS_UI = 'bl_v210_ui_v1';
+var V210 = window.V210 = { cleaning: false, cleaned: false, lastClean: null, stats: null };
+
+/* ---------- 1) Polymarket / prediction-market / exchange exclusion ---------- */
+function v210IsPmId(id){
+  return /^(pm|k|nv|px|cc):/i.test(String(id || ''));
+}
+function v210IsPmRow(id, o){
+  if (!o) return true;
+  if (o.bad === 'v210pm' || o.legacyPm) return true;
+  if (o.s && o.s !== 'sb') return true;
+  if (!o.s && v210IsPmId(id || o.id || o.i)) return true;
+  if (v210IsPmId(id || o.id || o.i)) return true;
+  return false;
+}
+function v210SanitizePmRow(id, o){
+  if (!o || !v210IsPmRow(id, o)) return false;
+  let ch = false;
+  if (o.legacyPm !== 1){ o.legacyPm = 1; ch = true; }
+  if (o.bad !== 'v210pm'){ o.bad = 'v210pm'; ch = true; }
+  if (o.v === 'good' || o.v === 'watch'){ o.v = 'avoid'; ch = true; }
+  if (o.sv === 'good' || o.sv === 'watch'){ o.sv = 'avoid'; ch = true; }
+  if (o.lv === 'good' || o.lv === 'watch'){ o.lv = 'avoid'; ch = true; }
+  if (o.sh){ delete o.sh; ch = true; }
+  if (o.shown){ delete o.shown; ch = true; }
+  return ch;
+}
+function v210CleanSbRow(id, o){
+  if (!o || v210IsPmRow(id, o)) return false;
+  if (o.s !== 'sb') return false;
+  if (o.bad === 'v200' || o.bad === 'v189' || o._v200bad || o._v189bad) return false;
+  return true;
+}
+
+(function v210Hooks(){
+  // A) Never capture, tag, or log new non-sportsbook (pm/kalshi/nv/px/cc) rows
+  if (typeof uniUpsert === 'function'){
+    const base = uniUpsert;
+    uniUpsert = function(b, src, id, row, snap){
+      if (src !== 'sb' || v210IsPmId(id)) return false;
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof uniCapturePolymarket === 'function'){
+    uniCapturePolymarket = async function(){ return 0; };
+  }
+  if (typeof mlogCompact === 'function'){
+    const base = mlogCompact;
+    mlogCompact = function(r){
+      if (!r || (r.src && r.src !== 'sb') || v210IsPmId(r.id || r.i)) return null;
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof mlogQueue === 'function'){
+    const base = mlogQueue;
+    mlogQueue = function(r){
+      if (!r || (r.src && r.src !== 'sb') || v210IsPmId(r.id || r.i)) return;
+      return base.apply(this, arguments);
+    };
+  }
+
+  // B) Force sportsbooks-only everywhere in Results
+  if (typeof V163R !== 'undefined' && V163R) V163R.src = 'sb';
+  try{ if (localStorage.getItem('bl_v163_src') === 'all') localStorage.removeItem('bl_v163_src'); }catch(e){}
+  v163Src = function(){ return 'sb'; };
+  v163SrcOk = function(o){ return !!(o && o.s === 'sb' && !o.legacyPm && o.bad !== 'v210pm'); };
+
+  if (typeof v153BoardPick === 'function'){
+    const base = v153BoardPick;
+    v153BoardPick = function(o){
+      if (!v210CleanSbRow(null, o)) return false;
+      return base.apply(this, arguments);
+    };
+  }
+
+  // C) Better duplicate tiebreaker in mlogRank (Fix 4: Texas Southern ML & cross-shard SV preservation)
+  if (typeof mlogRank === 'function'){
+    const base = mlogRank;
+    mlogRank = function(o){
+      const r = base.apply(this, arguments);
+      if (r < 0 || !o) return r;
+      let tie = 0;
+      if (o.sv === 'good') tie += 0.15;
+      else if (o.sv) tie += 0.10;
+      if (o.lpr != null && isFinite(+o.lpr)) tie += 0.05;
+      const at = +o.at || 0;
+      if (at > 0) tie += (at % 1e13) / 1e15;
+      if (o.bad === 'v210pm' || o.legacyPm) tie += 0.0001;
+      return r + tie;
+    };
+  }
+
+  // Sanitize any PM rows on MLOG.raw mutations and fix v163Rebucket
+  if (typeof v163Rebucket === 'function'){
+    const base = v163Rebucket;
+    v163Rebucket = function(){
+      if (typeof MLOG !== 'undefined' && MLOG.raw){
+        for (const [, m] of MLOG.raw){
+          if (!m) continue;
+          for (const [id, o] of m) if (o && v210IsPmRow(id, o)) v210SanitizePmRow(id, o);
+        }
+      }
+      return base.apply(this, arguments);
+    };
+  }
+
+  // D) Exclude all PM/exchange rows (including voids!) from Results day stats, Locked, modelSum, & drilldown rows
+  if (typeof v145DayStat === 'function'){
+    v145DayStat = function(m){
+      const sbRows = [...m.values()].filter(o => v210CleanSbRow(null, o));
+      const goodPack = typeof v163Pack === 'function' ? v163Pack(sbRows, 'sb') : null;
+      const el = v142E();
+      const locked = mlogOnePerBet(sbRows.filter(o => o && o.lkd && (typeof v163FloorOk !== 'function' || v163FloorOk(o))));
+      for (const o of locked) v145Grade(o.b === 'props' ? el.p : el.g, o, o.lpr != null ? o.lpr : o.pr);
+      const out = {
+        good: goodPack || v142Pack(v142E()),
+        ga: goodPack || v142Pack(v142E()),
+        locked: v142Pack(el),
+        n: m.size,
+        v163: 1,
+        v210: 1
+      };
+      return out;
+    };
+  }
+  try{
+    if (typeof V145 !== 'undefined' && V145.stat){
+      for (const d in V145.stat){
+        const s = V145.stat[d];
+        if (s && !s.v210) delete V145.stat[d];
+      }
+    }
+  }catch(e){}
+
+  if (typeof mlogAggAdd === 'function'){
+    const base = mlogAggAdd;
+    mlogAggAdd = function(agg, o){
+      if (!v210CleanSbRow(null, o)) return;
+      return base.apply(this, arguments);
+    };
+  }
+
+  if (typeof MLOG !== 'undefined' && MLOG.sums){
+    const fix = x => (x && x.final && !x.v210) ? Object.assign({}, x, {final: false, dd: 0}) : x;
+    const set0 = MLOG.sums.set.bind(MLOG.sums);
+    MLOG.sums.set = function(k, x){ return set0(k, fix(x)); };
+    for (const [k, x] of [...MLOG.sums]) set0(k, fix(x));
+  }
+
+  if (typeof mlogWriteFinalSums === 'function'){
+    mlogWriteFinalSums = async function(){
+      if (typeof mlogOn === 'function' && !mlogOn()) return;
+      if (typeof v154Pub === 'function' && !v154Pub()) return;
+      try{ if (typeof v157Sweep === 'function') v157Sweep(); }catch(e){}
+      try{ if (typeof v163Rebucket === 'function') v163Rebucket(); }catch(e){}
+      const now = Date.now(), cut = mlogDay(now - 86400000); const db = mlogFS(); let w = 0;
+      for (const [day, m] of MLOG.raw){
+        if (day > cut || !m || !m.size) continue;
+        const s = MLOG.sums.get(day);
+        if (s && s.v210 && s.v163 && s.final && s.dd && s.n === m.size) continue;
+        const sbRows = [...m.values()].filter(o => v210CleanSbRow(null, o));
+        const open = sbRows.filter(o => !o.res).length;
+        const final = open === 0 || day <= mlogDay(now - 4 * 86400000);
+        if (!final) continue;
+        const one = mlogOnePerBet(sbRows);
+        const agg = {};
+        for (const o of one) mlogAggAdd(agg, o);
+        for (const k in agg) agg[k][4] = Math.round(agg[k][4] * 100) / 100;
+        const bp = v163Pack(sbRows, 'sb');
+        const body = {d: day, final: true, dd: 1, v157: 1, v160: 1, v163: 1, v210: 1, n: m.size, nb: one.length, agg, bp, bpa: bp, at: now};
+        try{ await db.collection('modelSum').doc(day).set(body); MLOG.sums.set(day, body); w++; }catch(e){ break; }
+        if (w >= 8) break;
+      }
+    };
+  }
+
+  if (typeof v147ModelRows === 'function'){
+    const base = v147ModelRows;
+    v147ModelRows = function(metric, from, to){
+      try{ if (typeof v163Rebucket === 'function') v163Rebucket(); }catch(e){}
+      if (metric === 'locked'){
+        const out = [];
+        try{
+          if (typeof v148LearnNames === 'function') v148LearnNames();
+          for (const d of [...MLOG.raw.keys()].sort()){
+            if (d < from || d > to) continue;
+            const m = MLOG.raw.get(d); if (!m || !m.size) continue;
+            const sbRows = [...m.values()].filter(o => v210CleanSbRow(null, o) && o.lkd && (typeof v163FloorOk !== 'function' || v163FloorOk(o)));
+            const pick = mlogOnePerBet(sbRows);
+            for (const o of pick){
+              if (!o.res || o.res === 'ungradeable') continue;
+              const price = o.lpr != null ? o.lpr : o.pr;
+              out.push({
+                d, tier: 'locked',
+                line: typeof v147RowLine === 'function' ? v147RowLine(o) : '',
+                teams: typeof v148Match === 'function' ? v148Match(o) : (o.gm || String(o.l || '').toUpperCase()),
+                price, res: o.res, u: typeof v147Unit === 'function' ? v147Unit(o.res, price) : 0,
+                t: +o.t || 0, s: 'sb'
+              });
+            }
+          }
+        }catch(e){}
+        return typeof v163DedupRows === 'function' ? v163DedupRows(out) : out;
+      }
+      const res = base.apply(this, arguments) || [];
+      return res.filter(r => !r || !r.s || r.s === 'sb');
+    };
+  }
+
+  if (typeof v155Rows === 'function'){
+    const base = v155Rows;
+    v155Rows = function(b){
+      if (typeof MLOG !== 'undefined' && MLOG.raw){
+        for (const [, m] of MLOG.raw){
+          if (!m) continue;
+          for (const [id, o] of m) if (o && v210IsPmRow(id, o)) v210SanitizePmRow(id, o);
+        }
+      }
+      return base.apply(this, arguments);
+    };
+  }
+
+  if (typeof v156Buckets === 'function'){
+    const base = v156Buckets;
+    v156Buckets = function(b){
+      if (typeof MLOG !== 'undefined' && MLOG.raw){
+        for (const [, m] of MLOG.raw){
+          if (!m) continue;
+          for (const [id, o] of m) if (o && v210IsPmRow(id, o)) v210SanitizePmRow(id, o);
+        }
+      }
+      return base.apply(this, arguments);
+    };
+  }
+
+  /* ---------- 2) Freeze Props POTD edge cutoff while prop Picks are paused ---------- */
+  if (typeof v131RowsFromRaw === 'function'){
+    v131RowsFromRaw = function(day){
+      const m = (typeof MLOG !== 'undefined' && MLOG.raw) ? MLOG.raw.get(day) : null;
+      if (!m || !m.size) return null;
+      const sbRows = [...m.values()].filter(o => v210CleanSbRow(null, o));
+      return mlogOnePerBet(sbRows).map(o => {
+        const c = v131Compact(o);
+        if (typeof v153BoardPick === 'function') c.v = v153BoardPick(o) ? 'good' : (o.v === 'good' ? 'watch' : o.v);
+        return c;
+      }).filter(v131Keep);
+    };
+  }
+
+  if (typeof v131Step === 'function'){
+    const base = v131Step;
+    v131Step = function(pr, win, D){
+      const propsPaused = typeof V207_PAUSE_AT !== 'undefined';
+      const pBefore = propsPaused ? JSON.parse(JSON.stringify(pr.P)) : null;
+      const capPropsBefore = propsPaused ? pr.cap.props : null;
+      const r = base.apply(this, arguments);
+      if (propsPaused && r){
+        r.next.P = pBefore;
+        r.next.cap.props = capPropsBefore;
+        if (Array.isArray(r.ch)) r.ch = r.ch.filter(c => c && c.b !== 'props');
+      }
+      return r;
+    };
+  }
+
+  if (typeof v131LearnHTML === 'function'){
+    const base = v131LearnHTML;
+    v131LearnHTML = function(){
+      let h = base.apply(this, arguments);
+      try{
+        if (typeof V207_PAUSE_AT !== 'undefined'){
+          const pct = (typeof V131 !== 'undefined' && V131.params && V131.params.P) ? Math.round(V131.params.P.edge * 100) : 12;
+          h = h.replace(/(Picks of the Day · Props<\/span><span class="v">[^<]*)(<\/span>)/, `$1 · paused (frozen at ${pct}%)$2`);
+        }
+      }catch(e){}
+      return h;
+    };
+  }
+
+  /* ---------- 3) Props learner: match Results exact one-per-bet set & 30m lock window ---------- */
+  if (typeof ensureLockMins === 'function'){
+    const base = ensureLockMins;
+    ensureLockMins = function(){
+      let dirty = base.apply(this, arguments);
+      if (typeof LEARN !== 'undefined' && LEARN && LEARN.props && LEARN.props.lockMins !== 30){
+        LEARN.props.lockMins = 30;
+        dirty = true;
+      }
+      return dirty;
+    };
+  }
+  if (typeof defaultLockMins === 'function'){
+    const base = defaultLockMins;
+    defaultLockMins = function(board){
+      if (board === 'props') return 30;
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof lockLeadMins === 'function'){
+    const base = lockLeadMins;
+    lockLeadMins = function(board){
+      if (board === 'props') return 30;
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof boardLockMins === 'function'){
+    const base = boardLockMins;
+    boardLockMins = function(board){
+      if (board === 'props') return 30;
+      return base.apply(this, arguments);
+    };
+  }
+  if (typeof v42RetuneLock === 'function'){
+    const base = v42RetuneLock;
+    v42RetuneLock = function(board){
+      if (board === 'props'){
+        try{
+          const A = AUTO();
+          if (A && A.boards && A.boards.props){
+            A.boards.props.lock = 30;
+            A.boards.props.lockWhy = 'Props lock window is fixed at 30 minutes before tip.';
+            A.boards.props.lockChecked = Date.now();
+          }
+          if (typeof LEARN !== 'undefined' && LEARN && LEARN.props) LEARN.props.lockMins = 30;
+          if (typeof v42Save === 'function') v42Save(true);
+        }catch(e){}
+        return {adopted: false, mins: 30, why: 'Props lock window is fixed at 30 minutes before tip.'};
+      }
+      return base.apply(this, arguments);
+    };
+  }
+
+  // Force propLearnRows() to derive from MLOG.raw using the exact same Results one-per-bet set
+  window.v210PropLearnRows = function(){
+    const out = [];
+    if (typeof MLOG === 'undefined' || !MLOG.raw || !MLOG.raw.size) return out;
+    try{ if (typeof v163Rebucket === 'function') v163Rebucket(); }catch(e){}
+    for (const [, m] of [...MLOG.raw.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1)){
+      if (!m || !m.size) continue;
+      const sbPicks = [...m.values()].filter(o => v210CleanSbRow(null, o) && (typeof v160Counted === 'function' ? v160Counted(o) : v153BoardPick(o)));
+      const picks = typeof mlogOnePerBet === 'function' ? mlogOnePerBet(sbPicks) : sbPicks;
+      for (const o of picks){
+        if (!o || o.b !== 'props') continue;
+        if (o.res !== 'win' && o.res !== 'loss') continue;
+        const price = typeof v163Px === 'function' ? v163Px(o) : (o.lpr != null ? +o.lpr : +o.pr);
+        if (price == null || !isFinite(+price) || +price < -250) continue;
+        const p = o.lp != null && isFinite(+o.lp) ? +o.lp : (o.p != null && isFinite(+o.p) ? +o.p : null);
+        if (p == null) continue;
+        const im = typeof v160Imp === 'function' ? v160Imp(+price) : (+price > 0 ? 100 / (+price + 100) : (-price) / (-price + 100));
+        out.push({
+          i: (o.ev || '') + ':' + (o.pid || o.pn || '') + ':' + (o.k || '') + ':' + (o.sd || '') + ':' + (o.pt == null ? '' : o.pt),
+          t: +o.t || 0,
+          eventId: o.ev || '',
+          league: o.l || '',
+          playerId: o.pid || '',
+          kind: o.k || '',
+          side: o.sd || '',
+          line: o.pt,
+          price: +price,
+          p,
+          implied: im,
+          verdict: 'good',
+          sg: 1,
+          y: o.res === 'win' ? 1 : 0,
+          res: o.res,
+          graded: +o.g || +o.at || +o.t || 0,
+          minsToTip: o.lmn != null ? +o.lmn : (o.mn != null ? +o.mn : 30),
+          mlog: 1
+        });
+      }
+    }
+    return out;
+  };
+
+  if (typeof propLearnRows === 'function'){
+    const base = propLearnRows;
+    propLearnRows = function(){
+      if (typeof MLOG !== 'undefined' && MLOG.raw && MLOG.raw.size) return window.v210PropLearnRows();
+      return base.apply(this, arguments);
+    };
+  }
+
+  if (typeof v42PruneBoard === 'function'){
+    const base = v42PruneBoard;
+    v42PruneBoard = function(board){
+      if (board === 'props' && typeof LEARN !== 'undefined' && LEARN && LEARN.props){
+        if (typeof MLOG !== 'undefined' && MLOG.raw && MLOG.raw.size){
+          LEARN.props.sportStats = {};
+          LEARN.props.lockMins = 30;
+        }
+      }
+      return base.apply(this, arguments);
+    };
+  }
+
+  if (typeof v189PublishLearn === 'function'){
+    const base = v189PublishLearn;
+    v189PublishLearn = async function(){
+      try{
+        if (typeof v154Put !== 'function' || typeof v154Pub !== 'function' || !v154Pub()) return false;
+        const payload = {
+          v: 210, at: Date.now(),
+          v131: typeof V131 !== 'undefined' ? {params: V131.params, seg: V131.seg, log: (V131.log || []).slice(-20), segLog: (V131.segLog || []).slice(-20), fitAt: V131.fitAt, propsPaused: typeof V207_PAUSE_AT !== 'undefined'} : null,
+          props: typeof LEARN !== 'undefined' && LEARN.props ? {cur: LEARN.props.cur, lockMins: LEARN.props.lockMins, sportStats: LEARN.props.sportStats, autoOff: LEARN.props.autoOff} : null
+        };
+        return await v154Put('learn', payload);
+      }catch(e){ return base.apply(this, arguments); }
+    };
+  }
+})();
+
+/* ---------- Immediate local reset on every device (runs once per device for v210) ---------- */
+(function v210LocalReset(){
+  try{
+    try{
+      if (typeof LEARN !== 'undefined' && LEARN && LEARN.props){
+        if (LEARN.props.lockMins !== 30){ LEARN.props.lockMins = 30; try{ if (typeof learnSave === 'function') learnSave(); }catch(e){} }
+      }
+      if (typeof AUTO === 'function'){
+        const A = AUTO();
+        if (A && A.boards && A.boards.props && A.boards.props.lock !== 30){ A.boards.props.lock = 30; try{ if (typeof v42Save === 'function') v42Save(true); }catch(e){} }
+      }
+    }catch(e){}
+
+    if (localStorage.getItem(V210_LS_UI) === '1') return;
+    for (let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('bl_v131_rows_') || k === 'bl_v131_fit' || k === 'bl_v163_rows' || k === 'bl_v163_src')) localStorage.removeItem(k);
+    }
+    if (typeof V131 !== 'undefined'){
+      V131.rows.clear(); V131.byDay = {}; V131.log = [];
+      if (typeof v131ApplyParams === 'function' && typeof v131Clone === 'function') v131ApplyParams(v131Clone(V131.prior));
+    }
+    if (typeof V145 !== 'undefined') V145.stat = {};
+    if (typeof V163R !== 'undefined'){ V163R.rows = null; V163R.rowsAt = 0; V163R.src = 'sb'; }
+    if (typeof V142 !== 'undefined'){ V142.lastPubJ = ''; V142.pub2 = null; V142.pub2At = 0; }
+    try{ localStorage.removeItem('bl_v145_pubj'); localStorage.removeItem('bl_v145_pub2'); }catch(e){}
+    localStorage.setItem(V210_LS_UI, '1');
+  }catch(e){}
+})();
+
+/* ---------- One-time publisher cleanup: retag all PM/exchange rows in Firestore & rebuild ---------- */
+async function v210CleanupAndRebuild(force){
+  if (V210.cleaning) return {busy: true};
+  if (!force && localStorage.getItem(V210_LS_CLEAN) === '1') return {skipped: true};
+  if (typeof mlogOn === 'function' && !mlogOn()) return null;
+  if (!force && (typeof v154Pub !== 'function' || !v154Pub())) return null;
+  if (typeof MLOG === 'undefined' || !MLOG.raw) return null;
+
+  V210.cleaning = true;
+  const stats = {shardsScanned: 0, shardsPatched: 0, pmRetagged: 0, pmVoidRetagged: 0, pmPickRetagged: 0, uniCleaned: 0, sumsWritten: 0, propsCount: 0, propsW: 0, propsL: 0, potdPropsEdge: null};
+  try{
+    const db = mlogFS();
+    const qs = await db.collection('modelLog').where('d', '>=', '20261119').get();
+    const freshRaw = new Map();
+    const patches = [];
+
+    qs.forEach(doc => {
+      stats.shardsScanned++;
+      const x = doc.data();
+      if (!x || !x.r) return;
+      const patch = {};
+      for (const id in x.r){
+        const o = x.r[id];
+        if (!o || !o.b) continue;
+        if (v210IsPmRow(id, o)){
+          const wasPick = (o.v === 'good' || o.sv === 'good' || o.lv === 'good');
+          const wasVoid = (o.res === 'void');
+          const needPatch = wasPick || o.v === 'watch' || o.sv === 'watch' || o.lv === 'watch' || wasVoid || o.pr === 9428 || o.lpr === 9428 || o.bad !== 'v210pm' || o.legacyPm !== 1;
+          if (v210SanitizePmRow(id, o) || needPatch){
+            o.legacyPm = 1; o.bad = 'v210pm';
+            patch[id] = Object.assign({}, o);
+            stats.pmRetagged++;
+            if (wasPick) stats.pmPickRetagged++;
+            if (wasVoid) stats.pmVoidRetagged++;
+          }
+        }
+        const pd = (+o.t > 0 && typeof mlogDay === 'function') ? mlogDay(+o.t) : (x.d || '');
+        if (!pd) continue;
+        let m = freshRaw.get(pd);
+        if (!m){ m = new Map(); freshRaw.set(pd, m); }
+        const old = m.get(id);
+        if (!old || mlogRank(o) >= mlogRank(old)) m.set(id, o);
+      }
+      if (Object.keys(patch).length){
+        patches.push({ref: doc.ref, patch});
+      }
+    });
+
+    for (const p of patches){
+      try{
+        await p.ref.set({r: p.patch, u: Date.now()}, {merge: true});
+        stats.shardsPatched++;
+      }catch(e){ console.warn('v210 shard patch', e); }
+    }
+
+    // Replace MLOG.raw with the cleanly rebucketed + retagged map
+    if (freshRaw.size){
+      MLOG.raw.clear();
+      for (const [d, m] of freshRaw) MLOG.raw.set(d, m);
+      MLOG.ver++;
+      if (MLOG.up && typeof mlogRank === 'function'){
+        MLOG.up.clear();
+        for (const [, m] of MLOG.raw) for (const [id, o] of m) MLOG.up.set(id, mlogRank(o));
+      }
+    }
+
+    // Clean UNI & IndexedDB uni/uniDone stores so local device never holds or re-uploads PM Picks
+    try{
+      if (typeof UNI !== 'undefined' && UNI){
+        for (const [id, r] of [...UNI]){
+          if (!r || r.src !== 'sb' || v210IsPmId(id)){
+            UNI.delete(id);
+            stats.uniCleaned++;
+          }
+        }
+      }
+      if (typeof idbOpen === 'function'){
+        const d = await idbOpen();
+        for (const storeName of ['uni', 'uniDone']){
+          if (!d.objectStoreNames.contains(storeName)) continue;
+          await new Promise(res => {
+            try{
+              const tx = d.transaction(storeName, 'readwrite');
+              const st = tx.objectStore(storeName);
+              const req = st.openCursor();
+              req.onsuccess = () => {
+                const c = req.result;
+                if (!c) return;
+                const val = c.value;
+                const k = val && (val.id || val.i);
+                if (val && (val.src !== 'sb' || v210IsPmId(k))){
+                  val.legacyPm = 1; val.bad = 'v210pm';
+                  if (val.v === 'good' || val.v === 'watch') val.v = 'avoid';
+                  if (val.sv === 'good' || val.sv === 'watch') val.sv = 'avoid';
+                  if (val.lk){ val.lk.v = 'avoid'; val.lk.sv = 'avoid'; }
+                  c.update(val);
+                  stats.uniCleaned++;
+                }
+                c.continue();
+              };
+              tx.oncomplete = () => res();
+              tx.onerror = () => res();
+            }catch(e){ res(); }
+          });
+        }
+      }
+    }catch(e){ console.warn('v210 uni clean', e); }
+
+    // Rebuild V145.stat, verdict_mlog_v145 IDB cache, & modelSum
+    try{
+      if (typeof V145 !== 'undefined'){
+        V145.stat = {};
+        V145.sig = {};
+      }
+      for (const [d, s] of [...MLOG.sums]) if (s) MLOG.sums.set(d, Object.assign({}, s, {final: false, dd: 0, v210: 0}));
+      if (typeof v145RefreshStats === 'function') v145RefreshStats();
+      if (typeof v145Save === 'function') v145Save(true);
+      if (typeof mlogWriteFinalSums === 'function'){
+        for (let pass = 0; pass < 3; pass++){
+          await mlogWriteFinalSums();
+        }
+      }
+    }catch(e){ console.warn('v210 sums', e); }
+
+    // Rebuild V131 POTD (restores Props edge cutoff to 12% and freezes while paused; Games unchanged)
+    try{
+      for (let i = localStorage.length - 1; i >= 0; i--){
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('bl_v131_rows_') || k === 'bl_v131_fit' || k === 'bl_v163_rows')) localStorage.removeItem(k);
+      }
+      if (typeof V131 !== 'undefined'){
+        V131.rows.clear();
+        V131.byDay = {};
+        V131.log = [];
+        V131.seg = {demote: {}, promote: {}};
+        V131.segLog = [];
+      }
+      if (typeof v131Fit === 'function') v131Fit();
+      if (typeof V131 !== 'undefined' && V131.params && V131.params.P) stats.potdPropsEdge = V131.params.P.edge;
+    }catch(e){ console.warn('v210 v131Fit', e); }
+
+    // Rebuild Props learner from exact Results one-per-bet set & 30m lock window
+    try{
+      if (typeof LEARN !== 'undefined' && LEARN.props){
+        LEARN.props.cur = 1;
+        LEARN.props.versions = (LEARN.props.versions || []).slice(0, 1);
+        LEARN.props.lockMins = 30;
+        LEARN.props.sportStats = {};
+        LEARN.props.autoOff = {};
+        LEARN.props.log = [{at: Date.now(), txt: 'Rebuilt Props learner from the clean Results one-per-bet log (30m lock window).'}];
+        if (typeof UNI_LEARN !== 'undefined'){ UNI_LEARN.props = []; UNI_LEARN.at = 0; }
+        if (typeof AUTO === 'function'){
+          const A = AUTO();
+          if (A && A.boards && A.boards.props){ A.boards.props.lock = 30; A.boards.props.lockChecked = Date.now(); }
+          if (typeof v42Save === 'function') v42Save(true);
+        }
+        if (typeof v42PruneBoard === 'function') v42PruneBoard('props');
+        if (typeof propsLearnRetune === 'function') await propsLearnRetune({force: true});
+        if (typeof learnSave === 'function') learnSave();
+        const nb = LEARN.props.sportStats && LEARN.props.sportStats.nba;
+        if (nb){ stats.propsCount = nb.n || 0; stats.propsW = nb.w || 0; stats.propsL = nb.l || 0; }
+      }
+    }catch(e){ console.warn('v210 props learn', e); }
+
+    // Force-publish updated Worker payloads (days2, rows, learn, audit, potd)
+    try{
+      if (typeof V154 !== 'undefined' && V154.pubSig){
+        delete V154.pubSig.days2; delete V154.pubSig.rows; delete V154.pubSig.learn; delete V154.pubSig.audit; delete V154.pubSig.potd;
+      }
+      if (typeof V163R !== 'undefined') V163R.rowsPubAt = 0;
+      if (typeof v142Publish === 'function') v142Publish(true);
+      if (typeof v189PublishLearn === 'function') await v189PublishLearn();
+      if (typeof v189PublishAudit === 'function') await v189PublishAudit();
+      if (typeof v154PublishSoon === 'function') v154PublishSoon();
+    }catch(e){ console.warn('v210 pub', e); }
+
+    localStorage.setItem(V210_LS_CLEAN, '1');
+    V210.cleaned = true;
+    V210.lastClean = Object.assign({at: Date.now()}, stats);
+    V210.stats = stats;
+    return stats;
+  }finally{
+    V210.cleaning = false;
+  }
+}
+
+(function v210BootClean(){
+  let tries = 0;
+  function tick(){
+    tries++;
+    try{
+      if (localStorage.getItem(V210_LS_CLEAN) === '1') return;
+      if (typeof mlogOn === 'function' && mlogOn() && typeof MLOG !== 'undefined' && MLOG.at && typeof v154Pub === 'function' && v154Pub()){
+        v210CleanupAndRebuild(false).catch(e => console.warn('v210 boot clean', e));
+        return;
+      }
+    }catch(e){}
+    if (tries < 36) setTimeout(tick, 5000);
+  }
+  setTimeout(tick, 6000);
+})();
 </script>
 </body>
 </html>
