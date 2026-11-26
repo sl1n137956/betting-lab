@@ -29992,7 +29992,7 @@ function v163UserEv(){ try{ return typeof uiUserEv==='function' ? uiUserEv() : f
   const KEYS = new Set(['bl_geo','bl_sched','bl_legStab_v1','bl_play_tabs','bl_rosters','bl_prop_athletes']);
   const P = new Map(); let t = 0;
   const set0 = Storage.prototype.setItem, get0 = Storage.prototype.getItem, rm0 = Storage.prototype.removeItem;
-  const flush = () => { t = 0; for (const [k, v] of P){ P.delete(k); try{ set0.call(localStorage, k, v); }catch(e){} } };
+  const flush = () => { t = 0; for (const [k, v] of P){ P.delete(k); try{ (window._v209SafeRaw || ((f,k,v)=>f.call(localStorage,k,v)))(set0, k, v); }catch(e){} } };
   const later = () => { if (t) return; t = setTimeout(()=>{ if (window.requestIdleCallback) requestIdleCallback(flush, {timeout:1500}); else flush(); }, 1200); };
   Storage.prototype.setItem = function(k, v){ if (this===localStorage && typeof AV_OK_LS!=='undefined' && k===AV_OK_LS) V163.avVer++; if (this===localStorage && KEYS.has(k)){ P.set(k, String(v)); V163.stats.lsDeferred++; later(); return; } return set0.apply(this, arguments); };
   Storage.prototype.getItem = function(k){ if (this===localStorage && P.has(k)) return P.get(k); return get0.apply(this, arguments); };
@@ -44509,6 +44509,961 @@ setInterval(() => { try{ if (typeof v138Admin === 'function' && v138Admin() && t
 
 window.v207Tick = v207Tick;
 window.v207Status = () => { const L = v207LogLoad(); return {build:APP_BUILD, spec:!!V207.spec, specErr:V207.specErr, err:V207.err, active:V207.active, preds:Object.keys(L.P).length, mv:L.mv, ps:v207PsStats(), lines:v207LlSummary(), st:Object.fromEntries(Object.entries(V207.st).map(([k, s]) => [k, s.n]))}; };
+/* ===== v209: Storage health, quota-safe localStorage, verified cache pruning & IndexedDB offload =====
+   1) Boot snapshot + write probe before cleanup, reported by the publisher to Worker ('storage' + /lease).
+   2) Quota-safe localStorage wrapper across Storage.prototype.setItem, v163 deferred flush, saveSyncMeta & sync2Save:
+      - Shrinks unbounded API caches before writing (schedules, rosters, prop athletes, missed-games, odds, etc.).
+      - On QuotaExceededError, evicts pure caches first (never evicting user bets, settings, sync meta, or official picks).
+      - Never silently drops critical data: mirrors to IndexedDB as fallback and raises a visible alert if ever tight.
+   3) Moves big logs (v198 market history / evxlog / sharplog, parlaylog, pflog, v131 daily rows, v173 pinnacle snap,
+      v145 pub cache) to IndexedDB after verifying server / Firestore / IDB copies so zero graded or official records are lost.
+   4) Admin-only warning banner when storage >= 85%, plus storage health line in Settings & Model lab.
+   Applies to every device (phones, PCs, and the VPS publisher); admin diagnostics/UI stay admin-only. ===== */
+APP_BUILD = 209;
+
+const V209_IDB_NAME = 'verdict_v209_store';
+const V209_IDB_STORE = 'kv';
+const V209_WARN_PCT = 85;
+
+const V209_TIER2_EXACT = new Set([
+  'bl_pmcache', 'bl_v163_rows', 'bl_v173_xb', 'bl_v198_hist_v1',
+  'bl_sched', 'bl_rosters', 'bl_prop_athletes', 'bl_oddscache',
+  'bl_sumcache', 'bl_wxcache', 'bl_missed', 'bl_pimpact', 'bl_geo',
+  'bl_v148_frz', 'bl_v148_tn', 'bl_v180_open', 'bl_v184_wind',
+  'bl_v183_seen', 'bl_v131_snap', 'bl_uni_betc', 'bl_inj_snap',
+  'bl_v145_pubj', 'bl_v145_pub2', 'bl_v165_board',
+  'bl_bt_v1', 'bl_snaps', 'bl_prop_snaps', 'bl_parlay_snaps'
+]);
+const V209_TIER1_EXACT = new Set([
+  'bl_prevGood_v1', 'bl_flipLog_v1', 'bl_v189_rej_v1', 'bl_v200_audit_v1',
+  'bl_v198_evlog_v1', 'bl_v198_shlog_v1', 'bl_v202_parlaylog_v1', 'bl_v204_pflog_v1',
+  'bl_potd_v131', 'bl_potd_v132'
+]);
+function v209Tier(k){
+  k = String(k || '');
+  if (V209_TIER2_EXACT.has(k) || k.indexOf('bl_v131_rows_') === 0 || k.indexOf('bl_v207_') === 0) return 2;
+  if (V209_TIER1_EXACT.has(k)) return 1;
+  return 0; // Tier 0: user bets, settings, sync, official POTD, active locks/results, learner state
+}
+
+function v209CapChars(){
+  try{ return /iPhone|iPad/i.test(navigator.userAgent || '') ? 2621440 : 5242880; }catch(e){ return 5242880; }
+}
+function v209MeasureLS(){
+  const keys = []; let total = 0;
+  try{
+    for (let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i); if (k == null) continue;
+      let v = ''; try{ v = localStorage.getItem(k) || ''; }catch(e){}
+      const chars = k.length + v.length;
+      total += chars; keys.push({k, chars});
+    }
+  }catch(e){}
+  keys.sort((a, b) => b.chars - a.chars);
+  const cap = v209CapChars();
+  const pct = Math.min(100, Math.round(total * 1000 / cap) / 10);
+  return {totalChars: total, kb: Math.round(total / 1024), capKb: Math.round(cap / 1024), pct, count: keys.length, keys: keys.slice(0, 80)};
+}
+
+const V209 = window.V209 = {
+  db: null,
+  before: null,
+  beforeProbe: null,
+  after: null,
+  afterProbe: null,
+  fails: [],        // {k, chars, tier, recovered, err, at}
+  evicted: [],      // {k, chars, why}
+  verified: {},     // key -> {ok, serverOk, idbOk, beforeChars, afterChars, note}
+  pruned: {},       // key -> {before, after}
+  criticalErr: '',
+  migrating: false,
+  migrated: false,
+  pubAt: 0,
+  pubSig: '',
+  pct: 0,
+  kb: 0,
+  capKb: 5120
+};
+
+/* capture exact pre-cleanup state BEFORE any pruning or migration runs */
+(function(){
+  V209.before = v209MeasureLS();
+  V209.pct = V209.before.pct;
+  V209.kb = V209.before.kb;
+  V209.capKb = V209.before.capKb;
+  const pk = '__v209_probe__';
+  try{
+    localStorage.setItem(pk, 'x'.repeat(256));
+    localStorage.removeItem(pk);
+    V209.beforeProbe = {ok: true, err: ''};
+  }catch(e){
+    try{ localStorage.removeItem(pk); }catch(_){}
+    V209.beforeProbe = {ok: false, err: String(e && (e.name ? e.name + ': ' + e.message : e) || 'quota').slice(0, 140)};
+  }
+})();
+
+/* ---------- IndexedDB (verdict_v209_store) ---------- */
+function v209IdbOpen(){
+  if (V209.db) return Promise.resolve(V209.db);
+  return new Promise((res, rej) => {
+    try{
+      if (typeof indexedDB === 'undefined') return rej(new Error('no idb'));
+      const timer = setTimeout(() => rej(new Error('idb timeout')), 3000);
+      const rq = indexedDB.open(V209_IDB_NAME, 1);
+      rq.onupgradeneeded = () => { if (!rq.result.objectStoreNames.contains(V209_IDB_STORE)) rq.result.createObjectStore(V209_IDB_STORE); };
+      rq.onsuccess = () => { clearTimeout(timer); V209.db = rq.result; res(V209.db); };
+      rq.onerror = () => { clearTimeout(timer); rej(rq.error || new Error('idb err')); };
+    }catch(e){ rej(e); }
+  });
+}
+function v209IdbGet(key){
+  return v209IdbOpen().then(db => new Promise((res, rej) => {
+    const timer = setTimeout(() => rej(new Error('idb get timeout')), 3000);
+    try{
+      const tx = db.transaction(V209_IDB_STORE, 'readonly');
+      const rq = tx.objectStore(V209_IDB_STORE).get(key);
+      rq.onsuccess = () => { clearTimeout(timer); res(rq.result); };
+      rq.onerror = () => { clearTimeout(timer); rej(rq.error); };
+    }catch(e){ clearTimeout(timer); rej(e); }
+  }));
+}
+function v209IdbPut(key, val){
+  return v209IdbOpen().then(db => new Promise((res, rej) => {
+    const timer = setTimeout(() => rej(new Error('idb put timeout')), 4000);
+    try{
+      const tx = db.transaction(V209_IDB_STORE, 'readwrite');
+      tx.objectStore(V209_IDB_STORE).put(val, key);
+      tx.oncomplete = () => { clearTimeout(timer); res(true); };
+      tx.onerror = () => { clearTimeout(timer); rej(tx.error); };
+    }catch(e){ clearTimeout(timer); rej(e); }
+  }));
+}
+function v209IdbDel(key){
+  return v209IdbOpen().then(db => new Promise((res, rej) => {
+    try{
+      const tx = db.transaction(V209_IDB_STORE, 'readwrite');
+      tx.objectStore(V209_IDB_STORE).delete(key);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => rej(tx.error);
+    }catch(e){ rej(e); }
+  }));
+}
+
+/* ---------- cache pruning helpers (pure/regenerable data only) ---------- */
+function v209KeepTopMap(obj, maxN, timeFn, maxAgeMs){
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  const now = Date.now(), arr = [];
+  for (const k in obj){
+    const v = obj[k];
+    const t = timeFn ? (+timeFn(v) || 0) : 0;
+    if (maxAgeMs && t && now - t > maxAgeMs) continue;
+    arr.push([k, v, t]);
+  }
+  if (arr.length > maxN){
+    arr.sort((a, b) => b[2] - a[2]);
+    arr.length = maxN;
+  }
+  const out = {};
+  for (const [k, v] of arr) out[k] = v;
+  return out;
+}
+function v209ShrinkCacheObj(k, obj){
+  const now = Date.now();
+  if (!obj || typeof obj !== 'object') return obj;
+  if (k === 'bl_pmcache') return null; // Polymarket retired (sportsbooks-only)
+  if (k === 'bl_sched') return v209KeepTopMap(obj, 45, v => v && v.t, 12 * 3600000);
+  if (k === 'bl_rosters') return v209KeepTopMap(obj, 45, v => v && v.t, 24 * 3600000);
+  if (k === 'bl_prop_athletes'){
+    const ks = Object.keys(obj);
+    if (ks.length <= 500 && JSON.stringify(obj).length <= 150000) return obj;
+    const out = {};
+    let sz = 2;
+    try{
+      for (const p of ((typeof props !== 'undefined' && props) || [])){
+        const ak = (p && (p.league || (p.g && p.g.league)) && p.playerId) ? ((p.league || p.g.league) + ':' + p.playerId) : '';
+        if (ak && obj[ak] && !out[ak]){
+          const es = JSON.stringify(obj[ak]).length + ak.length + 4;
+          if (sz + es <= 150000){ out[ak] = obj[ak]; sz += es; }
+        }
+      }
+    }catch(e){}
+    for (let i = ks.length - 1; i >= 0 && Object.keys(out).length < 500; i--){
+      const ak = ks[i]; if (out[ak]) continue;
+      const es = JSON.stringify(obj[ak]).length + ak.length + 4;
+      if (sz + es <= 150000){ out[ak] = obj[ak]; sz += es; }
+    }
+    return out;
+  }
+  if (k === 'bl_missed') return v209KeepTopMap(obj, 120, v => v && v.t, 48 * 3600000);
+  if (k === 'bl_pimpact') return v209KeepTopMap(obj, 120, v => v && v.t, 48 * 3600000);
+  if (k === 'bl_sumcache') return v209KeepTopMap(obj, 70, v => v && v.t, 24 * 3600000);
+  if (k === 'bl_wxcache') return v209KeepTopMap(obj, 70, v => v && v.t, 24 * 3600000);
+  if (k === 'bl_oddscache'){
+    const evs = Array.isArray(obj.events) ? obj.events.filter(x => {
+      const ct = x && x.ev && x.ev.commence_time ? Date.parse(x.ev.commence_time) : 0;
+      return !ct || ct > now - 6 * 3600000;
+    }).slice(0, 120) : [];
+    const out = Object.assign({}, obj, {events: evs});
+    if (JSON.stringify(out).length > 250000) out.events = evs.slice(0, 60);
+    return out;
+  }
+  if (k === 'bl_v148_frz') return v209KeepTopMap(obj, 80, v => v && v.t, 24 * 3600000);
+  if (k === 'bl_v148_tn'){
+    const ks = Object.keys(obj);
+    if (ks.length <= 600) return obj;
+    const out = {}; for (const x of ks.slice(-600)) out[x] = obj[x]; return out;
+  }
+  if (k === 'bl_v180_open') return v209KeepTopMap(obj, 150, v => v && v.t, 3 * 86400000);
+  if (k === 'bl_v184_wind') return v209KeepTopMap(obj, 150, v => v && v.st, 3 * 86400000);
+  if (k === 'bl_v183_seen'){
+    const out = {};
+    for (const x in obj) if ((+obj[x] || 0) > now - 24 * 3600000) out[x] = obj[x];
+    return out;
+  }
+  if (k === 'bl_v131_snap') return v209KeepTopMap(obj, 150, v => v && v.st, 24 * 3600000);
+  if (k === 'bl_uni_betc') return v209KeepTopMap(obj, 300, v => v && v.t, 7 * 86400000);
+  if (k === 'bl_v198_hist_v1') return v209KeepTopMap(obj, 100, v => v && v.t, 6 * 3600000);
+  if (k === 'bl_flipLog_v1' && Array.isArray(obj)) return obj.slice(0, 150);
+  if (k === 'bl_v189_rej_v1') return Object.assign({}, obj, {rejLog: (obj.rejLog || []).slice(0, 80), blocked: (obj.blocked || []).slice(0, 50)});
+  if (k === 'bl_v200_audit_v1') return Object.assign({}, obj, {earlyLocks: (obj.earlyLocks || []).slice(0, 40), lockLog: (obj.lockLog || []).slice(0, 40)});
+  return obj;
+}
+
+const V209_PRUNABLE = new Set([
+  'bl_pmcache', 'bl_sched', 'bl_rosters', 'bl_prop_athletes', 'bl_missed', 'bl_pimpact',
+  'bl_sumcache', 'bl_wxcache', 'bl_oddscache', 'bl_v148_frz', 'bl_v148_tn',
+  'bl_v180_open', 'bl_v184_wind', 'bl_v183_seen', 'bl_v131_snap', 'bl_uni_betc',
+  'bl_v198_hist_v1', 'bl_flipLog_v1', 'bl_v189_rej_v1', 'bl_v200_audit_v1'
+]);
+
+function v209ShrinkString(k, s){
+  if (k === 'bl_pmcache') return null;
+  if (!V209_PRUNABLE.has(k)) return s;
+  try{
+    const parsed = JSON.parse(s);
+    const trimmed = v209ShrinkCacheObj(k, parsed);
+    if (trimmed == null) return null;
+    const out = JSON.stringify(trimmed);
+    return out.length < s.length ? out : s;
+  }catch(e){ return s; }
+}
+
+/* ---------- quota-safe writer & cache evictor ---------- */
+let _v209RawSet = Storage.prototype.setItem;
+const _v209RawRm = Storage.prototype.removeItem;
+const _v209RawGet = Storage.prototype.getItem;
+
+function v209UpdateStats(){
+  const m = v209MeasureLS();
+  V209.pct = m.pct; V209.kb = m.kb; V209.capKb = m.capKb;
+  return m;
+}
+function v209RecordFail(k, len, recovered, err){
+  V209.fails.push({k: String(k), chars: +len || 0, tier: v209Tier(k), recovered, err: String(err || '').slice(0, 100), at: Date.now()});
+  if (V209.fails.length > 50) V209.fails.shift();
+}
+function v209EvictFor(excludeKey, neededChars){
+  const candidates = [];
+  try{
+    for (let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if (!k || k === excludeKey) continue;
+      const tier = v209Tier(k);
+      if (tier === 0) continue; // NEVER evict Tier 0 protected keys
+      const v = _v209RawGet.call(localStorage, k) || '';
+      candidates.push({k, tier, chars: k.length + v.length, v});
+    }
+  }catch(e){}
+  // Evict Tier 2 largest first; only touch Tier 1 if excludeKey is Tier 0 AND Tier 2 isn't enough (and mirror Tier 1 to IDB first)
+  candidates.sort((a, b) => (b.tier - a.tier) || (b.chars - a.chars));
+  let freed = 0;
+  const exTier = v209Tier(excludeKey);
+  const goal = Math.max((+neededChars || 0) + 65536, 262144);
+  for (const c of candidates){
+    if (c.tier === 1 && exTier !== 0) continue;
+    if (c.tier === 1){
+      try{ const parsed = JSON.parse(c.v); v209IdbPut('evict:' + c.k, parsed).catch(()=>{}); }catch(e){}
+    }
+    try{
+      _v209RawRm.call(localStorage, c.k);
+      freed += c.chars;
+      V209.evicted.push({k: c.k, chars: c.chars, tier: c.tier, why: 'quota for ' + excludeKey});
+      if (V209.evicted.length > 60) V209.evicted.shift();
+    }catch(e){}
+    if (freed >= goal) break;
+  }
+  return freed;
+}
+
+function v209SafeWrite(writeFn, k, v){
+  k = String(k);
+  let s = String(v == null ? '' : v);
+  if (k === 'bl_pmcache'){
+    try{ _v209RawRm.call(localStorage, k); }catch(e){}
+    return true;
+  }
+  if (k.indexOf('bl_v131_rows_') === 0 && typeof v145Put === 'function'){
+    try{
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)){
+        v145Put({['v131:' + k.slice(13)]: arr}).then(() => {
+          try{ _v209RawRm.call(localStorage, k); }catch(_){}
+        }).catch(() => {});
+        return true;
+      }
+    }catch(e){}
+  }
+  // Pre-trim unbounded cache keys before writing
+  if (V209_PRUNABLE.has(k) && s.length > 80000){
+    const s2 = v209ShrinkString(k, s);
+    if (s2 == null){ try{ _v209RawRm.call(localStorage, k); }catch(e){} return true; }
+    s = s2;
+  }
+  // If a heavy Tier 2 cache is > 350 KB (e.g. raw oddsCache/sched/rosters/v198_hist), offload to IDB instead of choking localStorage
+  if (v209Tier(k) === 2 && s.length > 350000){
+    try{ v209IdbPut('cache:' + k, JSON.parse(s)).catch(()=>{}); }catch(e){}
+    if (k === 'bl_v198_hist_v1' || k === 'bl_v173_xb' || k === 'bl_v145_pubj' || k === 'bl_v145_pub2'){
+      try{ _v209RawRm.call(localStorage, k); }catch(e){}
+      return true;
+    }
+  }
+  try{
+    writeFn(k, s);
+    return true;
+  }catch(e){
+    const tier = v209Tier(k);
+    // Evict caches and retry
+    v209EvictFor(k, s.length);
+    try{
+      writeFn(k, s);
+      v209RecordFail(k, s.length, 'evict-retry', e && (e.name || e.message));
+      v209UpdateStats();
+      return true;
+    }catch(e2){
+      if (tier === 0){
+        // Second eviction pass (evict remaining Tier 2 + mirrored Tier 1)
+        v209EvictFor(k, s.length * 2 + 524288);
+        try{
+          writeFn(k, s);
+          v209RecordFail(k, s.length, 'evict2-retry', e2 && (e2.name || e2.message));
+          v209UpdateStats();
+          return true;
+        }catch(e3){
+          // Never silently drop critical data: mirror to IndexedDB & surface warning
+          v209IdbPut('emergency:' + k, {k, v: s, at: Date.now()}).catch(()=>{});
+          V209.criticalErr = 'Could not save ' + k + ' to browser storage; backed up to IndexedDB.';
+          v209RecordFail(k, s.length, 'idb-emergency', e3 && (e3.name || e3.message));
+          try{ if (typeof v138Admin === 'function' && v138Admin() && typeof toast === 'function') toast('Storage full: ' + k + ' backed up to IndexedDB'); }catch(_){}
+          v209UpdateStats();
+          return false;
+        }
+      }else{
+        // Pure cache / Tier 1 that already lives in IDB/memory: keep in IDB and don't crash caller
+        try{ v209IdbPut('cache:' + k, JSON.parse(s)).catch(()=>{}); }catch(_){}
+        v209RecordFail(k, s.length, 'idb-only', e2 && (e2.name || e2.message));
+        v209UpdateStats();
+        return false;
+      }
+    }
+  }
+}
+
+/* Install Storage.prototype.setItem wrapper + hook 105_v163 flush + saveSyncMeta + sync2Save */
+(function(){
+  const prevSet = Storage.prototype.setItem;
+  _v209RawSet = prevSet;
+  Storage.prototype.setItem = function(k, v){
+    if (this !== window.localStorage) return prevSet.apply(this, arguments);
+    v209SafeWrite((key, val) => prevSet.call(this, key, val), k, v);
+  };
+  window._v209SafeRaw = function(rawFn, k, v){
+    return v209SafeWrite((key, val) => rawFn.call(localStorage, key, val), k, v);
+  };
+})();
+if (typeof saveSyncMeta === 'function'){
+  saveSyncMeta = function(){
+    v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), SYNC_META_LS, JSON.stringify(syncMeta));
+  };
+}
+if (typeof sync2Save === 'function'){
+  sync2Save = function(){
+    sync2.dirty = [...SYNC2_DIRTY];
+    v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), SYNC2_LS, JSON.stringify(sync2));
+  };
+}
+
+/* ---------- Immediate pure-cache cleanup (no graded or official records touched!) ---------- */
+function v209PrunePureCaches(){
+  const now = Date.now();
+  try{
+    if (typeof V163 !== 'undefined' && V163.lsFlush) V163.lsFlush();
+    // Remove retired keys
+    for (const dead of ['bl_pmcache', 'bl_v163_rows']){
+      const raw = _v209RawGet.call(localStorage, dead);
+      if (raw != null){ V209.pruned[dead] = {before: raw.length, after: 0}; _v209RawRm.call(localStorage, dead); }
+    }
+    for (let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if (k && k.indexOf('bl_v207_') === 0){ _v209RawRm.call(localStorage, k); }
+    }
+    if (typeof pmCache !== 'undefined') pmCache = null;
+
+    // Shrink in-memory caches as well as localStorage copies
+    if (typeof schedCache !== 'undefined' && schedCache){ schedCache = v209KeepTopMap(schedCache, 45, v => v && v.t, 12 * 3600000); }
+    if (typeof rosterCache !== 'undefined' && rosterCache){ rosterCache = v209KeepTopMap(rosterCache, 45, v => v && v.t, 24 * 3600000); }
+    if (typeof propAthleteCache !== 'undefined' && propAthleteCache){ propAthleteCache = v209ShrinkCacheObj('bl_prop_athletes', propAthleteCache); }
+    if (typeof missCache !== 'undefined' && missCache){ missCache = v209KeepTopMap(missCache, 120, v => v && v.t, 48 * 3600000); }
+    if (typeof pimp !== 'undefined' && pimp){ pimp = v209KeepTopMap(pimp, 120, v => v && v.t, 48 * 3600000); }
+    if (typeof sumCache !== 'undefined' && sumCache){ sumCache = v209KeepTopMap(sumCache, 70, v => v && v.t, 24 * 3600000); }
+    if (typeof wxCache !== 'undefined' && wxCache){ wxCache = v209KeepTopMap(wxCache, 70, v => v && v.t, 24 * 3600000); }
+    if (typeof oddsCache !== 'undefined' && oddsCache){ oddsCache = v209ShrinkCacheObj('bl_oddscache', oddsCache); }
+
+    for (const k of V209_PRUNABLE){
+      if (k === 'bl_pmcache') continue;
+      const raw = _v209RawGet.call(localStorage, k);
+      if (!raw) continue;
+      const s2 = v209ShrinkString(k, raw);
+      if (s2 == null){
+        V209.pruned[k] = {before: raw.length, after: 0};
+        _v209RawRm.call(localStorage, k);
+      }else if (s2.length < raw.length){
+        V209.pruned[k] = {before: raw.length, after: s2.length};
+        v209SafeWrite((key, val) => _v209RawSet.call(localStorage, key, val), k, s2);
+      }
+    }
+    // Cap flipLog, v189_rej, v200_audit
+    for (const k of ['bl_flipLog_v1', 'bl_v189_rej_v1', 'bl_v200_audit_v1']){
+      const raw = _v209RawGet.call(localStorage, k);
+      if (!raw) continue;
+      const s2 = v209ShrinkString(k, raw);
+      if (s2 && s2.length < raw.length){
+        V209.pruned[k] = {before: raw.length, after: s2.length};
+        v209SafeWrite((key, val) => _v209RawSet.call(localStorage, key, val), k, s2);
+      }
+    }
+    if (typeof V163 !== 'undefined' && V163.lsFlush) V163.lsFlush();
+  }catch(e){}
+  v209UpdateStats();
+}
+v209PrunePureCaches();
+
+/* ---------- Hook log save/load functions to persist big logs in IndexedDB instead of localStorage ---------- */
+(function(){
+  // v198 hist, evxlog, sharplog
+  if (typeof v198LogSave === 'function'){
+    v198LogSave = function(kind){
+      const L = v198LogLoad(kind);
+      const idbKey = kind === 'evx' ? 'evxlog' : 'sharplog';
+      v209IdbPut(idbKey, L).catch(() => {
+        // fallback only if IDB unavailable
+        v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), kind === 'evx' ? V198_EVLOG_LS : V198_SHLOG_LS, JSON.stringify(L));
+      });
+    };
+  }
+  if (typeof v198Snap === 'function'){
+    const baseSnap = v198Snap;
+    v198Snap = function(){
+      const r = baseSnap.apply(this, arguments);
+      try{
+        if (typeof V198 !== 'undefined' && V198.hist){
+          V198.hist = v209KeepTopMap(V198.hist, 100, v => v && v.t, 6 * 3600000);
+          v209IdbPut('v198_hist', V198.hist).catch(()=>{});
+          try{ _v209RawRm.call(localStorage, V198_HIST_LS); }catch(e){}
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  // v202 parlaylog
+  if (typeof v202PLogSave === 'function'){
+    v202PLogSave = function(){
+      const L = v202PLogLoad();
+      v209IdbPut('parlaylog', L).catch(() => {
+        v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), V202_PLOG_LS, JSON.stringify(L));
+      });
+    };
+  }
+  // v204 pflog
+  if (typeof v204LogSave === 'function'){
+    v204LogSave = function(){
+      const L = v204LogLoad();
+      v209IdbPut('pflog', L).catch(() => {
+        v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), V204_LS, JSON.stringify(L));
+      });
+    };
+  }
+  // v173 pinnacle snapshot: keep in memory + IDB, don't bloat localStorage
+  if (typeof v173Pull === 'function'){
+    const base173 = v173Pull;
+    v173Pull = async function(){
+      const r = await base173.apply(this, arguments);
+      try{
+        if (typeof V173 !== 'undefined' && V173.ev){
+          await v209IdbPut('v173_xb', {at: Date.now(), ev: V173.ev});
+          try{ _v209RawRm.call(localStorage, V173_LS); }catch(e){}
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  // v131 daily rows: save to verdict_mlog_v145 IDB instead of creating dozens of bl_v131_rows_* localStorage keys
+  if (typeof v131RowsFor === 'function'){
+    const base131 = v131RowsFor;
+    v131RowsFor = function(day){
+      const r = base131.apply(this, arguments);
+      try{
+        if (r && typeof v145Put === 'function' && typeof V131 !== 'undefined' && day <= v131DayAdd(v131Day(Date.now()), -2)){
+          v145Put({['v131:' + day]: r}).then(() => {
+            try{ _v209RawRm.call(localStorage, 'bl_v131_rows_' + day); }catch(e){}
+          }).catch(()=>{});
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+  // v41 locked: keep full 150d in IDB, last 14d in localStorage
+  if (typeof v41Save === 'function'){
+    const base41 = v41Save;
+    v41Save = function(which){
+      const st = V41();
+      const ws = which ? [].concat(which) : Object.keys(v41LS());
+      if (ws.includes('locked')){
+        v209IdbPut('v41_locked', st.locked).then(() => {
+          const cut = Date.now() - 14 * 86400000;
+          const thin = {};
+          for (const k in st.locked){ const x = st.locked[k]; if (x && (+x.start || 0) >= cut) thin[k] = x; }
+          v209SafeWrite((key, val) => _v209RawSet.call(localStorage, key, val), v41LS().locked, JSON.stringify(thin));
+        }).catch(() => {});
+        const rest = ws.filter(x => x !== 'locked');
+        if (rest.length) base41.call(this, rest);
+        return;
+      }
+      return base41.apply(this, arguments);
+    };
+  }
+})();
+
+/* ---------- Hydrate from IndexedDB on boot + verified migration ---------- */
+async function v209HydrateFromIdb(){
+  try{
+    await v209IdbOpen();
+    if (typeof V198 !== 'undefined'){
+      const h = await v209IdbGet('v198_hist').catch(()=>null);
+      if (h && typeof h === 'object') V198.hist = Object.assign({}, h, V198.hist || {});
+      const ex = await v209IdbGet('evxlog').catch(()=>null);
+      if (ex && ex.rows && typeof v198LogMerge === 'function') v198LogMerge('evx', ex);
+      const sh = await v209IdbGet('sharplog').catch(()=>null);
+      if (sh && sh.rows && typeof v198LogMerge === 'function') v198LogMerge('sharp', sh);
+    }
+    if (typeof V202 !== 'undefined' && typeof v202PLogMerge === 'function'){
+      const pl = await v209IdbGet('parlaylog').catch(()=>null);
+      if (pl && pl.rows) v202PLogMerge(pl);
+    }
+    if (typeof V204 !== 'undefined' && typeof v204LogMerge === 'function'){
+      const pf = await v209IdbGet('pflog').catch(()=>null);
+      if (pf && (pf.rows || pf.ties)) v204LogMerge(pf);
+    }
+    if (typeof V173 !== 'undefined'){
+      const xb = await v209IdbGet('v173_xb').catch(()=>null);
+      if (xb && xb.ev && Date.now() - (+xb.at || 0) < 6 * 3600000 && (!V173.ev || !Object.keys(V173.ev).length)) V173.ev = xb.ev;
+    }
+    if (typeof V142 !== 'undefined'){
+      if (!V142.lastPubJ){ const pj = await v209IdbGet('v145_pubj').catch(()=>null); if (typeof pj === 'string') V142.lastPubJ = pj; }
+      if (!V142.pub2){ const p2 = await v209IdbGet('v145_pub2').catch(()=>null); if (p2 && p2.p){ V142.pub2 = p2.p; V142.pub2At = p2.at || 0; V142.pub2Got = true; } }
+    }
+    if (typeof V165 !== 'undefined' && !V165.sh && typeof v165SetShared === 'function'){
+      const bd = await v209IdbGet('v165_board').catch(()=>null);
+      if (bd) v165SetShared(bd);
+    }
+    if (typeof V41 === 'function'){
+      const lk = await v209IdbGet('v41_locked').catch(()=>null);
+      if (lk && typeof lk === 'object'){
+        const st = V41();
+        for (const k in lk) if (!st.locked[k]) st.locked[k] = lk[k];
+      }
+    }
+    if (typeof results !== 'undefined' && Array.isArray(results)){
+      const rs = await v209IdbGet('results').catch(()=>null);
+      if (Array.isArray(rs) && rs.length > results.length){
+        const have = new Set(results.map(x => x && x.k));
+        for (const r of rs) if (r && r.k && !have.has(r.k)) results.push(r);
+      }
+    }
+  }catch(e){}
+}
+
+/* Verify server/Firestore/IDB copies exist before removing/trimming any graded or official records */
+async function v209VerifyAndMigrate(){
+  if (V209.migrating) return;
+  V209.migrating = true;
+  try{
+    await v209IdbOpen();
+    const pub = typeof v154Pub === 'function' && v154Pub();
+    const admin = typeof v138Admin === 'function' && v138Admin();
+
+    // 1. Ephemeral 6h market history (v198_hist) & Pinnacle snapshot (v173_xb) -> IDB
+    for (const [lsKey, idbKey, getMem] of [
+      ['bl_v198_hist_v1', 'v198_hist', () => typeof v198Hist === 'function' ? v198Hist() : null],
+      ['bl_v173_xb', 'v173_xb', () => (typeof V173 !== 'undefined' && V173.ev) ? {at: Date.now(), ev: V173.ev} : null]
+    ]){
+      const raw = _v209RawGet.call(localStorage, lsKey);
+      if (raw){
+        const val = getMem() || JSON.parse(raw);
+        await v209IdbPut(idbKey, val);
+        const back = await v209IdbGet(idbKey);
+        if (back){
+          _v209RawRm.call(localStorage, lsKey);
+          V209.verified[lsKey] = {ok: true, idbOk: true, beforeChars: raw.length, afterChars: 0, note: 'moved to IndexedDB'};
+        }
+      }
+    }
+
+    // 2. Graded / shadow logs on publisher: verify Worker copy >= local rows AND IDB readback before removing from LS
+    if (pub && typeof v154Get === 'function' && typeof v154Put === 'function'){
+      const workerMigrations = [
+        {ls: 'bl_v198_evlog_v1', wk: 'evxlog', idb: 'evxlog', load: () => v198LogLoad('evx'), merge: r => v198LogMerge('evx', r), bucket: 'rows'},
+        {ls: 'bl_v198_shlog_v1', wk: 'sharplog', idb: 'sharplog', load: () => v198LogLoad('sharp'), merge: r => v198LogMerge('sharp', r), bucket: 'rows'},
+        {ls: 'bl_v202_parlaylog_v1', wk: 'parlaylog', idb: 'parlaylog', load: () => v202PLogLoad(), merge: r => v202PLogMerge(r), bucket: 'rows'},
+        {ls: 'bl_v204_pflog_v1', wk: 'pflog', idb: 'pflog', load: () => v204LogLoad(), merge: r => v204LogMerge(r), bucket: 'rows'}
+      ];
+      for (const m of workerMigrations){
+        const raw = _v209RawGet.call(localStorage, m.ls);
+        if (!raw) continue;
+        try{
+          const localObj = JSON.parse(raw);
+          const localRows = Object.keys((localObj && localObj[m.bucket]) || {}).length;
+          let remote = null;
+          try{ remote = await v154Get(m.wk); }catch(e){}
+          m.merge(remote);
+          const merged = m.load();
+          const remoteRows = Object.keys((remote && remote[m.bucket]) || {}).length;
+          let serverOk = remote && remoteRows >= localRows;
+          if (!serverOk){
+            // Push merged log to Worker first and verify
+            const payload = m.wk === 'pflog'
+              ? Object.assign({at: Date.now(), v: 204, st: typeof v204Stats === 'function' ? v204Stats() : {}}, merged)
+              : Object.assign({at: Date.now()}, merged);
+            serverOk = await v154Put(m.wk, payload);
+          }
+          await v209IdbPut(m.idb, merged);
+          const back = await v209IdbGet(m.idb);
+          const idbOk = !!(back && Object.keys((back[m.bucket]) || {}).length >= localRows);
+          if (serverOk && idbOk){
+            _v209RawRm.call(localStorage, m.ls);
+            V209.verified[m.ls] = {ok: true, serverOk: true, idbOk: true, rows: localRows, beforeChars: raw.length, afterChars: 0, note: 'verified Worker + IDB'};
+          }else{
+            V209.verified[m.ls] = {ok: false, serverOk: !!serverOk, idbOk, rows: localRows, beforeChars: raw.length, afterChars: raw.length, note: 'kept in LS (unverified)'};
+          }
+        }catch(e){
+          V209.verified[m.ls] = {ok: false, note: String(e && e.message || e).slice(0, 60)};
+        }
+      }
+    }
+
+    // 3. Official Play of the Day (potd): verify Worker 'potd' + IDB before removing legacy bl_potd_v131 / bl_potd_v132
+    if (pub && typeof v154Get === 'function' && typeof v154Put === 'function' && typeof v154StoreLoad === 'function'){
+      try{
+        let remotePotd = null;
+        try{ remotePotd = await v154Get('potd'); }catch(e){}
+        const cur = v154StoreLoad();
+        let merged = cur;
+        if (remotePotd && typeof v154Merge === 'function') merged = v154Merge(merged, remotePotd);
+        for (const legKey of ['bl_potd_v131', 'bl_potd_v132']){
+          const raw = _v209RawGet.call(localStorage, legKey);
+          if (!raw) continue;
+          try{
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.days && typeof v154Merge === 'function') merged = v154Merge(merged, parsed);
+          }catch(e){}
+        }
+        V154.store = merged;
+        if (typeof V132 !== 'undefined') V132.shared = merged;
+        if (typeof V131 !== 'undefined') V131.sel = merged;
+        const okPut = await v154Put('potd', Object.assign({at: Date.now()}, typeof v154Trim === 'function' ? v154Trim(merged) : merged));
+        await v209IdbPut('potd', merged);
+        const back = await v209IdbGet('potd');
+        if (okPut && back){
+          v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), 'bl_v154_potd', JSON.stringify(merged));
+          for (const legKey of ['bl_potd_v131', 'bl_potd_v132']){
+            const raw = _v209RawGet.call(localStorage, legKey);
+            if (raw){
+              _v209RawRm.call(localStorage, legKey);
+              V209.verified[legKey] = {ok: true, serverOk: true, idbOk: true, beforeChars: raw.length, afterChars: 0, note: 'merged into potd + verified'};
+            }
+          }
+        }
+      }catch(e){}
+    }
+
+    // 4. bl_v131_rows_YYYYMMDD -> verify stored in verdict_mlog_v145 IDB ('v131:' + day) before deleting from LS
+    if (typeof v145Open === 'function' && typeof v145Get === 'function' && typeof v145Put === 'function'){
+      const rowKeys = [];
+      for (let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        if (k && k.indexOf('bl_v131_rows_') === 0) rowKeys.push(k);
+      }
+      let moved = 0, freed = 0;
+      for (const k of rowKeys){
+        const day = k.slice(13);
+        const raw = _v209RawGet.call(localStorage, k);
+        if (!raw) continue;
+        try{
+          const rows = JSON.parse(raw);
+          if (!Array.isArray(rows)) continue;
+          const got = await v145Get(['v131:' + day]);
+          let inIdb = Array.isArray(got && got['v131:' + day]) && got['v131:' + day].length >= rows.length;
+          if (!inIdb){
+            await v145Put({['v131:' + day]: rows});
+            const chk = await v145Get(['v131:' + day]);
+            inIdb = Array.isArray(chk && chk['v131:' + day]) && chk['v131:' + day].length >= rows.length;
+          }
+          if (inIdb){
+            _v209RawRm.call(localStorage, k);
+            moved++; freed += raw.length;
+          }
+        }catch(e){}
+      }
+      if (moved) V209.verified['bl_v131_rows_*'] = {ok: true, idbOk: true, count: moved, beforeChars: freed, afterChars: 0, note: 'verified in verdict_mlog_v145 IDB'};
+    }
+
+    // 5. bl_v145_pubj (verify Firestore pub/uniDays2 exists), bl_v145_pub2, bl_v165_board -> IDB
+    {
+      const pj = _v209RawGet.call(localStorage, 'bl_v145_pubj');
+      if (pj){
+        let fsOk = !admin;
+        if (admin && typeof firebase !== 'undefined' && firebase.firestore){
+          try{ const doc = await firebase.firestore().collection('pub').doc('uniDays2').get(); fsOk = doc.exists; }catch(e){}
+        }
+        await v209IdbPut('v145_pubj', pj);
+        const back = await v209IdbGet('v145_pubj');
+        if (fsOk && back === pj){
+          _v209RawRm.call(localStorage, 'bl_v145_pubj');
+          V209.verified['bl_v145_pubj'] = {ok: true, serverOk: fsOk, idbOk: true, beforeChars: pj.length, afterChars: 0, note: 'verified Firestore pub/uniDays2 + IDB'};
+        }
+      }
+      const p2 = _v209RawGet.call(localStorage, 'bl_v145_pub2');
+      if (p2 && p2.length > 30000){
+        const parsed = JSON.parse(p2);
+        await v209IdbPut('v145_pub2', parsed);
+        const back = await v209IdbGet('v145_pub2');
+        if (back){
+          _v209RawRm.call(localStorage, 'bl_v145_pub2');
+          V209.verified['bl_v145_pub2'] = {ok: true, idbOk: true, beforeChars: p2.length, afterChars: 0, note: 'moved to IDB'};
+        }
+      }
+      const bd = _v209RawGet.call(localStorage, 'bl_v165_board');
+      if (bd && bd.length > 30000){
+        const parsed = JSON.parse(bd);
+        await v209IdbPut('v165_board', parsed);
+        const back = await v209IdbGet('v165_board');
+        if (back){
+          _v209RawRm.call(localStorage, 'bl_v165_board');
+          V209.verified['bl_v165_board'] = {ok: true, idbOk: true, beforeChars: bd.length, afterChars: 0, note: 'moved to IDB'};
+        }
+      }
+    }
+
+    // 6. bl_locked_v1 & bl_results: archive full set in IDB, keep recent active window in localStorage
+    {
+      const lkRaw = _v209RawGet.call(localStorage, 'bl_locked_v1');
+      if (lkRaw && lkRaw.length > 40000 && typeof V41 === 'function'){
+        const st = V41();
+        await v209IdbPut('v41_locked', st.locked);
+        const back = await v209IdbGet('v41_locked');
+        if (back && Object.keys(back).length >= Object.keys(st.locked).length){
+          const cut = Date.now() - 14 * 86400000;
+          const thin = {};
+          for (const k in st.locked){ const x = st.locked[k]; if (x && (+x.start || 0) >= cut) thin[k] = x; }
+          const thinStr = JSON.stringify(thin);
+          v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), 'bl_locked_v1', thinStr);
+          V209.verified['bl_locked_v1'] = {ok: true, idbOk: true, beforeChars: lkRaw.length, afterChars: thinStr.length, note: 'full 150d in IDB; 14d in LS'};
+        }
+      }
+      const resRaw = _v209RawGet.call(localStorage, 'bl_results');
+      if (resRaw && resRaw.length > 60000 && typeof results !== 'undefined' && Array.isArray(results)){
+        await v209IdbPut('results', results);
+        const back = await v209IdbGet('results');
+        if (Array.isArray(back) && back.length >= results.length){
+          const cut = Date.now() - 30 * 86400000;
+          const thin = results.filter(r => r && (+r.start || 0) >= cut);
+          const thinStr = JSON.stringify(thin);
+          v209SafeWrite((k, v) => _v209RawSet.call(localStorage, k, v), 'bl_results', thinStr);
+          V209.verified['bl_results'] = {ok: true, idbOk: true, beforeChars: resRaw.length, afterChars: thinStr.length, note: 'full 120d in IDB; 30d in LS'};
+        }
+      }
+    }
+
+    // 7. Legacy backtest/snapshot keys if already in 'bettinglab' IDB
+    if (typeof idbGet === 'function' && _v209RawGet.call(localStorage, 'bl_bt_v1')){
+      try{
+        const b = await idbGet('bt');
+        if (b && b.games){
+          const raw = _v209RawGet.call(localStorage, 'bl_bt_v1');
+          _v209RawRm.call(localStorage, 'bl_bt_v1');
+          V209.verified['bl_bt_v1'] = {ok: true, idbOk: true, beforeChars: raw.length, afterChars: 0, note: 'verified in bettinglab IDB'};
+        }
+      }catch(e){}
+    }
+
+    V209.migrated = true;
+  }finally{
+    V209.migrating = false;
+    v209PrunePureCaches();
+    V209.after = v209MeasureLS();
+    const pk = '__v209_probe__';
+    try{
+      _v209RawSet.call(localStorage, pk, 'x'.repeat(256));
+      _v209RawRm.call(localStorage, pk);
+      V209.afterProbe = {ok: true, err: ''};
+    }catch(e){
+      try{ _v209RawRm.call(localStorage, pk); }catch(_){}
+      V209.afterProbe = {ok: false, err: String(e && (e.name ? e.name + ': ' + e.message : e) || 'quota').slice(0, 140)};
+    }
+    v209RenderWarning();
+    v209PublishDiag().catch(()=>{});
+  }
+}
+
+/* ---------- Publisher reports diagnostic to Worker ('storage') + compact summary on /lease ---------- */
+async function v209PublishDiag(force){
+  if (typeof v154Pub !== 'function' || !v154Pub() || typeof v154Put !== 'function') return false;
+  const cur = v209MeasureLS();
+  V209.pct = cur.pct; V209.kb = cur.kb; V209.capKb = cur.capKb;
+  const payload = {
+    at: Date.now(),
+    v: APP_BUILD,
+    before: V209.before,
+    beforeProbe: V209.beforeProbe,
+    after: V209.after || cur,
+    afterProbe: V209.afterProbe,
+    current: cur,
+    fails: V209.fails.slice(-30),
+    evicted: V209.evicted.slice(-30),
+    pruned: V209.pruned,
+    verified: V209.verified,
+    warn85: cur.pct >= V209_WARN_PCT,
+    criticalErr: V209.criticalErr || ''
+  };
+  const sig = JSON.stringify({kb: cur.kb, pct: cur.pct, f: V209.fails.length, v: Object.keys(V209.verified).length});
+  if (!force && sig === V209.pubSig && Date.now() - V209.pubAt < 5 * 60000) return true;
+  const ok = await v154Put('storage', payload);
+  if (ok){ V209.pubAt = Date.now(); V209.pubSig = sig; }
+  return ok;
+}
+
+/* Attach compact storage summary {pct, kb, bkb, fails} to /lease POST */
+(function(){
+  const f = window.fetch;
+  window.fetch = function(u, o){
+    try{
+      if (o && o.method === 'POST' && typeof u === 'string' && typeof PUB_BASE !== 'undefined' && u === PUB_BASE + '/lease' && typeof o.body === 'string'){
+        const b = JSON.parse(o.body);
+        const cur = v209MeasureLS();
+        V209.pct = cur.pct; V209.kb = cur.kb; V209.capKb = cur.capKb;
+        b.ls = {pct: cur.pct, kb: cur.kb, bkb: V209.before ? V209.before.kb : cur.kb, fails: V209.fails.length};
+        o = Object.assign({}, o, {body: JSON.stringify(b)});
+      }
+    }catch(e){}
+    return f.call(this, u, o);
+  };
+})();
+
+/* ---------- Admin-only >=85% warning banner + storage health line ---------- */
+function v209BannerHTML(){
+  try{
+    if (typeof v138Admin !== 'function' || !v138Admin()) return '';
+    const m = v209UpdateStats();
+    if (m.pct < V209_WARN_PCT && !V209.criticalErr) return '';
+    const msg = V209.criticalErr
+      ? V209.criticalErr
+      : `Browser storage on this device is ${m.pct}% full (${m.kb} KB of ${m.capKb} KB). Free cached data so picks and logs keep saving.`;
+    return `<div class="card v209-warn" role="alert">
+      <div class="v209-wt">⚠️ Browser storage high (${m.pct}%)</div>
+      <div class="hint" style="margin:4px 0 8px">${esc(msg)}</div>
+      <button type="button" class="btn primary" data-v209-clean="1">Free cache space</button>
+    </div>`;
+  }catch(e){ return ''; }
+}
+function v209RenderWarning(){
+  try{
+    const view = document.getElementById('view'); if (!view) return;
+    const old = view.querySelector('.v209-warn');
+    const html = v209BannerHTML();
+    if (old && !html) old.remove();
+    else if (old && html){ const t = document.createElement('div'); t.innerHTML = html; old.replaceWith(t.firstElementChild); }
+    else if (!old && html) view.insertAdjacentHTML('afterbegin', html);
+    const line = document.getElementById('v209SetLine');
+    if (line) line.textContent = v209HealthText();
+  }catch(e){}
+}
+function v209HealthText(){
+  const m = v209UpdateStats();
+  const f = V209.fails.length;
+  return `Browser storage on this device: ${m.pct}% used (${m.kb} KB of ${m.capKb} KB, ${m.count} keys)` + (f ? ` · ${f} write${f === 1 ? '' : 's'} recovered` : ' · writes OK');
+}
+window.v209CleanupNow = async function(){
+  v209PrunePureCaches();
+  await v209VerifyAndMigrate();
+  v209RenderWarning();
+  try{ if (typeof toast === 'function') toast(`Storage is now ${V209.pct}% (${V209.kb} KB)`); }catch(e){}
+};
+document.addEventListener('click', e => {
+  const b = e.target && e.target.closest && e.target.closest('[data-v209-clean]');
+  if (b){ b.disabled = true; v209CleanupNow().finally(() => { b.disabled = false; }); }
+});
+
+(function(){
+  for (const fn of ['render', 'softRender']){
+    if (typeof window[fn] !== 'function') continue;
+    const base = window[fn];
+    window[fn] = function(){
+      const r = base.apply(this, arguments);
+      v209RenderWarning();
+      return r;
+    };
+  }
+  if (typeof v168SettingsRow === 'function'){
+    const baseSet = v168SettingsRow;
+    v168SettingsRow = function(){
+      baseSet.apply(this, arguments);
+      try{
+        const row = document.getElementById('v168PinRow');
+        if (row && !document.getElementById('v209SetLine')){
+          const el = document.createElement('div');
+          el.className = 's-note'; el.id = 'v209SetLine';
+          el.textContent = v209HealthText();
+          row.appendChild(el);
+        }
+      }catch(e){}
+    };
+  }
+  const st = document.createElement('style');
+  st.textContent = `.v209-warn{border:1px solid rgba(96,165,250,.55);background:rgba(30,64,175,.22);margin-bottom:12px}
+.v209-wt{font-weight:700;font-size:14px;color:#dbeafe}`;
+  document.head.appendChild(st);
+})();
+
+/* Boot sequence: hydrate from IDB immediately, then run verified migration once Auth/Worker are settled */
+v209HydrateFromIdb().then(() => {
+  setTimeout(() => { v209VerifyAndMigrate().catch(()=>{}); }, 9000);
+});
+setInterval(() => {
+  v209PrunePureCaches();
+  v209RenderWarning();
+  if (typeof v154Pub === 'function' && v154Pub()) v209PublishDiag(false).catch(()=>{});
+}, 5 * 60000);
+
+window.v209Status = () => ({
+  build: APP_BUILD,
+  before: V209.before,
+  beforeProbe: V209.beforeProbe,
+  after: V209.after,
+  afterProbe: V209.afterProbe,
+  now: v209MeasureLS(),
+  fails: V209.fails,
+  evicted: V209.evicted,
+  verified: V209.verified
+});
 </script>
 </body>
 </html>
