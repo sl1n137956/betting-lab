@@ -43841,7 +43841,7 @@ window.v206Status = () => ({build: APP_BUILD, at: V206.at, err: V206.err, stats:
    3. DraftKings open / close line log for every game in every covered sport (Firestore lineLog/{day}).
    4. Results (admin): "Model lab" with Backtest / Paper / Live kept separate.
    Nothing changes for other users except props leaving Picks. ===== */
-APP_BUILD = 207;
+APP_BUILD = 208;   // v207 hotfix: logs kept in memory + worker/Firestore (VPS localStorage was full); never publish before reading the shared log back
 const V207_PAUSE_AT = Date.parse('2026-11-26T00:00:00Z');   // Nov 25, 4:00 PM PT
 const V207_FLOOR = -250;
 
@@ -43979,8 +43979,9 @@ setInterval(v207Sweep, 3000);
 /* shadow log of paused would-be Prop Picks: locked at T-30, graded from box scores (admin only) */
 const V207_PS_LS = 'bl_v207_propshadow_v1';
 let V207_PS = null;
-function v207PsLoad(){ if (V207_PS) return V207_PS; try{ V207_PS = JSON.parse(localStorage.getItem(V207_PS_LS) || 'null'); }catch(e){} if (!V207_PS || !V207_PS.r) V207_PS = {r:{}}; return V207_PS; }
-function v207PsSave(){ try{ localStorage.setItem(V207_PS_LS, JSON.stringify(v207PsLoad())); }catch(e){} }
+/* v207 keeps its logs in memory + the shared worker / Firestore (this device's localStorage is already near its limit) */
+function v207PsLoad(){ if (!V207_PS || !V207_PS.r) V207_PS = {r:{}}; return V207_PS; }
+function v207PsSave(){}
 function v207PsMerge(o){ const L = v207PsLoad(); if (!o || !o.r) return; for (const k in o.r){ const a = L.r[k], b = o.r[k]; if (!a || (!a.res && b.res)) L.r[k] = b; } }
 function v207Units(res, pr){ if (res === 'loss') return -1; if (res !== 'win') return 0; const d = v207Dec(pr); return isFinite(d) ? d - 1 : 0; }
 function v207PsLock(){
@@ -44050,8 +44051,8 @@ function v207PsStats(L){
 })();
 const V207_LL_LS = 'bl_v207_lines_v1';
 let V207_LL = null;
-function v207LlLoad(){ if (V207_LL) return V207_LL; try{ V207_LL = JSON.parse(localStorage.getItem(V207_LL_LS) || 'null'); }catch(e){} if (!V207_LL || !V207_LL.d) V207_LL = {d:{}, dirty:{}, flushed:{}}; return V207_LL; }
-function v207LlSave(){ try{ localStorage.setItem(V207_LL_LS, JSON.stringify(v207LlLoad())); }catch(e){} }
+function v207LlLoad(){ if (!V207_LL || !V207_LL.d) V207_LL = {d:{}, dirty:{}, flushed:{}}; return V207_LL; }
+function v207LlSave(){}
 function v207Cmp(s){ if (!s) return null; const o = {};
   if (s.ml) o.ml = [s.ml.home, s.ml.away];
   if (s.spread) o.sp = [s.spread.home[0], s.spread.home[1], s.spread.away[1]];
@@ -44083,7 +44084,7 @@ async function v207LlFlush(){
     const allStarted = Object.values(D).every(r => r.t < now);
     if (!allStarted && now - (L.flushed[d] || 0) < 2 * 3600000) continue;
     try{
-      await mlogFS().collection('lineLog').doc(d).set({d, v:1, at:now, src:'ESPN DraftKings', n:Object.keys(D).length, g:D});
+      await mlogFS().collection('lineLog').doc(d).set({d, v:1, at:now, src:'ESPN DraftKings', g:D}, {merge:true});
       L.flushed[d] = now; delete L.dirty[d]; V207.llErr = '';
     }catch(e){ V207.llErr = String(e && e.message || e).slice(0, 80); }
   }
@@ -44099,8 +44100,8 @@ const V207_Q = {ncaab:'&groups=50&limit=500'};
 const V207_NAME = {nba_spread:'NBA spread', nfl_spread:'NFL spread', nba_total_open:'NBA total (at open)', nhl_ml_open:'NHL moneyline (at open)', ncaab_total_open:'College basketball total (at open)'};
 const V207 = window.V207 = {spec:null, specAt:0, specErr:'', hist:{}, fin:{}, st:{}, stN:{}, sb:{}, sbAt:{}, active:{}, busy:false, err:'', llErr:'', lastTick:0, pubTry:false, remote:null, remoteAt:0, log:null};
 
-function v207LogLoad(){ if (V207.log) return V207.log; try{ V207.log = JSON.parse(localStorage.getItem(V207_LS) || 'null'); }catch(e){} if (!V207.log || !V207.log.P) V207.log = {v:1, mv:{}, P:{}, B:{}}; return V207.log; }
-function v207LogSave(){ try{ localStorage.setItem(V207_LS, JSON.stringify(v207LogLoad())); }catch(e){ V207.err = 'save: ' + String(e && e.message || e).slice(0, 60); } }
+function v207LogLoad(){ if (!V207.log || !V207.log.P) V207.log = {v:1, mv:{}, P:{}, B:{}}; return V207.log; }
+function v207LogSave(){}
 function v207LogMerge(o){
   if (!o || !o.log || !o.log.P) return; const L = v207LogLoad(), R = o.log;
   for (const k in R.P){ const a = L.P[k], b = R.P[k]; if (!a || (!a.res && b.res)) L.P[k] = b; }
@@ -44118,8 +44119,9 @@ async function v207LoadSpec(){
   catch(e){ V207.specErr = String(e && e.message || e).slice(0, 80); }
   return V207.spec;
 }
-function v207FinLoad(lg){ if (V207.fin[lg]) return V207.fin[lg]; let o = null; try{ o = JSON.parse(localStorage.getItem(V207_FIN + lg) || 'null'); }catch(e){} return (V207.fin[lg] = (o && o.g) ? o : {g:{}, days:{}}); }
-function v207FinSave(lg){ try{ localStorage.setItem(V207_FIN + lg, JSON.stringify(V207.fin[lg])); }catch(e){} }
+function v207FinLoad(lg){ return V207.fin[lg] || (V207.fin[lg] = {g:{}, days:{}}); }
+function v207FinSave(lg){}
+try{ for (let i = localStorage.length - 1; i >= 0; i--){ const k = localStorage.key(i); if (k && k.indexOf('bl_v207_') === 0) localStorage.removeItem(k); } }catch(e){}
 async function v207LoadHist(lg){
   if (V207.hist[lg]) return V207.hist[lg];
   const r = await fetch(`models/hist_${lg}.json`, {cache:'no-cache'}); if (!r.ok) throw new Error('hist ' + lg + ' ' + r.status);
@@ -44353,8 +44355,8 @@ async function v207PaperPass(){
 async function v207Publish(){
   if (typeof v154Put !== 'function' || !v154Pub()) return;
   const spec = V207.spec, log = v207LogLoad();
-  await v154Put('paperlog', {at:Date.now(), v:207, active:V207.active, err:V207.err || V207.specErr || '', llErr:V207.llErr || '', lines:v207LlSummary(), log});
-  await v154Put('propshadow', {at:Date.now(), v:207, r:v207PsLoad().r});
+  if (V207.gotPaper) await v154Put('paperlog', {at:Date.now(), v:207, active:V207.active, err:V207.err || V207.specErr || '', llErr:V207.llErr || '', lines:v207LlSummary(), log});
+  if (V207.gotPs) await v154Put('propshadow', {at:Date.now(), v:207, r:v207PsLoad().r});
 }
 function v207LlSummary(){ const L = v207LlLoad(); const o = {}; for (const d in L.d){ const D = L.d[d]; let n = 0, op = 0, cl = 0; for (const k in D){ n++; if (D[k].o) op++; if (D[k].c) cl++; } o[d] = [n, op, cl, L.flushed[d] || 0]; } return o; }
 
@@ -44362,11 +44364,9 @@ async function v207Tick(){
   if (V207.busy || typeof v154Pub !== 'function' || !v154Pub()) return;
   V207.busy = true;
   try{
-    if (!V207.pubTry && typeof v154Get === 'function'){
-      V207.pubTry = true;
-      try{ v207LogMerge(await v154Get('paperlog')); }catch(e){}
-      try{ v207PsMerge(await v154Get('propshadow')); }catch(e){}
-    }
+    // read the shared logs back before ever publishing, so a reload can't overwrite them with an empty log
+    if (!V207.gotPaper){ try{ v207LogMerge(await v154Get('paperlog')); V207.gotPaper = true; }catch(e){ if (/ 404/.test(String(e && e.message))) V207.gotPaper = true; } }
+    if (!V207.gotPs){ try{ v207PsMerge(await v154Get('propshadow')); V207.gotPs = true; }catch(e){ if (/ 404/.test(String(e && e.message))) V207.gotPs = true; } }
     try{ v207PsLock(); await v207PsGrade(); }catch(e){}
     try{ v207LlTick(); await v207LlFlush(); }catch(e){}
     try{ await v207PaperPass(); }catch(e){ V207.err = String(e && e.message || e).slice(0, 80); }
