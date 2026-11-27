@@ -47252,14 +47252,16 @@ function v213EvalGameSpecialist(sp, g, st, now){
     }
   }
   const ln = sp.market === 'spread' ? (s === 'a' ? M.line : -M.line) : sp.market === 'total' ? M.line : null;
-  const R = (v, k) => isFinite(v) ? Math.round(v * Math.pow(10, k)) / Math.pow(10, k) : null;
+  const R = (v, k) => (v != null && isFinite(+v)) ? Math.round(+v * Math.pow(10, k)) / Math.pow(10, k) : null;
   const sideLabel = sp.market === 'ml' ? (s === 'a' ? g.ha + ' ML' : g.aa + ' ML')
     : sp.market === 'spread' ? ((s === 'a' ? g.ha : g.aa) + ' ' + (ln > 0 ? '+' + ln : ln))
     : ((s === 'a' ? 'Over ' : 'Under ') + ln);
+  const pSide = s === 'a' ? p : (1 - p);
+  const nvSide = s === 'a' ? M.nvTrue : (1 - M.nvTrue);
   return {
     m: sp.id, sp: sp.specialist, ver: sp.ver, ev: g.id, l: sp.sport, t: g.t, d: v207Ymd(g.t), at: now,
     mk: sp.market, w: sp.when, h: g.ha, a: g.aa, hl: R(M.line, 1), pa: M.pa, pb: M.pb,
-    nv: R(M.nvTrue, 4), p: R(p, 4), mu: R(pred.mu, 1), s, e: R(e, 4), thr: R(thr, 4),
+    nv: R(M.nvTrue, 4), nvSide: R(nvSide, 4), p: R(p, 4), pSide: R(pSide, 4), mu: R(pred.mu, 1), s, e: R(e, 4), thr: R(thr, 4),
     tier, bet: (tier && pr >= -250) ? 1 : 0, pr, ln, sideLabel
   };
 }
@@ -47332,9 +47334,9 @@ function v213CoordinateGame(g, calls, propsVote){
     ev: g.id, l: g.league || g.sport || '', h: g.ha, a: g.aa, t: g.t, at: Date.now(),
     mlContra, agreeBoost, notes,
     votes: {
-      ml: ml ? { lbl: ml.sideLabel, p: ml.p, e: ml.e, bet: ml.bet, pr: ml.pr } : null,
-      spread: sp ? { lbl: sp.sideLabel, p: sp.p, e: sp.e, bet: sp.bet, pr: sp.pr } : null,
-      total: tot ? { lbl: tot.sideLabel, p: tot.p, e: tot.e, mu: tot.mu, bet: tot.bet, pr: tot.pr } : null,
+      ml: ml ? { lbl: ml.sideLabel, p: ml.pSide != null ? ml.pSide : ml.p, e: ml.e, bet: ml.bet, pr: ml.pr } : null,
+      spread: sp ? { lbl: sp.sideLabel, p: sp.pSide != null ? sp.pSide : sp.p, e: sp.e, bet: sp.bet, pr: sp.pr } : null,
+      total: tot ? { lbl: tot.sideLabel, p: tot.pSide != null ? tot.pSide : tot.p, e: tot.e, mu: tot.mu, bet: tot.bet, pr: tot.pr } : null,
       props: propsVote
     },
     pick: pick ? Object.assign({}, pick.c, {
@@ -47640,6 +47642,915 @@ window.v213Status = () => ({
   err: V213.err,
   stats: { ml: v213Stats('ml'), spread: v213Stats('spread'), total: v213Stats('total'), coord: v213Stats('coord') },
   votes: Object.keys((v213LogLoad().votes || {})).length
+});
+/* ===== v214: BL-109 Phase 2 — Live 4-Specialist + Coordinator Engine (with 300-bet proof tracking)
+   - Wires Coordinator into live public Picks for ALL supported specialist markets:
+       * NBA: ML (close, <= +250 dog cap), Spread (close), Total (open, evaluated at live DK price)
+       * NHL: ML (open, evaluated at live DK price), Total (open projected goals Normal CDF, live DK price)
+       * NFL: ML (close), Spread (close)
+       * NCAAB: Total (open, evaluated at live DK price)
+   - Props stay paused (shadow only); unsupported markets stay blocked in Coordinator.
+   - Integrates cleanly with v212 model game picks: max 1 pick/game total across sharp + coord + model,
+     hard -250 floor, DK grading line, 8/day cap, contradictions blocked, consensus boosted & noted.
+   - Every pick's courtroom shows each specialist's vote in plain English, player/team case first.
+   - Separate records per specialist (ml, spread, total, props shadow) + Coordinator with N/300 proof,
+     W-L, units, ROI, CLV, Brier vs no-vig, and auto-suspend (-10u or 4 losing weeks).
+   - Learner counts match Results 1-for-1 via mlogOnePerBet. ===== */
+APP_BUILD = 214;
+if (typeof V160 !== 'undefined') V160.VER = 214;
+
+const V214_FLOOR = -250;
+const V214_DOG_MAX = 250;   // protects NBA ML & other MLs from archive long-dog price bias
+const V214_DAILY_CAP = 8;
+const V214_GOAL_BETS = 300;
+const V214_CREC_LS = 'bl_v214_crec_v1';
+
+const V214 = window.V214 = {
+  warmed: false, warming: false, inApply: false, inEst: false,
+  byGame: new Map(), lastSlate: null, crec: null
+};
+try{
+  const saved = JSON.parse(localStorage.getItem(V214_CREC_LS) || 'null');
+  if (saved && saved.recs) V214.crec = saved;
+}catch(e){}
+
+function v214IsCoordRow(o){ return !!(o && o.ms === 'coord'); }
+function v214IsAnyModelRow(o){ return !!(o && (o.ms === 'model' || o.ms === 'coord')); }
+
+/* ---------- 1) Warmup historical team state + specialist JSON for live board evaluation ---------- */
+async function v214Warmup(force){
+  if (V214.warming) return false;
+  if (V214.warmed && !force) return true;
+  V214.warming = true;
+  try{
+    const spec = typeof v213LoadSpec === 'function' ? await v213LoadSpec() : null;
+    if (spec && spec.nfl_static && typeof V207 !== 'undefined'){
+      if (!V207.spec) V207.spec = { models: {}, nfl_static: spec.nfl_static };
+      else if (!V207.spec.nfl_static) V207.spec.nfl_static = spec.nfl_static;
+    }
+    const lgs = ['nba', 'nhl', 'nfl', 'ncaab'];
+    for (const lg of lgs){
+      try{
+        if (typeof v207LoadHist === 'function') await v207LoadHist(lg);
+        if (typeof v207FillGap === 'function') await v207FillGap(lg);
+        if (typeof v207State === 'function') v207State(lg);
+      }catch(e){}
+    }
+    V214.warmed = !!(spec && spec.models);
+    if (V214.warmed && typeof evaluateAll === 'function' && typeof plays !== 'undefined' && plays.length){
+      evaluateAll();
+      if (typeof render === 'function') render();
+    }
+    return V214.warmed;
+  }catch(e){
+    return false;
+  }finally{
+    V214.warming = false;
+  }
+}
+setTimeout(() => { try{ v214Warmup(false); }catch(e){} }, 1200);
+
+/* ---------- 2) Convert live Verdict game object -> specialist evaluator input ---------- */
+function v214SeasonFor(lg, ms){
+  const d = new Date(ms || Date.now());
+  const y = d.getFullYear(), m = d.getMonth(); // 0=Jan .. 11=Dec
+  if (lg === 'nfl') return m >= 6 ? y : y - 1;
+  return m >= 8 ? y + 1 : y;
+}
+
+function v214BoardGameObj(g){
+  if (!g || !g.eventId || !g.analysis) return null;
+  const A = g.analysis;
+  const c = {};
+  if (A.ml && A.ml.sides && A.ml.sides.home && A.ml.sides.away){
+    const hp = A.ml.sides.home.best && A.ml.sides.home.best.price;
+    const ap = A.ml.sides.away.best && A.ml.sides.away.best.price;
+    if (hp != null && ap != null) c.ml = [+hp, +ap];
+  }
+  if (A.spread && A.spread.sides && A.spread.sides.home && A.spread.sides.away){
+    const ln = A.spread.sides.home.point;
+    const hp = A.spread.sides.home.best && A.spread.sides.home.best.price;
+    const ap = A.spread.sides.away.best && A.spread.sides.away.best.price;
+    if (ln != null && hp != null && ap != null) c.sp = [+ln, +hp, +ap];
+  }
+  if (A.total && A.total.sides && A.total.sides.over && A.total.sides.under){
+    const ln = A.total.sides.over.point;
+    const op = A.total.sides.over.best && A.total.sides.over.best.price;
+    const up = A.total.sides.under.best && A.total.sides.under.best.price;
+    if (ln != null && op != null && up != null) c.to = [+ln, +op, +up];
+  }
+  if (!c.ml && !c.sp && !c.to) return null;
+  const t = g.start ? +new Date(g.start) : Date.now();
+  return {
+    id: String(g.eventId),
+    t,
+    season: v214SeasonFor(g.league, t),
+    neutral: g.neutral ? 1 : 0,
+    h: String((g.home && g.home.id) || ''),
+    a: String((g.away && g.away.id) || ''),
+    ha: (g.home && g.home.short) || '',
+    aa: (g.away && g.away.short) || '',
+    league: g.league,
+    dk: { c }
+  };
+}
+
+function v214SideStr(call){
+  if (!call) return '';
+  if (call.mk === 'total') return call.s === 'a' ? 'over' : 'under';
+  return call.s === 'a' ? 'home' : 'away';
+}
+
+/* ---------- 3) Separate live records (N/300 proof, CLV, Brier vs no-vig, auto-suspend) ---------- */
+function v214LiveRows(bucket){
+  const out = [];
+  if (typeof MLOG === 'undefined' || !MLOG.raw) return out;
+  const raw = [];
+  for (const [, m] of MLOG.raw){
+    if (!m) continue;
+    for (const o of m.values()){
+      if (!o || !v214IsCoordRow(o)) continue;
+      if (bucket && bucket !== 'coord' && o.sp !== bucket) continue;
+      if (typeof v210CleanSbRow === 'function' && !v210CleanSbRow(null, o)) continue;
+      if (o.s !== 'sb') continue;
+      const call = o.sv ? o.sv : o.v;
+      if (call !== 'good') continue;
+      const pr = o.lpr != null ? +o.lpr : +o.pr;
+      if (!isFinite(pr) || pr < V214_FLOOR) continue;
+      raw.push(o);
+    }
+  }
+  const dedup = typeof mlogOnePerBet === 'function' ? mlogOnePerBet(raw) : raw;
+  return dedup.sort((a, b) => (+b.t || 0) - (+a.t || 0));
+}
+
+function v214ComputeRecord(bucket){
+  const hasLog = (typeof MLOG !== 'undefined' && MLOG.raw && MLOG.at > 0);
+  if (!hasLog && V214.crec && V214.crec.recs && V214.crec.recs[bucket]) return V214.crec.recs[bucket];
+  const rows = v214LiveRows(bucket);
+  let w = 0, l = 0, p = 0, u = 0, open = 0, agreed = 0;
+  let clvS = 0, clvN = 0, bMod = 0, bNv = 0, bN = 0;
+  const weeks = {};
+  for (const o of rows){
+    if (o.agr) agreed++;
+    const pr = o.lpr != null ? +o.lpr : +o.pr;
+    if (o.clv != null && isFinite(+o.clv)){ clvS += +o.clv; clvN++; }
+    if (!o.res){ open++; continue; }
+    if (o.res === 'ungradeable' || o.res === 'void') continue;
+    if (o.res === 'win' && isFinite(pr)){ w++; u += (pr > 0 ? pr / 100 : 100 / (-pr)); }
+    else if (o.res === 'loss'){ l++; u -= 1; }
+    else if (o.res === 'push') p++;
+    if ((o.res === 'win' || o.res === 'loss') && o.mp != null && o.nv != null && isFinite(+o.mp) && isFinite(+o.nv)){
+      const y = o.res === 'win' ? 1 : 0;
+      bMod += (+o.mp - y) ** 2;
+      bNv += (+o.nv - y) ** 2;
+      bN++;
+    }
+    if (typeof v207Week === 'function' && (o.res === 'win' || o.res === 'loss')){
+      const wk = v207Week(o.t);
+      const du = o.res === 'win' ? (pr > 0 ? pr / 100 : 100 / (-pr)) : -1;
+      weeks[wk] = (weeks[wk] || 0) + du;
+    }
+  }
+  const n = w + l;
+  let lossWeeks = 0;
+  if (typeof v207Week === 'function'){
+    const cur = v207Week(Date.now());
+    const wks = Object.keys(weeks).filter(wk => wk < cur).sort();
+    for (let i = wks.length - 1; i >= 0; i--){ if (weeks[wks[i]] < 0) lossWeeks++; else break; }
+  }
+  u = Math.round(u * 100) / 100;
+  let suspendWhy = '';
+  if (u <= -10) suspendWhy = `Down ${u.toFixed(1)}u (<= -10u limit)`;
+  else if (lossWeeks >= 4) suspendWhy = `${lossWeeks} losing weeks in a row`;
+
+  // Also honor v213 paper-only auto-suspend if already tripped
+  if (!suspendWhy && typeof v213LogLoad === 'function'){
+    const L13 = v213LogLoad();
+    const mv = L13 && L13.mv && L13.mv[bucket];
+    if (mv && mv.status === 'suspended') suspendWhy = 'Suspended in paper tracking';
+  }
+
+  return {
+    w, l, p, u, open, n, agreed,
+    roi: n ? Math.round((u / n) * 1000) / 1000 : null,
+    avgClv: clvN ? Math.round((clvS / clvN) * 10000) / 10000 : null,
+    clvN,
+    brierModel: bN ? Math.round((bMod / bN) * 10000) / 10000 : null,
+    brierNv: bN ? Math.round((bNv / bN) * 10000) / 10000 : null,
+    brierN: bN,
+    lossWeeks,
+    totalRows: rows.length,
+    proof: `${n}/${V214_GOAL_BETS}`,
+    suspended: !!suspendWhy,
+    suspendWhy
+  };
+}
+
+function v214AllRecords(){
+  return {
+    coord: v214ComputeRecord('coord'),
+    ml: v214ComputeRecord('ml'),
+    spread: v214ComputeRecord('spread'),
+    total: v214ComputeRecord('total'),
+    model: typeof v212ModelRecord === 'function' ? v212ModelRecord() : null,
+    props: typeof v207PsStats === 'function' ? v207PsStats() : null
+  };
+}
+
+function v214IsSuspended(bucket){
+  try{
+    const r = v214ComputeRecord(bucket);
+    return !!(r && r.suspended);
+  }catch(e){ return false; }
+}
+
+/* ---------- 4) Evaluate live Coordinator across all supported markets & integrate cleanly with v212 ---------- */
+function v214CleanReasons(p){
+  if (typeof v212CleanStaleReasons === 'function') v212CleanStaleReasons(p);
+}
+
+function v214EvalCoordinatorOnPlays(arr){
+  V214.byGame.clear();
+  const spec = typeof V213 !== 'undefined' ? V213.spec : null;
+  if (!spec || !spec.models || typeof v213EvalGameSpecialist !== 'function' || typeof v213CoordinateGame !== 'function') return [];
+
+  const bySport = {};
+  for (const sid in spec.models){
+    const m = spec.models[sid];
+    (bySport[m.sport] || (bySport[m.sport] = [])).push(m);
+  }
+
+  const seenGames = new Map();
+  for (const p of arr){
+    if (p && p.g && p.g.state === 'pre' && p.g.id && !seenGames.has(p.g.id)) seenGames.set(p.g.id, p.g);
+  }
+
+  const coordSuspended = v214IsSuspended('coord');
+  const spSusp = { ml: v214IsSuspended('ml'), spread: v214IsSuspended('spread'), total: v214IsSuspended('total') };
+  const now = Date.now();
+  const coordCands = [];
+
+  for (const g of seenGames.values()){
+    const spList = bySport[g.league];
+    if (!spList || !spList.length) continue;
+    const st = typeof v207State === 'function' ? v207State(g.league) : null;
+    if (!st) continue;
+    const gObj = v214BoardGameObj(g);
+    if (!gObj) continue;
+
+    const calls = {};
+    for (const sp of spList){
+      const d = v213EvalGameSpecialist(sp, gObj, st, now);
+      if (!d) continue;
+      // Enforce -250 floor, +250 underdog cap (protects NBA ML from long-dog bias), and auto-suspend gate
+      if (d.pr < V214_FLOOR || (d.pr > V214_DOG_MAX && d.mk === 'ml')){
+        d.bet = 0;
+        d.blockedWhy = d.pr < V214_FLOOR ? 'Below -250 floor' : 'Exceeds +250 dog cap';
+      }
+      if (spSusp[d.sp]){
+        d.bet = 0;
+        d.blockedWhy = 'Specialist auto-suspended';
+      }
+      calls[sp.specialist] = d;
+    }
+    if (!Object.keys(calls).length) continue;
+
+    const propsVote = typeof v213PropsVoteForGame === 'function' ? v213PropsVoteForGame(gObj.id) : null;
+    const cv = v213CoordinateGame(Object.assign({}, gObj, { league: g.league }), calls, propsVote);
+    cv.spList = spList.map(s => s.specialist);
+    cv.league = g.league;
+    cv.spSusp = spSusp;
+    V214.byGame.set(g.id, cv);
+    g._v214Coord = cv;
+
+    if (!coordSuspended && cv.pick){
+      const side = v214SideStr(cv.pick);
+      const matchPlay = arr.find(p => p && p.g && p.g.id === g.id && p.mk === cv.pick.mk && p.side === side);
+      if (matchPlay && matchPlay.base !== 'avoid' && !(typeof isFinalPulled === 'function' && isFinalPulled(matchPlay.id))){
+        // Check open-line movement safety: v213EvalGameSpecialist already scored at current live DK price;
+        // ensure price still satisfies -250 floor & factor completeness >= 50 (no broken/missing feed)
+        const dkLive = typeof v155Price === 'function' ? v155Price('games', matchPlay) : cv.pick.pr;
+        if (dkLive != null && +dkLive >= V214_FLOOR && !(cv.pick.mk === 'ml' && +dkLive > V214_DOG_MAX)){
+          coordCands.push({ p: matchPlay, cv, pick: cv.pick });
+        }
+      }
+    }
+  }
+  return coordCands;
+}
+
+function v214ApplyBoard(arr){
+  if (!Array.isArray(arr) || !arr.length) return;
+  const coordCands = v214EvalCoordinatorOnPlays(arr);
+
+  // Clear previous v214 tags on pre-game plays
+  for (const p of arr){
+    if (!p || !p.g || p.g.state !== 'pre') continue;
+    if (p._v214Src === 'coord'){
+      p._v214Src = '';
+      p._v214Sp = '';
+      p._v214 = null;
+    }
+  }
+
+  // Respect sharp picks & Coordinator contradiction blocks
+  const sharpGames = new Set();
+  for (const p of arr){
+    if (p && p.g && p.g.state === 'pre' && p.verdict === 'good' && p._v212Src === 'sharp') sharpGames.add(p.g.id);
+  }
+
+  // Demote any v212 model pick on a game where Coordinator has a play OR blocked an ML/Spread contradiction
+  const coordGames = new Set(coordCands.map(c => c.p.g.id));
+  for (const p of arr){
+    if (!p || !p.g || p.g.state !== 'pre') continue;
+    const cv = V214.byGame.get(p.g.id);
+    if (p._v212Src === 'model' && p.verdict === 'good'){
+      const blockedContra = !!(cv && cv.mlContra && (p.mk === 'ml' || p.mk === 'spread'));
+      if (coordGames.has(p.g.id) || blockedContra){
+        p.verdict = 'watch';
+        p._v0 = 'watch';
+        p._v212Src = '';
+        if (blockedContra){
+          (p.reasons || (p.reasons = [])).unshift('Coordinator blocked: Moneyline & Spread specialists contradict on this game');
+        }
+      }
+    }
+  }
+
+  // Build combined daily candidate pool (coord + remaining v212 model picks), max 1/game, cap 8/day
+  const byDay = new Map();
+  const addDay = (p, score, kind, obj) => {
+    const d = typeof mlogDay === 'function' ? mlogDay(+p.g.start) : String(p.g.start).slice(0, 10);
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push({ p, score, kind, obj });
+  };
+
+  for (const c of coordCands){
+    if (sharpGames.has(c.p.g.id)) continue;
+    const bonus = c.cv.agreeBoost ? 2.0 : 0;
+    addDay(c.p, c.pick.e * 100 + bonus, 'coord', c);
+  }
+  for (const p of arr){
+    if (!p || !p.g || p.g.state !== 'pre') continue;
+    if (p._v212Src === 'model' && p.verdict === 'good' && !coordGames.has(p.g.id) && !sharpGames.has(p.g.id)){
+      const sc = p._v212 ? (p._v212.modelEdge * 100 + p._v212.pureScore * 0.5) : 1;
+      addDay(p, sc, 'model', p._v212);
+    }
+  }
+
+  const pickedList = [];
+  for (const [, cands] of byDay){
+    cands.sort((a, b) => b.score - a.score);
+    const usedGames = new Set(sharpGames);
+    let dayUsed = 0;
+    for (const p of arr){
+      if (p && p.g && p.g.state === 'pre' && p._v212Src === 'sharp' && p.verdict === 'good'){
+        const d0 = typeof mlogDay === 'function' ? mlogDay(+p.g.start) : String(p.g.start).slice(0, 10);
+        if (d0 === (typeof mlogDay === 'function' ? mlogDay(+cands[0].p.g.start) : '')) dayUsed++;
+      }
+    }
+    for (const item of cands){
+      const p = item.p;
+      if (usedGames.has(p.g.id)) continue;
+      if (dayUsed < V214_DAILY_CAP){
+        usedGames.add(p.g.id);
+        dayUsed++;
+        if (item.kind === 'coord'){
+          const { cv, pick } = item.obj;
+          p._v214Src = 'coord';
+          p._v214Sp = pick.sp;
+          p._v214 = cv;
+          p._v212Src = '';
+          p.verdict = 'good';
+          p._v0 = 'good';
+          p.base = 'good';
+          p.est = pick.pSide != null ? pick.pSide : pick.p;
+          p._v160e = pick.e;
+          delete p._v155;
+          delete p._v160;
+          v214CleanReasons(p);
+          const spName = pick.sp === 'ml' ? 'Moneyline' : pick.sp === 'spread' ? 'Spread' : 'Totals';
+          const projTxt = pick.mu != null ? ` (projected ${pick.mu} total)` : '';
+          const agrTxt = cv.agreeBoost ? ' · ML + Spread specialists agree' : '';
+          const pShow = pick.pSide != null ? pick.pSide : pick.p;
+          const head = `${spName} specialist gives ${fmtPct(pShow, 1)} (+${(pick.e * 100).toFixed(1)}% vs DK)${projTxt}${agrTxt}`;
+          if (!(p.reasons || []).some(x => String(x).includes('specialist gives'))) (p.reasons || (p.reasons = [])).unshift(head);
+          if (p.j && p.j.conf){
+            const comp = p.j.conf.v != null ? +p.j.conf.v : 75;
+            const rawStr = 44 + Math.min(16, comp * 0.16) + Math.max(0, pick.e) * 320 + (cv.agreeBoost ? 8 : 0);
+            p.j.conf.str = Math.round(Math.max(35, Math.min(Math.max(comp, 70), rawStr)) * 10) / 10;
+          }
+          pickedList.push({
+            match: `${p.g.away.short}@${p.g.home.short}`, lg: p.g.league, mk: p.mk, label: p.label,
+            dk: pick.pr, modelP: pick.pSide != null ? pick.pSide : pick.p, edge: pick.e, sp: pick.sp, agreed: !!cv.agreeBoost,
+            votes: cv.votes
+          });
+        }
+      } else {
+        if (p.verdict === 'good') p.verdict = 'watch';
+        if (p._v0 === 'good') p._v0 = 'watch';
+        p._v214Src = '';
+        p._v212Src = '';
+      }
+    }
+  }
+
+  // Re-number Pick ranks cleanly across all good game plays (strictly max 1 per game)
+  const goods = arr.filter(p => p && p.verdict === 'good').sort((a, b) => (b.est || 0) - (a.est || 0) || (b.score || 0) - (a.score || 0));
+  const seenG = new Set();
+  let rk = 0;
+  for (const p of goods){
+    if (seenG.has(p.g.id)){ p.verdict = 'watch'; p._v0 = 'watch'; continue; }
+    seenG.add(p.g.id);
+    rk++;
+    p.rank = rk;
+  }
+
+  V214.lastSlate = { at: Date.now(), picks: pickedList };
+}
+
+(function v214WrapEvaluateAndEstimate(){
+  if (typeof estimate === 'function'){
+    const baseEst = estimate;
+    estimate = function(p, o){
+      const E = baseEst.apply(this, arguments);
+      try{
+        if (!V214.inEst && E && p && p._v214Src === 'coord' && p._v214 && p._v214.pick && (!p.g || !p.g.state || p.g.state === 'pre')){
+          const pk = p._v214.pick;
+          const prev = E.final != null ? E.final : E.start;
+          const pShow = pk.pSide != null ? pk.pSide : pk.p;
+          E.final = pShow;
+          if (!(E.steps || []).some(s => s && s.key === 'v214spec')){
+            const spName = pk.sp === 'ml' ? 'Moneyline' : pk.sp === 'spread' ? 'Spread' : 'Totals';
+            (E.steps || (E.steps = [])).push({
+              key: 'v214spec',
+              plain: `${spName} specialist estimates ${fmtPct(pShow, 1)}${pk.mu != null ? ` (projected ${pk.mu} total)` : ''}`,
+              dp: pShow - prev,
+              dz: 0,
+              math: `${fmtPct(pShow, 1)} vs DK (${pk.e >= 0 ? '+' : ''}${(pk.e * 100).toFixed(1)}% edge)`
+            });
+          }
+        }
+      }catch(e){}
+      return E;
+    };
+  }
+
+  if (typeof evaluateAll === 'function'){
+    const baseEvalAll = evaluateAll;
+    evaluateAll = function(){
+      const r = baseEvalAll.apply(this, arguments);
+      try{
+        if (!V214.inApply){
+          V214.inApply = true;
+          try{ v214ApplyBoard(typeof plays !== 'undefined' ? plays : []); }
+          finally{ V214.inApply = false; }
+          if (typeof v165Apply === 'function') v165Apply();
+          try{ if (typeof v162GPut === 'function') for (const p of (plays || [])) v162GPut(p); }catch(e){}
+        }
+      }catch(e){ console.warn('v214 evaluateAll', e); }
+      return r;
+    };
+  }
+})();
+
+/* ---------- 5) Courtroom breakdown: show each specialist's vote in plain English, player/team case first ---------- */
+function v214CourtVotesHTML(p){
+  const g = p && p.g;
+  const cv = (p && p._v214) || (g && g._v214Coord) || (g && V214.byGame.get(g.id));
+  if (!cv || !cv.votes) return '';
+  const lg = (g && g.league) || cv.league || '';
+  const fmtVote = (sp, v) => {
+    if (sp === 'props'){
+      if (v && v.n) return `Paused (shadow only: ${v.overs} over / ${v.unders} under leans${v.top ? ` · top: ${esc(v.top)}` : ''})`;
+      return 'Paused (shadow-tracking only until it beats DK no-vig)';
+    }
+    if (!v){
+      const spObj = V213 && V213.spec && V213.spec.specialists && V213.spec.specialists[sp];
+      const hasModel = spObj && Array.isArray(spObj.supported) && spObj.supported.some(s => s.startsWith(lg));
+      if (!hasModel) return 'Unsupported for this sport (kept off)';
+      if (cv.spSusp && cv.spSusp[sp]) return 'Suspended (-10u / 4 losing weeks limit)';
+      return 'No qualifying edge on current DK line';
+    }
+    const pct = Math.round(v.p * 1000) / 10;
+    const edge = (v.e * 100).toFixed(1);
+    const proj = v.mu != null ? `, projected ${v.mu}` : '';
+    const status = v.bet ? `<b>backs ${esc(v.lbl)}</b>` : `leans ${esc(v.lbl)} (below bet bar)`;
+    return `${status} — ${pct}%${proj} (${v.e >= 0 ? '+' : ''}${edge}% vs DK)`;
+  };
+  const notes = (cv.notes && cv.notes.length) ? `<div class="hint" style="margin-top:4px">${esc(cv.notes.join(' · '))}</div>` : '';
+  const lead = cv.pick ? `Coordinator picked <b>${esc(cv.pick.sideLabel)}</b> (highest coherent edge, 1 pick/game max).`
+    : p._v212Src === 'model' ? `Coordinator stood down; team matchup model picked <b>${esc(p.label)}</b>.`
+    : 'Coordinator checked all specialists (no specialist override needed).';
+  return `<div class="c-col v214-votes" style="grid-column:1/-1">
+    <div class="ct">🧩 Team of Specialists (Coordinator)</div>
+    <ul>
+      <li><b>Moneyline specialist:</b> ${fmtVote('ml', cv.votes.ml)}</li>
+      <li><b>Spread specialist:</b> ${fmtVote('spread', cv.votes.spread)}</li>
+      <li><b>Totals specialist:</b> ${fmtVote('total', cv.votes.total)}</li>
+      <li><b>Player props specialist:</b> ${fmtVote('props', cv.votes.props)}</li>
+      <li><b>Coordinator call:</b> ${lead}</li>
+    </ul>${notes}
+  </div>`;
+}
+
+(function v214CourtHook(){
+  if (typeof courtroomHTML === 'function'){
+    const baseCourt = courtroomHTML;
+    courtroomHTML = function(p, C){
+      let h = baseCourt.apply(this, arguments);
+      try{
+        const block = v214CourtVotesHTML(p);
+        if (block && typeof h === 'string'){
+          const idx = h.indexOf('<details class="dd fca"');
+          if (idx > 0) h = h.slice(0, idx) + block + h.slice(idx);
+          else{
+            const end = h.lastIndexOf('</div>');
+            if (end > 0) h = h.slice(0, end) + block + '</div>';
+          }
+        }
+      }catch(e){}
+      return h;
+    };
+  }
+})();
+
+/* ---------- 6) Shared board (/p/board) + Universe + MLOG tagging & 100% separate records ---------- */
+(function v214SyncAndLogHooks(){
+  if (typeof v165Collect === 'function'){
+    const baseCol = v165Collect;
+    v165Collect = function(){
+      const c = baseCol.apply(this, arguments) || { g: [], p: [] };
+      const cr = [];
+      for (const x of ((typeof plays !== 'undefined' && plays) || [])){
+        if (x && x.g && x.mk && x.verdict === 'good' && x._v214Src === 'coord' && typeof playResultKey === 'function'){
+          cr.push([playResultKey(x), x._v214Sp || x.mk, x._v214 && x._v214.pick ? (x._v214.pick.pSide != null ? x._v214.pick.pSide : x._v214.pick.p) : x.est, x._v214 && x._v214.pick ? x._v214.pick.e : x._v160e, x._v214 && x._v214.agreeBoost ? 1 : 0]);
+        }
+      }
+      c.c = cr;
+      try{ if (typeof MLOG !== 'undefined' && MLOG.at) c.cr = v214AllRecords(); }catch(e){}
+      return c;
+    };
+  }
+  if (typeof v165SetShared === 'function'){
+    const baseSet = v165SetShared;
+    v165SetShared = function(x){
+      const ok = baseSet.apply(this, arguments);
+      try{
+        if (V165 && V165.sh && x){
+          V165.sh.c = new Map(Array.isArray(x.c) ? x.c.map(z => [z[0], z]) : []);
+          if (x.cr && typeof x.cr === 'object'){
+            V214.crec = { at: x.at || Date.now(), recs: x.cr };
+            try{ localStorage.setItem(V214_CREC_LS, JSON.stringify(V214.crec)); }catch(e){}
+            try{ if (typeof v202UpdateRecordsDOM === 'function') v202UpdateRecordsDOM(); }catch(e){}
+          }
+          if (ok){
+            const prev = JSON.parse(localStorage.getItem('bl_v165_board') || '{}');
+            localStorage.setItem('bl_v165_board', JSON.stringify(Object.assign(prev, { c: Array.isArray(x.c) ? x.c : [], cr: x.cr || null })));
+          }
+        }
+      }catch(e){}
+      return ok;
+    };
+  }
+  if (typeof v154Put === 'function'){
+    const basePut = v154Put;
+    v154Put = function(key, obj){
+      if (key === 'board' && obj && Array.isArray(obj.g)){
+        try{
+          const c = typeof v165Collect === 'function' ? v165Collect() : null;
+          if (c) obj = Object.assign({}, obj, { v: 214, c: Array.isArray(c.c) ? c.c : [], cr: c.cr || obj.cr || null });
+        }catch(e){}
+      }
+      return basePut.call(this, key, obj);
+    };
+  }
+  if (typeof v165Apply === 'function'){
+    const baseApply = v165Apply;
+    v165Apply = function(){
+      const r = baseApply.apply(this, arguments);
+      try{
+        if (typeof v165Active === 'function' && v165Active() && V165 && V165.sh && V165.sh.c && V165.sh.c.size){
+          for (const p of ((typeof plays !== 'undefined' && plays) || [])){
+            if (!p || !p.g || !p.mk || p.verdict !== 'good') continue;
+            const k = typeof playResultKey === 'function' ? playResultKey(p) : '';
+            const info = k && V165.sh.c.get(k);
+            if (info){
+              p._v214Src = 'coord';
+              p._v214Sp = info[1] || p.mk;
+              if (info[2] != null) p.est = +info[2];
+              if (info[3] != null) p._v160e = +info[3];
+            }
+          }
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+
+  if (typeof uniUpsert === 'function'){
+    const baseUp = uniUpsert;
+    uniUpsert = function(b, src, id, rowBase, snap){
+      const r = baseUp.apply(this, arguments);
+      try{
+        if (r && b === 'games' && src === 'sb' && typeof plays !== 'undefined' && Array.isArray(plays)){
+          const play = plays.find(p => p && p.g && String(p.g.eventId) === String(r.ev) && p.mk === r.mk && p.side === r.side);
+          if (play && play._v214Src === 'coord' && play.verdict === 'good' && play._v214 && play._v214.pick){
+            const pk = play._v214.pick;
+            r.msrc = 'coord';
+            r.sp = pk.sp;
+            r.mp = pk.pSide != null ? pk.pSide : pk.p;
+            r.me = pk.e;
+            r.nv = pk.nvSide != null ? pk.nvSide : pk.nv;
+            r.agr = play._v214.agreeBoost ? 1 : 0;
+            if (play.sd && play.A && play.A.truth !== 'single' && play.sd.nv != null){
+              const impDk = typeof v160Imp === 'function' ? v160Imp(pk.pr) : null;
+              if (impDk != null) r.pe = Math.round((play.sd.nv - impDk) * 10000) / 10000;
+            }
+            if (r.lk && r.lk.sv === 'good'){ r.lk.msrc = 'coord'; r.lk.sp = pk.sp; }
+          }
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+
+  if (typeof mlogCompact === 'function'){
+    const baseMc = mlogCompact;
+    mlogCompact = function(r){
+      const out = baseMc.apply(this, arguments);
+      try{
+        if (out && out[1] && r && r.b === 'games' && (r.msrc === 'coord' || r.ms === 'coord')){
+          const o = out[1];
+          o.ms = 'coord';
+          if (r.sp) o.sp = r.sp;
+          if (r.mp != null && isFinite(+r.mp)) o.mp = Math.round(+r.mp * 10000) / 10000;
+          if (r.me != null && isFinite(+r.me)) o.me = Math.round(+r.me * 10000) / 10000;
+          if (r.nv != null && isFinite(+r.nv)) o.nv = Math.round(+r.nv * 10000) / 10000;
+          if (r.pe != null && isFinite(+r.pe)) o.pe = Math.round(+r.pe * 10000) / 10000;
+          if (r.agr) o.agr = 1;
+        }
+      }catch(e){}
+      return out;
+    };
+  }
+
+  if (typeof mlogRank === 'function'){
+    const baseRk = mlogRank;
+    mlogRank = function(o){
+      const r = baseRk.apply(this, arguments);
+      if (r < 0 || !o) return r;
+      let tie = 0;
+      if (o.ms === 'coord') tie += 0.003;
+      if (o.clv != null) tie += 0.001;
+      return r + tie;
+    };
+  }
+
+  if (typeof v200RowSig === 'function'){
+    const baseSig = v200RowSig;
+    v200RowSig = function(o){
+      const s = baseSig.apply(this, arguments);
+      return o ? (s + '|' + (o.ms || '') + '|' + (o.sp || '') + '|' + (o.clv ?? '')) : s;
+    };
+  }
+
+  // Also stamp closing DraftKings CLV on Coordinator live picks
+  window.v214StampCloseClv = function(){
+    try{
+      const now = Date.now();
+      const gs = (typeof games !== 'undefined' && Array.isArray(games)) ? games : [];
+      const gMap = new Map(gs.map(g => [String(g.eventId), g]));
+      if (typeof UNI !== 'undefined'){
+        for (const r of UNI.values()){
+          if (!r || r.b !== 'games' || r.msrc !== 'coord') continue;
+          if ((r.t - now) / 60000 > 20) continue;
+          const g = gMap.get(String(r.ev));
+          if (!g || g.state !== 'pre') continue;
+          const A = g.analysis && g.analysis[r.mk];
+          const sd = A && A.sides && A.sides[r.side];
+          const cpr = sd && sd.best && sd.best.price != null ? +sd.best.price : null;
+          if (cpr == null || !isFinite(cpr)) continue;
+          const pickPr = (r.lk && r.lk.price != null) ? +r.lk.price : +r.price;
+          const pi = typeof v160Imp === 'function' ? v160Imp(pickPr) : null;
+          const ci = typeof v160Imp === 'function' ? v160Imp(cpr) : null;
+          r.cpr = Math.round(cpr);
+          if (sd.nv != null && isFinite(+sd.nv)) r.cnv = Math.round(+sd.nv * 10000) / 10000;
+          if (pi != null && ci != null) r.clv = Math.round((ci - pi) * 10000) / 10000;
+          if (typeof UNI_DIRTY !== 'undefined') UNI_DIRTY.add(r.i);
+        }
+      }
+      if (typeof MLOG !== 'undefined' && MLOG.raw){
+        for (const [, m] of MLOG.raw){
+          if (!m) continue;
+          for (const [id, o] of m){
+            if (!o || o.ms !== 'coord') continue;
+            if ((o.t - now) / 60000 > 20) continue;
+            const g = gMap.get(String(o.ev));
+            if (!g || g.state !== 'pre') continue;
+            const A = g.analysis && g.analysis[o.mk];
+            const sd = A && A.sides && A.sides[o.sd];
+            const cpr = sd && sd.best && sd.best.price != null ? +sd.best.price : null;
+            if (cpr == null || !isFinite(cpr)) continue;
+            const pickPr = o.lpr != null ? +o.lpr : +o.pr;
+            const pi = typeof v160Imp === 'function' ? v160Imp(pickPr) : null;
+            const ci = typeof v160Imp === 'function' ? v160Imp(cpr) : null;
+            o.cpr = Math.round(cpr);
+            if (sd.nv != null && isFinite(+sd.nv)) o.cnv = Math.round(+sd.nv * 10000) / 10000;
+            if (pi != null && ci != null) o.clv = Math.round((ci - pi) * 10000) / 10000;
+            MLOG.queue.set(id, o);
+          }
+        }
+      }
+    }catch(e){}
+  };
+  setInterval(() => { try{ if (typeof v154Pub === 'function' && v154Pub()) v214StampCloseClv(); }catch(e){} }, 120000);
+})();
+
+/* Exclude ms='coord' from historical Picks, POD, and v212 model-only row count */
+(function v214SeparationHooks(){
+  if (typeof v153BoardPick === 'function'){
+    const baseBp = v153BoardPick;
+    v153BoardPick = function(o){ if (v214IsCoordRow(o)) return false; return baseBp.apply(this, arguments); };
+  }
+  if (typeof v160Counted === 'function'){
+    const baseCnt = v160Counted;
+    v160Counted = function(o){ if (v214IsCoordRow(o)) return false; return baseCnt.apply(this, arguments); };
+  }
+  if (typeof v131Keep === 'function'){
+    const baseKeep = v131Keep;
+    v131Keep = function(c){ if (v214IsCoordRow(c)) return false; return baseKeep.apply(this, arguments); };
+  }
+})();
+
+/* ---------- 7) Results (Tracked separately + Model lab) + exact Learner parity ---------- */
+function v214SyncLearner(){
+  try{
+    if (typeof LEARN === 'undefined' || !LEARN) return;
+    const R = v214AllRecords();
+    LEARN.coord = Object.assign({ at: Date.now() }, R.coord);
+    LEARN.specMl = Object.assign({ at: Date.now() }, R.ml);
+    LEARN.specSpread = Object.assign({ at: Date.now() }, R.spread);
+    LEARN.specTotal = Object.assign({ at: Date.now() }, R.total);
+    if (typeof learnSave === 'function') learnSave();
+  }catch(e){}
+}
+
+(function v214ResultsAndUiHooks(){
+  if (typeof v142Publish === 'function'){
+    const basePub = v142Publish;
+    v142Publish = function(force){
+      const r = basePub.apply(this, arguments);
+      try{ v214SyncLearner(); }catch(e){}
+      return r;
+    };
+  }
+
+  if (typeof v202RecordsCardHTML === 'function' && typeof v202RecordRowHTML === 'function'){
+    const fmtMeta = (base, r) => {
+      if (!r) return base;
+      const parts = [base, `Proof ${r.proof || `0/${V214_GOAL_BETS}`}`];
+      if (r.avgClv != null) parts.push(`CLV ${r.avgClv >= 0 ? '+' : ''}${(r.avgClv * 100).toFixed(1)}%`);
+      if (r.brierN >= 10) parts.push(`Brier ${r.brierModel.toFixed(3)}/${r.brierNv.toFixed(3)}`);
+      if (r.suspended) parts.push(`SUSPENDED`);
+      return parts.join(' · ');
+    };
+    v202RecordsCardHTML = function(){
+      const all = v214AllRecords();
+      const sh = typeof v202SignalRecord === 'function' ? v202SignalRecord('sharp') : null;
+      const pa = typeof v202SignalRecord === 'function' ? v202SignalRecord('parlay') : null;
+      return `<div class="card v202-recs" id="v202Recs">
+        <div class="v202-recs-h"><h3>Tracked separately</h3><span class="hint">300-bet proof tracking · excluded from historical Picks &amp; POD</span></div>
+        <div class="v202-recs-list">
+          ${v202RecordRowHTML('Coordinator (Live Team)', fmtMeta('Combined 4-specialist picks', all.coord), all.coord)}
+          ${v202RecordRowHTML('Moneyline Specialist', fmtMeta('NBA/NHL/NFL ML', all.ml), all.ml)}
+          ${v202RecordRowHTML('Spread Specialist', fmtMeta('NBA/NFL Spread', all.spread), all.spread)}
+          ${v202RecordRowHTML('Totals Specialist', fmtMeta('NBA/NHL/NCAAB Open Total', all.total), all.total)}
+          ${v202RecordRowHTML('Player Props (Shadow)', fmtMeta('Paused · NBA DK shadow', all.props), all.props)}
+          ${v202RecordRowHTML('Model game picks (v212)', fmtMeta('Fallback model edge', all.model), all.model)}
+          ${v202RecordRowHTML('Sharp', 'Locked 30m before start', sh)}
+          ${v202RecordRowHTML('Parlays', '2+ legs · sportsbook lines', pa)}
+        </div>
+      </div>`;
+    };
+  }
+
+  if (typeof v207LiveHTML === 'function'){
+    const baseLive = v207LiveHTML;
+    v207LiveHTML = function(){
+      let h = baseLive.apply(this, arguments);
+      try{
+        const R = v214AllRecords().coord;
+        if (R){
+          const recTxt = (R.w + R.l + R.p) ? `<b>${R.w}-${R.l}${R.p ? '-' + R.p : ''}</b>` : `<b>0-0</b>`;
+          const roiTxt = R.roi != null ? `, ROI <b class="${R.roi >= 0 ? 'pos' : 'neg'}">${R.roi >= 0 ? '+' : ''}${(R.roi * 100).toFixed(1)}%</b>` : '';
+          const clvTxt = R.avgClv != null ? ` · avg CLV <b class="${R.avgClv >= 0 ? 'pos' : 'neg'}">${R.avgClv >= 0 ? '+' : ''}${(R.avgClv * 100).toFixed(1)}%</b>` : '';
+          const brTxt = R.brierN ? ` · Brier ${R.brierModel.toFixed(4)} vs NV ${R.brierNv.toFixed(4)}` : '';
+          const li = `<li>Coordinator live team (v214, ${esc(R.proof)}): ${recTxt}${roiTxt}${clvTxt}${brTxt}${R.open ? ` (${R.open} open)` : ''}</li>`;
+          const idx = h.indexOf('</ul>');
+          if (idx > 0) h = h.slice(0, idx) + li + h.slice(idx);
+        }
+      }catch(e){}
+      return h;
+    };
+  }
+
+  if (typeof v213PanelHTML === 'function'){
+    v213PanelHTML = function(){
+      const sp = typeof V213 !== 'undefined' ? V213.spec : null;
+      const specs = sp && sp.specialists ? sp.specialists : {};
+      const mIds = sp && sp.models ? Object.keys(sp.models) : [];
+      const liveAll = v214AllRecords();
+
+      const rows = [
+        ['ml', 'Moneyline Specialist', 'Straight-up win features + ML no-vig only'],
+        ['spread', 'Spread Specialist', 'Cover margin/variance + spread line only'],
+        ['total', 'Totals Specialist', 'Projected points distribution (pace/PF/PA) + totals only'],
+        ['props', 'Player Props Specialist', 'Player-first NegBin (minutes, role, on/off, pace) · PAUSED'],
+        ['coord', 'Coordinator (Team Lead)', 'Checks consistency, blocks contradictions, boosts consensus, max 1/game']
+      ].map(([k, title, desc]) => {
+        const liveR = liveAll[k] || { w: 0, l: 0, u: 0, roi: null, avgClv: null, brierN: 0, open: 0, proof: '0/300' };
+        const papR = k === 'props' ? liveAll.props : (typeof v213Stats === 'function' ? v213Stats(k) : { w: 0, l: 0, u: 0, roi: null, clv: null, pend: 0 });
+        const status = k === 'props' ? 'Paused (shadow)' : (liveR.suspended ? 'Suspended' : 'Live + Proof');
+        const lw = (liveR.w + liveR.l) ? `${liveR.w}-${liveR.l}` : '0-0';
+        const lu = `${(liveR.u || 0) >= 0 ? '+' : ''}${(+liveR.u || 0).toFixed(2)}u`;
+        const clv = liveR.avgClv != null ? v213Pct(liveR.avgClv) : (papR && papR.clv != null ? v213Pct(papR.clv) : '—');
+        const br = liveR.brierN ? `${liveR.brierModel.toFixed(4)}/${liveR.brierNv.toFixed(4)}` : '—';
+        const sup = specs[k] && specs[k].supported ? specs[k].supported.join(', ') : (k === 'coord' ? 'NBA, NFL, NHL, NCAAB' : '—');
+        const unsup = specs[k] && specs[k].unsupported ? specs[k].unsupported.join(' · ') : '';
+        return `<tr>
+          <td><b>${esc(title)}</b><div class="hint">${esc(desc)}</div><div class="hint">Supported: ${esc(sup)}${unsup ? `<br>Unsupported: ${esc(unsup)}` : ''}</div></td>
+          <td><span class="v207-chip ${status === 'Live + Proof' ? 'on' : status === 'Suspended' ? 'neg' : ''}">${esc(status)}</span><div class="hint">${esc(liveR.proof || `0/${V214_GOAL_BETS}`)}</div></td>
+          <td><b>${lw}</b>${liveR.open ? ` <span class="hint">(${liveR.open} open)</span>` : ''}${k !== 'props' && papR && (papR.w + papR.l + papR.pend) ? `<div class="hint">Paper: ${papR.w}-${papR.l}</div>` : ''}</td>
+          <td class="${(liveR.u || 0) >= 0 ? 'pos' : 'neg'}">${lu} (${v213Pct(liveR.roi)})</td>
+          <td>${clv}<div class="hint">Brier: ${br}</div></td>
+        </tr>`;
+      }).join('');
+
+      const btRows = mIds.map(id => {
+        const m = sp.models[id], b = m.backtest || {};
+        const h1b = b.brier_h1 != null ? `${b.brier_h1.toFixed(4)}/${b.brier_nv_h1.toFixed(4)}` : '—';
+        const h2b = b.brier_h2 != null ? `${b.brier_h2.toFixed(4)}/${b.brier_nv_h2.toFixed(4)}` : '—';
+        return `<tr>
+          <td><b>${esc(id)}</b> <span class="hint">(${esc(m.kind)})</span></td>
+          <td>${b.w}-${b.l} (${b.n})</td>
+          <td class="${b.units >= 0 ? 'pos' : 'neg'}">${b.units >= 0 ? '+' : ''}${b.units}u (${v213Pct(b.roi)})</td>
+          <td>${v213Pct(b.roi_dk)}</td>
+          <td>${v213Pct(b.h1_roi)} / ${v213Pct(b.h2_roi)}</td>
+          <td>${h1b} | ${h2b}</td>
+        </tr>`;
+      }).join('');
+
+      const coordBt = sp && sp.coordinator && sp.coordinator.backtest ? Object.entries(sp.coordinator.backtest).map(([lg, c]) =>
+        `<li><b>${esc(lg.toUpperCase())}:</b> ${c.w}-${c.l} (${c.n}), <span class="${c.units >= 0 ? 'pos' : 'neg'}">${c.units >= 0 ? '+' : ''}${c.units}u (${v213Pct(c.roi)})</span>, H1 ${v213Pct(c.h1_roi)} / H2 ${v213Pct(c.h2_roi)}, DD ${c.dd}u, blocked ${c.contradictions_blocked} contradictions${c.consensus_roi != null ? `, consensus (${c.consensus_n}) <b>${v213Pct(c.consensus_roi)}</b>` : ''}</li>`
+      ).join('') : '';
+
+      return `<div class="v213-box" style="margin-top:12px">
+        <div class="v207-sub">🧩 4-Specialist Team + Coordinator (BL-109 Live — 300-Bet Proof Tracking)</div>
+        <p class="hint">All supported markets are live in Coordinator Picks and tracked independently to 300 bets. Auto-suspend triggers at −10u or 4 losing weeks. Props remain paused in shadow mode.</p>
+        <div class="v207-tw"><table class="v207-t">
+          <thead><tr><th>Agent</th><th>Proof</th><th>Live W-L</th><th>Units (ROI)</th><th>CLV / Brier</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        <details class="v207-dd" data-k="v213bt"><summary>Walk-forward backtest by specialist &amp; Coordinator</summary>
+          ${btRows ? `<div class="v207-tw"><table class="v207-t">
+            <thead><tr><th>Specialist Model</th><th>Record</th><th>Units (ROI)</th><th>After DK</th><th>H1 / H2 ROI</th><th>Brier vs NV (H1 | H2)</th></tr></thead>
+            <tbody>${btRows}</tbody>
+          </table></div>` : `<div class="hint">Loading specialists_v1.json…</div>`}
+          ${coordBt ? `<ul class="v207-ul">${coordBt}</ul>` : ''}
+        </details>
+        <details class="v207-dd" data-k="v213votes"><summary>Latest Coordinator game votes</summary>
+          ${typeof v213VotesHTML === 'function' ? v213VotesHTML() : ''}
+        </details>
+      </div>`;
+    };
+  }
+
+  if (typeof learnPanelHTML === 'function'){
+    const baseLp = learnPanelHTML;
+    learnPanelHTML = function(){
+      let h = baseLp.apply(this, arguments);
+      try{
+        const A = v214AllRecords();
+        const R = A.coord;
+        if (R && typeof h === 'string' && h.includes('ln-kpis')){
+          const cTxt = `<div class="hint" style="margin:6px 0 0"><b>Coordinator live (v214, ${esc(R.proof)}):</b> ${R.w}-${R.l}${R.p ? '-' + R.p : ''} (${R.totalRows} tracked one-per-bet${R.open ? `, ${R.open} open` : ''}) · ML ${A.ml.w}-${A.ml.l} (${A.ml.totalRows}) · Spread ${A.spread.w}-${A.spread.l} (${A.spread.totalRows}) · Totals ${A.total.w}-${A.total.l} (${A.total.totalRows})</div>`;
+          const pos = h.indexOf('<div class="ln-actions">');
+          if (pos > 0) h = h.slice(0, pos) + cTxt + h.slice(pos);
+        }
+      }catch(e){}
+      return h;
+    };
+  }
+})();
+
+window.v214Status = () => ({
+  build: APP_BUILD,
+  warmed: V214.warmed,
+  byGame: V214.byGame.size,
+  lastSlate: V214.lastSlate,
+  records: v214AllRecords()
 });
 </script>
 </body>
