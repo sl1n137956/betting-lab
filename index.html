@@ -47058,6 +47058,589 @@ window.v212Status = () => ({
   picksToday: V212.lastSlate,
   record: v212ModelRecord()
 });
+/* ===== v213: BL-109 Phase 1 — 4 Independent Specialists + Coordinator (Admin-Only Paper Mode)
+   - Zero changes to public Picks (v212 stays untouched) or paused Props (v207 stays paused).
+   - Four genuinely independent specialist models (zero cross-market leakage):
+       1. Moneyline Specialist (ml): nba_close logit, nhl_open xgb, nfl_close ens
+       2. Spread Specialist (spread): nba_close xgb, nfl_close ens
+       3. Totals Specialist (total): nhl_open projected-goals Normal distribution (dist_pure),
+          nba_open simple, ncaab_open logit
+       4. Player Props Specialist (props): player-first shadow tracker (v207 propshadow),
+          paused until walk-forward/shadow beats DK no-vig
+   - Coordinator Agent: collects all 4 specialist votes per game, checks consistency
+     (blocks ML/Spread contradictions, boosts ML+Spread consensus, notes Props vs Totals pace),
+     picks max 1 play per game (-250 floor, DraftKings price), tracks paper record & CLV
+     per specialist + Coordinator separately in Results -> Model lab (admin-only). ===== */
+APP_BUILD = 213;
+
+const V213 = window.V213 = {
+  spec: null, specAt: 0, specErr: '',
+  log: null, got: false, busy: false, lastAt: 0, err: ''
+};
+
+function v213LogLoad(){
+  if (!V213.log || !V213.log.S){
+    V213.log = { v: 1, mv: {}, S: {}, C: {}, B: {}, votes: {} };
+  }
+  return V213.log;
+}
+
+function v213CompactLog(){
+  const L = v213LogLoad();
+  const votesArr = Object.entries(L.votes || {})
+    .sort((a, b) => ((b[1] && b[1].t) || 0) - ((a[1] && a[1].t) || 0))
+    .slice(0, 120);
+  const votes = Object.fromEntries(votesArr);
+  return { v: L.v || 1, at: Date.now(), mv: L.mv || {}, S: L.S || {}, C: L.C || {}, B: L.B || {}, votes };
+}
+
+function v213Merge(rem){
+  if (!rem || typeof rem !== 'object') return;
+  const L = v213LogLoad();
+  for (const k in (rem.S || {})){
+    const a = L.S[k], b = rem.S[k];
+    if (!a || (!a.res && b && b.res) || (b && b.cl && !a.cl)) L.S[k] = b;
+  }
+  for (const k in (rem.C || {})){
+    const a = L.C[k], b = rem.C[k];
+    if (!a || (!a.res && b && b.res) || (b && b.cl && !a.cl)) L.C[k] = b;
+  }
+  for (const id in (rem.B || {})){
+    if (!L.B[id] || (rem.B[id] || []).length > L.B[id].length) L.B[id] = rem.B[id];
+  }
+  for (const id in (rem.mv || {})){
+    if (!L.mv[id] || ((rem.mv[id].hist || []).length > (L.mv[id].hist || []).length)) L.mv[id] = rem.mv[id];
+  }
+  for (const k in (rem.votes || {})){
+    const a = L.votes[k], b = rem.votes[k];
+    if (!a || ((b && b.at || 0) > (a && a.at || 0))) L.votes[k] = b;
+  }
+  V213.got = true;
+}
+
+async function v213LoadSpec(){
+  if (V213.spec && Date.now() - V213.specAt < 6 * 3600000) return V213.spec;
+  try{
+    const r = await fetch('models/specialists_v1.json', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('specialists_v1 ' + r.status);
+    V213.spec = await r.json();
+    V213.specAt = Date.now();
+    V213.specErr = '';
+  }catch(e){
+    V213.specErr = String(e && e.message || e).slice(0, 80);
+  }
+  return V213.spec;
+}
+
+/* Standard normal CDF (Abramowitz & Stegun 7.1.26, error < 1.5e-7) */
+function v213NormCdf(z){
+  if (!isFinite(z)) return NaN;
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return 0.5 * (1 + sign * y);
+}
+
+/* Extend v207Pre with pf5/pa5/pf20/pa20/pfS/paS needed by Totals distribution & logit models */
+(function v213ExtendTeamFeatures(){
+  if (typeof v207Team === 'function' && typeof v207Pre === 'function'){
+    const baseTeam = v207Team;
+    v207Team = function(st, t, day, season, isHome){
+      const o = baseTeam.apply(this, arguments);
+      const L = (st && st.tm && st.tm[t]) || [];
+      for (const n of [5, 20]){
+        const k = Math.min(n, L.length), mp = Math.max(2, Math.floor(n / 2));
+        if (k < mp){ o['pf' + n] = o['pa' + n] = NaN; continue; }
+        let b = 0, c = 0;
+        for (let i = L.length - k; i < L.length; i++){ b += L[i].pf; c += L[i].pa; }
+        o['pf' + n] = b / k; o['pa' + n] = c / k;
+      }
+      return o;
+    };
+    const basePre = v207Pre;
+    v207Pre = function(st, g){
+      const f = basePre.apply(this, arguments);
+      const H = v207Team(st, g.h, g.day, g.season, 1);
+      const A = v207Team(st, g.a, g.day, g.season, 0);
+      f.h_pf5 = H.pf5; f.h_pa5 = H.pa5; f.a_pf5 = A.pf5; f.a_pa5 = A.pa5;
+      f.h_pf20 = H.pf20; f.h_pa20 = H.pa20; f.a_pf20 = A.pf20; f.a_pa20 = A.pa20;
+      f.h_pfS = H.pfS; f.h_paS = H.paS; f.a_pfS = A.pfS; f.a_paS = A.paS;
+      return f;
+    };
+  }
+})();
+
+function v213EvalComp(c, cols, x, line){
+  if (c.type === 'norm_dist'){
+    const get = n => x[cols.indexOf(n)];
+    let mu = c.b;
+    for (let i = 0; i < c.cols.length; i++){
+      let v = get(c.cols[i]);
+      if (!isFinite(v)) v = c.med[i];
+      mu += c.coef[i] * (v - c.mean[i]) / c.scale[i];
+    }
+    const z = c.target === 'pts' ? ((line - mu) / c.sigma) : ((-line - mu) / c.sigma);
+    return { p: 1 - v213NormCdf(z), mu };
+  }
+  return { p: typeof v207Comp === 'function' ? v207Comp(c, cols, x) : NaN, mu: null };
+}
+
+function v213PredictSpec(sp, F, M){
+  const X = Object.assign({}, F);
+  X.m_nv = M.nv; X.m_line = M.line;
+  if (sp.market === 'total'){ X.m_gap = F.exp_tot - M.line; X.m_gap10 = F.exp_tot10 - M.line; }
+  if (sp.market === 'spread'){ X.m_gap = F.d_mgS + M.line; X.m_gap10 = F.d_mg10 + M.line; }
+  X.dome = M.dome; X.div = M.div;
+  for (const c of sp.nan_cols || []) X[c] = NaN;
+  for (const c in (sp.const_cols || {})) X[c] = sp.const_cols[c];
+  const row = sp.cols.map(c => { const v = X[c]; return v == null ? NaN : +v; });
+  let s = 0, n = 0, mu = null;
+  for (const c of sp.comps){
+    const r = v213EvalComp(c, sp.cols, row, M.line);
+    if (isFinite(r.p)){ s += r.p; n++; }
+    if (r.mu != null && isFinite(r.mu)) mu = r.mu;
+  }
+  return { p: n ? (s / n) : NaN, mu };
+}
+
+function v213MarketFor(sp, g){
+  const C = g.dk && g.dk.c || {};
+  const ok2 = (a, b) => {
+    const x = v207Imp(a), y = v207Imp(b);
+    return isFinite(x) && isFinite(y) && x + y > 0.98 && x + y < 1.15;
+  };
+  let pa, pb, line = NaN, nv;
+  if (sp.market === 'ml'){
+    if (!C.ml || !ok2(C.ml[0], C.ml[1])) return null;
+    [pa, pb] = C.ml; nv = v207Nv(pa, pb);
+  } else if (sp.market === 'spread'){
+    if (!C.sp || !ok2(C.sp[1], C.sp[2]) || Math.abs(C.sp[0]) > 45) return null;
+    line = C.sp[0]; pa = C.sp[1]; pb = C.sp[2];
+    nv = sp.assumed_110 ? 0.5 : v207Nv(pa, pb);
+  } else {
+    if (!C.to || !ok2(C.to[1], C.to[2]) || !(C.to[0] > 0)) return null;
+    line = C.to[0]; pa = C.to[1]; pb = C.to[2];
+    nv = sp.assumed_110 ? 0.5 : v207Nv(pa, pb);
+  }
+  const M = { nv, line, pa, pb, nvTrue: v207Nv(pa, pb), dome: NaN, div: NaN };
+  if (sp.sport === 'nfl' && typeof V207 !== 'undefined' && V207.spec && V207.spec.nfl_static){
+    const S = V207.spec.nfl_static;
+    M.dome = S.dome[g.ha] != null ? S.dome[g.ha] : 0;
+    M.div = S.div[g.ha] && S.div[g.ha] === S.div[g.aa] ? 1 : 0;
+  }
+  return M;
+}
+
+function v213EvalGameSpecialist(sp, g, st, now){
+  const M = v213MarketFor(sp, g);
+  if (!M) return null;
+  const F = v207Pre(st, { h: g.h, a: g.a, day: v207DayET(g.t), season: g.season, neutral: g.neutral });
+  const pred = v213PredictSpec(sp, F, M);
+  if (!isFinite(pred.p)) return null;
+  const p = pred.p;
+  const da = v207Dec(M.pa), db = v207Dec(M.pb);
+  const ea = p * da - 1, eb = (1 - p) * db - 1;
+  const s = ea >= eb ? 'a' : 'b';
+  const e = s === 'a' ? ea : eb;
+  const pr = s === 'a' ? M.pa : M.pb;
+  const thr = (sp.thr && sp.thr.Standard != null) ? sp.thr.Standard : 0.015;
+  let tier = null;
+  if (sp.thr){
+    for (const t of ['Standard', 'Picky', 'Super Picky']){
+      if (sp.thr[t] != null && e >= sp.thr[t] - 1e-9) tier = t;
+    }
+  }
+  const ln = sp.market === 'spread' ? (s === 'a' ? M.line : -M.line) : sp.market === 'total' ? M.line : null;
+  const R = (v, k) => isFinite(v) ? Math.round(v * Math.pow(10, k)) / Math.pow(10, k) : null;
+  const sideLabel = sp.market === 'ml' ? (s === 'a' ? g.ha + ' ML' : g.aa + ' ML')
+    : sp.market === 'spread' ? ((s === 'a' ? g.ha : g.aa) + ' ' + (ln > 0 ? '+' + ln : ln))
+    : ((s === 'a' ? 'Over ' : 'Under ') + ln);
+  return {
+    m: sp.id, sp: sp.specialist, ver: sp.ver, ev: g.id, l: sp.sport, t: g.t, d: v207Ymd(g.t), at: now,
+    mk: sp.market, w: sp.when, h: g.ha, a: g.aa, hl: R(M.line, 1), pa: M.pa, pb: M.pb,
+    nv: R(M.nvTrue, 4), p: R(p, 4), mu: R(pred.mu, 1), s, e: R(e, 4), thr: R(thr, 4),
+    tier, bet: (tier && pr >= -250) ? 1 : 0, pr, ln, sideLabel
+  };
+}
+
+function v213PropsVoteForGame(evId){
+  try{
+    if (typeof v207PsLoad !== 'function') return null;
+    const ps = v207PsLoad();
+    const rows = Object.values(ps.r || {}).filter(r => r && String(r.ev) === String(evId));
+    if (!rows.length) return null;
+    const overs = rows.filter(r => r.sd === 'over').length;
+    const unders = rows.filter(r => r.sd === 'under').length;
+    const top = rows.slice().sort((a, b) => (b.p || 0) - (a.p || 0))[0];
+    return {
+      n: rows.length, overs, unders,
+      lean: overs > unders ? 'over' : unders > overs ? 'under' : 'split',
+      top: top ? `${top.pn} ${top.sd} ${top.pt} ${top.k} (${Math.round((top.p || 0) * 100)}%)` : ''
+    };
+  }catch(e){ return null; }
+}
+
+function v213CoordinateGame(g, calls, propsVote){
+  // calls: { ml, spread, total }
+  const ml = calls.ml || null;
+  const sp = calls.spread || null;
+  const tot = calls.total || null;
+  let mlContra = false, agreeBoost = false;
+  const notes = [];
+
+  if (ml && sp && sp.hl != null && ml.bet && sp.bet){
+    const favIsHome = sp.hl < 0;
+    const spPickedFav = ((sp.s === 'a') === favIsHome);
+    const mlPickedFav = ((ml.s === 'a') === favIsHome);
+    if (sp.s === ml.s){
+      agreeBoost = true;
+      notes.push('ML + Spread agree on ' + (ml.s === 'a' ? g.ha : g.aa));
+    } else if (spPickedFav && !mlPickedFav){
+      mlContra = true;
+      notes.push('Blocked contradiction: Spread backs fav while ML backs dog');
+    }
+  }
+
+  let paceNote = '';
+  if (tot && propsVote && propsVote.n){
+    const totDir = tot.s === 'a' ? 'over' : 'under';
+    if (tot.bet && propsVote.lean !== 'split'){
+      paceNote = (propsVote.lean === totDir)
+        ? `Props (${propsVote.lean}) align with Totals (${totDir})`
+        : `Note: Props (${propsVote.lean}) vs Totals (${totDir})`;
+      notes.push(paceNote);
+    }
+  }
+
+  const cands = [];
+  for (const mk of ['ml', 'spread', 'total']){
+    const c = calls[mk];
+    if (!c || !c.bet || c.pr < -250) continue;
+    if (mlContra && (mk === 'ml' || mk === 'spread')) continue;
+    let scoreEv = c.e;
+    let agreed = false;
+    if (agreeBoost && (mk === 'ml' || mk === 'spread')){
+      scoreEv += 0.005;
+      agreed = true;
+    }
+    cands.push({ scoreEv, mk, c, agreed });
+  }
+  cands.sort((a, b) => b.scoreEv - a.scoreEv);
+  const pick = cands[0] || null;
+  return {
+    ev: g.id, l: g.league || g.sport || '', h: g.ha, a: g.aa, t: g.t, at: Date.now(),
+    mlContra, agreeBoost, notes,
+    votes: {
+      ml: ml ? { lbl: ml.sideLabel, p: ml.p, e: ml.e, bet: ml.bet, pr: ml.pr } : null,
+      spread: sp ? { lbl: sp.sideLabel, p: sp.p, e: sp.e, bet: sp.bet, pr: sp.pr } : null,
+      total: tot ? { lbl: tot.sideLabel, p: tot.p, e: tot.e, mu: tot.mu, bet: tot.bet, pr: tot.pr } : null,
+      props: propsVote
+    },
+    pick: pick ? Object.assign({}, pick.c, {
+      coord: 1, agreed: pick.agreed ? 1 : 0, note: notes.join(' · ')
+    }) : null
+  };
+}
+
+function v213Rules(log, spec){
+  const now = Date.now();
+  const ids = ['ml', 'spread', 'total', 'coord'];
+  for (const id of ids){
+    const ver = id === 'coord' ? (spec.coordinator && spec.coordinator.ver || 'coord-s1')
+      : (spec.specialists && spec.specialists[id] && spec.specialists[id].ver || (id + '-s1'));
+    let mv = log.mv[id];
+    if (!mv){
+      mv = log.mv[id] = { ver, status: 'paper', since: now, hist: [{ at: now, ver, ev: 'start', why: 'Phase 1 paper tracking started' }] };
+    }
+    if (mv.status !== 'paper') continue;
+    const st = v213Stats(id);
+    let why = '';
+    if (st.u <= -10) why = `Down ${st.u.toFixed(1)}u on ${ver}`;
+    else if (st.lossWeeks >= 4) why = `${st.lossWeeks} losing weeks in a row`;
+    if (why){
+      mv.status = 'suspended';
+      mv.hist.push({ at: now, ver, ev: 'suspend', why });
+    }
+  }
+}
+
+function v213Stats(bucket){
+  const L = v213LogLoad();
+  const src = bucket === 'coord' ? Object.values(L.C || {})
+    : Object.values(L.S || {}).filter(r => r && r.sp === bucket);
+  const B = src.filter(r => r && r.bet);
+  const T = { n: 0, w: 0, l: 0, p: 0, u: 0, pend: 0, clvN: 0, clvS: 0, clvPos: 0, agreed: 0, weeks: {} };
+  for (const r of B){
+    if (r.agreed) T.agreed++;
+    if (!r.res){ T.pend++; continue; }
+    if (r.res === 'push'){ T.p++; continue; }
+    if (r.res !== 'win' && r.res !== 'loss') continue;
+    T.n++; r.res === 'win' ? T.w++ : T.l++;
+    T.u += +r.u || 0;
+    if (r.clv != null){ T.clvN++; T.clvS += r.clv; if (r.clv > 0) T.clvPos++; }
+    if (typeof v207Week === 'function'){
+      const wk = v207Week(r.t);
+      T.weeks[wk] = (T.weeks[wk] || 0) + (+r.u || 0);
+    }
+  }
+  T.u = Math.round(T.u * 100) / 100;
+  T.roi = T.n ? T.u / T.n : null;
+  T.clv = T.clvN ? T.clvS / T.clvN : null;
+  let streak = 0;
+  if (typeof v207Week === 'function'){
+    const cur = v207Week(Date.now());
+    const wks = Object.keys(T.weeks).filter(w => w < cur).sort();
+    for (let i = wks.length - 1; i >= 0; i--){ if (T.weeks[wks[i]] < 0) streak++; else break; }
+  }
+  T.lossWeeks = streak;
+  return T;
+}
+
+async function v213PaperPass(){
+  const spec = await v213LoadSpec();
+  if (!spec || !spec.models || typeof V207 === 'undefined') return;
+  const log = v213LogLoad(), now = Date.now();
+  v213Rules(log, spec);
+
+  // Group specialist models by sport
+  const bySport = {};
+  for (const sid in spec.models){
+    const sp = spec.models[sid];
+    (bySport[sp.sport] || (bySport[sp.sport] = [])).push(sp);
+  }
+
+  for (const lg in bySport){
+    try{ if (typeof v207LoadHist === 'function') await v207LoadHist(lg); }catch(e){ continue; }
+    const st = typeof v207State === 'function' ? v207State(lg) : null;
+    const SB = V207.sb && V207.sb[lg];
+    if (!st || !SB) continue;
+
+    for (const g of SB.values()){
+      if (!(g.stype === 2 || g.stype === 3) || g.state !== 'pre' || !g.dk || !isFinite(g.t)) continue;
+      const mins = (g.t - now) / 60000;
+      const gameCalls = {};
+      for (const sp of bySport[lg]){
+        const key = sp.id + '|' + g.id;
+        let r = log.S[key];
+        if (!r){
+          const due = sp.when === 'open' ? (mins > 30) : (mins <= 30 && mins > -2);
+          if (due){
+            const d = v213EvalGameSpecialist(sp, g, st, now);
+            if (d) log.S[key] = r = d;
+          }
+        }
+        if (r){
+          if (mins <= 30 && !r.lk && typeof v207Snap === 'function') r.lk = v207Snap(sp, g);
+          if (mins > -1 && typeof v207Snap === 'function'){ const cl = v207Snap(sp, g); if (cl) r.cl = cl; }
+          gameCalls[sp.specialist] = r;
+        }
+      }
+      // Run Coordinator vote snapshot & paper pick (max 1 per game)
+      if (Object.keys(gameCalls).length){
+        const propsVote = v213PropsVoteForGame(g.id);
+        const cv = v213CoordinateGame(Object.assign({}, g, { league: lg }), gameCalls, propsVote);
+        log.votes[g.id] = {
+          ev: g.id, l: lg, h: g.ha, a: g.aa, t: g.t, at: now,
+          notes: cv.notes, votes: cv.votes, pickLbl: cv.pick ? cv.pick.sideLabel : null,
+          pickMk: cv.pick ? cv.pick.mk : null, agreed: cv.agreeBoost ? 1 : 0, contra: cv.mlContra ? 1 : 0
+        };
+        if (cv.pick && !log.C[g.id]){
+          log.C[g.id] = cv.pick;
+        }
+        if (log.C[g.id]){
+          const rc = log.C[g.id];
+          const spRef = bySport[lg].find(x => x.market === rc.mk);
+          if (spRef && mins > -1 && typeof v207Snap === 'function'){
+            const cl = v207Snap(spRef, g);
+            if (cl) rc.cl = cl;
+          }
+        }
+      }
+    }
+
+    // Grade due specialist & coordinator calls for this league
+    if (typeof v207Grade === 'function'){
+      for (const pool of [log.S, log.C]){
+        for (const k in pool){
+          const r = pool[k];
+          if (!r || r.l !== lg || r.res || r.t >= now - 2 * 3600000) continue;
+          const g = SB.get(r.ev);
+          if (g && v207Grade(r, g)) continue;
+          if (g && /POSTPONED|CANCELED|CANCELLED/i.test(g.sname)){ r.res = r.bet ? 'void' : 'done'; r.u = 0; continue; }
+          if (r.t < now - 5 * 86400000){ r.res = r.bet ? 'void' : 'done'; r.u = 0; }
+        }
+      }
+    }
+  }
+
+  // Prune old votes (> 3 days) and resolved passes into Brier list
+  for (const k in log.S){
+    const r = log.S[k];
+    if (r && !r.bet && r.res){
+      if (r.y != null) (log.B[r.sp] || (log.B[r.sp] = [])).push([+r.d, r.p, r.nv, r.y, r.ver]);
+      delete log.S[k];
+    }
+  }
+  for (const k in log.votes){
+    if (log.votes[k] && log.votes[k].t < now - 3 * 86400000) delete log.votes[k];
+  }
+  v213Rules(log, spec);
+  log.at = now;
+}
+
+/* Piggyback cleanly onto v207 paperlog sync (zero extra worker endpoints needed) */
+(function v213SyncHooks(){
+  if (typeof v207LogMerge === 'function'){
+    const baseMerge = v207LogMerge;
+    v207LogMerge = function(o){
+      const r = baseMerge.apply(this, arguments);
+      try{ if (o && o.v213) v213Merge(o.v213); }catch(e){}
+      return r;
+    };
+  }
+  if (typeof v154Put === 'function'){
+    const basePut = v154Put;
+    v154Put = function(key, obj){
+      if (key === 'paperlog' && obj && typeof obj === 'object' && V213.got){
+        try{ obj = Object.assign({}, obj, { v: 213, v213: v213CompactLog() }); }catch(e){}
+      }
+      return basePut.call(this, key, obj);
+    };
+  }
+  if (typeof v207PaperPass === 'function'){
+    const basePass = v207PaperPass;
+    v207PaperPass = async function(){
+      const r = await basePass.apply(this, arguments);
+      try{ await v213PaperPass(); }catch(e){ V213.err = String(e && e.message || e).slice(0, 80); }
+      return r;
+    };
+  }
+})();
+
+/* ---------- Admin-only UI inside Model lab (Backtest | Paper | Live kept strictly separate) ---------- */
+function v213Pct(x){ return x == null || !isFinite(x) ? '—' : ((x >= 0 ? '+' : '') + (x * 100).toFixed(1) + '%'); }
+function v213VotesHTML(){
+  const L = v213LogLoad();
+  const vs = Object.values(L.votes || {}).sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, 8);
+  if (!vs.length) return `<div class="hint">Waiting for the publisher's first Phase 1 pass on today's slate.</div>`;
+  return vs.map(v => {
+    const pills = [];
+    if (v.votes.ml) pills.push(`ML: ${esc(v.votes.ml.lbl)} (${Math.round(v.votes.ml.p * 100)}%, ${v213Pct(v.votes.ml.e)})`);
+    if (v.votes.spread) pills.push(`Spread: ${esc(v.votes.spread.lbl)} (${Math.round(v.votes.spread.p * 100)}%, ${v213Pct(v.votes.spread.e)})`);
+    if (v.votes.total) pills.push(`Total: ${esc(v.votes.total.lbl)}${v.votes.total.mu != null ? ` [proj ${v.votes.total.mu}]` : ''} (${Math.round(v.votes.total.p * 100)}%, ${v213Pct(v.votes.total.e)})`);
+    if (v.votes.props && v.votes.props.n) pills.push(`Props shadow: ${v.votes.props.overs}O/${v.votes.props.unders}U`);
+    const call = v.pickLbl ? `<b>Coordinator paper pick: ${esc(v.pickLbl)}</b>` : 'No coordinator play';
+    const note = (v.notes && v.notes.length) ? ` · ${esc(v.notes.join(' · '))}` : '';
+    return `<div class="v207-m"><div class="v207-mh"><b>${esc(v.l.toUpperCase())} · ${esc(v.a)} @ ${esc(v.h)}</b><span class="v207-chip ${v.pickLbl ? 'on' : ''}">${call}</span></div><div class="hint">${pills.join(' · ')}${note}</div></div>`;
+  }).join('');
+}
+
+function v213PanelHTML(){
+  const sp = V213.spec;
+  const L = v213LogLoad();
+  const specs = sp && sp.specialists ? sp.specialists : {};
+  const mIds = sp && sp.models ? Object.keys(sp.models) : [];
+  const rows = [
+    ['ml', 'Moneyline Specialist', 'Straight-up win features + ML no-vig only'],
+    ['spread', 'Spread Specialist', 'Cover margin/variance + spread line only'],
+    ['total', 'Totals Specialist', 'Projected points distribution (pace/PF/PA) + totals only'],
+    ['props', 'Player Props Specialist', 'Player-first NegBin (minutes, role, on/off, pace) · PAUSED'],
+    ['coord', 'Coordinator (Team Lead)', 'Checks consistency, blocks contradictions, boosts consensus, max 1/game']
+  ].map(([k, title, desc]) => {
+    const st = k === 'props'
+      ? (typeof v207PsStats === 'function' ? v207PsStats() : { w: 0, l: 0, u: 0, roi: null, clv: null, pend: 0 })
+      : v213Stats(k);
+    const mv = L.mv && L.mv[k];
+    const badge = k === 'props' ? 'Paused (shadow)' : (mv && mv.status === 'suspended' ? 'Suspended' : 'Paper');
+    const wl = (st.w + st.l) ? `${st.w}-${st.l}` : '0-0';
+    const uTxt = `${st.u >= 0 ? '+' : ''}${(+st.u || 0).toFixed(2)}u`;
+    const roiTxt = v213Pct(st.roi);
+    const clvTxt = st.clv != null ? v213Pct(st.clv) : '—';
+    const sup = specs[k] && specs[k].supported ? specs[k].supported.join(', ') : (k === 'coord' ? 'NBA, NFL, NHL, NCAAB' : '—');
+    const unsup = specs[k] && specs[k].unsupported ? specs[k].unsupported.join(' · ') : '';
+    return `<tr>
+      <td><b>${esc(title)}</b><div class="hint">${esc(desc)}</div><div class="hint">Supported: ${esc(sup)}${unsup ? `<br>Unsupported: ${esc(unsup)}` : ''}</div></td>
+      <td><span class="v207-chip ${badge === 'Paper' ? 'on' : ''}">${esc(badge)}</span></td>
+      <td><b>${wl}</b>${st.pend ? ` <span class="hint">(${st.pend} open)</span>` : ''}</td>
+      <td class="${st.u >= 0 ? 'pos' : 'neg'}">${uTxt} (${roiTxt})</td>
+      <td>${clvTxt}</td>
+    </tr>`;
+  }).join('');
+
+  const btRows = mIds.map(id => {
+    const m = sp.models[id];
+    const b = m.backtest || {};
+    const h1b = b.brier_h1 != null ? `${b.brier_h1.toFixed(4)}/${b.brier_nv_h1.toFixed(4)}` : '—';
+    const h2b = b.brier_h2 != null ? `${b.brier_h2.toFixed(4)}/${b.brier_nv_h2.toFixed(4)}` : '—';
+    return `<tr>
+      <td><b>${esc(id)}</b> <span class="hint">(${esc(m.kind)})</span></td>
+      <td>${b.w}-${b.l} (${b.n})</td>
+      <td class="${b.units >= 0 ? 'pos' : 'neg'}">${b.units >= 0 ? '+' : ''}${b.units}u (${v213Pct(b.roi)})</td>
+      <td>${v213Pct(b.roi_dk)}</td>
+      <td>${v213Pct(b.h1_roi)} / ${v213Pct(b.h2_roi)}</td>
+      <td>${h1b} | ${h2b}</td>
+    </tr>`;
+  }).join('');
+
+  const coordBt = sp && sp.coordinator && sp.coordinator.backtest ? Object.entries(sp.coordinator.backtest).map(([lg, c]) =>
+    `<li><b>${esc(lg.toUpperCase())}:</b> ${c.w}-${c.l} (${c.n}), <span class="${c.units >= 0 ? 'pos' : 'neg'}">${c.units >= 0 ? '+' : ''}${c.units}u (${v213Pct(c.roi)})</span>, H1 ${v213Pct(c.h1_roi)} / H2 ${v213Pct(c.h2_roi)}, DD ${c.dd}u, blocked ${c.contradictions_blocked} contradictions${c.consensus_roi != null ? `, consensus (${c.consensus_n}) <b>${v213Pct(c.consensus_roi)}</b>` : ''}</li>`
+  ).join('') : '';
+
+  return `<div class="v213-box" style="margin-top:12px">
+    <div class="v207-sub">🧩 4-Specialist Team + Coordinator (BL-109 Phase 1 Paper — Admin Only)</div>
+    <p class="hint">Public Picks remain on v212 until you approve Phase 2 promotion. Each specialist uses only its own domain features (no shared probability fudge).</p>
+    <div class="v207-tw"><table class="v207-t">
+      <thead><tr><th>Agent</th><th>State</th><th>Paper W-L</th><th>Units (ROI)</th><th>Avg CLV</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <details class="v207-dd" data-k="v213bt"><summary>Walk-forward backtest by specialist &amp; Coordinator</summary>
+      ${btRows ? `<div class="v207-tw"><table class="v207-t">
+        <thead><tr><th>Specialist Model</th><th>Record</th><th>Units (ROI)</th><th>After DK</th><th>H1 / H2 ROI</th><th>Brier vs NV (H1 | H2)</th></tr></thead>
+        <tbody>${btRows}</tbody>
+      </table></div>` : `<div class="hint">Loading specialists_v1.json…</div>`}
+      ${coordBt ? `<ul class="v207-ul">${coordBt}</ul>` : ''}
+    </details>
+    <details class="v207-dd" data-k="v213votes"><summary>Latest Coordinator game votes (paper preview)</summary>
+      ${v213VotesHTML()}
+    </details>
+  </div>`;
+}
+
+(function v213UiHook(){
+  if (typeof v207LabHTML === 'function'){
+    const baseLab = v207LabHTML;
+    v207LabHTML = function(){
+      let h = baseLab.apply(this, arguments);
+      try{
+        const idx = h.lastIndexOf('</div>');
+        if (idx > 0) h = h.slice(0, idx) + v213PanelHTML() + '</div>';
+      }catch(e){}
+      return h;
+    };
+  }
+  if (typeof renderResults === 'function'){
+    const baseRes = renderResults;
+    renderResults = function(){
+      const r = baseRes.apply(this, arguments);
+      try{
+        if (typeof v138Admin === 'function' && v138Admin() && typeof ui !== 'undefined' && ui.tab === 'results' && !V213.spec){
+          v213LoadSpec().then(() => { if (typeof v207LabRefresh === 'function') v207LabRefresh(); });
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+})();
+
+window.v213Status = () => ({
+  build: APP_BUILD,
+  spec: !!V213.spec,
+  specErr: V213.specErr,
+  err: V213.err,
+  stats: { ml: v213Stats('ml'), spread: v213Stats('spread'), total: v213Stats('total'), coord: v213Stats('coord') },
+  votes: Object.keys((v213LogLoad().votes || {})).length
+});
 </script>
 </body>
 </html>
