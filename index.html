@@ -46307,6 +46307,757 @@ async function v211PatchAll(force){
   }
   setTimeout(tick, 4000);
 })();
+/* ===== v212: Model-driven Game Picks, single-book fix, separate tracking & /p/audit guard (BL-108)
+   1. Fixes the v160 single-book bug: when no sharp/Pinnacle line exists (A.truth === 'single'),
+      v160 never compares DraftKings against DraftKings' own no-vig (~-2.5%); it judges on the model.
+   2. Model-driven Game Picks: ML & spreads (never draws; never invents probabilities for totals)
+      qualify on Verdict's own model win chance vs DraftKings implied probability (+1.5% min edge),
+      keeping -250 floor, pure factor score & supporting factor count, no adverse move, data
+      completeness >= 70, strength calibration (5/5, 4/5, 3/5), courtroom BET/WATCH/PASS, max 1 pick
+      per game, and a daily cap of 8 picks per Pacific slate. Price vs Pinnacle alone never vetoes,
+      while edge vs Pinnacle no-vig and closing line value (CLV) are recorded on every pick.
+   3. Tracked separately: tagged with ms='model' so Results ("Tracked separately") and Model lab
+      show their own record (W-L, units, ROI, avg Pinnacle edge, avg CLV) distinct from historical
+      Picks, while appearing as normal Pick cards on the board for everyone. Learner count matches
+      Results exactly (one per bet via mlogOnePerBet).
+   4. Prevents brief phone/desktop visits (or cold boots) from overwriting /p/audit with 0/0/0. ===== */
+APP_BUILD = 212;
+try{ if (typeof V160 !== 'undefined') V160.VER = 212; }catch(e){}
+
+const V212_FLOOR = -250;
+const V212_MIN_EDGE = 0.015;   // +1.5% model win prob over DK implied prob
+const V212_MIN_CONF = 70;
+const V212_DOG_MAX = 250;
+const V212_DAILY_CAP = 8;
+const V212_MREC_LS = 'bl_v212_mrec_v1';
+
+var V212 = window.V212 = {
+  inEst: false,
+  inApply: false,
+  mrec: null,
+  mrecAt: 0,
+  mrecBusy: false,
+  pubMrecAt: 0,
+  auditChecked: false,
+  auditSeed: null,
+  lastSlate: { at: 0, picks: [] }
+};
+try{
+  const c = JSON.parse(localStorage.getItem(V212_MREC_LS) || 'null');
+  if (c && c.rec) V212.mrec = c;
+}catch(e){}
+
+function v212IsModelRow(o){
+  return !!(o && (o.ms === 'model' || o.src === 'model' || o.msrc === 'model'));
+}
+
+/* ---------- 1) Pure Model Evaluator (never invents probabilities) ---------- */
+function v212RawEstimate(p, opts){
+  if (typeof estimate !== 'function') return null;
+  const prev = V212.inEst;
+  V212.inEst = true;
+  try{ return estimate(p, opts); }
+  finally{ V212.inEst = prev; }
+}
+
+function v212EvalModelPlay(p){
+  const fail = (why, extra) => Object.assign({ ok: false, src: 'model', why: why || '' }, extra || {});
+  if (!p || !p.g || !p.sd || !p.sd.best || p.sd.best.price == null) return fail('Missing odds');
+  const g = p.g;
+  if (g.state && g.state !== 'pre') return fail('Game already started');
+  if (g.pickOnly || g.agOnly) return fail('Game not eligible for Picks');
+  if (typeof isFinalPulled === 'function' && isFinalPulled(p.id)) return fail('Pick was pulled');
+  // Never invent probabilities: totals have CAL k=0 and no matchup probability model
+  if (p.mk === 'total') return fail('No standalone model probability for totals', { noProb: true });
+  if (p.side !== 'home' && p.side !== 'away') return fail('Only home/away sides qualify');
+  if (typeof SOCCER !== 'undefined' && SOCCER.has(g.league)) return fail('3-way soccer draws excluded');
+  if (p.mk !== 'ml' && p.mk !== 'spread') return fail('Unsupported market', { noProb: true });
+
+  const dk = (typeof v155Price === 'function' ? v155Price('games', p) : null) ?? +p.sd.best.price;
+  if (dk == null || !isFinite(+dk)) return fail('Missing DraftKings price');
+  if (+dk < V212_FLOOR) return fail('Below -250 floor');
+  if (typeof v155Out === 'function'){
+    const outWhy = v155Out('games', +dk);
+    if (outWhy) return fail('Outside odds floor/band (' + outWhy + ')');
+  }
+
+  const nv = p.sd.nv;
+  if (nv == null || !isFinite(+nv) || nv <= 0 || nv >= 1) return fail('Missing fair baseline');
+
+  // Require real enriched game data (stats / matchup / injuries / predictor)
+  if (!g.fx) return fail('Waiting for team stats & matchup data', { noProb: true });
+  const conf = (p.j && p.j.conf && p.j.conf.v != null) ? +p.j.conf.v : 0;
+  if (conf < V212_MIN_CONF) return fail(`Data completeness ${Math.round(conf)} (needs ${V212_MIN_CONF})`);
+  if (p.sd.adverse || p.sd.heavy) return fail('Odds moved against this side');
+
+  const factors = (p.j && Array.isArray(p.j.factors)) ? p.j.factors : [];
+  const pureFactors = factors.filter(x => x && x.key !== 'price' && x.key !== 'edge');
+  const pureScore = pureFactors.reduce((a, x) => a + (+x.pts || 0), 0);
+  const posNoPx = pureFactors.filter(x => (+x.pts || 0) >= 0.5).length;
+  const strongAg = pureFactors.filter(x => (+x.pts || 0) <= -0.75);
+
+  const pred = (g.fx.pred && g.fx.pred[p.side] != null) ? +g.fx.pred[p.side] : null;
+  const hasPredMl = (p.mk === 'ml' && pred != null && isFinite(pred) && pred > 0 && pred < 1);
+
+  // Stricter pure-factor bar when ESPN Matchup Predictor is absent (spreads, NHL)
+  const reqScore = hasPredMl ? 2.5 : 3.0;
+  const reqPos = hasPredMl ? 2 : 3;
+  if (pureScore < reqScore) return fail(`Factor score ${pureScore.toFixed(1)} (needs ${reqScore.toFixed(1)})`);
+  if (posNoPx < reqPos) return fail(`Only ${posNoPx} supporting factors (needs ${reqPos})`);
+  if (strongAg.length) return fail('Strong non-price factor against this side');
+
+  if (+dk > 0){
+    if (+dk > V212_DOG_MAX) return fail('Underdog longer than +250');
+    if (pureScore < 3.5 || posNoPx < 3) return fail('Underdog needs stronger factor support');
+  }
+
+  const E0 = v212RawEstimate(p, { noBonus: true });
+  const eDelta = (E0 && E0.final != null && isFinite(E0.final)) ? (E0.final - nv) : 0;
+  let modelP = nv;
+  if (hasPredMl) modelP = 0.5 * modelP + 0.5 * pred;
+  modelP = clamp(modelP + eDelta + clamp(pureScore * 0.01, -0.04, 0.04), 0.02, 0.98);
+
+  const impDk = v160Imp(+dk);
+  if (impDk == null) return fail('Invalid implied probability');
+  const modelEdge = modelP - impDk;
+  const pinEdge = (p.A && p.A.truth !== 'single') ? (nv - impDk) : null;
+  const pinNv = (p.A && p.A.truth === 'Pinnacle') ? nv : null;
+
+  if (modelEdge < V212_MIN_EDGE){
+    return fail(`Model edge ${(modelEdge * 100).toFixed(1)}% (needs +${(V212_MIN_EDGE * 100).toFixed(1)}%)`, {
+      modelP, impDk, modelEdge, pinEdge, pinNv, pureScore, posNoPx, conf, dk: +dk, truth: p.A && p.A.truth
+    });
+  }
+
+  return {
+    ok: true,
+    src: 'model',
+    modelP: Math.round(modelP * 10000) / 10000,
+    impDk: Math.round(impDk * 10000) / 10000,
+    modelEdge: Math.round(modelEdge * 10000) / 10000,
+    pinEdge: pinEdge != null ? Math.round(pinEdge * 10000) / 10000 : null,
+    pinNv: pinNv != null ? Math.round(pinNv * 10000) / 10000 : null,
+    pureScore: Math.round(pureScore * 100) / 100,
+    posNoPx,
+    conf: Math.round(conf),
+    dk: +dk,
+    truth: (p.A && p.A.truth) || 'single',
+    hasPredMl,
+    why: ''
+  };
+}
+
+/* ---------- 2) Fix v160 single-book bug & hook estimate / evaluateAll ---------- */
+(function v212EvalHooks(){
+  if (typeof v160GameEdge === 'function'){
+    v160GameEdge = function(p){
+      try{
+        const sd = p && p.sd;
+        if (!sd || sd.nv == null) return null;
+        const pr = typeof v155Price === 'function' ? v155Price('games', p) : (sd.best && sd.best.price);
+        if (p.A && p.A.truth === 'single'){
+          // Fixed: never compare DraftKings against DraftKings' own no-vig (~-2.5%); judge on the model instead
+          const r = v212EvalModelPlay(p);
+          return { ok: !!r.ok, edge: r.modelEdge != null ? r.modelEdge : null, pinEdge: null, src: 'model', modelP: r.modelP, why: r.why || '' };
+        }
+        const sharp = typeof v160GameRule === 'function' ? v160GameRule(+sd.nv, pr) : { ok: false, edge: null, why: '' };
+        if (sharp && sharp.ok) return Object.assign({}, sharp, { src: 'sharp', pinEdge: sharp.edge });
+        const m = v212EvalModelPlay(p);
+        if (m && m.ok) return { ok: true, edge: m.modelEdge, pinEdge: sharp ? sharp.edge : null, src: 'model', modelP: m.modelP, why: '' };
+        return Object.assign({}, sharp, { modelEdge: m ? m.modelEdge : null, pinEdge: sharp ? sharp.edge : null });
+      }catch(e){ return null; }
+    };
+  }
+
+  if (typeof estimate === 'function'){
+    const baseEst = estimate;
+    estimate = function(p, o){
+      const E = baseEst.apply(this, arguments);
+      try{
+        if (!V212.inEst && E && p && p._v212Src === 'model' && p._v212 && p._v212.modelP != null && (!p.g || !p.g.state || p.g.state === 'pre')){
+          const mp = p._v212.modelP;
+          const prev = E.final != null ? E.final : E.start;
+          E.final = mp;
+          if (Math.abs(mp - (E.start || mp)) >= 0.001 && !(E.steps || []).some(s => s && s.key === 'v212model')){
+            (E.steps || (E.steps = [])).push({
+              key: 'v212model',
+              plain: p._v212.hasPredMl
+                ? `Matchup predictor and team factors give ${fmtPct(mp, 0)} to win`
+                : `Team form and matchup factors give ${fmtPct(mp, 0)} to cover/win`,
+              dp: mp - prev,
+              dz: 0,
+              math: `${fmtPct(mp, 1)} vs ${fmtPct(p._v212.impDk, 1)} DK implied (${p._v212.modelEdge >= 0 ? '+' : ''}${(p._v212.modelEdge * 100).toFixed(1)}%)`
+            });
+          }
+        }
+      }catch(e){}
+      return E;
+    };
+  }
+})();
+
+function v212CleanStaleReasons(p){
+  if (!p || !Array.isArray(p.reasons)) return;
+  const drop = /^(?:The price is worse than|The price does not beat|No fair price to check|Strict mode: missed|Favorite in range but|Underdog with some support|Close to strict:|Not a Bet:|Outside your |The model does not recommend|Moved to Watchlist:|.*price is worse than fair)/i;
+  p.reasons = p.reasons.filter(r => !drop.test(String(r || '').trim()));
+}
+
+function v212ApplyBoard(list){
+  const arr = Array.isArray(list) ? list : ((typeof plays !== 'undefined' && Array.isArray(plays)) ? plays : []);
+  if (!arr.length) return;
+  const sharpGames = new Set();
+
+  // 1) Keep any legitimate sharp-price v160 Picks (truth !== 'single', sharp edge >= +2.5%)
+  for (const p of arr){
+    if (!p || !p.g || p.g.state !== 'pre') continue;
+    if (p.verdict === 'good' && p.A && p.A.truth !== 'single' && p.sd && p.sd.nv != null){
+      const pr = typeof v155Price === 'function' ? v155Price('games', p) : (p.sd.best && p.sd.best.price);
+      const r = typeof v160GameRule === 'function' ? v160GameRule(+p.sd.nv, pr) : null;
+      if (r && r.ok && pr >= V212_FLOOR && p.base !== 'avoid'){
+        p._v212Src = 'sharp';
+        sharpGames.add(p.g.id);
+        continue;
+      }
+    }
+    if (p._v212Src === 'model'){
+      p._v212Src = '';
+      p._v212 = null;
+    }
+  }
+
+  // 2) Evaluate model-driven Game Picks across all pre-game markets (never sharp-vetoed)
+  const byGame = new Map();
+  for (const p of arr){
+    if (!p || !p.g || p.g.state !== 'pre') continue;
+    if (sharpGames.has(p.g.id)) continue;
+    if (p.base === 'avoid') continue;
+    const res = v212EvalModelPlay(p);
+    p._v212 = res;
+    if (!res.ok) continue;
+    const prev = byGame.get(p.g.id);
+    if (!prev || res.modelP > prev.res.modelP + 1e-6 || (Math.abs(res.modelP - prev.res.modelP) <= 1e-6 && res.pureScore > prev.res.pureScore)){
+      byGame.set(p.g.id, { p, res });
+    }
+  }
+
+  // 3) Daily cap per Pacific game day (top 8 by edge + factor score)
+  const byDay = new Map();
+  for (const cand of byGame.values()){
+    const d = typeof mlogDay === 'function' ? mlogDay(+cand.p.g.start) : String(cand.p.g.start).slice(0, 10);
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push(cand);
+  }
+
+  const picked = [];
+  for (const [d, cands] of byDay){
+    cands.sort((a, b) => ((b.res.modelEdge * 100 + b.res.pureScore * 0.5) - (a.res.modelEdge * 100 + a.res.pureScore * 0.5)) || (b.res.modelP - a.res.modelP));
+    cands.forEach((cand, idx) => {
+      const { p, res } = cand;
+      if (idx < V212_DAILY_CAP){
+        p._v212Src = 'model';
+        p._v212 = res;
+        p.verdict = 'good';
+        p._v0 = 'good';
+        p.base = 'good';
+        p.est = res.modelP;
+        p._v160e = res.modelEdge;
+        delete p._v155;
+        delete p._v160;
+        v212CleanStaleReasons(p);
+        const head = `Model gives ${fmtPct(res.modelP, 1)} vs ${fmtPct(res.impDk, 1)} implied (+${(res.modelEdge * 100).toFixed(1)}% edge), backed by ${res.posNoPx} matchup factors`;
+        if (!p.reasons.some(x => String(x).includes('matchup factors'))) p.reasons.unshift(head);
+        if (p.j && p.j.conf){
+          const comp = p.j.conf.v != null ? +p.j.conf.v : 70;
+          const rawStr = 42 + Math.min(18, comp * 0.18) + Math.max(0, res.modelEdge) * 420 + Math.max(0, res.modelP - 0.54) * 90;
+          p.j.conf.str = Math.round(Math.max(30, Math.min(comp, rawStr)) * 10) / 10;
+        }
+        picked.push({ d, match: `${p.g.away.short}@${p.g.home.short}`, lg: p.g.league, mk: p.mk, label: p.label, dk: res.dk, modelP: res.modelP, impDk: res.impDk, modelEdge: res.modelEdge, pinEdge: res.pinEdge, pureScore: res.pureScore, posNoPx: res.posNoPx, conf: res.conf });
+      } else {
+        if (p.verdict === 'good') p.verdict = 'watch';
+        if (p._v0 === 'good') p._v0 = 'watch';
+        const capWhy = `Moved to Watchlist: daily cap of ${V212_DAILY_CAP} model game picks reached`;
+        if (!(p.reasons || []).includes(capWhy)) (p.reasons || (p.reasons = [])).unshift(capWhy);
+      }
+    });
+  }
+
+  // Re-number Pick ranks cleanly across all good game plays
+  const goods = arr.filter(p => p && p.verdict === 'good').sort((a, b) => (b.est || 0) - (a.est || 0) || (b.score + (b.j && b.j.conf ? b.j.conf.v / 50 : 0)) - (a.score + (a.j && a.j.conf ? a.j.conf.v / 50 : 0)));
+  const seenG = new Set();
+  let rk = 0;
+  for (const p of goods){
+    if (seenG.has(p.g.id)){ p.verdict = 'watch'; continue; }
+    seenG.add(p.g.id);
+    rk++;
+    p.rank = rk;
+  }
+
+  V212.lastSlate = { at: Date.now(), picks: picked };
+}
+
+(function v212WrapEvaluate(){
+  if (typeof evaluateAll === 'function'){
+    const baseEvalAll = evaluateAll;
+    evaluateAll = function(){
+      const r = baseEvalAll.apply(this, arguments);
+      try{
+        if (!V212.inApply){
+          V212.inApply = true;
+          try{ v212ApplyBoard(typeof plays !== 'undefined' ? plays : []); }
+          finally{ V212.inApply = false; }
+          if (typeof v165Apply === 'function') v165Apply();
+          try{ if (typeof v162GPut === 'function') for (const p of (plays || [])) v162GPut(p); }catch(e){}
+        }
+      }catch(e){ console.warn('v212 evaluateAll', e); }
+      return r;
+    };
+  }
+})();
+
+/* ---------- 3) Shared board (/p/board) carries model tag so every client matches ---------- */
+(function v212SharedBoardHooks(){
+  if (typeof v165Collect === 'function'){
+    const baseCollect = v165Collect;
+    v165Collect = function(){
+      const c = baseCollect.apply(this, arguments) || { g: [], p: [] };
+      const m = [];
+      for (const x of ((typeof plays !== 'undefined' && plays) || [])){
+        if (x && x.g && x.mk && x.verdict === 'good' && x._v212Src === 'model' && typeof playResultKey === 'function'){
+          m.push(playResultKey(x));
+        }
+      }
+      c.m = [...new Set(m)].sort();
+      try{ if (typeof MLOG !== 'undefined' && MLOG.at) c.mr = v212ModelRecord(); }catch(e){}
+      return c;
+    };
+  }
+  if (typeof v165SetShared === 'function'){
+    const baseSet = v165SetShared;
+    v165SetShared = function(x){
+      const ok = baseSet.apply(this, arguments);
+      try{
+        if (V165 && V165.sh && x){
+          V165.sh.m = new Set(Array.isArray(x.m) ? x.m : []);
+          if (x.mr && typeof x.mr === 'object'){
+            V212.mrec = { at: x.at || Date.now(), rec: x.mr };
+            try{ localStorage.setItem(V212_MREC_LS, JSON.stringify(V212.mrec)); }catch(e){}
+            try{ if (typeof v202UpdateRecordsDOM === 'function') v202UpdateRecordsDOM(); }catch(e){}
+          }
+          if (ok) localStorage.setItem('bl_v165_board', JSON.stringify({ at: x.at, g: x.g, p: x.p, m: Array.isArray(x.m) ? x.m : [], mr: x.mr || null }));
+        }
+      }catch(e){}
+      return ok;
+    };
+  }
+  if (typeof v165PubTick === 'function'){
+    const baseTick = v165PubTick;
+    // Also tag m in /p/board payload when v154Put('board', ...) is called
+    if (typeof v154Put === 'function'){
+      const basePut = v154Put;
+      v154Put = function(key, obj){
+        if (key === 'board' && obj && Array.isArray(obj.g)){
+          try{
+            const c = v165Collect();
+            if (c) obj = Object.assign({}, obj, { v: 212, m: Array.isArray(c.m) ? c.m : [], mr: c.mr || obj.mr || null });
+          }catch(e){}
+        }
+        return basePut.call(this, key, obj);
+      };
+    }
+  }
+  if (typeof v165Apply === 'function'){
+    const baseApply = v165Apply;
+    v165Apply = function(){
+      const r = baseApply.apply(this, arguments);
+      try{
+        if (typeof v165Active === 'function' && v165Active() && V165 && V165.sh && V165.sh.m && V165.sh.m.size){
+          for (const p of ((typeof plays !== 'undefined' && plays) || [])){
+            if (!p || !p.g || !p.mk || p.verdict !== 'good') continue;
+            const k = typeof playResultKey === 'function' ? playResultKey(p) : '';
+            if (k && V165.sh.m.has(k)){
+              p._v212Src = 'model';
+              const res = v212EvalModelPlay(p);
+              if (res && res.modelP != null){
+                p._v212 = res;
+                p.est = res.modelP;
+                p._v160e = res.modelEdge;
+              }
+            }
+          }
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+})();
+
+/* ---------- 4) Universe + MLOG tagging (src='model' metadata, Pinnacle edge & CLV) ---------- */
+(function v212UniAndLogHooks(){
+  if (typeof uniUpsert === 'function'){
+    const baseUp = uniUpsert;
+    uniUpsert = function(b, src, id, rowBase, snap){
+      try{
+        if (b === 'games' && src === 'sb' && snap && snap.sv === 'good' && typeof UNI !== 'undefined'){
+          const ex = UNI.get(id);
+          if (ex && ex.y == null && ex.sv !== 'good') ex.at = 0;
+        }
+      }catch(e){}
+      const r = baseUp.apply(this, arguments);
+      try{
+        if (r && b === 'games' && src === 'sb' && typeof plays !== 'undefined' && Array.isArray(plays)){
+          const play = plays.find(p => p && p.g && String(p.g.eventId) === String(r.ev) && p.mk === r.mk && p.side === r.side);
+          if (play && play._v212Src === 'model' && play.verdict === 'good' && play._v212){
+            r.msrc = 'model';
+            r.mp = play._v212.modelP;
+            r.me = play._v212.modelEdge;
+            r.pe = play._v212.pinEdge;
+            r.pnv = play._v212.pinNv;
+            if (r.lk && r.lk.sv === 'good'){ r.lk.msrc = 'model'; }
+          }
+        }
+      }catch(e){}
+      return r;
+    };
+  }
+
+  if (typeof mlogCompact === 'function'){
+    const baseMc = mlogCompact;
+    mlogCompact = function(r){
+      const out = baseMc.apply(this, arguments);
+      try{
+        if (out && out[1] && r && r.b === 'games'){
+          const o = out[1];
+          if (r.msrc === 'model' || r.ms === 'model'){
+            o.ms = 'model';
+            if (r.mp != null && isFinite(+r.mp)) o.mp = Math.round(+r.mp * 10000) / 10000;
+            if (r.me != null && isFinite(+r.me)) o.me = Math.round(+r.me * 10000) / 10000;
+            if (r.pe != null && isFinite(+r.pe)) o.pe = Math.round(+r.pe * 10000) / 10000;
+            if (r.pnv != null && isFinite(+r.pnv)) o.pnv = Math.round(+r.pnv * 10000) / 10000;
+          }
+          if (r.cpr != null && isFinite(+r.cpr)) o.cpr = Math.round(+r.cpr);
+          if (r.cnv != null && isFinite(+r.cnv)) o.cnv = Math.round(+r.cnv * 10000) / 10000;
+          if (r.clv != null && isFinite(+r.clv)) o.clv = Math.round(+r.clv * 10000) / 10000;
+        }
+      }catch(e){}
+      return out;
+    };
+  }
+
+  if (typeof mlogRank === 'function'){
+    const baseRk = mlogRank;
+    mlogRank = function(o){
+      const r = baseRk.apply(this, arguments);
+      if (r < 0 || !o) return r;
+      let tie = 0;
+      if (o.ms === 'model') tie += 0.002;
+      if (o.clv != null) tie += 0.001;
+      return r + tie;
+    };
+  }
+
+  // Stamp closing DraftKings price & CLV on model game picks as games reach kickoff
+  window.v212StampCloseClv = function(){
+    try{
+      const now = Date.now();
+      const gs = (typeof games !== 'undefined' && Array.isArray(games)) ? games : [];
+      const gMap = new Map(gs.map(g => [String(g.eventId), g]));
+      let stamped = 0;
+      if (typeof UNI !== 'undefined'){
+        for (const r of UNI.values()){
+          if (!r || r.b !== 'games' || r.msrc !== 'model') continue;
+          const mins = (r.t - now) / 60000;
+          if (mins > 20) continue;
+          const g = gMap.get(String(r.ev));
+          if (!g || g.state !== 'pre') continue;
+          const A = g.analysis && g.analysis[r.mk];
+          const sd = A && A.sides && A.sides[r.side];
+          const cpr = sd && sd.best && sd.best.price != null ? +sd.best.price : null;
+          if (cpr == null || !isFinite(cpr)) continue;
+          const pickPr = (r.lk && r.lk.price != null) ? +r.lk.price : +r.price;
+          const pickImp = typeof v160Imp === 'function' ? v160Imp(pickPr) : null;
+          const closeImp = typeof v160Imp === 'function' ? v160Imp(cpr) : null;
+          const cnv = (sd.nv != null && isFinite(+sd.nv)) ? +sd.nv : null;
+          r.cpr = Math.round(cpr);
+          if (cnv != null) r.cnv = Math.round(cnv * 10000) / 10000;
+          if (pickImp != null && closeImp != null){
+            r.clv = Math.round((closeImp - pickImp) * 10000) / 10000;
+          }
+          if (typeof UNI_DIRTY !== 'undefined') UNI_DIRTY.add(r.i);
+          stamped++;
+        }
+      }
+      if (typeof MLOG !== 'undefined' && MLOG.raw){
+        for (const [, m] of MLOG.raw){
+          if (!m) continue;
+          for (const [id, o] of m){
+            if (!o || o.ms !== 'model') continue;
+            const mins = (o.t - now) / 60000;
+            if (mins > 20) continue;
+            const g = gMap.get(String(o.ev));
+            if (!g || g.state !== 'pre') continue;
+            const A = g.analysis && g.analysis[o.mk];
+            const sd = A && A.sides && A.sides[o.sd];
+            const cpr = sd && sd.best && sd.best.price != null ? +sd.best.price : null;
+            if (cpr == null || !isFinite(cpr)) continue;
+            const pickPr = o.lpr != null ? +o.lpr : +o.pr;
+            const pickImp = typeof v160Imp === 'function' ? v160Imp(pickPr) : null;
+            const closeImp = typeof v160Imp === 'function' ? v160Imp(cpr) : null;
+            o.cpr = Math.round(cpr);
+            if (sd.nv != null && isFinite(+sd.nv)) o.cnv = Math.round(+sd.nv * 10000) / 10000;
+            if (pickImp != null && closeImp != null) o.clv = Math.round((closeImp - pickImp) * 10000) / 10000;
+            MLOG.queue.set(id, o);
+          }
+        }
+      }
+      return stamped;
+    }catch(e){ return 0; }
+  };
+  setInterval(() => { try{ if (typeof v154Pub === 'function' && v154Pub()) v212StampCloseClv(); }catch(e){} }, 120000);
+})();
+
+/* ---------- 5) Exclude src='model' from historical Picks & compute separate Model Game Picks record ---------- */
+(function v212SeparationHooks(){
+  if (typeof v153BoardPick === 'function'){
+    const baseBp = v153BoardPick;
+    v153BoardPick = function(o){
+      if (v212IsModelRow(o)) return false;
+      return baseBp.apply(this, arguments);
+    };
+  }
+  if (typeof v160Counted === 'function'){
+    const baseCnt = v160Counted;
+    v160Counted = function(o){
+      if (v212IsModelRow(o)) return false;
+      return baseCnt.apply(this, arguments);
+    };
+  }
+  // Keep Play of the Day separate from v212 model-tagged picks too
+  if (typeof v131Keep === 'function'){
+    const baseKeep = v131Keep;
+    v131Keep = function(c){
+      if (v212IsModelRow(c)) return false;
+      return baseKeep.apply(this, arguments);
+    };
+  }
+})();
+
+function v212ModelRows(){
+  const out = [];
+  if (typeof MLOG === 'undefined' || !MLOG.raw) return out;
+  const raw = [];
+  for (const [, m] of MLOG.raw){
+    if (!m) continue;
+    for (const o of m.values()){
+      if (!o || !v212IsModelRow(o)) continue;
+      if (typeof v210CleanSbRow === 'function' && !v210CleanSbRow(null, o)) continue;
+      if (o.s !== 'sb') continue;
+      const call = o.sv ? o.sv : o.v;
+      if (call !== 'good') continue;
+      const pr = o.lpr != null ? +o.lpr : +o.pr;
+      if (!isFinite(pr) || pr < V212_FLOOR) continue;
+      raw.push(o);
+    }
+  }
+  const dedup = typeof mlogOnePerBet === 'function' ? mlogOnePerBet(raw) : raw;
+  return dedup.sort((a, b) => (+b.t || 0) - (+a.t || 0));
+}
+
+function v212ModelRecord(){
+  const hasLog = (typeof MLOG !== 'undefined' && MLOG.raw && MLOG.at > 0);
+  if (!hasLog && V212.mrec && V212.mrec.rec) return V212.mrec.rec;
+  const rows = v212ModelRows();
+  let w = 0, l = 0, p = 0, u = 0, open = 0;
+  let clvS = 0, clvN = 0, pinS = 0, pinN = 0, meS = 0, meN = 0;
+  for (const o of rows){
+    const pr = o.lpr != null ? +o.lpr : +o.pr;
+    if (o.me != null && isFinite(+o.me)){ meS += +o.me; meN++; }
+    if (o.pe != null && isFinite(+o.pe)){ pinS += +o.pe; pinN++; }
+    if (o.clv != null && isFinite(+o.clv)){ clvS += +o.clv; clvN++; }
+    if (!o.res){ open++; continue; }
+    if (o.res === 'ungradeable' || o.res === 'void') continue;
+    if (o.res === 'win' && isFinite(pr)){ w++; u += (pr > 0 ? pr / 100 : 100 / (-pr)); }
+    else if (o.res === 'loss'){ l++; u -= 1; }
+    else if (o.res === 'push') p++;
+  }
+  const n = w + l;
+  return {
+    w, l, p, u: Math.round(u * 100) / 100, open, n,
+    roi: n ? Math.round((u / n) * 1000) / 1000 : null,
+    avgModelEdge: meN ? Math.round((meS / meN) * 10000) / 10000 : null,
+    avgPinEdge: pinN ? Math.round((pinS / pinN) * 10000) / 10000 : null,
+    pinN,
+    avgClv: clvN ? Math.round((clvS / clvN) * 10000) / 10000 : null,
+    clvN,
+    totalRows: rows.length
+  };
+}
+
+function v212SyncLearner(){
+  try{
+    if (typeof LEARN === 'undefined' || !LEARN) return;
+    const R = v212ModelRecord();
+    LEARN.gamesModel = Object.assign({ at: Date.now() }, R);
+    if (typeof learnSave === 'function') learnSave();
+  }catch(e){}
+}
+
+async function v212FetchMrec(force){
+  if (typeof v154Pub === 'function' && v154Pub()) return V212.mrec;
+  if (V212.mrecBusy) return V212.mrec;
+  if (!force && Date.now() - V212.mrecAt < 3 * 60000) return V212.mrec;
+  if (typeof v154Get !== 'function') return V212.mrec;
+  V212.mrecBusy = true;
+  V212.mrecAt = Date.now();
+  try{
+    const x = await v154Get('board');
+    if (x && x.mr && typeof x.mr === 'object'){
+      V212.mrec = { at: x.at || Date.now(), rec: x.mr };
+      try{ localStorage.setItem(V212_MREC_LS, JSON.stringify(V212.mrec)); }catch(e){}
+      if (typeof v202UpdateRecordsDOM === 'function') v202UpdateRecordsDOM();
+    }
+  }catch(e){}
+  finally{ V212.mrecBusy = false; }
+  return V212.mrec;
+}
+
+async function v212PublishMrec(force){
+  try{
+    if (typeof v154Pub !== 'function' || !v154Pub()) return false;
+    if (typeof MLOG === 'undefined' || !MLOG.at) return false;
+    v212SyncLearner();
+    return true;
+  }catch(e){ return false; }
+}
+
+(function v212ResultsAndPublishHooks(){
+  if (typeof v142Publish === 'function'){
+    const basePub = v142Publish;
+    v142Publish = function(force){
+      const r = basePub.apply(this, arguments);
+      try{ v212PublishMrec(force); }catch(e){}
+      return r;
+    };
+  }
+  if (typeof v202RecordsCardHTML === 'function' && typeof v202RecordRowHTML === 'function'){
+    v202RecordsCardHTML = function(){
+      const gm = v212ModelRecord();
+      const sh = typeof v202SignalRecord === 'function' ? v202SignalRecord('sharp') : null;
+      const pa = typeof v202SignalRecord === 'function' ? v202SignalRecord('parlay') : null;
+      const parts = ['Model win % vs DraftKings'];
+      if (gm && gm.avgPinEdge != null) parts.push(`vs Pin ${gm.avgPinEdge >= 0 ? '+' : ''}${(gm.avgPinEdge * 100).toFixed(1)}%`);
+      if (gm && gm.avgClv != null) parts.push(`CLV ${gm.avgClv >= 0 ? '+' : ''}${(gm.avgClv * 100).toFixed(1)}%`);
+      const gmRow = v202RecordRowHTML('Model game picks', parts.join(' · '), gm);
+      return `<div class="card v202-recs" id="v202Recs">
+        <div class="v202-recs-h"><h3>Tracked separately</h3><span class="hint">Excluded from historical Picks, POD &amp; paper models</span></div>
+        <div class="v202-recs-list">
+          ${gmRow}
+          ${v202RecordRowHTML('Sharp', 'Locked 30m before start', sh)}
+          ${v202RecordRowHTML('Parlays', '2+ legs · sportsbook lines', pa)}
+        </div>
+      </div>`;
+    };
+  }
+  if (typeof v142RenderModel === 'function'){
+    const baseRm = v142RenderModel;
+    v142RenderModel = function(){
+      const r = baseRm.apply(this, arguments);
+      try{ v212FetchMrec(false); }catch(e){}
+      return r;
+    };
+  }
+  if (typeof renderTracker === 'function'){
+    const baseRt = renderTracker;
+    renderTracker = function(){
+      const r = baseRt.apply(this, arguments);
+      try{ v212FetchMrec(false); }catch(e){}
+      return r;
+    };
+  }
+  if (typeof v207LiveHTML === 'function'){
+    const baseLive = v207LiveHTML;
+    v207LiveHTML = function(){
+      let h = baseLive.apply(this, arguments);
+      try{
+        const R = v212ModelRecord();
+        if (R){
+          const recTxt = (R.w + R.l + R.p) ? `<b>${R.w}-${R.l}${R.p ? '-' + R.p : ''}</b>` : `<b>0-0</b>`;
+          const roiTxt = R.roi != null ? `, ROI <b class="${R.roi >= 0 ? 'pos' : 'neg'}">${R.roi >= 0 ? '+' : ''}${(R.roi * 100).toFixed(1)}%</b>` : '';
+          const pinTxt = R.avgPinEdge != null ? ` · vs Pinnacle <b>${R.avgPinEdge >= 0 ? '+' : ''}${(R.avgPinEdge * 100).toFixed(1)}%</b>` : '';
+          const clvTxt = R.avgClv != null ? ` · avg CLV <b class="${R.avgClv >= 0 ? 'pos' : 'neg'}">${R.avgClv >= 0 ? '+' : ''}${(R.avgClv * 100).toFixed(1)}%</b>` : '';
+          const openTxt = R.open ? ` (${R.open} open)` : '';
+          const li = `<li>Model game picks (v212, tracked separately): ${recTxt}${roiTxt}${pinTxt}${clvTxt}${openTxt}</li>`;
+          const idx = h.indexOf('</ul>');
+          if (idx > 0) h = h.slice(0, idx) + li + h.slice(idx);
+        }
+      }catch(e){}
+      return h;
+    };
+  }
+  if (typeof learnPanelHTML === 'function'){
+    const baseLp = learnPanelHTML;
+    learnPanelHTML = function(){
+      let h = baseLp.apply(this, arguments);
+      try{
+        const R = v212ModelRecord();
+        if (R && typeof h === 'string' && h.includes('ln-kpis')){
+          const gmTxt = `<div class="hint" style="margin:6px 0 0"><b>Model game picks (v212, separate record):</b> ${R.w}-${R.l}${R.p ? '-' + R.p : ''} (${R.totalRows} tracked one-per-bet${R.open ? `, ${R.open} open` : ''})${R.avgClv != null ? ` · avg CLV ${R.avgClv >= 0 ? '+' : ''}${(R.avgClv * 100).toFixed(1)}%` : ''}</div>`;
+          const pos = h.indexOf('<div class="ln-actions">');
+          if (pos > 0) h = h.slice(0, pos) + gmTxt + h.slice(pos);
+        }
+      }catch(e){}
+      return h;
+    };
+  }
+})();
+
+/* ---------- 6) Fix /p/audit 0/0/0 overwrite on brief non-VPS visits / cold boots ---------- */
+(function v212AuditGuard(){
+  if (typeof v189PublishAudit !== 'function') return;
+  const baseAudit = v189PublishAudit;
+  function hasNonZeroCounts(c){
+    if (!c || typeof c !== 'object') return false;
+    return Object.values(c).some(v => (+v || 0) > 0);
+  }
+  function localAuditEmpty(){
+    const c1 = typeof V189 !== 'undefined' ? V189.counts : null;
+    const c2 = typeof V200 !== 'undefined' ? V200.counts : null;
+    const r1 = (typeof V189 !== 'undefined' && Array.isArray(V189.rejLog)) ? V189.rejLog.length : 0;
+    const e1 = (typeof V200 !== 'undefined' && Array.isArray(V200.earlyLocks)) ? V200.earlyLocks.length : 0;
+    return !hasNonZeroCounts(c1) && !hasNonZeroCounts(c2) && r1 === 0 && e1 === 0;
+  }
+  v189PublishAudit = async function(){
+    try{
+      if (typeof v154Pub !== 'function' || !v154Pub()) return false;
+      const pri = typeof v154Pri === 'function' ? v154Pri() : 0;
+      const upMs = Date.now() - ((typeof V154 !== 'undefined' && V154.bootAt) || 0);
+      // Never let a short phone/desktop visit (or freshly booted device with 0/0/0) overwrite /p/audit
+      if (localAuditEmpty() && (pri < 2 || upMs < 5 * 60000)) return false;
+      if (!V212.auditChecked && typeof v154Get === 'function'){
+        V212.auditChecked = true;
+        try{
+          const rem = await v154Get('audit');
+          if (rem && (hasNonZeroCounts(rem.counts) || hasNonZeroCounts(rem.v200))){
+            V212.auditSeed = rem;
+            if (localAuditEmpty()) return false;
+            if (typeof V189 !== 'undefined' && rem.counts){
+              for (const k in rem.counts) V189.counts[k] = Math.max(+V189.counts[k] || 0, +rem.counts[k] || 0);
+            }
+            if (typeof V200 !== 'undefined' && rem.v200){
+              for (const k in rem.v200) V200.counts[k] = Math.max(+V200.counts[k] || 0, +rem.v200[k] || 0);
+            }
+          }
+        }catch(e){}
+      }
+      return await baseAudit.apply(this, arguments);
+    }catch(e){ return false; }
+  };
+})();
+
+window.v212Status = () => ({
+  build: APP_BUILD,
+  picksToday: V212.lastSlate,
+  record: v212ModelRecord()
+});
 </script>
 </body>
 </html>
